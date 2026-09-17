@@ -4,3 +4,6 @@
 [submodule "mpi.tool/components/contrib/getopt"]
 	path = mpi.tool/components/contrib/getopt
 	url = https://github.com/peatman/getopt.git
+[submodule "mpi.tool/components/contrib/libfabric"]
+	path = mpi.tool/components/contrib/libfabric
+	url = https://github.com/peatman/libfabric.git
