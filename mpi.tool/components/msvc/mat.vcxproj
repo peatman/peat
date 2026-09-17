@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug.MPI|x64">
+      <Configuration>Debug.MPI</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release.MPI|x64">
+      <Configuration>Release.MPI</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\common\common_types.cpp" />
+    <ClCompile Include="..\common\communicators.cpp" />
+    <ClCompile Include="..\common\file_io.cpp" />
+    <ClCompile Include="..\common\func_id.cpp" />
+    <ClCompile Include="..\common\model_id.cpp" />
+    <ClCompile Include="..\common\ptp.cpp" />
+    <ClCompile Include="..\common\utils.cpp" />
+    <ClCompile Include="..\contrib\getopt\source\getopt.c" />
+    <ClCompile Include="..\mat\src\collectives.cpp" />
+    <ClCompile Include="..\mat\src\comm.cpp" />
+    <ClCompile Include="..\mat\src\gpu.cpp" />
+    <ClCompile Include="..\mat\src\main.cpp" />
+    <ClCompile Include="..\mat\src\mat.cpp" />
+    <ClCompile Include="..\mat\src\p2pal.cpp" />
+    <ClCompile Include="..\mat\src\requests.cpp" />
+    <ClCompile Include="..\mat\src\tempdebug.cpp">
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Disabled</Optimization>
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release.MPI|x64'">Disabled</Optimization>
+      <IntrinsicFunctions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</IntrinsicFunctions>
+      <IntrinsicFunctions Condition="'$(Configuration)|$(Platform)'=='Release.MPI|x64'">false</IntrinsicFunctions>
+      <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</WholeProgramOptimization>
+      <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Release.MPI|x64'">false</WholeProgramOptimization>
+    </ClCompile>
+    <ClCompile Include="..\mat\src\tevent.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\common\common_plain_types.h" />
+    <ClInclude Include="..\common\common_types.h" />
+    <ClInclude Include="..\common\communicators.h" />
+    <ClInclude Include="..\common\file_io.h" />
+    <ClInclude Include="..\common\func_id.h" />
+    <ClInclude Include="..\common\func_id_def.h" />
+    <ClInclude Include="..\common\model_id.h" />
+    <ClInclude Include="..\common\mpi_func_ids.h" />
+    <ClInclude Include="..\common\ptp.h" />
+    <ClInclude Include="..\common\utils.h" />
+    <ClInclude Include="..\mat\src\collectives.h" />
+    <ClInclude Include="..\mat\src\comm.h" />
+    <ClInclude Include="..\mat\src\gpu.h" />
+    <ClInclude Include="..\mat\src\mat.h" />
+    <ClInclude Include="..\mat\src\p2pal.h" />
+    <ClInclude Include="..\mat\src\records.h" />
+    <ClInclude Include="..\mat\src\requests.h" />
+    <ClInclude Include="..\mat\src\tevent.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\common\mpi_func.inc" />
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{30827690-915C-43B8-BDB2-3427521E67C7}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>mt2stat</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug.MPI|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release.MPI|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug.MPI|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release.MPI|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\include;..\contrib\getopt\include;</IncludePath>
+    <LibraryPath>$(ICInstallDir)\compiler\lib\intel64_win;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);..\contrib\zlib\install\lib;$(ICInstallDir)\lib</LibraryPath>
+    <ExecutablePath>$(ICInstallDir)bin;$(NativeExecutablePath);$(VC_ExecutablePath_x64);$(WindowsSDK_ExecutablePath);$(VS_ExecutablePath);$(MSBuild_ExecutablePath);$(FxCopDir);$(PATH)</ExecutablePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug.MPI|x64'">
+    <LinkIncremental>true</LinkIncremental>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\include;..\contrib\getopt\include;</IncludePath>
+    <LibraryPath>$(MSBuildProgramFiles32)\Intel\oneAPI\mpi\latest\lib\mpi\debug;$(MSBuildProgramFiles32)\Intel\oneAPI\mpi\latest\lib;$(I_MPI_ROOT)\lib\mpi\debug;$(I_MPI_ROOT)\lib;$(ICInstallDir)\compiler\lib\intel64_win;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);..\contrib\zlib\install\lib;$(ICInstallDir)\lib</LibraryPath>
+    <ExecutablePath>$(ICInstallDir)bin;$(NativeExecutablePath);$(VC_ExecutablePath_x64);$(WindowsSDK_ExecutablePath);$(VS_ExecutablePath);$(MSBuild_ExecutablePath);$(FxCopDir);$(PATH)</ExecutablePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\include;..\contrib\getopt\include;</IncludePath>
+    <LibraryPath>$(ICInstallDir)\compiler\lib\intel64_win;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);..\contrib\zlib\install\lib;$(ICInstallDir)\lib</LibraryPath>
+    <LibraryWPath>$(WindowsSDK_MetadataPath);</LibraryWPath>
+    <ExecutablePath>$(ICInstallDir)bin;$(NativeExecutablePath);$(VC_ExecutablePath_x64);$(WindowsSDK_ExecutablePath);$(VS_ExecutablePath);$(MSBuild_ExecutablePath);$(FxCopDir);$(PATH)</ExecutablePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release.MPI|x64'">
+    <LinkIncremental>false</LinkIncremental>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\include;..\contrib\getopt\include;</IncludePath>
+    <LibraryPath>$(MSBuildProgramFiles32)\Intel\oneAPI\mpi\latest\lib;$(I_MPI_ROOT)\lib;$(ICInstallDir)\compiler\lib\intel64_win;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);..\contrib\zlib\install\lib;$(ICInstallDir)\lib</LibraryPath>
+    <LibraryWPath>$(WindowsSDK_MetadataPath);</LibraryWPath>
+    <ExecutablePath>$(ICInstallDir)bin;$(NativeExecutablePath);$(VC_ExecutablePath_x64);$(WindowsSDK_ExecutablePath);$(VS_ExecutablePath);$(MSBuild_ExecutablePath);$(FxCopDir);$(PATH)</ExecutablePath>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SDLCheck>false</SDLCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <AdditionalIncludeDirectories>$(I_MPI_ROOT)\include</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <OpenMP>None</OpenMP>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;libzs.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <CreateHotPatchableImage>Enabled</CreateHotPatchableImage>
+      <AdditionalLibraryDirectories>$(I_MPI_ROOT)\lib\mpi\debug;$(I_MPI_ROOT)\lib</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug.MPI|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>PEAT_MPI;ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SDLCheck>false</SDLCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <AdditionalIncludeDirectories>$(I_MPI_ROOT)\include</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <OpenMP>None</OpenMP>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>$(MSBuildProgramFiles32)\Intel\oneAPI\mpi\latest\lib\mpi\debug\impi.lib;$(MSBuildProgramFiles32)\Intel\oneAPI\mpi\latest\lib\impi.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;libzs.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <CreateHotPatchableImage>Enabled</CreateHotPatchableImage>
+      <AdditionalLibraryDirectories>$(I_MPI_ROOT)\lib\mpi\debug;$(I_MPI_ROOT)\lib;$(ONEAPI_ROOT)mpi\latest\lib\mpi\debug;$(ONEAPI_ROOT)mpi\latest\lib;$(ProgramFiles(x86))\Intel\oneAPI\mpi\latest\lib\mpi\debug;$(ProgramFiles(x86))\Intel\oneAPI\mpi\latest\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SDLCheck>false</SDLCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+      <AdditionalIncludeDirectories>$(I_MPI_ROOT)\include</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <OpenMP>None</OpenMP>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;libzs.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <CreateHotPatchableImage>Enabled</CreateHotPatchableImage>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+      <AdditionalLibraryDirectories>$(I_MPI_ROOT)\lib</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release.MPI|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>PEAT_MPI;ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SDLCheck>false</SDLCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+      <AdditionalIncludeDirectories>$(I_MPI_ROOT)\include</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
+      <OpenMP>None</OpenMP>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>$(MSBuildProgramFiles32)\Intel\oneAPI\mpi\latest\lib\impi.lib;impi.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;libzs.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <CreateHotPatchableImage>Enabled</CreateHotPatchableImage>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+      <AdditionalLibraryDirectories>$(I_MPI_ROOT)\lib;$(ONEAPI_ROOT)mpi\latest\lib;$(ProgramFiles(x86))\Intel\oneAPI\mpi\latest\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

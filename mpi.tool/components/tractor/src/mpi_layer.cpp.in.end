@@ -1,0 +1,3 @@
+#if defined(__CPLUSPLUS__) || defined(__cplusplus)
+}
+#endif

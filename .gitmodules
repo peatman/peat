@@ -1,0 +1,6 @@
+[submodule "mpi.tool/components/contrib/zlib"]
+	path = mpi.tool/components/contrib/zlib
+	url = https://github.com/peatman/zlib.git
+[submodule "mpi.tool/components/contrib/getopt"]
+	path = mpi.tool/components/contrib/getopt
+	url = https://github.com/peatman/getopt.git

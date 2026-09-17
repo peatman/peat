@@ -1,0 +1,26 @@
+<RCC>
+  <qresource prefix="/icons/light">
+    <file alias="presentation.svg">icons/light/presentation.svg</file>
+    <file alias="curve.svg">icons/light/curve.svg</file>
+    <file alias="line.svg">icons/light/line.svg</file>
+    <file alias="rectangle.svg">icons/light/rectangle.svg</file>
+    <file alias="ellipse.svg">icons/light/ellipse.svg</file>
+    <file alias="arrow.svg">icons/light/arrow.svg</file>
+    <file alias="zoom_in.svg">icons/light/zoom_in.svg</file>
+    <file alias="zoom_out.svg">icons/light/zoom_out.svg</file>
+    <file alias="undo.svg">icons/light/undo.svg</file>
+    <file alias="redo.svg">icons/light/redo.svg</file>
+  </qresource>
+  <qresource prefix="/icons/dark">
+    <file alias="presentation.svg">icons/dark/presentation.svg</file>
+    <file alias="curve.svg">icons/dark/curve.svg</file>
+    <file alias="line.svg">icons/dark/line.svg</file>
+    <file alias="rectangle.svg">icons/dark/rectangle.svg</file>
+    <file alias="ellipse.svg">icons/dark/ellipse.svg</file>
+    <file alias="arrow.svg">icons/dark/arrow.svg</file>
+    <file alias="zoom_in.svg">icons/dark/zoom_in.svg</file>
+    <file alias="zoom_out.svg">icons/dark/zoom_out.svg</file>
+    <file alias="undo.svg">icons/dark/undo.svg</file>
+    <file alias="redo.svg">icons/dark/redo.svg</file>
+  </qresource>
+</RCC>

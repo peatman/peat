@@ -1,0 +1,57 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.4.33103.184
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mat", "mat.vcxproj", "{30827690-915C-43B8-BDB2-3427521E67C7}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ctt", "ctt.vcxproj", "{96F16CA9-483D-46CC-9D6F-A4FEA15E1763}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug.MPI|x64 = Debug.MPI|x64
+		Debug|x64 = Debug|x64
+		Release.MPI|x64 = Release.MPI|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4E3C4E49-068C-466D-85B9-C9CF974CD076}.Debug.MPI|x64.ActiveCfg = Debug|x64
+		{4E3C4E49-068C-466D-85B9-C9CF974CD076}.Debug.MPI|x64.Build.0 = Debug|x64
+		{4E3C4E49-068C-466D-85B9-C9CF974CD076}.Debug|x64.ActiveCfg = Debug|x64
+		{4E3C4E49-068C-466D-85B9-C9CF974CD076}.Debug|x64.Build.0 = Debug|x64
+		{4E3C4E49-068C-466D-85B9-C9CF974CD076}.Release.MPI|x64.ActiveCfg = Release|x64
+		{4E3C4E49-068C-466D-85B9-C9CF974CD076}.Release.MPI|x64.Build.0 = Release|x64
+		{4E3C4E49-068C-466D-85B9-C9CF974CD076}.Release|x64.ActiveCfg = Release|x64
+		{4E3C4E49-068C-466D-85B9-C9CF974CD076}.Release|x64.Build.0 = Release|x64
+		{30827690-915C-43B8-BDB2-3427521E67C7}.Debug.MPI|x64.ActiveCfg = Debug.MPI|x64
+		{30827690-915C-43B8-BDB2-3427521E67C7}.Debug.MPI|x64.Build.0 = Debug.MPI|x64
+		{30827690-915C-43B8-BDB2-3427521E67C7}.Debug|x64.ActiveCfg = Debug|x64
+		{30827690-915C-43B8-BDB2-3427521E67C7}.Debug|x64.Build.0 = Debug|x64
+		{30827690-915C-43B8-BDB2-3427521E67C7}.Release.MPI|x64.ActiveCfg = Release.MPI|x64
+		{30827690-915C-43B8-BDB2-3427521E67C7}.Release.MPI|x64.Build.0 = Release.MPI|x64
+		{30827690-915C-43B8-BDB2-3427521E67C7}.Release|x64.ActiveCfg = Release|x64
+		{30827690-915C-43B8-BDB2-3427521E67C7}.Release|x64.Build.0 = Release|x64
+		{3F436C8C-9754-461F-8340-9110539088CB}.Debug.MPI|x64.ActiveCfg = Debug|x64
+		{3F436C8C-9754-461F-8340-9110539088CB}.Debug.MPI|x64.Build.0 = Debug|x64
+		{3F436C8C-9754-461F-8340-9110539088CB}.Debug|x64.ActiveCfg = Debug|x64
+		{3F436C8C-9754-461F-8340-9110539088CB}.Debug|x64.Build.0 = Debug|x64
+		{3F436C8C-9754-461F-8340-9110539088CB}.Release.MPI|x64.ActiveCfg = Release.MPI|x64
+		{3F436C8C-9754-461F-8340-9110539088CB}.Release.MPI|x64.Build.0 = Release.MPI|x64
+		{3F436C8C-9754-461F-8340-9110539088CB}.Release|x64.ActiveCfg = Release|x64
+		{3F436C8C-9754-461F-8340-9110539088CB}.Release|x64.Build.0 = Release|x64
+		{96F16CA9-483D-46CC-9D6F-A4FEA15E1763}.Debug.MPI|x64.ActiveCfg = Debug|x64
+		{96F16CA9-483D-46CC-9D6F-A4FEA15E1763}.Debug.MPI|x64.Build.0 = Debug|x64
+		{96F16CA9-483D-46CC-9D6F-A4FEA15E1763}.Debug|x64.ActiveCfg = Debug|x64
+		{96F16CA9-483D-46CC-9D6F-A4FEA15E1763}.Debug|x64.Build.0 = Debug|x64
+		{96F16CA9-483D-46CC-9D6F-A4FEA15E1763}.Release.MPI|x64.ActiveCfg = Release|x64
+		{96F16CA9-483D-46CC-9D6F-A4FEA15E1763}.Release.MPI|x64.Build.0 = Release|x64
+		{96F16CA9-483D-46CC-9D6F-A4FEA15E1763}.Release|x64.ActiveCfg = Release|x64
+		{96F16CA9-483D-46CC-9D6F-A4FEA15E1763}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {BB836419-0F64-4E2A-8405-34B9507B1BFC}
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MessagesTabWidget</class>
+ <widget class="QTabWidget" name="MessagesTabWidget">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>400</width>
+    <height>300</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Messages In Region</string>
+  </property>
+  <property name="currentIndex">
+   <number>0</number>
+  </property>
+  <widget class="QTableWidget" name="initiation">
+   <attribute name="title">
+    <string>Initiation</string>
+   </attribute>
+  </widget>
+  <widget class="QTableWidget" name="completion">
+   <attribute name="title">
+    <string>Completion</string>
+   </attribute>
+  </widget>
+  <widget class="QTableWidget" name="p2p">
+   <attribute name="title">
+    <string>P2P</string>
+   </attribute>
+  </widget>
+  <widget class="QTreeWidget" name="collectives">
+   <property name="columnCount">
+    <number>3</number>
+   </property>
+   <property name="supportedDragActions">
+    <set>Qt::DropAction::MoveAction</set>
+   </property>
+   <attribute name="title">
+    <string>Collectives</string>
+   </attribute>
+   <column>
+    <property name="text">
+     <string notr="true">Function</string>
+    </property>
+   </column>
+   <column>
+    <property name="text">
+     <string notr="true">Rank</string>
+    </property>
+   </column>
+   <column>
+    <property name="text">
+     <string notr="true">UID</string>
+    </property>
+   </column>
+  </widget>
+  <widget class="QTableWidget" name="gpu">
+   <attribute name="title">
+    <string>GPU</string>
+   </attribute>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
