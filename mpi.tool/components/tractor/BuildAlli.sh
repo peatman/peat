@@ -10,6 +10,7 @@ rm -f Build.${COMPILER}.dir
 
 #do_not_remove=1 ./Build.sh mvapich:2.3.5x-mt-ib-verbs-eng  mvapich2 off   on   off  off off off 
 #do_not_remove=1 ./Build.sh mvapich:2.3.5x-mt-ib-verbs      mvapich2 off   on   off  off off off 
+export FABRIC=on
 #do_not_remove=1 ./Build.sh mvapich:2.3.5x-mt-ib-verbs-eng  mvapich2 off   on   off  off off off 
 #do_not_remove=1 ./Build.sh mvapich:2.3.5x-mt-ib-verbs      mvapich2 off   on   off  off off off 
 #exit
@@ -20,10 +21,22 @@ rm -f Build.${COMPILER}.dir
 #do_not_remove=1 ./Build.sh mvapich:4.1x-mt-ofi-eng         mvapich4  off   on  off  off off  off 
 #do_not_remove=1 ./Build.sh mpich:4.3.2x-mt-ofi-eng         mpich4    off   on  off  off off  off 
 #do_not_remove=1 ./Build.sh mpich:5.0.1x-mt-ofi-eng         mpich5    off   on  off  off off  off
+#do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng        fab_layers off   off  off  off off off
 #do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng        mpich5     off   off  off  off off off
+#export FABRIC=on
 #do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng        mpich5   off   off  off  off off off
 
 #exit
+# build fab layers (mpi doesn't matter here so use mpich) 
+# do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng        fab_layers off   off  off  off off off
+# do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng        fab_layers off   on  off  off off off
+
+# exit
+
+./Build.sh  mpich:5.0.1x-mt-ofi-eng     fab_layers off   off  off  off off off &
+./Build.sh  mpich:5.0.1x-mt-ofi-eng     fab_layers off   on   off  off off off &
+
+unset FABRIC
 
 # fab layer and colletive transfers are explicitly turned off for Intel MPI (no source in public) and openmpi (for now)
 #          mpi_type                         target  mem  diag  GPU  buf v2p  hwc  
@@ -47,7 +60,7 @@ rm -f Build.${COMPILER}.dir
 # unset ENG_MPI_BUILD
 
 
-# orinary mvapich2 builds (no ct) 
+# orinary mvapich2 builds (no ct and fab) 
  ./Build.sh mvapich:2.3.5x-mt-ib-verbs       mvapich2 off   off  off  off off off &
 # ./Build.sh mvapich:2.3.5x-mt-ib-verbs       mvapich2 off   off  on   off off off &
  ./Build.sh mvapich:2.3.5x-mt-ib-verbs       mvapich2 off   on   off  off off off &
@@ -56,7 +69,7 @@ rm -f Build.${COMPILER}.dir
 #          1                                  2       3    4     5    6   7    8 
 #       mpi_type                           target    mem  diag  GPU  buf v2p  hwc  
 
-# orinary mvapich4 builds (no ct) 
+# orinary mvapich4 builds (no ct and fab) 
 
 ./Build.sh mpich:4.3.2x-mt-ofi             mpich4    off   off  off  off off  off &
 #./Build.sh mpich:4.3.2x-mt-ofi             mpich4    off   off  on   off off  off &
@@ -74,7 +87,9 @@ rm -f Build.${COMPILER}.dir
 ./Build.sh mpich:5.0.1x-mt-ofi             mpich5    off   on   off  off off  off &
 #./Build.sh mpich:5.0.1x-mt-ofi             mpich5    off   on   on   off off  off &
 
-# ct mvapich2 builds 
+export FABRIC=on
+
+# ct and fab (SMPI/Verbs/psm2 combined) mvapich2 builds 
 
  ./Build.sh mvapich:2.3.5x-mt-ib-verbs-eng   mvapich2 off   off  off  off off off &
 # ./Build.sh mvapich:2.3.5x-mt-ib-verbs-eng   mvapich2 off   off  on   off off off &
@@ -82,14 +97,20 @@ rm -f Build.${COMPILER}.dir
 # ./Build.sh mvapich:2.3.5x-mt-ib-verbs-eng   mvapich2 off   on   on   off off off &
 
 
-# engineering mpich4 builds (ct) 
+# ct and fab (psm2) mvapich2 builds 
+# ./Build.sh mvapich:2.3.5x-st-opa-psm2-eng   mvapich2 off   off  off  off off off &
+# ./Build.sh mvapich:2.3.5x-st-opa-psm2-eng   mvapich2 off   off  on   off off off &
+# ./Build.sh mvapich:2.3.5x-st-opa-psm2-eng   mvapich2 off   on   off  off off off &
+# ./Build.sh mvapich:2.3.5x-st-opa-psm2-eng   mvapich2 off   on   on   off off off &
+
+# engineering mpich4 builds (ct and fab) 
 
 ./Build.sh mpich:4.3.2x-mt-ofi-eng         mpich4    off   off  off  off off  off &
 #./Build.sh mpich:4.3.2x-mt-ofi-eng         mpich4    off   off  on   off off  off &
 ./Build.sh mpich:4.3.2x-mt-ofi-eng         mpich4    off   on   off  off off  off &
 #./Build.sh mpich:4.3.2x-mt-ofi-eng         mpich4    off   on   on   off off  off &
 
-# engineering mpich5 builds (ct) 
+# engineering mpich5 builds (ct and fab) 
 
 ./Build.sh mpich:5.0.1x-mt-ofi-eng         mpich5    off   off  off  off off  off &
 #./Build.sh mpich:5.0.1x-mt-ofi-eng         mpich5    off   off  on   off off  off &

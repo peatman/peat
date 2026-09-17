@@ -99,34 +99,38 @@ bool Elements::get_message(const PEAT_Rank rank, File_Storage_GZ *input_bind, TV
                 Elements::Collective tmp;
                 tmp.func_id = func_id;
                 PEAT_Rank rank_num = 0;
-                /*  Following 2 events will be holding conditionaly sendee and receiver parts of bytes in case they are different */
-                TV_Collective_Event *master_evt1 = NULL;
-                TV_Collective_Event *master_evt2 = NULL;
+                /*  Following 2 events will be holding conditionaly sender and receiver parts of bytes in case they are different */
                 for (int i = 2; i < line_size; i += 2) {
                     PEAT_Rank rank = -1;
                     extract(rank, trace_line_bind.at(i));
                     rank_num++;
                     PEAT_UID primary_id = -1;
                     extract(primary_id, trace_line_bind.at(i + 1));
-                    TV_Collective_Event *evt = static_cast<TV_Collective_Event *>(find_event(rank, primary_id, -1));
-                    if (evt) {
-                        tmp.events[rank] = evt;
-                        if (master_evt1) {
-                            if (master_evt1->bytes == evt->bytes) {
-                                evt->msg_bytes = &master_evt1->bytes;
-                                evt->bytes.clear();
-                            } else {
-                                if (master_evt2) {
-                                    if (master_evt1->bytes == evt->bytes) {
-                                        evt->msg_bytes = &master_evt2->bytes;
-                                        evt->bytes.clear();
-                                    }
+                    TV_Coll_Event *evt_tmp = static_cast<TV_Coll_Event *>(find_event(rank, primary_id, -1));
+
+                    if (evt_tmp) {
+                        if (evt_tmp->get_event_type() == TV_EVENT_TYPE_COLLECTIVE) { // ignore COMM collective for now
+                            TV_Collective_Event *evt = static_cast<TV_Collective_Event *>(evt_tmp);
+                            TV_Collective_Event *master_evt1 = NULL;
+                            TV_Collective_Event *master_evt2 = NULL;
+                            tmp.events[rank] = evt;
+                            if (master_evt1) {
+                                if (master_evt1->bytes == evt->bytes) {
+                                    evt->msg_bytes = &master_evt1->bytes;
+                                    evt->bytes.clear();
                                 } else {
-                                    master_evt2 = evt;
+                                    if (master_evt2) {
+                                        if (master_evt1->bytes == evt->bytes) {
+                                            evt->msg_bytes = &master_evt2->bytes;
+                                            evt->bytes.clear();
+                                        }
+                                    } else {
+                                        master_evt2 = evt;
+                                    }
                                 }
+                            } else {
+                                master_evt1 = evt;
                             }
-                        } else {
-                            master_evt1 = evt;
                         }
                     }
                 }
@@ -1735,7 +1739,8 @@ TV_Event *Elements::get_event(int x, int y, int width) const
         }
     }
     PEAT_Clock clk = convert_mouse_to_ticks(x, 0, width);
-    return (find_event(rank, clk, selector, thread));
+    if (rank>=0) return (find_event(rank, clk, selector, thread));
+    return NULL;
 }
 
 PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, File_Storage_GZ *input_HWC, PEAT_Clock min_clock, PEAT_Clock max_clock, TV_Event **event)

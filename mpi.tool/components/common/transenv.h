@@ -44,14 +44,14 @@ struct PEAT_Trasport_Environment {
 struct PEAT_Ext_Trasport_Environment : public PEAT_Trasport_Environment {
     PEAT_MPI_Message message_size;
     PEAT_Ratio mult_lat = 0.0;
-    PEAT_LAT min_pre_delay = -1;
-    PEAT_LAT min_post_delay = -1;
-    PEAT_LAT max_pre_delay = -1;
-    PEAT_LAT max_post_delay = -1;
-    PEAT_LAT avg_pre_delay = -1;
-    PEAT_LAT avg_post_delay = -1;
-    PEAT_LAT median_pre_delay = -1;
-    PEAT_LAT median_post_delay = -1;
+    PEAT_LAT min_pre_delay = 0;
+    PEAT_LAT min_post_delay = 0;
+    PEAT_LAT max_pre_delay = 0;
+    PEAT_LAT max_post_delay = 0;
+    PEAT_LAT avg_pre_delay = 0;
+    PEAT_LAT avg_post_delay = 0;
+    PEAT_LAT median_pre_delay = 0;
+    PEAT_LAT median_post_delay = 0;
     PEAT_Ratio left_ratio = 1.00;
     PEAT_Ratio right_ratio = 1.00;
     PEAT_Num left_ratio_num = 0;

@@ -39,7 +39,9 @@ ldd $LD_PRELOAD
 LD_PRELOAD=" -genv LD_PRELOAD $LD_PRELOAD "
 fi
 
-$MPICC -O2 -g -o alltoall alltoall.c
+$MPICC -O2 -g -o compression.test compression.test.c 
+
+
 if [ -f "$PBS_NODEFILE" ]   ; then
 nnodes=`sort -u $PBS_NODEFILE | wc -l`
 ppn=2

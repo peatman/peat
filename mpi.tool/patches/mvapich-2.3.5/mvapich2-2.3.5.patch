@@ -3232,6 +3232,89 @@
  	    MPIR_ERR_CHKANDSTMT1((rc != MPI_SUCCESS), mpi_errno, MPI_ERR_OTHER,
  		{;}, "**user", "**userquery %d", rc);
  	}
+--- a/src/mpid/ch3/channels/common/include/hwloc_bind.h	2020-11-29 06:32:48.000000000 -0700
++++ b/src/mpid/ch3/channels/common/include/hwloc_bind.h	2020-12-15 04:32:58.000000000 -0700
+@@ -13,10 +13,6 @@
+ #ifndef CH3_HWLOC_BIND_H_
+ #define CH3_HWLOC_BIND_H_
+ 
+-#if defined(HAVE_LIBIBVERBS)
+-#include <infiniband/verbs.h>
+-#endif
+-
+ #include <hwloc.h>
+ #include <dirent.h>
+ 
+--- a/src/mpid/ch3/channels/common/include/ib_param.h	2020-11-29 06:32:48.000000000 -0700
++++ b/src/mpid/ch3/channels/common/include/ib_param.h	2020-12-15 04:33:10.000000000 -0700
+@@ -16,6 +16,7 @@
+ 
+ #if defined(HAVE_LIBIBVERBS)
+ #include <infiniband/verbs.h>
++#include "verbs-proxy.h"
+ #endif
+ #include "mv2_arch_hca_detect.h"
+ 
+--- a/src/mpid/ch3/channels/common/include/mv2_arch_hca_detect.h	2020-11-29 06:32:48.000000000 -0700
++++ b/src/mpid/ch3/channels/common/include/mv2_arch_hca_detect.h	2020-12-15 04:33:38.000000000 -0700
+@@ -18,6 +18,7 @@
+ 
+ #if defined(HAVE_LIBIBVERBS)
+ #include <infiniband/verbs.h>
++#include "verbs-proxy.h"
+ #endif
+ 
+ /* HCA Types */
+--- a/src/mpid/ch3/channels/common/include/mv2_ud.h	2020-11-29 06:32:48.000000000 -0700
++++ b/src/mpid/ch3/channels/common/include/mv2_ud.h	2020-12-15 04:33:48.000000000 -0700
+@@ -15,6 +15,7 @@
+ 
+ #include <vbuf.h>
+ #include <infiniband/verbs.h>
++#include "verbs-proxy.h"
+ 
+ #define LOG2(_v, _r)                            \
+ do {                                            \
+--- a/src/mpid/ch3/channels/common/include/rdma_3dtorus.h	2020-11-29 06:32:48.000000000 -0700
++++ b/src/mpid/ch3/channels/common/include/rdma_3dtorus.h	2020-12-15 04:33:55.000000000 -0700
+@@ -14,6 +14,7 @@
+ #define RDMA_3DTORUS_H
+ #include <netinet/in.h>
+ #include <infiniband/verbs.h>
++#include "verbs-proxy.h"
+ #include <sys/time.h>
+ #include <mpidi_ch3_impl.h>
+ 
+--- a/src/mpid/ch3/channels/common/include/rdma_cm.h	2020-11-29 06:32:48.000000000 -0700
++++ b/src/mpid/ch3/channels/common/include/rdma_cm.h	2020-12-15 04:34:01.000000000 -0700
+@@ -26,6 +26,7 @@
+ #include <pthread.h>
+ #include <rdma/rdma_cma.h>
+ #include <infiniband/verbs.h>
++#include "verbs-proxy.h"
+ #ifdef _MULTI_SUBNET_SUPPORT_
+ #include <infiniband/ib.h>
+ #endif /*_MULTI_SUBNET_SUPPORT_*/
+--- a/src/mpid/ch3/channels/common/src/detect/arch/mv2_arch_detect.c	2020-11-29 06:32:48.000000000 -0700
++++ b/src/mpid/ch3/channels/common/src/detect/arch/mv2_arch_detect.c	2020-12-15 04:36:35.000000000 -0700
+@@ -14,6 +14,7 @@
+ #include <string.h>
+ #if defined(HAVE_LIBIBVERBS)
+ #include <infiniband/verbs.h>
++#include "verbs-proxy.h"
+ #endif
+ 
+ #include <mpichconf.h>
+--- a/src/mpid/ch3/channels/common/src/mcast/ibv_mcast.c	2020-11-29 06:32:48.000000000 -0700
++++ b/src/mpid/ch3/channels/common/src/mcast/ibv_mcast.c	2020-12-15 04:37:26.000000000 -0700
+@@ -14,6 +14,7 @@
+ 
+ #if defined(_MCST_SUPPORT_)
+ #include <infiniband/verbs.h>
++#include "verbs-proxy.h"
+ #include <infiniband/umad.h>
+ #include <infiniband/mad.h>
+ #if defined(RDMA_CM)
 --- a/src/mpid/ch3/channels/common/src/util/error_handling.c	2020-11-29 06:32:48.000000000 -0700
 +++ b/src/mpid/ch3/channels/common/src/util/error_handling.c	2026-08-10 09:11:22.000000000 -0600
 @@ -69,7 +69,8 @@
@@ -3244,6 +3327,453 @@
      // Show backtrace if required
      if (show_backtrace) print_backtrace();
      // Raise the signal again with default handler
+--- a/src/mpid/ch3/channels/common/src/util/Makefile.mk	2020-11-29 06:32:48.000000000 -0700
++++ b/src/mpid/ch3/channels/common/src/util/Makefile.mk	2020-11-29 06:32:48.000000000 -0700
+@@ -17,4 +17,5 @@
+ 	src/mpid/ch3/channels/common/src/util/mv2_config.c  \
+ 	src/mpid/ch3/channels/common/src/util/error_handling.c  \
+ 	src/mpid/ch3/channels/common/src/util/debug_utils.c  \
++	src/mpid/ch3/channels/common/src/util/verbs-proxy.c  \
+ 	src/mpid/ch3/channels/common/src/util/mv2_clock.c
+--- a/src/mpid/ch3/channels/mrail/src/gen2/ibv_param.c	2020-11-29 06:32:48.000000000 -0700
++++ b/src/mpid/ch3/channels/mrail/src/gen2/ibv_param.c	2020-12-15 04:42:49.000000000 -0700
+@@ -15,7 +15,6 @@
+ #include <stdlib.h>
+ #include <stdio.h>
+ #include <ctype.h>
+-#include <infiniband/verbs.h>
+ #include "rdma_impl.h"
+ #include "vbuf.h"
+ #include "ibv_param.h"
+--- a/src/mpid/ch3/channels/mrail/src/gen2/ibv_param.h	2020-11-29 06:32:48.000000000 -0700
++++ b/src/mpid/ch3/channels/mrail/src/gen2/ibv_param.h	2020-12-15 04:43:32.000000000 -0700
+@@ -14,6 +14,7 @@
+ #define _IBV_PARAM_H
+ 
+ #include <infiniband/verbs.h>
++#include "verbs-proxy.h"
+ #include "debug_utils.h"
+ #include "mv2_arch_hca_detect.h"
+ 
+--- a/src/mpid/ch3/channels/mrail/src/gen2/rdma_iba_1sc.c	2020-11-29 06:32:48.000000000 -0700
++++ b/src/mpid/ch3/channels/mrail/src/gen2/rdma_iba_1sc.c	2020-12-15 04:48:49.000000000 -0700
+@@ -16,6 +16,7 @@
+ #include "dreg.h"
+ #include "ibv_param.h"
+ #include "infiniband/verbs.h"
++#include "verbs-proxy.h"
+ #include "mpidrma.h"
+ #include "upmi.h"
+ #include "mpiutil.h"
+--- a/src/mpid/ch3/channels/mrail/src/gen2/rdma_impl.h	2020-11-29 06:32:48.000000000 -0700
++++ b/src/mpid/ch3/channels/mrail/src/gen2/rdma_impl.h	2020-12-15 04:51:29.000000000 -0700
+@@ -24,6 +24,8 @@
+ #include "upmi.h"
+ 
+ #include <ofed_abstraction.h>
++// #include <infiniband/verbs.h>
++#include "verbs-proxy.h"
+ #include "ibv_param.h"
+ #include "mv2_arch_hca_detect.h"
+ #include "rdma_3dtorus.h"
+--- a/src/mpid/ch3/channels/mrail/src/gen2/sysreport.c	2020-11-29 06:32:48.000000000 -0700
++++ b/src/mpid/ch3/channels/mrail/src/gen2/sysreport.c	2020-12-15 04:51:48.000000000 -0700
+@@ -12,6 +12,7 @@
+ #include <unistd.h>
+ #include <infiniband/verbs.h>
+ /*#include <infiniband/umad.h>*/
++#include "verbs-proxy.h"
+ 
+ #include "sysreport.h"
+ 
+--- a/src/mpid/ch3/channels/mrail/src/gen2/vbuf.c	2020-11-29 06:32:48.000000000 -0700
++++ b/src/mpid/ch3/channels/mrail/src/gen2/vbuf.c	2020-12-15 04:52:12.000000000 -0700
+@@ -29,6 +29,7 @@
+ 
+ #include "mem_hooks.h"
+ #include <infiniband/verbs.h>
++#include "verbs-proxy.h"
+ #include "upmi.h"
+ #include "rdma_impl.h"
+ #include "vbuf.h"
+--- a/src/mpid/ch3/channels/mrail/src/gen2/vbuf.h	2020-11-29 06:32:48.000000000 -0700
++++ b/src/mpid/ch3/channels/mrail/src/gen2/vbuf.h	2020-12-15 04:52:20.000000000 -0700
+@@ -29,6 +29,7 @@
+ 
+ #include "mpichconf.h"
+ #include "infiniband/verbs.h"
++#include "verbs-proxy.h"
+ #include "ibv_param.h"
+ #include "mv2_clock.h"
+ #if defined(_ENABLE_CUDA_)
+--- a/src/mpid/ch3/channels/mrail/src/rdma/ch3_smp_progress.c	2020-11-29 06:32:48.000000000 -0700
++++ b/src/mpid/ch3/channels/mrail/src/rdma/ch3_smp_progress.c	2020-12-15 04:56:16.000000000 -0700
+@@ -17,6 +17,7 @@
+  * copyright file COPYRIGHT in the top level MVAPICH2 directory.
+  *
+  */
++#include "mpiimpl.h"
+ 
+ #include "mpichconf.h"
+ #include "mpidi_ch3_impl.h"
+@@ -216,6 +217,19 @@
+ #endif
+ 
+ #if defined(_SMP_CMA_)
++ssize_t mv2_process_vm_readv(pid_t pid,
++                         const struct iovec *local_iov,
++                         unsigned long liovcnt,
++                         const struct iovec *remote_iov,
++                         unsigned long riovcnt,
++                         unsigned long flags);
++ssize_t mv2_process_vm_writev(pid_t pid,
++                         const struct iovec *local_iov,
++                         unsigned long liovcnt,
++                         const struct iovec *remote_iov,
++                         unsigned long riovcnt,
++                         unsigned long flags);
++                                               
+ int g_smp_use_cma = 1;
+ size_t MV2_CMA_MSG_LIMIT = 1<<30;
+ #ifndef HAVE_PROCESS_VM_READV
+@@ -230,7 +244,36 @@
+ #    define __NR_process_vm_writev 311
+ #  endif
+ 
+-static inline ssize_t process_vm_readv(pid_t pid,
++
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak mv2_process_vm_readv = t_mv2_process_vm_readv
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF t_mv2_process_vm_readv  mv2_process_vm_readv
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate mv2_process_vm_readv as t_mv2_process_vm_readv
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++ssize_t mv2_process_vm_readv(pid_t pid,
++                         const struct iovec *local_iov,
++                         unsigned long liovcnt,
++                         const struct iovec *remote_iov,
++                         unsigned long riovcnt,
++                         unsigned long flags)
++                  __attribute__((weak,alias("t_mv2_process_vm_readv")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef mv2_process_vm_readv
++#define mv2_process_vm_readv t_mv2_process_vm_readv
++
++#undef FUNCNAME
++#define FUNCNAME mv2_process_vm_readv
++#undef FCNAME
++#define FCNAME MPL_QUOTE(FUNCNAME)
++
++ssize_t mv2_process_vm_readv(pid_t pid,
+                          const struct iovec *local_iov,
+                          unsigned long liovcnt,
+                          const struct iovec *remote_iov,
+@@ -238,8 +281,38 @@
+                          unsigned long flags) {
+     return syscall(__NR_process_vm_readv, pid, local_iov, liovcnt, remote_iov, riovcnt, flags);
+ }
++#undef mv2_process_vm_readv 
++#endif
+ 
+-static inline ssize_t process_vm_writev(pid_t pid,
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak mv2_process_vm_writev = mv2_t_process_vm_writev
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF mv2_t_process_vm_writev  mv2_process_vm_writev
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate mv2_process_vm_writev as mv2_t_process_vm_writev
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++ssize_t mv2_process_vm_writev(pid_t pid,
++                         const struct iovec *local_iov,
++                         unsigned long liovcnt,
++                         const struct iovec *remote_iov,
++                         unsigned long riovcnt,
++                         unsigned long flags)
++                  __attribute__((weak,alias("mv2_t_process_vm_writev")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef mv2_process_vm_writev
++#define mv2_process_vm_writev mv2_t_process_vm_writev
++
++#undef FUNCNAME
++#define FUNCNAME mv2_process_vm_writev
++#undef FCNAME
++#define FCNAME MPL_QUOTE(FUNCNAME)
++
++ssize_t mv2_process_vm_writev(pid_t pid,
+                          const struct iovec *local_iov,
+                          unsigned long liovcnt,
+                          const struct iovec *remote_iov,
+@@ -247,6 +320,86 @@
+                          unsigned long flags) {
+     return syscall(__NR_process_vm_writev, pid, local_iov, liovcnt, remote_iov, riovcnt, flags);
+ }
++#undef mv2_process_vm_writev 
++#endif
++#else
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak mv2_process_vm_readv = t_mv2_process_vm_readv
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF t_mv2_process_vm_readv  mv2_process_vm_readv
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate mv2_process_vm_readv as t_mv2_process_vm_readv
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++ssize_t mv2_process_vm_readv(pid_t pid,
++                         const struct iovec *local_iov,
++                         unsigned long liovcnt,
++                         const struct iovec *remote_iov,
++                         unsigned long riovcnt,
++                         unsigned long flags)
++                  __attribute__((weak,alias("t_mv2_process_vm_readv")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef mv2_process_vm_readv
++#define mv2_process_vm_readv t_mv2_process_vm_readv
++
++#undef FUNCNAME
++#define FUNCNAME mv2_process_vm_readv
++#undef FCNAME
++#define FCNAME MPL_QUOTE(FUNCNAME)
++
++ssize_t mv2_process_vm_readv(pid_t pid,
++                         const struct iovec *local_iov,
++                         unsigned long liovcnt,
++                         const struct iovec *remote_iov,
++                         unsigned long riovcnt,
++                         unsigned long flags) {
++    return process_vm_readv(pid, local_iov, liovcnt, remote_iov, riovcnt, flags);
++}
++#undef mv2_process_vm_readv 
++#endif
++
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak mv2_process_vm_writev = mv2_t_process_vm_writev
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF mv2_t_process_vm_writev  mv2_process_vm_writev
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate mv2_process_vm_writev as mv2_t_process_vm_writev
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++ssize_t mv2_process_vm_writev(pid_t pid,
++                         const struct iovec *local_iov,
++                         unsigned long liovcnt,
++                         const struct iovec *remote_iov,
++                         unsigned long riovcnt,
++                         unsigned long flags)
++                  __attribute__((weak,alias("mv2_t_process_vm_writev")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef mv2_process_vm_writev
++#define mv2_process_vm_writev mv2_t_process_vm_writev
++
++#undef FUNCNAME
++#define FUNCNAME mv2_process_vm_writev
++#undef FCNAME
++#define FCNAME MPL_QUOTE(FUNCNAME)
++
++ssize_t mv2_process_vm_writev(pid_t pid,
++                         const struct iovec *local_iov,
++                         unsigned long liovcnt,
++                         const struct iovec *remote_iov,
++                         unsigned long riovcnt,
++                         unsigned long flags) {
++    return process_vm_writev(pid, local_iov, liovcnt, remote_iov, riovcnt, flags);
++}
++#undef mv2_process_vm_writev 
++#endif
+ 
+ #endif /*#ifndef HAVE_PROCESS_VM_READV */
+ 
+@@ -287,9 +440,37 @@
+  * set current flag, set data size, clear next flag and update local send  header
+  * pointer.
+  */
+-static inline void smpi_complete_send(unsigned int destination,
+-    unsigned int length, int data_sz,
+-    volatile void *ptr, volatile void *ptr_head, volatile void *ptr_flag)
++void smpi_complete_send(unsigned int destination, unsigned int length, int data_sz, volatile void *ptr, volatile void *ptr_head, volatile void *ptr_flag);
++void smpi_complete_recv(unsigned int from_grank,  unsigned int my_id,  unsigned int length);
++int smpi_check_avail(int rank, int len, volatile void **pptr_flag, smp_ctrl_avail_flag_t num);
++int MPIDI_CH3I_SMP_Process_header(MPIDI_VC_t* vc, MPIDI_CH3_Pkt_t* pkt, int* index, 
++                  void *limic_header, void *cma_header, 
++                  int *use_limic, int *use_cma);
++
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak smpi_complete_send = t_smpi_complete_send
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF t_smpi_complete_send  smpi_complete_send
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate smpi_complete_send as t_smpi_complete_send
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++void smpi_complete_send(unsigned int destination, unsigned int length, int data_sz, volatile void *ptr, volatile void *ptr_head, volatile void *ptr_flag)
++                  __attribute__((weak,alias("t_smpi_complete_send")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef smpi_complete_send
++#define smpi_complete_send t_smpi_complete_send
++
++#undef FUNCNAME
++#define FUNCNAME smpi_complete_send
++#undef FCNAME
++#define FCNAME MPL_QUOTE(FUNCNAME)
++
++void smpi_complete_send(unsigned int destination, unsigned int length, int data_sz, volatile void *ptr, volatile void *ptr_head, volatile void *ptr_flag)
+ {
+     s_header_ptr_s[destination] += length + sizeof(int)*2;
+     /* set next flag to free */
+@@ -301,12 +482,37 @@
+     WRITEBAR();
+     avail[destination] -= length + sizeof(int)*2;
+ }
++#undef smpi_complete_send 
++#endif
+ 
+ /*
+  * called by receiver after every successful read from cyclic buffer, in order
+  * to clear flag, update shared tail, update local receive header pointer.
+  */
+-static inline void smpi_complete_recv(unsigned int from_grank,
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak smpi_complete_recv = t_smpi_complete_recv
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF t_smpi_complete_recv  smpi_complete_recv
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate smpi_complete_recv as t_smpi_complete_recv
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++void smpi_complete_recv(unsigned int from_grank, unsigned int my_id, unsigned int length)
++                  __attribute__((weak,alias("t_smpi_complete_recv")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef smpi_complete_recv
++#define smpi_complete_recv t_smpi_complete_recv
++
++#undef FUNCNAME
++#define FUNCNAME smpi_complete_recv
++#undef FCNAME
++#define FCNAME MPL_QUOTE(FUNCNAME)
++
++void smpi_complete_recv(unsigned int from_grank,
+     unsigned int my_id,
+     unsigned int length)
+ {
+@@ -327,13 +533,38 @@
+         WRITEBAR();
+     }
+ }
++#undef smpi_complete_recv 
++#endif
+ 
+ /*
+  * called by sender before every send in order to check if enough room left in
+  * cyclic buffer.
+  */
+-static inline int smpi_check_avail(int rank, int len,
+-    volatile void **pptr_flag, smp_ctrl_avail_flag_t num)
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak smpi_check_avail = t_smpi_check_avail
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF t_smpi_check_avail  smpi_check_avail
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate smpi_check_avail as t_smpi_check_avail
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++int smpi_check_avail(int rank, int len,volatile void **pptr_flag, smp_ctrl_avail_flag_t num)
++                  __attribute__((weak,alias("t_smpi_check_avail")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++
++#ifndef MPICH_MPI_FROM_PMPI
++#undef smpi_check_avail
++#define smpi_check_avail t_smpi_check_avail
++
++#undef FUNCNAME
++#define FUNCNAME smpi_check_avail
++#undef FCNAME
++#define FCNAME MPL_QUOTE(FUNCNAME)
++
++int smpi_check_avail(int rank, int len, volatile void **pptr_flag, smp_ctrl_avail_flag_t num)
+ {
+     /* check if avail is less than data size */
+     if(avail[rank] < num * (len + sizeof(int)*3)) {
+@@ -379,6 +610,8 @@
+     }
+     return 1;
+ }
++#undef smpi_check_avail 
++#endif
+ 
+ static inline int MPIDI_CH3I_SMP_attach_shm_pool_inline();
+ 
+@@ -519,11 +752,32 @@
+     goto fn_exit;
+ }
+ 
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak MPIDI_CH3I_SMP_Process_header = t_MPIDI_CH3I_SMP_Process_header
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF t_MPIDI_CH3I_SMP_Process_header  MPIDI_CH3I_SMP_Process_header
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate MPIDI_CH3I_SMP_Process_header as t_MPIDI_CH3I_SMP_Process_header
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++int MPIDI_CH3I_SMP_Process_header(MPIDI_VC_t* vc, MPIDI_CH3_Pkt_t* pkt, int* index, 
++                  void *limic_header, void *cma_header, 
++                  int *use_limic, int *use_cma)
++ __attribute__((weak,alias("t_MPIDI_CH3I_SMP_Process_header")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef MPIDI_CH3I_SMP_Process_header
++#define MPIDI_CH3I_SMP_Process_header t_MPIDI_CH3I_SMP_Process_header
++
++
+ #undef FUNCNAME
+ #define FUNCNAME MPIDI_CH3I_SMP_process_header
+ #undef FCNAME
+ #define FCNAME MPL_QUOTE(FUNCNAME)
+-static inline int MPIDI_CH3I_SMP_Process_header(MPIDI_VC_t* vc, MPIDI_CH3_Pkt_t* pkt, int* index, 
++int MPIDI_CH3I_SMP_Process_header(MPIDI_VC_t* vc, MPIDI_CH3_Pkt_t* pkt, int* index, 
+                   void *limic_header, void *cma_header, 
+                   int *use_limic, int *use_cma)
+ {
+@@ -733,6 +987,8 @@
+ fn_fail:
+     goto fn_exit;
+ }
++#undef MPIDI_CH3I_SMP_Process_header
++#endif
+ 
+ #undef FUNCNAME
+ #define FUNCNAME MPIDI_CH3I_SMP_write_progress
 --- a/src/mpid/ch3/channels/psm/src/psm_queue.c	2020-11-29 06:32:48.000000000 -0700
 +++ b/src/mpid/ch3/channels/psm/src/psm_queue.c	2020-12-15 11:44:17.262632000 -0700
 @@ -425,9 +425,13 @@

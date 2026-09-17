@@ -1,19 +1,19 @@
---- a/maint/version.m4	2025-10-27 09:35:41.000000000 -0600
-+++ b/maint/version.m4	2025-11-13 07:06:11.988764873 -0700
+--- a/maint/version.m4
++++ b/maint/version.m4
 @@ -38,9 +38,9 @@
  # libmpi so version only includes functionality defined in the MPI
  # standard, and does not include MPIX_ functions and C++ bindings.
  
 -# Use [0:0:0] for unstable (e.g. alpha and beta) releases.
-+# Use [17:0:5] for stable releases.
++# Use [17:0:5] for unstable (e.g. alpha and beta) releases.
  
  # last version 4.3.0 - 17:0:5
 -m4_define([libmpi_so_version_m4],[0:0:0])dnl
 +m4_define([libmpi_so_version_m4],[17:0:5])dnl
  
  [#] end of __file__
---- a/modules/yaksa/maint/version.m4	2024-09-25 09:10:37.000000000 -0600
-+++ b/modules/yaksa/maint/version.m4	2025-11-13 07:06:12.303124442 -0700
+--- a/modules/yaksa/maint/version.m4
++++ b/modules/yaksa/maint/version.m4
 @@ -22,6 +22,6 @@
  #     4. If any interfaces have been removed since the last public
  #     release, then set age to 0.
@@ -22,8 +22,8 @@
 +m4_define([libyaksa_so_version_m4],[17:0:5])dnl
  
  [#] end of __file__
---- a/src/binding/fortran/mpif_h/mpi_fortimpl.h	2025-10-27 09:35:09.000000000 -0600
-+++ b/src/binding/fortran/mpif_h/mpi_fortimpl.h	2025-11-13 08:20:37.000000000 -0700
+--- a/src/binding/fortran/mpif_h/mpi_fortimpl.h
++++ b/src/binding/fortran/mpif_h/mpi_fortimpl.h
 @@ -411,4 +411,7 @@
  extern FORT_DLL_SPEC void FORT_CALL mpi_alloc_mem_cptr_(MPI_Aint * size, MPI_Fint * info,
                                                          void **baseptr, MPI_Fint * ierr);
@@ -32,8 +32,8 @@
 +#define USE_ONLY_MPI_NAMES
 +
  #endif /* MPI_FORTIMPL_H_INCLUDED */
---- a/src/binding/fortran/use_mpi_f08/wrappers_c/comm_spawn_c.c	2025-10-27 09:35:09.000000000 -0600
-+++ b/src/binding/fortran/use_mpi_f08/wrappers_c/comm_spawn_c.c	2025-11-12 09:49:57.000000000 -0700
+--- a/src/binding/fortran/use_mpi_f08/wrappers_c/comm_spawn_c.c
++++ b/src/binding/fortran/use_mpi_f08/wrappers_c/comm_spawn_c.c
 @@ -22,7 +22,7 @@
      }
  
@@ -43,8 +43,8 @@
  
      if (argv_c != MPI_ARGV_NULL) {
          free(argv_c);
---- a/src/binding/fortran/use_mpi_f08/wrappers_c/comm_spawn_multiple_c.c	2025-10-27 09:35:09.000000000 -0600
-+++ b/src/binding/fortran/use_mpi_f08/wrappers_c/comm_spawn_multiple_c.c	2025-11-12 09:49:49.000000000 -0700
+--- a/src/binding/fortran/use_mpi_f08/wrappers_c/comm_spawn_multiple_c.c
++++ b/src/binding/fortran/use_mpi_f08/wrappers_c/comm_spawn_multiple_c.c
 @@ -110,7 +110,7 @@
          free(buf);
      }
@@ -54,8 +54,8 @@
                                           array_of_maxprocs, array_of_info, root, comm, intercomm,
                                           array_of_errcodes);
  
---- a/src/include/mpir_coll.h	2025-10-27 09:35:09.000000000 -0600
-+++ b/src/include/mpir_coll.h	2025-11-13 09:57:43.000000000 -0700
+--- a/src/include/mpir_coll.h
++++ b/src/include/mpir_coll.h
 @@ -24,26 +24,49 @@
     other internal operations. They are wrappers around MPID send/recv
     functions. They do sends/receives by setting the context offset to
@@ -115,8 +115,8 @@
  
  int MPIR_Reduce_local(const void *inbuf, void *inoutbuf, MPI_Aint count, MPI_Datatype datatype,
                        MPI_Op op);
---- a/src/include/mpir_comm.h	2025-10-27 09:35:09.000000000 -0600
-+++ b/src/include/mpir_comm.h	2025-11-13 10:02:31.000000000 -0700
+--- a/src/include/mpir_comm.h
++++ b/src/include/mpir_comm.h
 @@ -180,6 +180,7 @@
      struct MPIR_Comm *node_comm;        /* Comm of processes in this comm that are on
                                           * the same node as this process. */
@@ -152,8 +152,8 @@
 +MPI_Comm MPI_MPID_get_mpicomm_from_mpidcomm(MPIR_Comm *comm) MPICH_API_PUBLIC;
 +
  #endif /* MPIR_COMM_H_INCLUDED */
---- a/src/mpi/coll/helper_fns.c	2025-10-27 09:35:09.000000000 -0600
-+++ b/src/mpi/coll/helper_fns.c	2025-11-13 09:56:48.000000000 -0700
+--- a/src/mpi/coll/helper_fns.c
++++ b/src/mpi/coll/helper_fns.c
 @@ -47,6 +47,29 @@
      } while (0)
  #endif
@@ -502,8 +502,8 @@
 +   return MPIR_Waitany(numreq, requests, indx, status);
 +}
 +#endif
---- a/src/mpi/coll/mvapich/reduce/reduce_knomial_osu.c	2025-10-27 09:35:09.000000000 -0600
-+++ b/src/mpi/coll/mvapich/reduce/reduce_knomial_osu.c	2025-11-12 06:07:05.000000000 -0700
+--- a/src/mpi/coll/mvapich/reduce/reduce_knomial_osu.c
++++ b/src/mpi/coll/mvapich/reduce/reduce_knomial_osu.c
 @@ -127,7 +127,6 @@
      void **tmp_buf = NULL;
      int reduce_kf;
@@ -546,8 +546,8 @@
      }
  
      if (src_array != NULL) {
---- a/src/mpi/comm/commutil.c	2025-10-27 09:35:09.000000000 -0600
-+++ b/src/mpi/comm/commutil.c	2025-11-13 11:50:00.000000000 -0700
+--- a/src/mpi/comm/commutil.c
++++ b/src/mpi/comm/commutil.c
 @@ -300,8 +300,11 @@
      comm_p->hierarchy_kind = MPIR_COMM_HIERARCHY_KIND__FLAT;
      comm_p->node_comm = NULL;
@@ -618,8 +618,8 @@
  
          MPIR_stream_comm_free(comm_ptr);
  
---- a/src/mpi/group/group_impl.c	2025-10-27 09:35:09.000000000 -0600
-+++ b/src/mpi/group/group_impl.c	2025-11-12 06:48:11.000000000 -0700
+--- a/src/mpi/group/group_impl.c
++++ b/src/mpi/group/group_impl.c
 @@ -687,3 +687,253 @@
    fn_fail:
      goto fn_exit;
@@ -874,22 +874,22 @@
 +    if (comm->parent_comm) return MPI_MPID_get_mpicomm_from_mpidcomm(comm->parent_comm);
 +    return comm->handle;
 +}
---- a/src/mpi/romio/version.m4	2025-10-27 09:35:41.000000000 -0600
-+++ b/src/mpi/romio/version.m4	2025-11-13 07:06:12.476524545 -0700
+--- a/src/mpi/romio/version.m4
++++ b/src/mpi/romio/version.m4
 @@ -38,9 +38,9 @@
  # libmpi so version only includes functionality defined in the MPI
  # standard, and does not include MPIX_ functions and C++ bindings.
  
 -# Use [0:0:0] for unstable (e.g. alpha and beta) releases.
-+# Use [17:0:5] for stable releases.
++# Use [17:0:5] for unstable (e.g. alpha and beta) releases.
  
  # last version 4.3.0 - 17:0:5
 -m4_define([libmpi_so_version_m4],[0:0:0])dnl
 +m4_define([libmpi_so_version_m4],[17:0:5])dnl
  
  [#] end of __file__
---- a/src/mpid/ch4/shm/ipc/src/ipc_control.c	2025-10-27 09:35:09.000000000 -0600
-+++ b/src/mpid/ch4/shm/ipc/src/ipc_control.c	2026-01-07 06:08:33.000000000 -0700
+--- a/src/mpid/ch4/shm/ipc/src/ipc_control.c
++++ b/src/mpid/ch4/shm/ipc/src/ipc_control.c
 @@ -136,6 +136,9 @@
              MPIR_CVAR_CH4_IPC_RNDV_PROTOCOL_coop ||
          MPIR_CVAR_CH4_IPC_RNDV_PROTOCOL ==
@@ -900,8 +900,8 @@
          MPIDI_IPC_remote_complete(sreq, hdr->ipc_hdr.ipc_type);
          if (MPIR_CVAR_CH4_IPC_RNDV_PROTOCOL ==
              MPIR_CVAR_CH4_IPC_RNDV_PROTOCOL_rput) {
---- a/src/mpid/common/sched/mpidu_sched.c	2025-10-27 09:35:09.000000000 -0600
-+++ b/src/mpid/common/sched/mpidu_sched.c	2025-11-14 08:04:58.000000000 -0700
+--- a/src/mpid/common/sched/mpidu_sched.c
++++ b/src/mpid/common/sched/mpidu_sched.c
 @@ -1054,7 +1054,8 @@
                              e->status = MPIDU_SCHED_ENTRY_STATUS_FAILED;
                          else
@@ -978,8 +978,8 @@
 +}
 +#undef T_MPID_Request_release
 +#endif
---- a/src/mpid/common/sched/mpidu_sched.h	2025-10-27 09:35:09.000000000 -0600
-+++ b/src/mpid/common/sched/mpidu_sched.h	2025-11-14 07:52:53.000000000 -0700
+--- a/src/mpid/common/sched/mpidu_sched.h
++++ b/src/mpid/common/sched/mpidu_sched.h
 @@ -153,5 +153,7 @@
  int MPIDU_Sched_copy(const void *inbuf, MPI_Aint incount, MPI_Datatype intype, void *outbuf,
                       MPI_Aint outcount, MPI_Datatype outtype, MPIR_Sched_t s);
@@ -988,45 +988,60 @@
 +void PT_MPID_Request_release(MPIR_Request *req) MPICH_API_PUBLIC;
  
  #endif /* MPIDU_SCHED_H_INCLUDED */
---- a/src/pm/hydra/version.m4	2025-10-27 09:35:41.000000000 -0600
-+++ b/src/pm/hydra/version.m4	2025-11-13 07:06:12.622797299 -0700
+--- a/src/pm/hydra/version.m4
++++ b/src/pm/hydra/version.m4
 @@ -38,9 +38,9 @@
  # libmpi so version only includes functionality defined in the MPI
  # standard, and does not include MPIX_ functions and C++ bindings.
  
 -# Use [0:0:0] for unstable (e.g. alpha and beta) releases.
-+# Use [17:0:5] for stable releases.
++# Use [17:0:5] for unstable (e.g. alpha and beta) releases.
  
  # last version 4.3.0 - 17:0:5
 -m4_define([libmpi_so_version_m4],[0:0:0])dnl
 +m4_define([libmpi_so_version_m4],[17:0:5])dnl
  
  [#] end of __file__
---- a/src/pmi/version.m4	2025-10-27 09:35:41.000000000 -0600
-+++ b/src/pmi/version.m4	2025-11-13 07:06:12.669382333 -0700
+--- a/src/pmi/version.m4
++++ b/src/pmi/version.m4
 @@ -38,9 +38,9 @@
  # libmpi so version only includes functionality defined in the MPI
  # standard, and does not include MPIX_ functions and C++ bindings.
  
 -# Use [0:0:0] for unstable (e.g. alpha and beta) releases.
-+# Use [17:0:5] for stable releases.
++# Use [17:0:5] for unstable (e.g. alpha and beta) releases.
  
  # last version 4.3.0 - 17:0:5
 -m4_define([libmpi_so_version_m4],[0:0:0])dnl
 +m4_define([libmpi_so_version_m4],[17:0:5])dnl
  
  [#] end of __file__
---- a/test/mpi/version.m4	2025-10-27 09:35:41.000000000 -0600
-+++ b/test/mpi/version.m4	2025-11-13 07:06:12.769516086 -0700
+--- a/test/mpi/version.m4
++++ b/test/mpi/version.m4
 @@ -38,9 +38,9 @@
  # libmpi so version only includes functionality defined in the MPI
  # standard, and does not include MPIX_ functions and C++ bindings.
  
 -# Use [0:0:0] for unstable (e.g. alpha and beta) releases.
-+# Use [17:0:5] for stable releases.
++# Use [17:0:5] for unstable (e.g. alpha and beta) releases.
  
  # last version 4.3.0 - 17:0:5
 -m4_define([libmpi_so_version_m4],[0:0:0])dnl
 +m4_define([libmpi_so_version_m4],[17:0:5])dnl
  
  [#] end of __file__
+--- a/maint/local_python/binding_f08.py
++++ b/maint/local_python/binding_f08.py
+@@ -809,10 +809,10 @@
+     elif RE.match(r'mpi_op_create', func['name'], re.IGNORECASE) and not is_large:
+         # defined in src/binding/fortran/mpif_h/user_proxy.c
+         c_name = "MPII_op_create"
+     else:
+-        # uses PMPI c binding directly
+-        c_name = 'P' + get_function_name(func, is_large)
++        # uses MPI c binding 
++        c_name = get_function_name(func, is_large)
+     dump_interface_function(func, name, c_name, is_large)
+ 
+ def dump_interface_function(func, name, c_name, is_large):
+     c_mapping = get_kind_map('C', is_large)

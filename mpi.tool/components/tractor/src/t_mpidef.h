@@ -18,6 +18,9 @@
 
 #ifndef __T_MPIDEF_H__
 #define __T_MPIDEF_H__
+
+#include <mpi.h>
+
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
 extern "C" {
 #endif

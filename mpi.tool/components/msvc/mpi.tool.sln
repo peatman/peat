@@ -3,7 +3,11 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.4.33103.184
 MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "pet", "pet.vcxproj", "{4E3C4E49-068C-466D-85B9-C9CF974CD076}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mat", "mat.vcxproj", "{30827690-915C-43B8-BDB2-3427521E67C7}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "urpu", "urpu.vcxproj", "{3F436C8C-9754-461F-8340-9110539088CB}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ctt", "ctt.vcxproj", "{96F16CA9-483D-46CC-9D6F-A4FEA15E1763}"
 EndProject

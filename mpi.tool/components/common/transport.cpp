@@ -60,14 +60,31 @@ PEAT_Transport::PEAT_Transport(const Global_Parameters &glob, const PEAT_FREQ ta
 
 void PEAT_Transport::read_trasport_profile(const std::string &dir, const std::string &name)
 {
-    if (name.empty())
-        return;
-    File_Storage_GZ tst_file(dir + name, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, verbose);
-    String_Split lines;
-    PEAT_Bool hasMoreLines = true;
-    while (hasMoreLines) {
-        hasMoreLines = tst_file.read_lines(lines, 0, ':');
-        parse(lines, 0);
+    if (!name.empty()) {
+        File_Storage_GZ tst_file(dir + name, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, verbose);
+        if (tst_file.is_file_good(0)) {
+            String_Split lines;
+            PEAT_Bool hasMoreLines = true;
+            while (hasMoreLines) {
+                hasMoreLines = tst_file.read_lines(lines, 0, ':');
+                parse(lines, 0);
+            }
+        }
+    } 
+    
+    for (int i = 0; i < PEAT_TRANSPORT_MAX; i++) {
+        if (!te_orig[i].initialized) {
+            // create dummy transenv
+            PEAT_Ext_Trasport_Environment tmp;
+            tmp.general_bw = DBL_MAX;
+            tmp.cross_packet_delay = 0;
+            tmp.packet_size = tmp.unit_size = INT_MAX; // avoid packet interleaving -> increase speed of 'estimation'
+            tmp.is_parallel = true;
+            tmp.initialized = true;
+            tmp.frequency = tgt_freq;
+            tmp.t_id = (PEAT_Transports)i;
+            te_orig[i] = tmp;
+        }
     }
     convert_profiles();
 }
@@ -87,7 +104,7 @@ void PEAT_Transport::convert_profiles()
                 cte_mod.corrections[fid_pair][0].general_bw = (PEAT_BW)cte_orig.general_bw / freq_ratio;
                 cte_mod.corrections[fid_pair][0].general_lat = (PEAT_LAT)(cte_orig.general_lat * freq_ratio);
                 assert(cte_mod.corrections[fid_pair][0].general_bw > 0);
-                assert(cte_mod.corrections[fid_pair][0].general_lat > 0);
+                assert(cte_mod.corrections[fid_pair][0].general_lat >= 0);
                 cte_mod.corrections[fid_pair][0].right_ratio = cte_orig.right_ratio;
                 cte_mod.corrections[fid_pair][0].left_ratio = cte_orig.left_ratio;
                 cte_mod.corrections[fid_pair][0].right_ratio_num = cte_orig.right_ratio_num;
@@ -177,10 +194,13 @@ PEAT_Trasport_Environment PEAT_Transport::get_env(int which, PEAT_MPI_Func_ID fu
             fid_pair.id = TMPI_FUNC_ID_NONE;
         }
     }
-    if (te_mod[which].corrections.count(fid_pair) < 1)
+    if (te_mod[which].corrections[fid_pair].empty()) {
+        // crutch: create "speedoflight" transport;
+    }
+    if (te_mod[which].corrections.count(fid_pair) == 1)
         return cvt_env(te_mod[which].corrections.at(fid_pair).at(0), ts);
 
-    if (te_mod[which].corrections.at(fid_pair).size() <= 2)
+    if (te_mod[which].corrections.at(fid_pair).size() == 2)
         return cvt_env(te_mod[which].corrections.at(fid_pair).at(0), ts);
     std::vector<PEAT_Ext_Trasport_Environment> &working_list = te_mod[which].corrections.at(fid_pair);
     if (message_size < 0) { // rts, cts and ack are handled separatelly

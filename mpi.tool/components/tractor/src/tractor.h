@@ -34,6 +34,10 @@
 #endif
 #include "t_base_event.h"
 
+#if defined(_FAB_PROFILE_)
+#include "t_fab.h"
+#endif
+
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -82,11 +86,11 @@ enum T_LOC {
     T_LOC_SHARED
 };
 
-struct T_Stat_Record {
+struct t_stat_record {
     PEAT_Clock duration = 0;
     PEAT_LNum occurences = 0;
-    T_Stat_Record(PEAT_Clock d = 0, PEAT_LNum o = 0) : duration(d), occurences(o) {};
-    T_Stat_Record &operator+=(const T_Stat_Record &s)
+    t_stat_record(PEAT_Clock d = 0, PEAT_LNum o = 0) : duration(d), occurences(o) {};
+    t_stat_record &operator+=(const t_stat_record &s)
     {
         duration += s.duration;
         occurences += s.occurences;
@@ -94,6 +98,20 @@ struct T_Stat_Record {
     }
 };
 #endif
+/*
+
+#if defined(_FAB_PROFILE_)
+enum t_fab_layer {
+    T_FAB_LAYER_NONE=0,
+    T_FAB_LAYER_VERBS,
+    T_FAB_LAYER_OFI,
+    T_FAB_LAYER_PSM2,
+    T_FAB_LAYER_PSM3,
+    T_FAB_LAYER_UCX,
+    T_FAB_LAYER_MAX
+};
+#endif
+*/
 struct tractor : t_base_event {
     int print_all;
     int tractor_initialized;
@@ -102,6 +120,10 @@ struct tractor : t_base_event {
     int pcontrol;
     int t_write_main_files;
     int t_use_signals;
+#ifdef _FAB_PROFILE_
+    int t_collect_fab;
+    int t_permit_collect_fab;
+#endif
     char mpi_filename[1024];
     char hwc_filename[1024];
     char com_filename[1024];
@@ -126,8 +148,8 @@ struct tractor : t_base_event {
 
 #ifdef GPUPARSE
     std::map<void *, T_LOC> addr_location;
-    std::map<short, std::map<T_LOC, std::map<T_LOC, std::map<PEAT_Message_Size, T_Stat_Record>>>> gpu_transfers; // func,from,to,size,time
-    std::map<short, std::map<T_LOC, std::map<PEAT_Message_Size, T_Stat_Record>>> gpu_fills;                      // func,from,to,size,time
+    std::map<short, std::map<T_LOC, std::map<T_LOC, std::map<PEAT_Message_Size, t_stat_record>>>> gpu_transfers; // func,from,to,size,time
+    std::map<short, std::map<T_LOC, std::map<PEAT_Message_Size, t_stat_record>>> gpu_fills;                      // func,from,to,size,time
     std::map<short, PEAT_Clock> gpu_executions;                                                                  // func,time
     std::map<short, PEAT_Clock> gpu_syncs;                                                                       // func,time
 #endif
@@ -183,6 +205,10 @@ struct tractor : t_base_event {
     int t_runtime_correction;
     char ptpd_in_libpath[MAX_PATH];
     char ptpd_in_binpath[MAX_PATH];
+#endif
+#if defined(_FAB_PROFILE_)
+    t_fab_profiler t_fab_prof;
+    // t_fab_layer fab_layer;
 #endif
 
     char gz_mode[16];

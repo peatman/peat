@@ -393,6 +393,230 @@
 
 /* exit_parsing_here */
 perl_hint("exit_parsing_here")
+ 
+/* psm2_layer_starts_here */
+perl_hint("psm2_layer_starts_here")
+
+{ PSM2_MQ_INIT_ID COMMA "psm2_error_t" COMMA "psm2_mq_init" COMMA "psm2_ep_t ep, uint64_t tag_order_mask, const struct psm2_optkey* opts, int numopts, psm2_mq_t* mq" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_FINALIZE_ID COMMA "psm2_error_t" COMMA "psm2_mq_finalize" COMMA "psm2_mq_t mq" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_FP_MSG_ID COMMA "psm2_error_t" COMMA "psm2_mq_fp_msg" COMMA "psm2_ep_t ep, psm2_mq_t mq, psm2_epaddr_t addr, psm2_mq_tag_t* tag, psm2_mq_tag_t* tagsel, uint32_t flags, void* buf, uint32_t len, void* context, enum psm2_mq_fp_op fp_type, psm2_mq_req_t* req" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_IRECV_ID COMMA "psm2_error_t" COMMA "psm2_mq_irecv" COMMA "psm2_mq_t mq, uint64_t rtag, uint64_t rtagsel, uint32_t flags, void* buf, uint32_t len, void* context, psm2_mq_req_t* req" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_IRECV2_ID COMMA "psm2_error_t" COMMA "psm2_mq_irecv2" COMMA "psm2_mq_t mq, psm2_epaddr_t src, psm2_mq_tag_t* rtag, psm2_mq_tag_t* rtagsel, uint32_t flags, void* buf, uint32_t len, void* context, psm2_mq_req_t* req" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_IMRECV_ID COMMA "psm2_error_t" COMMA "psm2_mq_imrecv" COMMA "psm2_mq_t mq, uint32_t flags, void* buf, uint32_t len, void* context, psm2_mq_req_t* reqo" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_SEND_ID COMMA "psm2_error_t" COMMA "psm2_mq_send" COMMA "psm2_mq_t mq, psm2_epaddr_t dest, uint32_t flags, uint64_t stag, const void* buf, uint32_t len" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_SEND2_ID COMMA "psm2_error_t" COMMA "psm2_mq_send2" COMMA "psm2_mq_t mq, psm2_epaddr_t dest, uint32_t flags, psm2_mq_tag_t* stag, const void* buf, uint32_t len" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_ISEND_ID COMMA "psm2_error_t" COMMA "psm2_mq_isend" COMMA "psm2_mq_t mq, psm2_epaddr_t dest, uint32_t flags, uint64_t stag, const void* buf, uint32_t len, void* context, psm2_mq_req_t* req" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_ISEND2_ID COMMA "psm2_error_t" COMMA "psm2_mq_isend2" COMMA "psm2_mq_t mq, psm2_epaddr_t dest, uint32_t flags, psm2_mq_tag_t* stag, const void* buf, uint32_t len, void* context, psm2_mq_req_t* req" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_IPROBE_ID COMMA "psm2_error_t" COMMA "psm2_mq_iprobe" COMMA "psm2_mq_t mq, uint64_t rtag, uint64_t rtagsel, psm2_mq_status_t* status" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_IPROBE2_ID COMMA "psm2_error_t" COMMA "psm2_mq_iprobe2" COMMA "psm2_mq_t mq, psm2_epaddr_t src, psm2_mq_tag_t* rtag, psm2_mq_tag_t* rtagsel, psm2_mq_status2_t* status" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_IMPROBE_ID COMMA "psm2_error_t" COMMA "psm2_mq_improbe" COMMA "psm2_mq_t mq, uint64_t rtag, uint64_t rtagsel, psm2_mq_req_t* req, psm2_mq_status_t* status" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_IMPROBE2_ID COMMA "psm2_error_t" COMMA "psm2_mq_improbe2" COMMA "psm2_mq_t mq, psm2_epaddr_t src, psm2_mq_tag_t* rtag, psm2_mq_tag_t* rtagsel, psm2_mq_req_t* reqo, psm2_mq_status2_t* status" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_IPEEK_ID COMMA "psm2_error_t" COMMA "psm2_mq_ipeek" COMMA "psm2_mq_t mq, psm2_mq_req_t* req, psm2_mq_status_t* status" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_IPEEK2_ID COMMA "psm2_error_t" COMMA "psm2_mq_ipeek2" COMMA "psm2_mq_t mq, psm2_mq_req_t* req, psm2_mq_status2_t* status" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_IPEEK_DEQUEUE_MULTI_ID COMMA "psm2_error_t" COMMA "psm2_mq_ipeek_dequeue_multi" COMMA "psm2_mq_t mq, void* status_array, psmi_mq_status_copy_user_t status_copy, int* count" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_IPEEK_DEQUEUE_ID COMMA "psm2_error_t" COMMA "psm2_mq_ipeek_dequeue" COMMA "psm2_mq_t mq, psm2_mq_req_t* req" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_REQ_FREE_ID COMMA "psm2_error_t" COMMA "psm2_mq_req_free" COMMA "psm2_mq_t mq, psm2_mq_req_t req" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_WAIT_ID COMMA "psm2_error_t" COMMA "psm2_mq_wait" COMMA "psm2_mq_req_t* request, psm2_mq_status_t* status" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_WAIT2_ID COMMA "psm2_error_t" COMMA "psm2_mq_wait2" COMMA "psm2_mq_req_t* request, psm2_mq_status2_t* status" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_TEST_ID COMMA "psm2_error_t" COMMA "psm2_mq_test" COMMA "psm2_mq_req_t* request, psm2_mq_status_t* status" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_TEST2_ID COMMA "psm2_error_t" COMMA "psm2_mq_test2" COMMA "psm2_mq_req_t* request, psm2_mq_status2_t* status" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM2_MQ_CANCEL_ID COMMA "psm2_error_t" COMMA "psm2_mq_cancel" COMMA "psm2_mq_req_t* req" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM2 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+
+/* exit_parsing_here */
+perl_hint("exit_parsing_here")
+
+/* verbs_layer_starts_here */
+perl_hint("verbs_layer_starts_here")
+
+{ IBV_ACK_CQ_EVENTS_ID COMMA "void" COMMA "ibv_ack_cq_events" COMMA "struct ibv_cq* cq, unsigned int nevents" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_ALLOC_PD_ID COMMA "struct ibv_pd*" COMMA "ibv_alloc_pd" COMMA "struct ibv_context* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_ATTACH_MCAST_ID COMMA "int" COMMA "ibv_attach_mcast" COMMA "struct ibv_qp* qp, const union ibv_gid* gid, uint16_t lid" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_CLOSE_DEVICE_ID COMMA "int" COMMA "ibv_close_device" COMMA "struct ibv_context* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_CREATE_AH_ID COMMA "struct ibv_ah*" COMMA "ibv_create_ah" COMMA "struct ibv_pd* pd, struct ibv_ah_attr* attr" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_CREATE_COMP_CHANNEL_ID COMMA "struct ibv_comp_channel*" COMMA "ibv_create_comp_channel" COMMA "struct ibv_context* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_CREATE_CQ_ID COMMA "struct ibv_cq*" COMMA "ibv_create_cq" COMMA "struct ibv_context* context, int cqe, void* cq_context, struct ibv_comp_channel* channel, int comp_vector" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_CREATE_SRQ_ID COMMA "struct ibv_srq*" COMMA "ibv_create_srq" COMMA "struct ibv_pd* pd, struct ibv_srq_init_attr* srq_init_attr" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_CREATE_QP_ID COMMA "struct ibv_qp*" COMMA "ibv_create_qp" COMMA "struct ibv_pd* pd, struct ibv_qp_init_attr* qp_init_attr" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_DEALLOC_PD_ID COMMA "int" COMMA "ibv_dealloc_pd" COMMA "struct ibv_pd* pd" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_DEREG_MR_ID COMMA "int" COMMA "ibv_dereg_mr" COMMA "struct ibv_mr* mr" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_DESTROY_AH_ID COMMA "int" COMMA "ibv_destroy_ah" COMMA "struct ibv_ah* ah" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_DESTROY_COMP_CHANNEL_ID COMMA "int" COMMA "ibv_destroy_comp_channel" COMMA "struct ibv_comp_channel* channel" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_DESTROY_CQ_ID COMMA "int" COMMA "ibv_destroy_cq" COMMA "struct ibv_cq* cq" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_DESTROY_QP_ID COMMA "int" COMMA "ibv_destroy_qp" COMMA "struct ibv_qp* qp" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_DETACH_MCAST_ID COMMA "int" COMMA "ibv_detach_mcast" COMMA "struct ibv_qp* qp, const union ibv_gid* gid, uint16_t lid" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_EVENT_TYPE_STR_ID COMMA "const char*" COMMA "ibv_event_type_str" COMMA "enum ibv_event_type event" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_GET_CQ_EVENT_ID COMMA "int" COMMA "ibv_get_cq_event" COMMA "struct ibv_comp_channel* channel, struct ibv_cq** cq, void** cq_context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_MODIFY_QP_ID COMMA "int" COMMA "ibv_modify_qp" COMMA "struct ibv_qp* qp, struct ibv_qp_attr* attr, int attr_mask" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_MODIFY_SRQ_ID COMMA "int" COMMA "ibv_modify_srq" COMMA "struct ibv_srq* srq, struct ibv_srq_attr* srq_attr, int srq_attr_mask" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_POLL_CQ_ID COMMA "int" COMMA "ibv_poll_cq" COMMA "struct ibv_cq* cq, int num_entries, struct ibv_wc* wc" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_POST_SEND_ID COMMA "int" COMMA "ibv_post_send" COMMA "struct ibv_qp* qp, struct ibv_send_wr* wr, struct ibv_send_wr** bad_wr" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_POST_RECV_ID COMMA "int" COMMA "ibv_post_recv" COMMA "struct ibv_qp* qp, struct ibv_recv_wr* wr, struct ibv_recv_wr** bad_wr" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_POST_SRQ_RECV_ID COMMA "int" COMMA "ibv_post_srq_recv" COMMA "struct ibv_srq* srq, struct ibv_recv_wr* recv_wr, struct ibv_recv_wr** bad_recv_wr" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_QUERY_QP_ID COMMA "int" COMMA "ibv_query_qp" COMMA "struct ibv_qp* qp, struct ibv_qp_attr* attr, int attr_mask, struct ibv_qp_init_attr* init_attr" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_REG_MR_ID COMMA "struct ibv_mr*" COMMA "ibv_reg_mr" COMMA "struct ibv_pd* pd, void* addr, size_t length, int access" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_REQ_NOTIFY_CQ_ID COMMA "int" COMMA "ibv_req_notify_cq" COMMA "struct ibv_cq* cq, int solicited_only" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+
+/* exit_parsing_here */
+perl_hint("exit_parsing_here")
+/* smpi_layer_starts_here */
+perl_hint("smpi_layer_starts_here")
+
+
+{ SMPI_CHECK_AVAIL_ID COMMA "int" COMMA "smpi_check_avail" COMMA "int rank, int len, volatile void** pptr_flag, smp_ctrl_avail_flag_t num" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_SMPI PROPSEP PEAT_PROP_T_PREFIX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ SMPI_COMPLETE_SEND_ID COMMA "void" COMMA "smpi_complete_send" COMMA "unsigned int destination, unsigned int length, int data_sz, volatile void* ptr, volatile void* ptr_head, volatile void* ptr_flag" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_SMPI PROPSEP PEAT_PROP_T_PREFIX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ SMPI_COMPLETE_RECV_ID COMMA "void" COMMA "smpi_complete_recv" COMMA "unsigned int from_grank,  unsigned int my_id,  unsigned int length" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_SMPI PROPSEP PEAT_PROP_T_PREFIX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PROCESS_VM_READV_ID COMMA "ssize_t" COMMA "process_vm_readv" COMMA "pid_t pid, const struct iovec* local_iov, unsigned long liovcnt, const struct iovec* remote_iov, unsigned long riovcnt, unsigned long flags" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_SMPI PROPSEP PEAT_PROP_MV2_PREFIX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PROCESS_VM_WRITEV_ID COMMA "ssize_t" COMMA "process_vm_writev" COMMA "pid_t pid, const struct iovec* local_iov, unsigned long liovcnt, const struct iovec* remote_iov, unsigned long riovcnt, unsigned long flags" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_SMPI PROPSEP PEAT_PROP_MV2_PREFIX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ MPIDI_CH3I_SMP_PROCESS_HEADER_ID COMMA "int" COMMA "MPIDI_CH3I_SMP_Process_header" COMMA "MPIDI_VC_t*  vc, MPIDI_CH3_Pkt_t*  pkt, int*  index, void* limic_header, void* cma_header, int* use_limic, int* use_cma" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_SMPI PROPSEP PEAT_PROP_T_PREFIX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+
+/* exit_parsing_here */
+perl_hint("exit_parsing_here")
+
+/* psm3_layer_starts_here */
+perl_hint("psm3_layer_starts_here")
+
+{ PSM3_INIT_ID COMMA "psm2_error_t" COMMA "psm3_init" COMMA "int* api_verno_major, int* api_verno_minor" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_FINALIZE_ID COMMA "psm2_error_t" COMMA "psm3_finalize" COMMA "void" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_POLL_ID COMMA "psm2_error_t" COMMA "psm3_poll" COMMA "psm2_ep_t ep" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_EP_OPEN_ID COMMA "psm2_error_t" COMMA "psm3_ep_open" COMMA "const psm2_uuid_t unique_job_key, const struct psm3_ep_open_opts* opts, psm2_ep_t* ep, psm2_epid_t* epid" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_EP_CLOSE_ID COMMA "psm2_error_t" COMMA "psm3_ep_close" COMMA "psm2_ep_t ep, int mode, int64_t timeout" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_EP_CONNECT_ID COMMA "psm2_error_t" COMMA "psm3_ep_connect" COMMA "psm2_ep_t ep, int num_of_epid, const psm2_epid_t* array_of_epid, const int* array_of_epid_mask, psm2_error_t* array_of_errors, psm2_epaddr_t* array_of_epaddr, int64_t timeout" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_MQ_INIT_ID COMMA "psm2_error_t" COMMA "psm3_mq_init" COMMA "psm2_ep_t ep, uint64_t tag_order_mask, const struct psm2_optkey* opts, int numopts, psm2_mq_t* mq" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_MQ_FINALIZE_ID COMMA "psm2_error_t" COMMA "psm3_mq_finalize" COMMA "psm2_mq_t mq" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_MQ_IRECV2_ID COMMA "psm2_error_t" COMMA "psm3_mq_irecv2" COMMA "psm2_mq_t mq, psm2_epaddr_t src, psm2_mq_tag_t* rtag, psm2_mq_tag_t* rtagsel, uint32_t flags, void* buf, uint32_t len, void* context, psm2_mq_req_t* req" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_MQ_IMRECV_ID COMMA "psm2_error_t" COMMA "psm3_mq_imrecv" COMMA "psm2_mq_t mq, uint32_t flags, void* buf, uint32_t len, void* context, psm2_mq_req_t* reqo" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_MQ_SEND2_ID COMMA "psm2_error_t" COMMA "psm3_mq_send2" COMMA "psm2_mq_t mq, psm2_epaddr_t dest, uint32_t flags, psm2_mq_tag_t* stag, const void* buf, uint32_t len" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_MQ_ISEND2_ID COMMA "psm2_error_t" COMMA "psm3_mq_isend2" COMMA "psm2_mq_t mq, psm2_epaddr_t dest, uint32_t flags, psm2_mq_tag_t* stag, const void* buf, uint32_t len, void* context, psm2_mq_req_t* req" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_MQ_IPROBE2_ID COMMA "psm2_error_t" COMMA "psm3_mq_iprobe2" COMMA "psm2_mq_t mq, psm2_epaddr_t src, psm2_mq_tag_t* rtag, psm2_mq_tag_t* rtagsel, psm2_mq_status2_t* status" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_MQ_IMPROBE2_ID COMMA "psm2_error_t" COMMA "psm3_mq_improbe2" COMMA "psm2_mq_t mq, psm2_epaddr_t src, psm2_mq_tag_t* rtag, psm2_mq_tag_t* rtagsel, psm2_mq_req_t* reqo, psm2_mq_status2_t* status" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_MQ_IPEEK2_ID COMMA "psm2_error_t" COMMA "psm3_mq_ipeek2" COMMA "psm2_mq_t mq, psm2_mq_req_t* req, psm2_mq_status2_t* status" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_MQ_IPEEK_DEQUEUE_ID COMMA "psm2_error_t" COMMA "psm3_mq_ipeek_dequeue" COMMA "psm2_mq_t mq, psm2_mq_req_t* req" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_MQ_REQ_FREE_ID COMMA "psm2_error_t" COMMA "psm3_mq_req_free" COMMA "psm2_mq_t mq, psm2_mq_req_t req" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_MQ_WAIT2_ID COMMA "psm2_error_t" COMMA "psm3_mq_wait2" COMMA "psm2_mq_req_t* request, psm2_mq_status2_t* status" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_MQ_TEST2_ID COMMA "psm2_error_t" COMMA "psm3_mq_test2" COMMA "psm2_mq_req_t* request, psm2_mq_status2_t* status" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ PSM3_MQ_CANCEL_ID COMMA "psm2_error_t" COMMA "psm3_mq_cancel" COMMA "psm2_mq_req_t* req" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_PSM3 PROPSEP T_PROPERTY_NONE}} }  COMMA 
+
+/* exit_parsing_here */
+perl_hint("exit_parsing_here")
+
+/* ucx_layer_starts_here */
+perl_hint("ucx_layer_starts_here")
+
+{ UCP_INIT_VERSION_ID COMMA "ucs_status_t" COMMA "ucp_init_version" COMMA "unsigned api_major_version, unsigned api_minor_version, const ucp_params_t* params, const ucp_config_t* config, ucp_context_h* context_p" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_CLEANUP_ID COMMA "void" COMMA "ucp_cleanup" COMMA "ucp_context_h context_p" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_WORKER_CREATE_ID COMMA "ucs_status_t" COMMA "ucp_worker_create" COMMA "ucp_context_h context, const ucp_worker_params_t* params, ucp_worker_h* worker_p" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_WORKER_DESTROY_ID COMMA "void" COMMA "ucp_worker_destroy" COMMA "ucp_worker_h worker" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_WORKER_PROGRESS_ID COMMA "unsigned" COMMA "ucp_worker_progress" COMMA "ucp_worker_h worker" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_WORKER_ARM_ID COMMA "ucs_status_t" COMMA "ucp_worker_arm" COMMA "ucp_worker_h worker" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_WORKER_WAIT_ID COMMA "ucs_status_t" COMMA "ucp_worker_wait" COMMA "ucp_worker_h worker" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_EP_CREATE_ID COMMA "ucs_status_t" COMMA "ucp_ep_create" COMMA "ucp_worker_h worker, const ucp_ep_params_t* params, ucp_ep_h* ep_p" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_EP_CLOSE_NB_ID COMMA "void*" COMMA "ucp_ep_close_nb" COMMA "ucp_ep_h ep, unsigned mode" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_EP_FLUSH_NB_ID COMMA "void*" COMMA "ucp_ep_flush_nb" COMMA "ucp_ep_h ep, unsigned flags, ucp_send_callback_t cb" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_TAG_SEND_NB_ID COMMA "void*" COMMA "ucp_tag_send_nb" COMMA "ucp_ep_h ep, const void* buffer, size_t count, ucp_datatype_t datatype, ucp_tag_t tag, ucp_send_callback_t cb" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_TAG_SEND_NBR_ID COMMA "ucs_status_t" COMMA "ucp_tag_send_nbr" COMMA "ucp_ep_h ep, const void* buffer, size_t count, ucp_datatype_t datatype, ucp_tag_t tag, void* req" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_TAG_SEND_SYNC_NB_ID COMMA "void*" COMMA "ucp_tag_send_sync_nb" COMMA "ucp_ep_h ep, const void* buffer, size_t count, ucp_datatype_t datatype, ucp_tag_t tag, ucp_send_callback_t cb" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_TAG_RECV_NB_ID COMMA "void*" COMMA "ucp_tag_recv_nb" COMMA "ucp_worker_h worker, void* buffer, size_t count, ucp_datatype_t datatype, ucp_tag_t tag, ucp_tag_t tag_mask, ucp_tag_recv_callback_t cb" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_TAG_PROBE_NB_ID COMMA "ucp_tag_message_h" COMMA "ucp_tag_probe_nb" COMMA "ucp_worker_h worker, ucp_tag_t tag, ucp_tag_t tag_mask, int remove, ucp_tag_recv_info_t* info" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_TAG_MSG_RECV_NB_ID COMMA "void*" COMMA "ucp_tag_msg_recv_nb" COMMA "ucp_worker_h worker, void* buffer, size_t count, ucp_datatype_t datatype, ucp_tag_message_h message, ucp_tag_recv_callback_t cb" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_REQUEST_CHECK_STATUS_ID COMMA "ucs_status_t" COMMA "ucp_request_check_status" COMMA "void* request" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_REQUEST_TEST_ID COMMA "ucs_status_t" COMMA "ucp_request_test" COMMA "void* request, ucp_tag_recv_info_t* info" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_REQUEST_FREE_ID COMMA "void" COMMA "ucp_request_free" COMMA "void* request" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_REQUEST_CANCEL_ID COMMA "void" COMMA "ucp_request_cancel" COMMA "ucp_worker_h worker, void* request" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ UCP_CONTEXT_QUERY_ID COMMA "ucs_status_t" COMMA "ucp_context_query" COMMA "ucp_context_h context_p, ucp_context_attr_t* attr" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_UCX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+
+/* exit_parsing_here */
+perl_hint("exit_parsing_here")
+
+/* ofi_layer_starts_here */
+perl_hint("ofi_layer_starts_here")
+
+/* now that the libfabric fork (contrib/libfabric) de-inlines the public API
+ * (see DEFAULT_SYMVER_PRE/DEFAULT_SYMVER + default-visibility attribute in the
+ * *_ops.c wrapper sources), every function below is a real, dlsym-able symbol
+ * again - no longer limited to the bootstrap-only set. */
+{ FI_GETINFO_ID COMMA "int" COMMA "fi_getinfo" COMMA "uint32_t version, const char* node, const char* service, uint64_t flags, const struct fi_info* hints, struct fi_info** info" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_FREEINFO_ID COMMA "void" COMMA "fi_freeinfo" COMMA "struct fi_info* info" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_DUPINFO_ID COMMA "struct fi_info*" COMMA "fi_dupinfo" COMMA "const struct fi_info* info" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_ALLOCINFO_ID COMMA "struct fi_info*" COMMA "fi_allocinfo" COMMA "void" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_FABRIC_ID COMMA "int" COMMA "fi_fabric" COMMA "struct fi_fabric_attr* attr, struct fid_fabric** fabric, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_DOMAIN_ID COMMA "int" COMMA "fi_domain" COMMA "struct fid_fabric* fabric, struct fi_info* info, struct fid_domain** domain, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_DOMAIN_BIND_ID COMMA "int" COMMA "fi_domain_bind" COMMA "struct fid_domain* domain, struct fid* fid, uint64_t flags" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_ENDPOINT_ID COMMA "int" COMMA "fi_endpoint" COMMA "struct fid_domain* domain, struct fi_info* info, struct fid_ep** ep, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_SCALABLE_EP_ID COMMA "int" COMMA "fi_scalable_ep" COMMA "struct fid_domain* domain, struct fi_info* info, struct fid_ep** sep, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_PASSIVE_EP_ID COMMA "int" COMMA "fi_passive_ep" COMMA "struct fid_fabric* fabric, struct fi_info* info, struct fid_pep** pep, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_AV_OPEN_ID COMMA "int" COMMA "fi_av_open" COMMA "struct fid_domain* domain, struct fi_av_attr* attr, struct fid_av** av, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_EQ_OPEN_ID COMMA "int" COMMA "fi_eq_open" COMMA "struct fid_fabric* fabric, struct fi_eq_attr* attr, struct fid_eq** eq, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_CQ_OPEN_ID COMMA "int" COMMA "fi_cq_open" COMMA "struct fid_domain* domain, struct fi_cq_attr* attr, struct fid_cq** cq, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_CNTR_OPEN_ID COMMA "int" COMMA "fi_cntr_open" COMMA "struct fid_domain* domain, struct fi_cntr_attr* attr, struct fid_cntr** cntr, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_WAIT_OPEN_ID COMMA "int" COMMA "fi_wait_open" COMMA "struct fid_fabric* fabric, struct fi_wait_attr* attr, struct fid_wait** waitset" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_POLL_OPEN_ID COMMA "int" COMMA "fi_poll_open" COMMA "struct fid_domain* domain, struct fi_poll_attr* attr, struct fid_poll** pollset" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_TRYWAIT_ID COMMA "int" COMMA "fi_trywait" COMMA "struct fid_fabric* fabric, struct fid** fids, int count" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_MR_REG_ID COMMA "int" COMMA "fi_mr_reg" COMMA "struct fid_domain* domain, const void* buf, size_t len, uint64_t access, uint64_t offset, uint64_t requested_key, uint64_t flags, struct fid_mr** mr, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_CLOSE_ID COMMA "int" COMMA "fi_close" COMMA "struct fid* fid" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_OPEN_OPS_ID COMMA "int" COMMA "fi_open_ops" COMMA "struct fid* fid, const char* name, uint64_t flags, void** ops, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+
+/* connection/addressing */
+{ FI_GETNAME_ID COMMA "int" COMMA "fi_getname" COMMA "fid_t fid, void* addr, size_t* addrlen" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_SETNAME_ID COMMA "int" COMMA "fi_setname" COMMA "fid_t fid, void* addr, size_t addrlen" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_EP_BIND_ID COMMA "int" COMMA "fi_ep_bind" COMMA "struct fid_ep* ep, struct fid* bfid, uint64_t flags" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_ENABLE_ID COMMA "int" COMMA "fi_enable" COMMA "struct fid_ep* ep" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_CONNECT_ID COMMA "int" COMMA "fi_connect" COMMA "struct fid_ep* ep, const void* addr, const void* param, size_t paramlen" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_ACCEPT_ID COMMA "int" COMMA "fi_accept" COMMA "struct fid_ep* ep, const void* param, size_t paramlen" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_SHUTDOWN_ID COMMA "int" COMMA "fi_shutdown" COMMA "struct fid_ep* ep, uint64_t flags" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_AV_INSERT_ID COMMA "int" COMMA "fi_av_insert" COMMA "struct fid_av* av, const void* addr, size_t count, fi_addr_t* fi_addr, uint64_t flags, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+
+/* untagged messaging */
+{ FI_SEND_ID COMMA "ssize_t" COMMA "fi_send" COMMA "struct fid_ep* ep, const void* buf, size_t len, void* desc, fi_addr_t dest_addr, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_RECV_ID COMMA "ssize_t" COMMA "fi_recv" COMMA "struct fid_ep* ep, void* buf, size_t len, void* desc, fi_addr_t src_addr, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_SENDMSG_ID COMMA "ssize_t" COMMA "fi_sendmsg" COMMA "struct fid_ep* ep, const struct fi_msg* msg, uint64_t flags" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_RECVMSG_ID COMMA "ssize_t" COMMA "fi_recvmsg" COMMA "struct fid_ep* ep, const struct fi_msg* msg, uint64_t flags" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_INJECT_ID COMMA "ssize_t" COMMA "fi_inject" COMMA "struct fid_ep* ep, const void* buf, size_t len, fi_addr_t dest_addr" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+
+/* tagged messaging */
+{ FI_TSEND_ID COMMA "ssize_t" COMMA "fi_tsend" COMMA "struct fid_ep* ep, const void* buf, size_t len, void* desc, fi_addr_t dest_addr, uint64_t tag, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_TRECV_ID COMMA "ssize_t" COMMA "fi_trecv" COMMA "struct fid_ep* ep, void* buf, size_t len, void* desc, fi_addr_t src_addr, uint64_t tag, uint64_t ignore, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_TSENDMSG_ID COMMA "ssize_t" COMMA "fi_tsendmsg" COMMA "struct fid_ep* ep, const struct fi_msg_tagged* msg, uint64_t flags" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_TRECVMSG_ID COMMA "ssize_t" COMMA "fi_trecvmsg" COMMA "struct fid_ep* ep, const struct fi_msg_tagged* msg, uint64_t flags" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_TINJECT_ID COMMA "ssize_t" COMMA "fi_tinject" COMMA "struct fid_ep* ep, const void* buf, size_t len, fi_addr_t dest_addr, uint64_t tag" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+
+/* RMA */
+{ FI_WRITE_ID COMMA "ssize_t" COMMA "fi_write" COMMA "struct fid_ep* ep, const void* buf, size_t len, void* desc, fi_addr_t dest_addr, uint64_t addr, uint64_t key, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_READ_ID COMMA "ssize_t" COMMA "fi_read" COMMA "struct fid_ep* ep, void* buf, size_t len, void* desc, fi_addr_t src_addr, uint64_t addr, uint64_t key, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_WRITEDATA_ID COMMA "ssize_t" COMMA "fi_writedata" COMMA "struct fid_ep* ep, const void* buf, size_t len, void* desc, uint64_t data, fi_addr_t dest_addr, uint64_t addr, uint64_t key, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+
+/* completion queue */
+{ FI_CQ_READ_ID COMMA "ssize_t" COMMA "fi_cq_read" COMMA "struct fid_cq* cq, void* buf, size_t count" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_CQ_READERR_ID COMMA "ssize_t" COMMA "fi_cq_readerr" COMMA "struct fid_cq* cq, struct fi_cq_err_entry* buf, uint64_t flags" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_CQ_SREAD_ID COMMA "ssize_t" COMMA "fi_cq_sread" COMMA "struct fid_cq* cq, void* buf, size_t count, const void* cond, int timeout" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+
+/* core utilities */
+{ FI_OPEN_ID COMMA "int" COMMA "fi_open" COMMA "uint32_t version, const char* name, void* attr, size_t attr_len, uint64_t flags, struct fid** fid, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_VERSION_ID COMMA "uint32_t" COMMA "fi_version" COMMA "void" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_TOSTR_ID COMMA "char*" COMMA "fi_tostr" COMMA "const void* data, enum fi_type datatype" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_STRERROR_ID COMMA "const char*" COMMA "fi_strerror" COMMA "int errnum" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+
+/* counters and wait/poll sets */
+{ FI_CNTR_READ_ID COMMA "uint64_t" COMMA "fi_cntr_read" COMMA "struct fid_cntr* cntr" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_CNTR_READERR_ID COMMA "uint64_t" COMMA "fi_cntr_readerr" COMMA "struct fid_cntr* cntr" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_CNTR_ADD_ID COMMA "int" COMMA "fi_cntr_add" COMMA "struct fid_cntr* cntr, uint64_t value" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_CNTR_SET_ID COMMA "int" COMMA "fi_cntr_set" COMMA "struct fid_cntr* cntr, uint64_t value" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_CNTR_WAIT_ID COMMA "int" COMMA "fi_cntr_wait" COMMA "struct fid_cntr* cntr, uint64_t threshold, int timeout" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_WAIT_ID COMMA "int" COMMA "fi_wait" COMMA "struct fid_wait* waitset, int timeout" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_POLL_ID COMMA "int" COMMA "fi_poll" COMMA "struct fid_poll* pollset, void** context, int count" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+
+/* address vector helpers */
+{ FI_AV_REMOVE_ID COMMA "int" COMMA "fi_av_remove" COMMA "struct fid_av* av, fi_addr_t* fi_addr, size_t count, uint64_t flags" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_AV_LOOKUP_ID COMMA "int" COMMA "fi_av_lookup" COMMA "struct fid_av* av, fi_addr_t fi_addr, void* addr, size_t* addrlen" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_AV_STRADDR_ID COMMA "const char*" COMMA "fi_av_straddr" COMMA "struct fid_av* av, const void* addr, char* buf, size_t* len" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+
+/* memory registration variants */
+{ FI_MR_REGV_ID COMMA "int" COMMA "fi_mr_regv" COMMA "struct fid_domain* domain, const struct iovec* iov, size_t count, uint64_t access, uint64_t offset, uint64_t requested_key, uint64_t flags, struct fid_mr** mr, void* context" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_MR_REGATTR_ID COMMA "int" COMMA "fi_mr_regattr" COMMA "struct fid_domain* domain, const struct fi_mr_attr* attr, uint64_t flags, struct fid_mr** mr" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_MR_DESC_ID COMMA "void*" COMMA "fi_mr_desc" COMMA "struct fid_mr* mr" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ FI_MR_KEY_ID COMMA "uint64_t" COMMA "fi_mr_key" COMMA "struct fid_mr* mr" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_OFI PROPSEP T_PROPERTY_NONE}} }  COMMA 
+
+/* exit_parsing_here */
+perl_hint("exit_parsing_here")
 
 /* cl_layer_starts_here */
 perl_hint("cl_layer_starts_here")
@@ -691,6 +915,26 @@ perl_hint("exit_parsing_here")
 
 /* exit_parsing_here_all */
 perl_hint("exit_parsing_here_all")
+
+
+
+{ MPIDI_CH3I_SMP_READ_PROGRESS_ID COMMA "int" COMMA "MPIDI_CH3I_SMP_read_progress" COMMA "MPIDI_PG_t* pg" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_SMPI PROPSEP PEAT_PROP_T_PREFIX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ MPIDI_CH3I_SMP_WRITE_PROGRESS_ID COMMA "int" COMMA "MPIDI_CH3I_SMP_write_progress" COMMA "MPIDI_PG_t* pg" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_SMPI PROPSEP PEAT_PROP_T_PREFIX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ MPIDI_CH3I_MRAILI_GET_NEXT_VBUF_ID COMMA "int" COMMA "MPIDI_CH3I_MRAILI_Get_next_vbuf" COMMA "MPIDI_VC_t**  vc_ptr, vbuf**  vbuf_ptr" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_T_PREFIX PROPSEP T_PROPERTY_NONE}} }  COMMA 
+
+
+/* These verbs functcions are not intercepted (yet?) */
+{ IBV_GET_DEVICE_LIST_ID COMMA "struct ibv_device**" COMMA "ibv_get_device_list" COMMA "int* num_devices" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_GET_DEVICE_NAME_ID COMMA "const char*" COMMA "ibv_get_device_name" COMMA "struct ibv_device* device" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_FREE_DEVICE_LIST_ID COMMA "void" COMMA "ibv_free_device_list" COMMA "struct ibv_device** list" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_OPEN_DEVICE_ID COMMA "struct ibv_context*" COMMA "ibv_open_device" COMMA "struct ibv_device* device" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_QUERY_DEVICE_ID COMMA "int" COMMA "ibv_query_device" COMMA "struct ibv_context* context, struct ibv_device_attr* device_attr" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_QUERY_GID_ID COMMA "int" COMMA "ibv_query_gid" COMMA "struct ibv_context* context, uint8_t port_num, int index, union ibv_gid* gid" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_QUERY_PKEY_ID COMMA "int" COMMA "ibv_query_pkey" COMMA "struct ibv_context* context, uint8_t port_num, int index, uint16_t* pkey" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_QUERY_PORT_ID COMMA "int" COMMA "ibv_query_port" COMMA "struct ibv_context* context, uint8_t port_num, struct ibv_port_attr* port_attr" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+
+{ IBV_ACK_ASYNC_EVENT_ID COMMA "void" COMMA "ibv_ack_async_event" COMMA "struct ibv_async_event* event" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
+{ IBV_GET_ASYNC_EVENT_ID COMMA "int" COMMA "ibv_get_async_event" COMMA "struct ibv_context* context, struct ibv_async_event* event" COMMA "" COMMA "" COMMA  {{PEAT_PROP_CLASS_VERBS PROPSEP PEAT_PROP_MV2_PROXY PROPSEP T_PROPERTY_NONE}} }  COMMA 
 
 /* not in the standard yet but I believe in the committee ;) */
 /*

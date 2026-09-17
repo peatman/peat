@@ -7,6 +7,7 @@
 `src/Makefile` produces:
 - `libtractor<suffix>.so` - the interception library, installed to `mpi.tool/lib/<COMPILER>/`
 - `ptpd<suffix>` - the PTP daemon binary, installed to `mpi.tool/bin/<COMPILER>/`
+- optionally `libtractor_fab_{psm2,psm3,ucx,ofi}<suffix>.so` shims (`TARGET=fab_layers`)
 
 ## 2. Platform & toolchain prerequisites
 
@@ -28,12 +29,16 @@
 | **hwloc** (headers + `libhwloc`) | node/CPU topology capture | `Makefile` references `$(HWLOC_PATH)/include` and `$(HWLOC_PATH)/lib` 
 | **An MPI implementation** | tractor links against `MPICC`/`MPICXX`/`MPIFC` | see section 5 below |
 
+`../contrib/libfabric` and `../contrib/psm3` in this repo are vendored **sources for building those libraries yourself**, not prebuilt - see section 4.
+
 ## 4. Optional libraries (only needed for specific Build.sh switches)
 
 | Feature flag | Extra dependency | Notes |
 |---|---|---|
 | `PARSE_GPU=on` | OpenCL (`-lOpenCL`) + Level Zero loader (`-lze_loader`) | GPU call interception |
 | `HWCOUNTERS=RDPMC` | Linux kernel headers (`linux/perf_event.h`) | no PAPI needed - uses `perf_event_open` directly |
+| `FABRIC=on` / `TARGET=fab_layers` | libfabric, PSM2, PSM3, UCX headers (+libs for the standalone shims) | PSM2/PSM3/UCX/OFI calls are `dlsym(RTLD_NEXT,...)`-intercepted, so only headers are strictly needed to build; the real `.so` must be on `LD_LIBRARY_PATH` at run time. Build [../contrib/libfabric](../contrib/libfabric) yourself (or use system libfabric); headers for [../contrib/psm3](../contrib/psm3) are bundled but the actual PSM3/UCX/PSM2 runtime libs are not - install separately. |
+| `TARGET=mvapich2` (verbs/smpi) | `libibverbs`-dev | `VERBSPATH` defaults to `/usr` in `Build.sh`; install e.g. `libibverbs-dev`/`rdma-core-devel` |
 
 ## 5. MPI implementation - build first
 
@@ -46,7 +51,7 @@
 | Open MPI 5.0.x | build/install normally (not provided here) | `TARGET=openmpi`, no patch |
 | MPICH 4.3.2 | [../../scripts/mpich-4.3.2/Build-{ofi,tcp,ucx}-m.sh](../../scripts/mpich-4.3.2) | `TARGET=mpich4`; optional patch [../../patches/mpich-4.3.2/mpich-4.3.2.patch](../../patches/mpich-4.3.2/mpich-4.3.2.patch) for the "engineering" (`PARSE_COLT`) build |
 | MPICH 5.0.1 | [../../scripts/mpich-5.0.1](../../scripts/mpich-5.0.1) | `TARGET=mpich5` |
-| MVAPICH2 2.3.5 | [../../scripts/mvapich-2.3.5/Build-ibv-m.sh](../../scripts/mvapich-2.3.5/Build-ibv-m.sh) | `TARGET=mvapich2`; patch [../../patches/mvapich-2.3.5/mvapich2-2.3.5.patch](../../patches/mvapich-2.3.5/mvapich2-2.3.5.patch) (+ `src/` collective-call interceptor sources) |
+| MVAPICH2 2.3.5 | [../../scripts/mvapich-2.3.5/Build-ibv-m.sh](../../scripts/mvapich-2.3.5/Build-ibv-m.sh) | `TARGET=mvapich2`; patch [../../patches/mvapich-2.3.5/mvapich2-2.3.5.patch](../../patches/mvapich-2.3.5/mvapich2-2.3.5.patch) (+ `src/` verbs interceptor sources) needed for verbs/smpi fabric interception |
 | MVAPICH 4.1 | [../../scripts/mvapich-4.1](../../scripts/mvapich-4.1) | `TARGET=mvapich4`; patch [../../patches/mvapich-4.1/mvapich-4.1.patch](../../patches/mvapich-4.1/mvapich-4.1.patch) |
 
 These `Build-*.sh` scripts are examples - edit `--prefix=$HOME/<mpi>/<version>` paths for your system.
@@ -88,6 +93,9 @@ ln -sf ../../scripts/env/env.sh env.sh
   vars right before invoking `Build.sh` (see `BuildAllg.sh`/`BuildAlli.sh` for  examples).
 - **`HWLOC_PATH`** - not set by `env.sh`; export it yourself.
 
+`Build.sh` also hardcodes `PSM2PATH=$HOME/psm2`, `PSM3PATH=$HOME/psm3`, `UCXPATH=$HOME/ucx`, `OFI_PATH=$HOME/libfabric[-eng]`, `VERBSPATH=/usr` -
+place those libraries there, or edit `Build.sh`.
+
 ## 7. Build steps
 
 ```sh
@@ -112,8 +120,9 @@ Pass as `make` vars, or positional args to `Build.sh`.
 
 | Switch | Values | Meaning |
 |---|---|---|
-| `TARGET` | `impi*, mpich4, mpich5, mvapich2, mvapich4, openmpi` | MPI flavor |
+| `TARGET` | `impi*, mpich4, mpich5, mvapich2, mvapich4, openmpi, fab_layers` | MPI flavor |
 | `COMPILER` | `gnu*, intel` | toolchain |
+| `FABRIC` | `on, off*` (mvapich2 also: `PSM2/PSM3/VERBS/UCX/OFI`, legacy) | fabric-level interception |
 | `PTPD` | `on*, off` | build PTP daemon support |
 | `OMPT` | `on*, off` | OpenMP interception |
 | `DIAG` | `off*, on` | debug build (`-O0`, `_dbg` suffix) |

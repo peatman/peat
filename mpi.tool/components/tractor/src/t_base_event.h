@@ -180,8 +180,7 @@ struct t_base_event {
     int t_max_threads;
     int t_max_tid_num;
     int t_tid_counter;
-    pid_t *tid2t_tid;
-    int owns_tid2t_tid; // false when tid2t_tid points to a buffer owned by another t_base_event instance
+    static pid_t *tid2t_tid;
     pid_t t_pid;
 
     void set_tsc_adjust(int tid);

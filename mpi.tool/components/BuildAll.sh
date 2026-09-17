@@ -10,9 +10,17 @@ pushd mat/src
 ./BuildAll.sh
 popd 
 
+pushd pet/src
+./Build.sh 
+popd 
+
 pushd tractor 
 ./BuildAlli.sh
 ./BuildAllg.sh
+popd 
+
+pushd urpu/src 
+./BuildAll.sh 
 popd 
 
 pushd qTV

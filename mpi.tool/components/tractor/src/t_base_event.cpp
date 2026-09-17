@@ -40,6 +40,7 @@
 
 #include "mpi_func_ids_through.h"
 #include "t_base_event.h"
+
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
 extern "C" {
 #endif
@@ -62,7 +63,7 @@ t_base_event::t_base_event()
     t_max_threads = 6;
     t_tid_counter = 0;
     t_max_tid_num = MAX_TID_NUM;
-    tid2t_tid = NULL;
+    // tid2t_tid = NULL;
 
     extras = 0;
     events_start_chain = events_chain = NULL;
@@ -80,7 +81,6 @@ t_base_event::t_base_event()
     addrs_array = NULL;
     uniq_index = NULL;
     last_returned_event = NULL;
-    owns_tid2t_tid = 1;
     __DEBUG_EPILOG_TRACTOR_LAYER__
 };
 
@@ -99,6 +99,7 @@ int t_base_event::get_tid(pid_t tid_in)
     pid_t tid = tid_in - t_pid;
 
     debug_printf("Base Event::get_tid. %d %d %p.\n", tid_in, t_tid, tid2t_tid);
+    // if (tid2t_tid==NULL) return 0; // happens if t_fab_profiler won't count any events
     if (counting_permit) {
         if (tid >= t_max_tid_num) {
             fprintf(stderr, "Rank %d. Thread ID=%d. is out of range (0..%d).\n", t_mpi_rank, tid, t_max_tid_num);
@@ -282,6 +283,12 @@ void t_base_event::allocate_event(int tid, msl_event **event, short func_id)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
     if (counting_permit && ++num_allocated <= calls_limit) {
+        if (!events_chain[tid]) {
+            init_events_storage(tid);
+        }
+        if (tid >= t_tid_counter) {
+            t_tid_counter = tid + 1;
+        }
         if (event_index[tid] >= onetimealloc) {
             msl_adv_chain *temp = events_chain[tid];
             events_chain[tid] = new msl_adv_chain(events_chain[tid], sizeof(msl_event), num_addrs,
@@ -407,8 +414,10 @@ void t_base_event::init(int max_threads)
     last_returned_event = (msl_event **)t_malloc(t_max_threads * sizeof(msl_event **), 128);
     memset(last_returned_event, 0, t_max_threads * sizeof(msl_event **));
 
-    tid2t_tid = (int *)t_malloc(t_max_tid_num * sizeof(int), 128);
-    memset(tid2t_tid, -1, t_max_tid_num * sizeof(int));
+    if (tid2t_tid == NULL) {
+        tid2t_tid = (int *)t_malloc(t_max_tid_num * sizeof(int), 128);
+        memset(tid2t_tid, -1, t_max_tid_num * sizeof(int));
+    }
 
     initialized = 1;
     __DEBUG_EPILOG_TRACTOR_LAYER__
@@ -454,8 +463,12 @@ void t_base_event::end()
         t_free(uniq_index, t_max_threads * sizeof(long long));
     if (last_returned_event)
         t_free(last_returned_event, t_max_threads * sizeof(msl_event **));
-    if (tid2t_tid && owns_tid2t_tid)
+
+    if (tid2t_tid ) { 
         t_free(tid2t_tid, t_max_tid_num * sizeof(int));
+        tid2t_tid = NULL;
+    }
+
     if (events_array)
         t_free(events_array, t_max_threads * sizeof(msl_event *));
     if (addrs_array)

@@ -2,7 +2,7 @@
 
 Documentation for the tractor trace collector.
 
-For build/usage instructions, see [../README.md](../README.md).
+For build/usage instructions, see [../readme.md](../readme.md).
 
 ## Contents
 
@@ -10,7 +10,7 @@ For build/usage instructions, see [../README.md](../README.md).
 
 ---
 
-The remainder of this file is legacy documentation, kept for historical reference only; it does not reflect the current build/usage (see [../README.md](../README.md) instead).
+The remainder of this file is legacy documentation, kept for historical reference only; it does not reflect the current build/usage (see [../readme.md](../readme.md) instead).
 
 0. Disclaimer
    This package provided �AS IS�. This is NOT an official product. Use it for your own risk.
@@ -33,11 +33,11 @@ The remainder of this file is legacy documentation, kept for historical referenc
    ../../common/mpifunc.inc
    ../../common/mpifuncids.h
         /src
-		Makefile
+                Makefile
                 addr_entry.h, records.h, t_defines.h, t_extradef.h, t_mpidef.h, t_time.h
                 tractor.cpp/.h        - main interception library entry point
                 t_comm.cpp/.h         - communicator tracking
-                t_fab.cpp/.h          - fabric-level (PSM2/Verbs) event profiling
+                t_fab.cpp/.h          - fabric-level (PSM2/PSM3/Verbs/UCX/OFI) event profiling
                 t_alloc.cpp/.h        - internal allocator/memory tracking
                 t_base_event.cpp/.h   - base trace-event/statistic record types
                 t_stat.cpp/.h         - statistics collection
@@ -55,13 +55,13 @@ The remainder of this file is legacy documentation, kept for historical referenc
                 cl_layer.pl, cl_proto.pl, ze_layer.pl, ze_proto.pl, ze_api.h - OpenCL/Level Zero (GPU) layer generators
                 fab_func_layers.pl, funcids_convert.pl(.old) - fabric/function-ID table generators
                 test_mpi.c/.f         - C/Fortran MPI test programs used to validate the built library
-		/pinc
+                /pinc
                     buf_local.code.inc, collective.code.inc, create_alloc.code.inc,
                     local.code.inc, request.code.inc, rt.code.inc, sendrecv.code.inc,
                     fab.code.inc, fab.direct.code.inc, fab.ipeek.code.inc, fab.poll.direct.code.inc,
                     gpu_general.code.inc
         /doc/
-		README.md (this file)
+                readme.md (this file)
                 Tractor.Trace.Format.Description.pdf 
 4. Usage Model
    4.1 Build process.
@@ -69,18 +69,19 @@ The remainder of this file is legacy documentation, kept for historical referenc
          a. Assuming  that all paths(Compiler,MPI,PAPI) are properly set.  
          b. Go to src directory and execute 'make'. libtractor.<specifiers>so should be built. After make install all required library are installed into PEAT_ROOT/lib and all binaries are in PEAT_ROOT/bin.
       4.1.2 Build switches (specified after make command, * - indicates default value, see src/Makefile for the authoritative list)
-	TARGET=[impi*,mpich4,mvapich2,mvapich4,openmpi] compile under/for a certain MPI flavour.
-	COMPILER=[gnu*,intel] toolchain used to build.
-	PTPD=[on*,off] build in support for the Precision Time Protocol Daemon (adds -D_TRACTOR_USE_PTPD_).
-	OMPT=[on*,off] build in OpenMP (OMPT) callback hooks for combined MPI+OpenMP tracing.
-	DIAG=[off*,on] enable diagnostic/debug messages during collection (DEBUG purposes). Adds _dbg to the library name, forces -O0.
-	PARSE_GPU=[off*,on] build in OpenCL/Level Zero (GPU) interception layers.
-	PARSE_COLT=[off*,on] enable collective-timeline parsing engine.
-	FABRIC=[off*,PSM2,VERBS] (mvapich2 target only) build in fabric-level (PSM2/Verbs) event profiling via t_fab.
-	USE_SIGNALS=[on*,off] install signal handlers for clean trace flushing on crash/termination.
-	USE_PRAGMA_WEAK=[on*,off] use weak symbols for the generated MPI interception layer.
-	MAXMPI=[3*,...] MPI standard level targeted by the generated layer.
-	example: make install TARGET=mpich4 DIAG=on; 
+        TARGET=[impi*,mpich4,mpich5,mvapich2,mvapich4,openmpi] compile under/for a certain MPI flavor. TARGET=fab_layer builds special libraries which can be loaded in runtime depending on switch (see 4.2).
+        COMPILER=[gnu*,intel] toolchain used to build.
+        FABRIC=[on,off*] build in 'fab' interception (psm2,psm3,ucx,ofi).
+        PTPD=[on*,off] build in support for the Precision Time Protocol Daemon (adds -D_TRACTOR_USE_PTPD_).
+        OMPT=[on*,off] build in OpenMP (OMPT) callback hooks for combined MPI+OpenMP tracing.
+        DIAG=[off*,on] enable diagnostic/debug messages during collection (DEBUG purposes). Adds _dbg to the library name, forces -O0.
+        PARSE_GPU=[off*,on] build in OpenCL/Level Zero (GPU) interception layers.
+        PARSE_COLT=[off*,on] enable collective-timeline parsing engine.
+        FABRIC=[off*,PSM2,PSM3,VERBS,UCX,OFI] (mvapich2 target only) build in fabric-level (PSM2/PSM3/Verbs/UCX/OFI) event profiling via t_fab.
+        USE_SIGNALS=[on*,off] install signal handlers for clean trace flushing on crash/termination.
+        USE_PRAGMA_WEAK=[on*,off] use weak symbols for the generated MPI interception layer.
+        MAXMPI=[3*,...] MPI standard level targeted by the generated layer.
+        example: make install TARGET=mpich4 DIAG=on; 
 
    4.2 Running   
        4.2.1 Tractor itself
@@ -91,7 +92,7 @@ The remainder of this file is legacy documentation, kept for historical referenc
        SUFFIX  exactly the same as one in 4.1.2 (usually empty)
        DBG={_dbg,<empty>}
        TARGET  exactly the same as one in 4.1.2
-       EXTRANAMELIB  accumulates suffixes from optional switches:  .gpu (PARSE_GPU), .ct (PARSE_COLT)
+       EXTRANAMELIB  accumulates suffixes from optional switches:  .gpu (PARSE_GPU), .eng (PARSE_COLT/fab layer)
 
        Environment variables (all prefixed PEAT_TRACTOR_, read by tractor::parse_env_vars(), * - indicates default value):
        export PEAT_TRACTOR_FILE=<template>            - template for trace file names (default: tractor_t)
@@ -114,7 +115,8 @@ The remainder of this file is legacy documentation, kept for historical referenc
        export PEAT_TRACTOR_PARSE_OPENMP=1|0            - parse OpenMP (OMPT) events when built with OMPT support (default: on)
        export PEAT_TRACTOR_FULL_OMPT_UNWIND=<value>    - depth of OMPT call-stack unwinding (default: 0)
        export PEAT_TRACTOR_ABORT_SLEEP=<seconds>       - seconds to sleep before aborting on fatal error, to allow ranks to flush their files (default: 300)
-       export PEAT_TRACTOR_COLLECT_FAB=1|0             - collect fabric-level (PSM2/Verbs) events, when PEAT_TRACTOR_WRITE_TRACE is on
+       export PEAT_TRACTOR_COLLECT_FAB=1|0             - collect fabric-level (PSM2/PSM3/Verbs/UCX/OFI) events, when PEAT_TRACTOR_WRITE_TRACE is on
+       export PEAT_TRACTOR_FAB_LAYER=ucx|ofi|psm2|psm3 - collect fabric-level (PSM2/PSM3/Verbs/UCX/OFI) events, when PEAT_TRACTOR_COLLECT_FAB is on (only for libraries with .eng suffix)
        export PEAT_TRACTOR_INCLUDE_EVENTS / PEAT_TRACTOR_EXCLUDE_EVENTS="comma_separated_ids" - include/exclude particular MPI functions from recording (see mpifuncids.h for IDs). If both are specified, PEAT_TRACTOR_EXCLUDE_EVENTS is ignored.
        export PEAT_TRACTOR_INCLUDE_FULL_STACK_EVENTS / PEAT_TRACTOR_EXCLUDE_FULL_STACK_EVENTS="comma_separated_ids" - same, but controls which events get full-stack (multi-level) return-address resolution.
        export PEAT_TRACTOR_BOUNDARIES=<value>          - restrict tracing to a boundary range

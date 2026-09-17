@@ -24,6 +24,7 @@
 #include <QHeaderView>
 #include <algorithm>
 #include <cmath>
+#include <functional>
 
 // #include <QtGui>
 
@@ -946,8 +947,17 @@ void TV::handle_tree_item_clicked(QTreeWidgetItem *item)
     if (!item)
         return;
 
-    // Check if the item has source file data
-    QVariantMap userData = item->data(2, Qt::UserRole).toMap();
+    // Check if the item has source file data. The data may be stored in
+    // different columns depending on which tree view triggered the click,
+    // so search all columns for a non-empty map.
+    QVariantMap userData;
+    for (int col = 0; col < item->columnCount(); col++) {
+        QVariantMap m = item->data(col, Qt::UserRole).toMap();
+        if (!m.isEmpty()) {
+            userData = m;
+            break;
+        }
+    }
     for (int addr_num = 0; addr_num < elements->get_trace_info().num_addrs; addr_num++) {
         QString file_key = "src_file" + QString::number(addr_num);
         QString line_key = "src_line" + QString::number(addr_num);
@@ -985,73 +995,45 @@ void TV::look_for_info()
         if (!evt) {
             return;
         }
-        info_view = new QTableWidget;
-        info_view->verticalHeader()->setVisible(false);
+        info_view = new QTreeWidget;
         info_view->setWordWrap(false);
-        info_view->setRowCount(1 + elements->get_trace_info().num_addrs);
-        info_view->setColumnCount(11);
-        info_view->setHorizontalHeaderLabels(QStringList() << "Name" << "Group" << "Type" << "Rank" << "Thread" << "Primary ID" << "Secondary ID" << "Start Time" << "End Time" << "Duration" << "Duration (us)");
-        // Name
-        QTableWidgetItem *name = new QTableWidgetItem(global_func_id.name_by_idx(evt->func_id));
-        info_view->setItem(0, 0, name);
-        // Group
-        QTableWidgetItem *group = new QTableWidgetItem();
-        group->setData(Qt::DisplayRole, evt->get_event_group());
-        group->setTextAlignment(Qt::AlignHCenter);
-        info_view->setItem(0, 1, group);
-        // Type 
-        QTableWidgetItem *type = new QTableWidgetItem();
-        type->setData(Qt::DisplayRole, evt->get_event_type());
-        type->setTextAlignment(Qt::AlignHCenter);
-        info_view->setItem(0, 2, type);
-        // Rank
-        QTableWidgetItem *rank = new QTableWidgetItem();
-        rank->setData(Qt::DisplayRole, evt->rank);
-        rank->setTextAlignment(Qt::AlignHCenter);
-        info_view->setItem(0, 3, rank);
+        info_view->setColumnCount(12);
+        info_view->setHeaderLabels(QStringList() << "Name" << "Group" << "Type" << "Rank" << "Thread" << "Primary ID" << "Secondary ID" << "Start Time" << "End Time" << "Duration" << "Duration (us)" << "Source Location");
 
-        // Thread
-        QTableWidgetItem *thread = new QTableWidgetItem();
-        thread->setData(Qt::DisplayRole, evt->thread);
-        thread->setTextAlignment(Qt::AlignHCenter);
-        info_view->setItem(0, 4, thread);
-        // Primary ID
-        QTableWidgetItem *primary_id = new QTableWidgetItem();
-        primary_id->setData(Qt::DisplayRole, evt->primary_id);
-        primary_id->setTextAlignment(Qt::AlignHCenter);
-        info_view->setItem(0, 5, primary_id);
-        // Secondary ID
-        QTableWidgetItem *secondary_id = new QTableWidgetItem();
-        secondary_id->setData(Qt::DisplayRole, evt->secondary_id);
-        secondary_id->setTextAlignment(Qt::AlignHCenter);
-        info_view->setItem(0, 6, secondary_id);
-        // Start Time
-        QTableWidgetItem *start_time = new QTableWidgetItem(outputDouble(evt->e_time.func.in));
-        start_time->setTextAlignment(Qt::AlignRight);
-        info_view->setItem(0, 7, start_time);
-        // End Time
-        QTableWidgetItem *end_time = new QTableWidgetItem(outputDouble(evt->e_time.func.out));
-        end_time->setTextAlignment(Qt::AlignRight);
-        info_view->setItem(0, 8, end_time);
-        // Duration
-        QTableWidgetItem *duration = new QTableWidgetItem(outputDouble(evt->e_time.func.duration()));
-        duration->setTextAlignment(Qt::AlignRight);
-        info_view->setItem(0, 9, duration);
-        // Duration micro sec
-        QTableWidgetItem *duration_micro = new QTableWidgetItem(outputDouble((PEAT_Ratio(evt->e_time.func.duration()) / elements->get_trace_info().freq) * 1000000));
-        duration_micro->setTextAlignment(Qt::AlignRight);
-        info_view->setItem(0, 10, duration_micro);
-        // distance Before
-        if (elements->user_regions) {
-            {
+        std::function<QTreeWidgetItem *(const TV_Event *)> add_event_item = [&](const TV_Event *e) -> QTreeWidgetItem * {
+            QTreeWidgetItem *func_item = new QTreeWidgetItem((QTreeWidget *)0);
+            func_item->setText(0, global_func_id.name_by_idx(e->func_id));
+            func_item->setData(1, Qt::DisplayRole, e->get_event_group());
+            func_item->setTextAlignment(1, Qt::AlignHCenter);
+            func_item->setData(2, Qt::DisplayRole, e->get_event_type());
+            func_item->setTextAlignment(2, Qt::AlignHCenter);
+            func_item->setData(3, Qt::DisplayRole, e->rank);
+            func_item->setTextAlignment(3, Qt::AlignHCenter);
+            func_item->setData(4, Qt::DisplayRole, e->thread);
+            func_item->setTextAlignment(4, Qt::AlignHCenter);
+            func_item->setData(5, Qt::DisplayRole, e->primary_id);
+            func_item->setTextAlignment(5, Qt::AlignHCenter);
+            func_item->setData(6, Qt::DisplayRole, e->secondary_id);
+            func_item->setTextAlignment(6, Qt::AlignHCenter);
+            func_item->setText(7, outputDouble(e->e_time.func.in));
+            func_item->setTextAlignment(7, Qt::AlignRight);
+            func_item->setText(8, outputDouble(e->e_time.func.out));
+            func_item->setTextAlignment(8, Qt::AlignRight);
+            func_item->setText(9, outputDouble(e->e_time.func.duration()));
+            func_item->setTextAlignment(9, Qt::AlignRight);
+            func_item->setText(10, outputDouble((PEAT_Ratio(e->e_time.func.duration()) / elements->get_trace_info().freq) * 1000000));
+            func_item->setTextAlignment(10, Qt::AlignRight);
+
+            if (elements->user_regions) {
                 QString tt;
+                QStringList source_locations;
                 QString source_file;
                 int source_line = -1;
                 QVariantMap userData;
                 for (int addr_num = 0; addr_num < elements->get_trace_info().num_addrs; addr_num++) {
-                    const PEAT_UID addr = evt->addrs->addr[addr_num];
+                    const PEAT_UID addr = e->addrs->addr[addr_num];
                     std::ostringstream itemObjectAddress;
-                    User_Address_Info *addr_info = elements->user_regions->get_addr_by_id(evt->rank, addr);
+                    User_Address_Info *addr_info = elements->user_regions->get_addr_by_id(e->rank, addr);
                     itemObjectAddress << addr_info->full_path << "+0x" << std::hex << addr_info->addr_offset << "\n"
                                       << addr_info->source << ":" << std::dec << addr_info->line << "\n";
                     tt = tt + itemObjectAddress.str().c_str() + "\n";
@@ -1062,59 +1044,50 @@ void TV::look_for_info()
                     if (!source_file.isEmpty() && source_line >= 0) {
                         userData[file_key] = source_file;
                         userData[line_key] = source_line;
+                        source_locations << (source_file + ":" + QString::number(source_line));
                     }
-
-                    // Row for this address, spanning all columns
-                    int row = 1 + addr_num;
-                    info_view->setSpan(row, 0, 1, 11);
-                    QTableWidgetItem *addrItem = new QTableWidgetItem(QString::fromStdString(itemObjectAddress.str()));
-                    info_view->setItem(row, 0, addrItem);
                 }
-                userData["func_name"] = global_func_id.name_by_idx(evt->func_id);
-                // primary_id->setToolTip(tt);
-                // primary_id->setData(Qt::UserRole, userData);
-                // duplicate for name column
-                // name->setToolTip(tt);
-                // name->setData(Qt::UserRole, userData);
-                for (int addr_num = 0; addr_num < elements->get_trace_info().num_addrs; addr_num++) {
-                    QTableWidgetItem *addrItem = info_view->item(1 + addr_num, 0);
-                    addrItem->setData(Qt::UserRole, userData);
-                }
+                userData["func_name"] = global_func_id.name_by_idx(e->func_id);
+                func_item->setText(11, source_locations.join("; "));
+                func_item->setToolTip(11, tt);
+                func_item->setToolTip(0, tt);
+                func_item->setData(0, Qt::UserRole, userData);
+                func_item->setData(11, Qt::UserRole, userData);
             }
+
+            for (int f = 0; const TV_Event *child = e->get_child(f); f++) {
+                QTreeWidgetItem *child_item = add_event_item(child);
+                func_item->addChild(child_item);
+            }
+
+            return func_item;
+        };
+
+        QTreeWidgetItem *root_item = add_event_item(evt);
+        info_view->addTopLevelItem(root_item);
+
+        // Connect click handler to open source files
+        connect(info_view, &QTreeWidget::itemClicked, this, &TV::handle_tree_item_clicked);
+
+        for (int col = 0; col < info_view->columnCount(); col++) {
+            info_view->resizeColumnToContents(col);
         }
 
-        // Connect double-click handler to open source files
-        connect(info_view, &QTableWidget::itemClicked, this, &TV::handle_table_item_clicked);
-
-        // connect((const QObject*) functionsView->horizontalHeader(), SIGNAL(sectionClicked(int)), (const QObject*) functionsView, SLOT(sortByColumn(int)));//sort column by header click
-        info_view->resizeColumnsToContents();
-        info_view->resizeRowsToContents();
-
-        // resizeColumnsToContents() only measures column 0 for spanned rows,
-        // so widen the last column to fit the widest spanned address row too.
-        QFontMetrics fm(info_view->font());
-        int spanned_content_width = 0;
-        for (int addr_num = 0; addr_num < elements->get_trace_info().num_addrs; addr_num++) {
-            QTableWidgetItem *addrItem = info_view->item(1 + addr_num, 0);
-            if (addrItem) {
-                spanned_content_width = (std::max)(spanned_content_width, fm.horizontalAdvance(addrItem->text()));
-            }
-        }
-        spanned_content_width += 10; // padding
-
-        int total_width = info_view->verticalHeader()->width() + info_view->frameWidth() * 2;
+        int total_width = info_view->frameWidth() * 2;
         for (int col = 0; col < info_view->columnCount(); col++) {
             total_width += info_view->columnWidth(col);
         }
-        if (total_width < spanned_content_width) {
-            int last_col = info_view->columnCount() - 1;
-            info_view->setColumnWidth(last_col, info_view->columnWidth(last_col) + (spanned_content_width - total_width));
-            total_width = spanned_content_width;
-        }
-        int total_height = info_view->horizontalHeader()->height() + info_view->frameWidth() * 2;
-        for (int row = 0; row < info_view->rowCount(); row++) {
-            total_height += info_view->rowHeight(row);
-        }
+        std::function<int(QTreeWidgetItem *)> visible_height = [&](QTreeWidgetItem *item) -> int {
+            int h = info_view->visualItemRect(item).height();
+            if (item->isExpanded()) {
+                for (int c = 0; c < item->childCount(); c++) {
+                    h += visible_height(item->child(c));
+                }
+            }
+            return h;
+        };
+        int total_height = info_view->header()->height() + info_view->frameWidth() * 2;
+        total_height += visible_height(root_item);
         info_view->resize(total_width, total_height);
 
         info_view->show();

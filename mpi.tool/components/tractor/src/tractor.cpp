@@ -22,6 +22,7 @@
 #include <dlfcn.h>
 #include <libgen.h>
 #include <limits.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,6 +43,9 @@
 #include <cpuid.h>
 #endif
 
+
+pid_t *t_base_event::tid2t_tid = NULL;
+
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
 extern "C" {
 #endif
@@ -52,7 +56,6 @@ extern "C" {
 #ifdef _TRACTOR_DIAG_
 FILE *debug_fp;
 #endif
-
 #ifdef _T_OMPT_
 extern ompt_finalize_tool_t ompt_finalize_tool;
 #endif
@@ -231,6 +234,11 @@ tractor::tractor(void)
 #endif
 
     store_map = 0;
+
+#ifdef _FAB_PROFILE_
+    t_permit_collect_fab = 0;
+#endif
+
     onetimealloc = defonetimealloc;
     pcontrol = 0;
     overall_permit = 0;
@@ -698,9 +706,11 @@ void tractor::parse_env_vars(void)
     temp = __msl_getenv("PEAT_TRACTOR_ABORT_SLEEP");
     if (temp)
         abort_sleep = atoi(temp);
+#ifdef _FAB_PROFILE_
+        t_collect_fab = is_true(__msl_getenv("PEAT_TRACTOR_COLLECT_FAB"), t_collect_fab);
+#endif
 
-    if (t_write_main_files) {
-    } else {
+    if (!t_write_main_files) {
         calls_limit = 0;
     }
 
@@ -715,10 +725,107 @@ void tractor::parse_env_vars(void)
     temp = __msl_getenv("PEAT_TRACTOR_COMPRESS_EVENTS");
     if (temp)
         compress_events = atoi(temp);
-    // compress_events = is_true(__msl_getenv("PEAT_TRACTOR_COMPRESS_EVENTS"),compress_events);
+/*
+#if defined(_FAB_PROFILE_)
+    temp = __msl_getenv("PEAT_TRACTOR_FAB_LAYER");
+    fab_layer = T_FAB_LAYER_NONE;
+    if (temp) {
+        if (strcasecmp(temp,"VERBS")==0) fab_layer=T_FAB_LAYER_VERBS;
+        else if (strcasecmp(temp,"OFI")==0) fab_layer=T_FAB_LAYER_OFI;
+        else if (strcasecmp(temp,"PSM2")==0) fab_layer=T_FAB_LAYER_PSM2;
+        else if (strcasecmp(temp,"PSM3")==0) fab_layer=T_FAB_LAYER_PSM3;
+        else if (strcasecmp(temp,"UCX")==0) fab_layer=T_FAB_LAYER_UCX;
+        if (fab_layer == T_FAB_LAYER_NONE) {
+            printf(" Unknown Fab Layer specified:%s. No Fab events will be traced\n",temp);
+        }
+    }
+#endif
+*/
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
 
+#if !defined(_TRACTOR_LEGACY_PROC_MAPS_)
+namespace {
+struct t_maps_phdr_ctx {
+    void *binval;
+    void *lowfort, *highfort;
+    void *lowtrac, *hightrac;
+};
+
+int t_maps_phdr_callback(struct dl_phdr_info *info, size_t size, void *data)
+{
+    t_maps_phdr_ctx *ctx = (t_maps_phdr_ctx *)data;
+    bool is_main = (info->dlpi_name == NULL || info->dlpi_name[0] == 0);
+    bool is_fort = !is_main && strstr(info->dlpi_name, "libmpifort");
+    bool is_trac = !is_main && strstr(info->dlpi_name, "libtractor");
+    if (!is_main && !is_fort && !is_trac)
+        return 0;
+    ElfW(Addr) low = (ElfW(Addr))-1, high = 0;
+    for (int i = 0; i < info->dlpi_phnum; ++i) {
+        const ElfW(Phdr) &phdr = info->dlpi_phdr[i];
+        if (phdr.p_type != PT_LOAD || !(phdr.p_flags & PF_X))
+            continue;
+        ElfW(Addr) seg_low = info->dlpi_addr + phdr.p_vaddr;
+        ElfW(Addr) seg_high = seg_low + phdr.p_memsz;
+        if (seg_low < low)
+            low = seg_low;
+        if (seg_high > high)
+            high = seg_high;
+        if (is_main) // mirror legacy behavior: only the first PT_LOAD segment matters
+            break;
+    }
+    if (high == 0)
+        return 0;
+    if (is_main)
+        ctx->binval = (void *)high;
+    else if (is_fort) {
+        ctx->lowfort = (void *)low;
+        ctx->highfort = (void *)high;
+    } else if (is_trac) {
+        ctx->lowtrac = (void *)low;
+        ctx->hightrac = (void *)high;
+    }
+    return 0;
+}
+} // namespace
+
+void tractor::map_file_parse(void)
+{
+    t_maps_phdr_ctx ctx = {0};
+    dl_iterate_phdr(t_maps_phdr_callback, &ctx);
+    if (ctx.binval)
+        binval = ctx.binval;
+    if (ctx.highfort) {
+        lowfort = ctx.lowfort;
+        highfort = ctx.highfort;
+    }
+    if (ctx.hightrac) {
+        lowtrac = ctx.lowtrac;
+        hightrac = ctx.hightrac;
+    }
+
+    // main arena heap bounds: cache the break at first call, track current top thereafter
+    static void *heap_base = NULL;
+    if (!heap_base)
+        heap_base = sbrk(0);
+    void *heap_top = sbrk(0);
+    if (heap_top != heap_base) {
+        lowheap = heap_base;
+        highheap = heap_top;
+    }
+
+    pthread_attr_t attr;
+    if (0 == pthread_getattr_np(pthread_self(), &attr)) {
+        void *stack_addr;
+        size_t stack_size;
+        if (0 == pthread_attr_getstack(&attr, &stack_addr, &stack_size)) {
+            lowstack = stack_addr;
+            highstack = (void *)((char *)stack_addr + stack_size);
+        }
+        pthread_attr_destroy(&attr);
+    }
+}
+#else
 void tractor::map_file_parse(void)
 {
     char pid[16];
@@ -773,6 +880,7 @@ void tractor::map_file_parse(void)
         fclose(tfp);
     }
 }
+#endif
 void tractor::init(void)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
@@ -783,6 +891,12 @@ void tractor::init(void)
     char pid[16];
     msl_event *event;
     debug_printf("Rank %d: Tractor pre_initialization started...\n", t_mpi_rank);
+#if defined(_FAB_PROFILE_)
+    if (t_collect_fab && t_mpi_rank >= 0) {
+        // t_fab_prof.init_hooks();
+        t_fab_prof.calls_limit = calls_limit;
+    }
+#endif
 
 #ifdef _MEM_HOOKS_
     mprof.enable_memory_profiling();
@@ -817,6 +931,12 @@ void tractor::init(void)
         memset(fps_c_extras, 0, t_max_threads * sizeof(FILE *));
     }
 
+#if defined(_FAB_PROFILE_)
+    if (t_collect_fab && t_mpi_rank >= 0) {
+        t_fab_prof.init(t_max_threads, stat_dir, tmp_dir, stat_template, use_realtime_dump);
+        t_permit_collect_fab = 1;
+    }
+#endif
     char tbuf[MAX_PATH];
     FILE *tfp, *tfp1;
     pid[0] = 0;
@@ -1009,6 +1129,9 @@ void tractor::pre_finalize(int abort)
     debug_printf("rank %d: msl_pre_finalize called...\n", t_mpi_rank);
     if (tractor_initialized < 1)
         return;
+#ifdef _FAB_PROFILE_
+    t_permit_collect_fab = 0;
+#endif
     skip_parse = 1;
     if (t_mpi_rank >= 0 && abort == 0) {
         nodes_info(gt_ninfo);
@@ -1901,7 +2024,7 @@ void tractor::correct_events(void)
 #ifdef GPUPARSE
 
 //    std::map<void *, T_LOC> addr_location;
-//    std::map<short,std::map<T_LOC,std::map<T_LOC,std::map<PEAT_Message_Size, T_Stat_Record>>>> gpu_transfers; // func,from,to,size,time
+//    std::map<short,std::map<T_LOC,std::map<T_LOC,std::map<PEAT_Message_Size, t_stat_record>>>> gpu_transfers; // func,from,to,size,time
 //    std::map<short,PEAT_Clock> gpu_executions; // func,time
 //    std::map<short,PEAT_Clock> gpu_syncs; // func,time
 const char *directions[] = {
@@ -1921,11 +2044,11 @@ void tractor::print_gpu_stat(void)
     long long total = 0;
     SEPARATOR(2 + 34 + 16 + 16 + 16 + 16 + 3);
     gzprintf(fps_com, "%d:%34s|%16s|%16s|%16s|%16s|\n", PEAT_RT_Remark, "Function", "Direction", "Size", "Occurences", "Duration");
-    for (std::map<short, std::map<T_LOC, std::map<T_LOC, std::map<PEAT_Message_Size, T_Stat_Record>>>>::const_iterator func_it = gpu_transfers.cbegin(); func_it != gpu_transfers.cend(); ++func_it) {
-        for (std::map<T_LOC, std::map<T_LOC, std::map<PEAT_Message_Size, T_Stat_Record>>>::const_iterator from_it = func_it->second.cbegin(); from_it != func_it->second.cend(); ++from_it) {
-            for (std::map<T_LOC, std::map<PEAT_Message_Size, T_Stat_Record>>::const_iterator to_it = from_it->second.cbegin(); to_it != from_it->second.cend(); ++to_it) {
-                for (std::map<PEAT_Message_Size, T_Stat_Record>::const_iterator message_it = to_it->second.cbegin(); message_it != to_it->second.cend(); ++message_it) {
-                    const T_Stat_Record &record = message_it->second;
+    for (std::map<short, std::map<T_LOC, std::map<T_LOC, std::map<PEAT_Message_Size, t_stat_record>>>>::const_iterator func_it = gpu_transfers.cbegin(); func_it != gpu_transfers.cend(); ++func_it) {
+        for (std::map<T_LOC, std::map<T_LOC, std::map<PEAT_Message_Size, t_stat_record>>>::const_iterator from_it = func_it->second.cbegin(); from_it != func_it->second.cend(); ++from_it) {
+            for (std::map<T_LOC, std::map<PEAT_Message_Size, t_stat_record>>::const_iterator to_it = from_it->second.cbegin(); to_it != from_it->second.cend(); ++to_it) {
+                for (std::map<PEAT_Message_Size, t_stat_record>::const_iterator message_it = to_it->second.cbegin(); message_it != to_it->second.cend(); ++message_it) {
+                    const t_stat_record &record = message_it->second;
                     int index = ((int)from_it->first) * 3 + (int)(to_it->first);
                     gzprintf(fps_com, "%d:%34s|%16s|%16lld|%16lld|%16lld|\n", PEAT_RT_Remark, mpi_function_names[func_it->first], directions[index], message_it->first, message_it->second.occurences, message_it->second.duration);
                 }
@@ -2405,7 +2528,7 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                     size = in_args[3];
                     to = addr_location.at(dst_ptr);
                     from = addr_location.at(src_ptr);
-                    T_Stat_Record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
+                    t_stat_record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
                     gpu_transfers[func_id][from][to][size] += sr;
                 } else {
                     debug_printf("Unknown Address %p or %p\n", dst_ptr, src_ptr);
@@ -2416,7 +2539,7 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                 if (addr_location.count(ptr) == 1) {
                     size = in_args[4];
                     to = addr_location.at(ptr);
-                    T_Stat_Record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
+                    t_stat_record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
                     gpu_fills[func_id][to][size] += sr;
                 } else {
                     debug_printf("Unknown Address %p\n", ptr);
@@ -2818,6 +2941,10 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
     if (fps_hwc)
         gzclose(fps_hwc);
 
+#if defined(_FAB_PROFILE_)
+    if (t_write_main_files && t_collect_fab && t_mpi_rank >= 0)
+        t_fab_prof.write_fab_file(print_names);
+#endif
     __DEBUG_EPILOG_TRACTOR_LAYER__
     return (ret);
 }
@@ -3276,6 +3403,11 @@ int tractor::t_check_chain(pid_t tid)
 {
     if (use_realtime_dump) {
         check_chain(tid);
+#if defined(_FAB_PROFILE_)
+        if (t_collect_fab) {
+            t_fab_prof.check_chain(tid);
+        }
+#endif
     }
 }
 
