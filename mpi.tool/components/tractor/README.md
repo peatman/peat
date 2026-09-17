@@ -6,7 +6,7 @@ Part of peat.
 
 A low-intrusion, `LD_PRELOAD`-based shared library that intercepts MPI (and optionally OpenMP/OMPT, GPU, and fabric/PSM2/PSM3/verbs/UCX/OFI) calls and records them into the trace files consumed by `mat`, `ctt`, `urpu`, `pet` and `qTV`. Also drives the PTP Daemon (PTPD) used to synchronise timings across nodes. Supports Intel MPI, MPICH, MVAPICH and Open MPI on Linux.
 
-See [doc/readme.md](doc/readme.md) for older build/usage/trace-format documentation (note: marked outdated there, kept for reference).
+See [doc/README.md](doc/README.md) for older build/usage/trace-format documentation (note: marked outdated there, kept for reference).
 
 ## Layout
 
@@ -27,7 +27,7 @@ See [doc/readme.md](doc/readme.md) for older build/usage/trace-format documentat
 - `src/cl_layer.pl`/`cl_proto.pl`, `src/ze_layer.pl`/`ze_proto.pl`, `src/ze_api.h` - code generators for OpenCL and Level Zero (GPU) interception layers.
 - `src/fab_func_layers.pl`, `src/funcids_convert.pl`(`.old`) - code generators for fabric-layer functions and MPI function-ID tables.
 - `src/pinc/` - per-call-category C++ code snippets included by the generated MPI layer (collectives, requests, local/buffer handling, fabric direct/poll/ipeek, GPU).
-- `doc/` - readme and trace format description documents.
+- `doc/` - README and trace format description documents.
 - `Build.sh`/`BuildAllg.sh`/`BuildAlli.sh` - build scripts for GNU/Intel toolchains across supported MPI.
 
 ## Fabric-layer profiling

@@ -2,7 +2,7 @@
 
 Documentation for the tractor trace collector.
 
-For build/usage instructions, see [../readme.md](../readme.md).
+For build/usage instructions, see [../README.md](../README.md).
 
 ## Contents
 
@@ -10,7 +10,7 @@ For build/usage instructions, see [../readme.md](../readme.md).
 
 ---
 
-The remainder of this file is legacy documentation, kept for historical reference only; it does not reflect the current build/usage (see [../readme.md](../readme.md) instead).
+The remainder of this file is legacy documentation, kept for historical reference only; it does not reflect the current build/usage (see [../README.md](../README.md) instead).
 
 0. Disclaimer
    This package provided �AS IS�. This is NOT an official product. Use it for your own risk.
@@ -61,7 +61,7 @@ The remainder of this file is legacy documentation, kept for historical referenc
                     fab.code.inc, fab.direct.code.inc, fab.ipeek.code.inc, fab.poll.direct.code.inc,
                     gpu_general.code.inc
         /doc/
-                readme.md (this file)
+                README.md (this file)
                 Tractor.Trace.Format.Description.pdf 
 4. Usage Model
    4.1 Build process.
