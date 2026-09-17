@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="..\pet\src\collstorage.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\events.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\contrib\getopt\source\getopt.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\pet_core.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\requests.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\stat.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\tempdebug.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\timeline.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\pet_events\base.cpp">
+      <Filter>Sources\PET_Events</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\pet_events\coll.cpp">
+      <Filter>Sources\PET_Events</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\pet_events\collective.cpp">
+      <Filter>Sources\PET_Events</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\pet_events\comm.cpp">
+      <Filter>Sources\PET_Events</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\pet_events\completion.cpp">
+      <Filter>Sources\PET_Events</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\pet_events\local.cpp">
+      <Filter>Sources\PET_Events</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\pet_events\localbuf.cpp">
+      <Filter>Sources\PET_Events</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\pet_events\start.cpp">
+      <Filter>Sources\PET_Events</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\pet_events\tar.cpp">
+      <Filter>Sources\PET_Events</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\pet_events\tor.cpp">
+      <Filter>Sources\PET_Events</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\pet_node.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\pet_rank.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\main.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\te_timeline.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\common_types.cpp">
+      <Filter>Sources\common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\communicators.cpp">
+      <Filter>Sources\common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\file_io.cpp">
+      <Filter>Sources\common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\func_id.cpp">
+      <Filter>Sources\common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\func_split.cpp">
+      <Filter>Sources\common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\model_id.cpp">
+      <Filter>Sources\common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\ptp.cpp">
+      <Filter>Sources\common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\utils.cpp">
+      <Filter>Sources\common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\transport.cpp">
+      <Filter>Sources\common</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\pet_thread.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\pet_events\gpu.cpp">
+      <Filter>Sources\PET_Events</Filter>
+    </ClCompile>
+    <ClCompile Include="..\pet\src\pet_events\ompt.cpp">
+      <Filter>Sources\PET_Events</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\pet\src\pet_core.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\pet\src\pet_event.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\pet\src\requests.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\pet\src\resource.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\pet\src\stat.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\pet\src\pet_node.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\pet\src\pet_rank.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\pet\src\te_event.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\pet\src\pet_fabric_event.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\pet\src\te_timeline.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\mpi_func_ids.h">
+      <Filter>Headers\common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\model_id.h">
+      <Filter>Headers\common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\func_id_def.h">
+      <Filter>Headers\common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\func_id.h">
+      <Filter>Headers\common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\func_split.h">
+      <Filter>Headers\common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\file_io.h">
+      <Filter>Headers\common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\communicators.h">
+      <Filter>Headers\common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\common_types.h">
+      <Filter>Headers\common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\common_plain_types.h">
+      <Filter>Headers\common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\pet\src\collstorage.h">
+      <Filter>Headers\common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\ptp.h">
+      <Filter>Headers\common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\utils.h">
+      <Filter>Headers\common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\transport.h">
+      <Filter>Headers\common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\transenv.h">
+      <Filter>Headers\common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\pet\src\pet_defines.h">
+      <Filter>Headers\common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\pet\src\pet_thread.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\pet\src\timeline.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Headers">
+      <UniqueIdentifier>{f99d4a1a-8f59-43bf-baca-52c44c91f39f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Sources">
+      <UniqueIdentifier>{4e846e71-d014-4c55-a275-9f8b2c6807ec}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Sources\PET_Events">
+      <UniqueIdentifier>{4678b559-d50d-46d3-b1f1-40fee5386608}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Sources\common">
+      <UniqueIdentifier>{0215a18a-9aa8-4788-9619-0fde9f664481}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Headers\common">
+      <UniqueIdentifier>{775046f2-0561-4a39-a499-6bee133008f4}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\common\mpi_func.inc">
+      <Filter>Headers\common</Filter>
+    </None>
+  </ItemGroup>
+</Project>

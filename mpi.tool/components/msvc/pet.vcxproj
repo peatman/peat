@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{4E3C4E49-068C-466D-85B9-C9CF974CD076}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>PET</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>Intel C++ Compiler 2026</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>Intel C++ Compiler 2026</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);..\pet\src;..\common;..\contrib\zlib\install\include;..\contrib\getopt\include</IncludePath>
+    <LibraryPath>$(ICInstallDir)\compiler\lib\intel64_win;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);..\contrib\zlib\install\lib;$(ICInstallDir)\lib</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);..\pet\src;..\common;..\contrib\zlib\install\include;..\contrib\getopt\include</IncludePath>
+    <LibraryPath>$(ICInstallDir)\compiler\lib\intel64_win;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);..\contrib\zlib\install\lib;$(ICInstallDir)\lib</LibraryPath>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level2</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>REMOVE_T_OVERHEAD;ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SDLCheck>true</SDLCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <OpenMPSupport>false</OpenMPSupport>
+      <OpenMP>None</OpenMP>
+      <RecognizeRestrictKeyword>true</RecognizeRestrictKeyword>
+      <EnableAnsiAliasing>true</EnableAnsiAliasing>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <CCppSupport>
+      </CCppSupport>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
+      <AdditionalDependencies>libzs.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <GenerateMapFile>true</GenerateMapFile>
+      <MapExports>true</MapExports>
+      <StackReserveSize>
+      </StackReserveSize>
+      <StackCommitSize>
+      </StackCommitSize>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level2</WarningLevel>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>REMOVE_T_OVERHEAD;ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <SDLCheck>true</SDLCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <OpenMPSupport>false</OpenMPSupport>
+      <OpenMP>None</OpenMP>
+      <RecognizeRestrictKeyword>true</RecognizeRestrictKeyword>
+      <EnableAnsiAliasing>true</EnableAnsiAliasing>
+      <EnableExpandedLineNumberInfo>true</EnableExpandedLineNumberInfo>
+      <InterproceduralOptimization>NoIPO</InterproceduralOptimization>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <OptimizeForWindowsApplication>true</OptimizeForWindowsApplication>
+      <UseIntelOptimizedHeaders>true</UseIntelOptimizedHeaders>
+      <CCppSupport>
+      </CCppSupport>
+      <GenerateDebugInformation>Full</GenerateDebugInformation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>libzs.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <GenerateMapFile>true</GenerateMapFile>
+      <MapExports>true</MapExports>
+      <InterproceduralOptimization>true</InterproceduralOptimization>
+      <StackReserveSize>
+      </StackReserveSize>
+      <StackCommitSize>
+      </StackCommitSize>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\common\common_types.cpp" />
+    <ClCompile Include="..\common\communicators.cpp" />
+    <ClCompile Include="..\common\file_io.cpp" />
+    <ClCompile Include="..\common\func_id.cpp" />
+    <ClCompile Include="..\common\model_id.cpp" />
+    <ClCompile Include="..\common\ptp.cpp" />
+    <ClCompile Include="..\common\utils.cpp" />
+    <ClCompile Include="..\contrib\getopt\source\getopt.c" />
+    <ClCompile Include="..\pet\src\collstorage.cpp" />
+    <ClCompile Include="..\common\func_split.cpp" />
+    <ClCompile Include="..\pet\src\pet_events\base.cpp" />
+    <ClCompile Include="..\pet\src\pet_events\gpu.cpp" />
+    <ClCompile Include="..\pet\src\pet_events\ompt.cpp" />
+    <ClCompile Include="..\pet\src\pet_rank.cpp" />
+    <ClCompile Include="..\pet\src\pet_thread.cpp" />
+    <ClCompile Include="..\pet\src\te_timeline.cpp" />
+    <ClCompile Include="..\pet\src\events.cpp" />
+    <ClCompile Include="..\pet\src\pet_events\local.cpp" />
+    <ClCompile Include="..\pet\src\pet_events\localbuf.cpp" />
+    <ClCompile Include="..\pet\src\pet_events\tor.cpp" />
+    <ClCompile Include="..\pet\src\pet_events\tar.cpp" />
+    <ClCompile Include="..\pet\src\pet_events\coll.cpp" />
+    <ClCompile Include="..\pet\src\pet_events\comm.cpp" />
+    <ClCompile Include="..\pet\src\pet_events\collective.cpp" />
+    <ClCompile Include="..\pet\src\pet_events\completion.cpp" />
+    <ClCompile Include="..\pet\src\pet_events\start.cpp" />
+    <ClCompile Include="..\pet\src\main.cpp" />
+    <ClCompile Include="..\pet\src\pet_core.cpp" />
+    <ClCompile Include="..\common\transport.cpp" />
+    <ClCompile Include="..\pet\src\pet_node.cpp" />
+    <ClCompile Include="..\pet\src\requests.cpp" />
+    <ClCompile Include="..\pet\src\stat.cpp" />
+    <ClCompile Include="..\pet\src\timeline.cpp" />
+    <ClCompile Include="..\pet\src\tempdebug.cpp">
+      <OmitFramePointers Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</OmitFramePointers>
+      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Disabled</Optimization>
+      <IntrinsicFunctions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</IntrinsicFunctions>
+      <OmitFramePointers Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</OmitFramePointers>
+      <WholeProgramOptimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</WholeProgramOptimization>
+      <EnableExpandedLineNumberInfo Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</EnableExpandedLineNumberInfo>
+      <InterproceduralOptimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NoIPO</InterproceduralOptimization>
+      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">__INTEL_COMPILER=1910;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\common\common_plain_types.h" />
+    <ClInclude Include="..\common\common_types.h" />
+    <ClInclude Include="..\common\communicators.h" />
+    <ClInclude Include="..\common\file_io.h" />
+    <ClInclude Include="..\common\func_id.h" />
+    <ClInclude Include="..\common\func_id_def.h" />
+    <ClInclude Include="..\common\model_id.h" />
+    <ClInclude Include="..\common\mpi_func_ids.h" />
+    <ClInclude Include="..\common\ptp.h" />
+    <ClInclude Include="..\common\utils.h" />
+    <ClInclude Include="..\pet\src\pet_defines.h" />
+    <ClInclude Include="..\pet\src\collstorage.h" />
+    <ClInclude Include="..\common\func_split.h" />
+    <ClInclude Include="..\pet\src\pet_event.h" />
+    <ClInclude Include="..\pet\src\pet_fabric_event.h" />
+    <ClInclude Include="..\pet\src\pet_rank.h" />
+    <ClInclude Include="..\pet\src\pet_thread.h" />
+    <ClInclude Include="..\pet\src\te_timeline.h" />
+    <ClInclude Include="..\pet\src\pet_core.h" />
+    <ClInclude Include="..\pet\src\te_event.h" />
+    <ClInclude Include="..\common\transenv.h" />
+    <ClInclude Include="..\common\transport.h" />
+    <ClInclude Include="..\pet\src\pet_node.h" />
+    <ClInclude Include="..\pet\src\requests.h" />
+    <ClInclude Include="..\pet\src\resource.h" />
+    <ClInclude Include="..\pet\src\stat.h" />
+    <ClInclude Include="..\pet\src\timeline.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\common\mpi_func.inc" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
