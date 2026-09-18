@@ -175,7 +175,9 @@ tractor::tractor(void)
     full_ompt_unwind = 0;
     abort_sleep = 300;
     resolve_comms_and_ranks = 1;
+#ifdef USE_NANO_TIMER
     t_runtime_correction = 0;
+#endif
     highval = (void *)0x7FFFFFFFFFFFFFFF;
     binval = (void *)0x7FFFFFFFFFFFFFFF;
     lowval = (void *)0;
@@ -1612,8 +1614,10 @@ int tractor::write_trace(void)
     }
     //    }
 
+#ifdef USE_NANO_TIMER
     if (t_runtime_correction)
         correct_events();
+#endif
     num_processed_events events_num = write_main_files(/*l_user_region_store*/);
     PEAT_Clock time_symbols_search = 0;
     // apply_shared_object_info_to_regions(l_user_region_store);

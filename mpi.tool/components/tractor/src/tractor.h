@@ -180,9 +180,10 @@ struct tractor : t_base_event {
     char *ptpd_timenode;
     char *ptpd_ui;
     int use_ptpd;
-    int t_runtime_correction;
     char ptpd_in_libpath[MAX_PATH];
     char ptpd_in_binpath[MAX_PATH];
+#ifdef USE_NANO_TIMER
+    int t_runtime_correction;
 #endif
 
     char gz_mode[16];
