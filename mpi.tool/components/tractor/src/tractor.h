@@ -202,10 +202,13 @@ struct tractor : t_base_event {
     char *ptpd_timenode;
     char *ptpd_ui;
     int use_ptpd;
-    int t_runtime_correction;
     char ptpd_in_libpath[MAX_PATH];
     char ptpd_in_binpath[MAX_PATH];
 #endif
+#ifdef USE_NANO_TIMER
+    int t_runtime_correction;
+#endif
+
 #if defined(_FAB_PROFILE_)
     t_fab_profiler t_fab_prof;
     // t_fab_layer fab_layer;

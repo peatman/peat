@@ -6,7 +6,7 @@ mpi.tool/bin
 mpi.tool/lib
 mpi.tool/components/tractor/Build*.dir
 mpi.tool/components/tractor/Build*.log
-mpi.tool/components/tractor/src-TARGET*
+mpi.tool/components/tractor/src-*
 *.o
 *.log
 *.so*

@@ -178,7 +178,6 @@ tractor::tractor(void)
     full_ompt_unwind = 0;
     abort_sleep = 300;
     resolve_comms_and_ranks = 1;
-    t_runtime_correction = 0;
     highval = (void *)0x7FFFFFFFFFFFFFFF;
     binval = (void *)0x7FFFFFFFFFFFFFFF;
     lowval = (void *)0;
@@ -218,6 +217,7 @@ tractor::tractor(void)
     grp_master = MPI_GROUP_NULL;
     start_sync = stop_sync = NULL;
 #ifdef USE_NANO_TIMER
+    t_runtime_correction = 0;
     char *temp = __msl_getenv("PEAT_TRACTOR_SYSTIMER");
     if (temp)
         default_timer = (clockid_t)atoi(temp);
@@ -1735,8 +1735,10 @@ int tractor::write_trace(void)
     }
     //    }
 
+#ifdef USE_NANO_TIMER
     if (t_runtime_correction)
         correct_events();
+#endif
     num_processed_events events_num = write_main_files(/*l_user_region_store*/);
     PEAT_Clock time_symbols_search = 0;
     // apply_shared_object_info_to_regions(l_user_region_store);

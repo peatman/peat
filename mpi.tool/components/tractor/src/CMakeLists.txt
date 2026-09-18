@@ -41,6 +41,7 @@ string(TIMESTAMP TRACTOR_BUILD_DATE "%Y-%m-%d %H:%M:%S")
 #    headers can't be produced at all.
 # ---------------------------------------------------------------------------
 find_package(Perl REQUIRED)
+find_package(MPI REQUIRED)
 message(STATUS "tractor: using Perl ${PERL_VERSION_STRING} (${PERL_EXECUTABLE})")
 
 # ---------------------------------------------------------------------------
@@ -78,9 +79,11 @@ if(NOT TRACTOR_TARGET)
                    RESULT_VARIABLE _mpi_v_rc)
   set(_mpi_v "${_mpi_v_out} ${_mpi_v_err}")
 
-  if(DEFINED ENV{I_MPI_ROOT} OR _mpi_v MATCHES "Intel\\(R\\) MPI")
+#  if(DEFINED ENV{I_MPI_ROOT} OR _mpi_v MATCHES "Intel\\(R\\) MPI")
+  if(_mpi_v MATCHES "Intel\\(R\\) MPI")
     set(_mpi_vendor impi)
-  elseif(DEFINED ENV{CRAY_MPICH_DIR} OR DEFINED ENV{CRAYPE_VERSION} OR _mpi_v MATCHES "[Cc]ray")
+#  elseif(DEFINED ENV{CRAY_MPICH_DIR} OR DEFINED ENV{CRAYPE_VERSION} OR _mpi_v MATCHES "[Cc]ray")
+  elseif(_mpi_v MATCHES "[Cc]ray")
     set(_mpi_vendor cray)
   else()
     find_program(TRACTOR_MPINAME_EXE mpiname)
@@ -221,14 +224,6 @@ string(TOUPPER "${FABRIC}" _fabric_upper)
 # ---------------------------------------------------------------------------
 find_package(ZLIB REQUIRED)
 
-if(NOT HWLOC_PATH)
-  if(DEFINED ENV{HWLOC_PATH})
-    set(HWLOC_PATH "$ENV{HWLOC_PATH}")
-  else()
-    set(HWLOC_PATH "/usr")
-  endif()
-endif()
-
 # only used when FABRIC != off or TRACTOR_TARGET=fab_layers - defaults match Build.sh's
 if(NOT VERBSPATH)
   if(DEFINED ENV{VERBSPATH})
@@ -283,7 +278,7 @@ set(TRACTOR_CONTROLS
 )
 set(TRACTOR_SOURCES
   t_base_event.cpp tractor.cpp t_stat.cpp t_comm.cpp elf_parser.cpp t_topo.cpp t_globals.cpp t_signals.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer.cpp
+  ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp
 )
 set(TRACTOR_LIBS ZLIB::ZLIB)
 set(TRACTOR_EXTRANAME "")
@@ -309,8 +304,8 @@ if(TRACTOR_TARGET STREQUAL "fab_layers")
     -l psm2=mpi_layer_fab_psm2.cpp -l psm3=mpi_layer_fab_psm3.cpp
     -l ucx=mpi_layer_fab_ucx.cpp   -l ofi=mpi_layer_fab_ofi.cpp)
   set(_fab_shim_outputs
-    ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer_fab_psm2.cpp ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer_fab_psm3.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer_fab_ucx.cpp  ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer_fab_ofi.cpp)
+    ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_fab_psm2.cpp ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_fab_psm3.cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_fab_ucx.cpp  ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_fab_ofi.cpp)
 else()
   if(TRACTOR_TARGET STREQUAL "mvapich2")
     list(APPEND _fab_func_layers -l verbs -l smpi -l psm2)
@@ -471,7 +466,7 @@ list(TRANSFORM _tractor_defs PREPEND "-D")
 # ---------------------------------------------------------------------------
 # Code generation (run in-place in src/, like the Makefile: the perl scripts
 # use cwd-relative paths - "cat pinc/...", "cp mpi_layer.cpp.in mpi_layer.cpp" -
-# so they must execute with CMAKE_CURRENT_SOURCE_DIR as their working directory)
+# so they must execute with CMAKE_CURRENT_BINARY_DIR as their working directory)
 # ---------------------------------------------------------------------------
 set(_common_dir ${CMAKE_CURRENT_SOURCE_DIR}/../../common)
 if(GPU)
@@ -481,36 +476,57 @@ else()
 endif()
 
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/mpi_func.inc
-  COMMAND ${TRACTOR_CPP_EXE} -E ${_cpp_input} ${_common_dir}/mpi_func.inc -o ${CMAKE_CURRENT_SOURCE_DIR}/mpi_func.inc
-  DEPENDS ${_common_dir}/mpi_func.inc ${_common_dir}/mpi_func_ids.h
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/pinc
+  COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/pinc ${CMAKE_CURRENT_BINARY_DIR}/pinc
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  COMMENT "tractor: copying templates pinc"
+  VERBATIM)
+
+add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp.in ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp.in.end 
+  COMMAND ${CMAKE_COMMAND} -E copy 
+  ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer_comm_begin.epilog.h 
+  ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer_comm_begin.prolog.h 
+  ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer_comm_end.epilog.h 
+  ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer_comm_end.prolog.h 
+  ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer.cpp.in 
+  ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer.cpp.in.end 
+  ${CMAKE_CURRENT_BINARY_DIR}
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+  COMMENT "tractor: copying templates mpi_layer"
+  VERBATIM)
+
+add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mpi_func.inc
+  COMMAND ${TRACTOR_CPP_EXE} -E ${_cpp_input} ${_common_dir}/mpi_func.inc -o ${CMAKE_CURRENT_BINARY_DIR}/mpi_func.inc
+  DEPENDS ${_common_dir}/mpi_func.inc ${_common_dir}/mpi_func_ids.h ${CMAKE_CURRENT_BINARY_DIR}/pinc
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   COMMENT "tractor: preprocessing mpi_func.inc (TARGET=${TRACTOR_TARGET})"
   VERBATIM)
 
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/mpi_func_ids_through.h
-         ${CMAKE_CURRENT_SOURCE_DIR}/mpi_func_names.h
-         ${CMAKE_CURRENT_SOURCE_DIR}/mpi_func_ids_trans.h
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mpi_func_ids_through.h
+         ${CMAKE_CURRENT_BINARY_DIR}/mpi_func_names.h
+         ${CMAKE_CURRENT_BINARY_DIR}/mpi_func_ids_trans.h
   COMMAND ${PERL_EXECUTABLE} ${_common_dir}/mpi_func_ids.pl
           -i ${_common_dir}/mpi_func_ids.h mpi_func.inc
           -o mpi_func_ids_through.h mpi_func_names.h mpi_func_ids_trans.h
-  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/mpi_func.inc ${_common_dir}/mpi_func_ids.h ${_common_dir}/mpi_func_ids.pl
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/mpi_func.inc ${_common_dir}/mpi_func_ids.h ${_common_dir}/mpi_func_ids.pl
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   COMMENT "tractor: generating mpi_func_ids_through.h / mpi_func_names.h / mpi_func_ids_trans.h"
   VERBATIM)
 
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer.cpp ${_fab_shim_outputs}
-  COMMAND ${PERL_EXECUTABLE} mpi_layer.pl -p on -e ${_print_extended_stuff} -m 3 -t ${_pct} -c ${_parse_gpu_flag}
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp ${_fab_shim_outputs}
+  COMMAND ${PERL_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer.pl -p on -e ${_print_extended_stuff} -m 3 -t ${_pct} -c ${_parse_gpu_flag}
           -s ${_mpi_layer_skip_core} -i mpi_func.inc -o mpi_layer.cpp ${_fab_func_layers}
   DEPENDS mpi_layer.cpp.in mpi_layer.cpp.in.end mpi_layer.pl
-          ${CMAKE_CURRENT_SOURCE_DIR}/mpi_func_ids_through.h
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+          ${CMAKE_CURRENT_BINARY_DIR}/mpi_func_ids_through.h
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   COMMENT "tractor: generating mpi_layer.cpp (TARGET=${TRACTOR_TARGET}, FABRIC=${FABRIC})"
   VERBATIM)
 
-add_custom_target(tractor_codegen DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer.cpp ${_fab_shim_outputs})
+add_custom_target(tractor_codegen DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp ${_fab_shim_outputs})
 
 # ---------------------------------------------------------------------------
 # Targets
@@ -528,8 +544,9 @@ if(TRACTOR_TARGET STREQUAL "fab_layers")
   endif()
 
   set(_fab_shim_libs)
+
   foreach(_layer psm2 psm3 ucx ofi)
-    set(_src ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer_fab_${_layer}.cpp)
+    set(_src ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_fab_${_layer}.cpp)
     set(_obj ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_fab_${_layer}.o)
     set(_soname libtractor${FABLIBSUFFIX}_fab_${_layer}.so.${TRACTOR_MAJOR}.${TRACTOR_MINOR})
     set(_so ${CMAKE_CURRENT_BINARY_DIR}/${_soname})
@@ -537,13 +554,13 @@ if(TRACTOR_TARGET STREQUAL "fab_layers")
     add_custom_command(
       OUTPUT ${_obj}
       COMMAND ${CMAKE_CXX_COMPILER} -o ${_obj} -c
-              -I${CMAKE_CURRENT_SOURCE_DIR} -I${_common_dir} -I${HWLOC_PATH}/include
+              -I${CMAKE_CURRENT_SOURCE_DIR} -I${_common_dir} -I${CMAKE_CURRENT_BINARY_DIR}
               -I${VERBSPATH}/include -I${PSM2PATH}/include
               -I${CMAKE_CURRENT_SOURCE_DIR}/../../contrib/psm3/include
               -I${UCXPATH}/include -I${OFIPATH}/include
               ${_tractor_defs} -D_FAB_PROFILE_ ${TRACTOR_CXX_MISC} ${TRACTOR_OPT} -fPIC ${_src}
       DEPENDS ${_src}
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
       COMMENT "tractor(fab_layers): compiling ${_layer} shim"
       VERBATIM)
 
@@ -575,6 +592,8 @@ if(TRACTOR_TARGET STREQUAL "fab_layers")
     ")
   endforeach()
 else()
+  list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../cmake)
+  find_package(hwloc REQUIRED)
   add_library(tractor SHARED ${TRACTOR_SOURCES})
   add_dependencies(tractor tractor_codegen)
   set_target_properties(tractor PROPERTIES
@@ -585,8 +604,8 @@ else()
   target_compile_definitions(tractor PRIVATE ${TRACTOR_CONTROLS})
   target_compile_options(tractor PRIVATE ${TRACTOR_OPT} ${TRACTOR_CXX_MISC} ${TRACTOR_OMP_FLAG})
   target_link_options(tractor PRIVATE ${TRACTOR_OMP_FLAG})
-  target_include_directories(tractor PRIVATE . ${_common_dir} ${HWLOC_PATH}/include)
-  target_link_libraries(tractor PRIVATE ${TRACTOR_LIBS} ${HWLOC_PATH}/lib/libhwloc.so)
+  target_include_directories(tractor PRIVATE . ${_common_dir} ${hwloc_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(tractor PRIVATE ${TRACTOR_LIBS} hwloc::hwloc)
   if(NOT _fabric_upper STREQUAL "OFF")
     target_include_directories(tractor PRIVATE
       ${VERBSPATH}/include ${PSM2PATH}/include
@@ -600,7 +619,7 @@ else()
     target_compile_definitions(ptpd PRIVATE ${TRACTOR_CONTROLS})
     target_compile_options(ptpd PRIVATE ${TRACTOR_OPT} ${TRACTOR_CXX_MISC} ${TRACTOR_OMP_FLAG})
     target_link_options(ptpd PRIVATE ${TRACTOR_OMP_FLAG})
-    target_include_directories(ptpd PRIVATE . ${_common_dir} ${HWLOC_PATH}/include)
+    target_include_directories(ptpd PRIVATE . ${_common_dir})
     target_link_libraries(ptpd PRIVATE ZLIB::ZLIB)
   endif()
 
