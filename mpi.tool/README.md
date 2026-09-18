@@ -20,3 +20,12 @@ Performance Estimation & Analysing Toolkit (PEAT): a collection of tools to coll
 - `components/qTV/` - Qt-based graphical trace viewer for visualising tractor traces. See [components/qTV/README.md](components/qTV/README.md).
 - `examples/imbalance/` - sample MPI application/scripts used to demonstrate/reproduce load-imbalance analysis.
 - `patches/` - source patches applied to supported MPI implementations (MPICH, MVAPICH) to enable tracing hooks. See [patches/README.md](patches/README.md).
+
+## Acknowledgements
+
+The following classes/functions are partially based on implementations by Sergey Shalnov ([https://github.com/shssf](https://github.com/shssf)):
+Model_ID (model_id.cpp)
+Func_ID (func_id.cpp)
+String_Split (utils.cpp)
+File_Storage_GZ (file_io.cpp)
+some general functions in util.h
