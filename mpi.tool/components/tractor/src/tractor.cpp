@@ -2026,7 +2026,7 @@ void tractor::correct_events(void)
 #ifdef GPUPARSE
 
 //    std::map<void *, T_LOC> addr_location;
-//    std::map<short,std::map<T_LOC,std::map<T_LOC,std::map<PEAT_Message_Size, t_stat_record>>>> gpu_transfers; // func,from,to,size,time
+//    std::map<short,std::map<T_LOC,std::map<T_LOC,std::map<PEAT_Message_Size, T_Stat_Record>>>> gpu_transfers; // func,from,to,size,time
 //    std::map<short,PEAT_Clock> gpu_executions; // func,time
 //    std::map<short,PEAT_Clock> gpu_syncs; // func,time
 const char *directions[] = {
@@ -2046,11 +2046,11 @@ void tractor::print_gpu_stat(void)
     long long total = 0;
     SEPARATOR(2 + 34 + 16 + 16 + 16 + 16 + 3);
     gzprintf(fps_com, "%d:%34s|%16s|%16s|%16s|%16s|\n", PEAT_RT_Remark, "Function", "Direction", "Size", "Occurences", "Duration");
-    for (std::map<short, std::map<T_LOC, std::map<T_LOC, std::map<PEAT_Message_Size, t_stat_record>>>>::const_iterator func_it = gpu_transfers.cbegin(); func_it != gpu_transfers.cend(); ++func_it) {
-        for (std::map<T_LOC, std::map<T_LOC, std::map<PEAT_Message_Size, t_stat_record>>>::const_iterator from_it = func_it->second.cbegin(); from_it != func_it->second.cend(); ++from_it) {
-            for (std::map<T_LOC, std::map<PEAT_Message_Size, t_stat_record>>::const_iterator to_it = from_it->second.cbegin(); to_it != from_it->second.cend(); ++to_it) {
-                for (std::map<PEAT_Message_Size, t_stat_record>::const_iterator message_it = to_it->second.cbegin(); message_it != to_it->second.cend(); ++message_it) {
-                    const t_stat_record &record = message_it->second;
+    for (std::map<short, std::map<T_LOC, std::map<T_LOC, std::map<PEAT_Message_Size, T_Stat_Record>>>>::const_iterator func_it = gpu_transfers.cbegin(); func_it != gpu_transfers.cend(); ++func_it) {
+        for (std::map<T_LOC, std::map<T_LOC, std::map<PEAT_Message_Size, T_Stat_Record>>>::const_iterator from_it = func_it->second.cbegin(); from_it != func_it->second.cend(); ++from_it) {
+            for (std::map<T_LOC, std::map<PEAT_Message_Size, T_Stat_Record>>::const_iterator to_it = from_it->second.cbegin(); to_it != from_it->second.cend(); ++to_it) {
+                for (std::map<PEAT_Message_Size, T_Stat_Record>::const_iterator message_it = to_it->second.cbegin(); message_it != to_it->second.cend(); ++message_it) {
+                    const T_Stat_Record &record = message_it->second;
                     int index = ((int)from_it->first) * 3 + (int)(to_it->first);
                     gzprintf(fps_com, "%d:%34s|%16s|%16lld|%16lld|%16lld|\n", PEAT_RT_Remark, mpi_function_names[func_it->first], directions[index], message_it->first, message_it->second.occurences, message_it->second.duration);
                 }
@@ -2530,7 +2530,7 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                     size = in_args[3];
                     to = addr_location.at(dst_ptr);
                     from = addr_location.at(src_ptr);
-                    t_stat_record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
+                    T_Stat_Record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
                     gpu_transfers[func_id][from][to][size] += sr;
                 } else {
                     debug_printf("Unknown Address %p or %p\n", dst_ptr, src_ptr);
@@ -2541,7 +2541,7 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                 if (addr_location.count(ptr) == 1) {
                     size = in_args[4];
                     to = addr_location.at(ptr);
-                    t_stat_record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
+                    T_Stat_Record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
                     gpu_fills[func_id][to][size] += sr;
                 } else {
                     debug_printf("Unknown Address %p\n", ptr);

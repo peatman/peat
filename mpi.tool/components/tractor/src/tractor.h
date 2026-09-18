@@ -86,11 +86,11 @@ enum T_LOC {
     T_LOC_SHARED
 };
 
-struct t_stat_record {
+struct T_Stat_Record {
     PEAT_Clock duration = 0;
     PEAT_LNum occurences = 0;
-    t_stat_record(PEAT_Clock d = 0, PEAT_LNum o = 0) : duration(d), occurences(o) {};
-    t_stat_record &operator+=(const t_stat_record &s)
+    T_Stat_Record(PEAT_Clock d = 0, PEAT_LNum o = 0) : duration(d), occurences(o) {};
+    T_Stat_Record &operator+=(const T_Stat_Record &s)
     {
         duration += s.duration;
         occurences += s.occurences;
@@ -148,8 +148,8 @@ struct tractor : t_base_event {
 
 #ifdef GPUPARSE
     std::map<void *, T_LOC> addr_location;
-    std::map<short, std::map<T_LOC, std::map<T_LOC, std::map<PEAT_Message_Size, t_stat_record>>>> gpu_transfers; // func,from,to,size,time
-    std::map<short, std::map<T_LOC, std::map<PEAT_Message_Size, t_stat_record>>> gpu_fills;                      // func,from,to,size,time
+    std::map<short, std::map<T_LOC, std::map<T_LOC, std::map<PEAT_Message_Size, T_Stat_Record>>>> gpu_transfers; // func,from,to,size,time
+    std::map<short, std::map<T_LOC, std::map<PEAT_Message_Size, T_Stat_Record>>> gpu_fills;                      // func,from,to,size,time
     std::map<short, PEAT_Clock> gpu_executions;                                                                  // func,time
     std::map<short, PEAT_Clock> gpu_syncs;                                                                       // func,time
 #endif
