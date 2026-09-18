@@ -1,6 +1,7 @@
 PEAT - Performance Estimation & Analysing Toolkit
 
-Status: TECHNICAL PREVIEW!!!
+Status: TECHNICAL PREVIEW!!! 
+Experimental Branch!!!
 
 However you're welcome to download/compile and use it in your own work.
 
