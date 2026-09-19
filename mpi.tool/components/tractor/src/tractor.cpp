@@ -872,7 +872,15 @@ void tractor::init(void)
     unsigned int cpu_info[4] = {0, 0, 0, 0};
     __get_cpuid(0, &cpu_info[0], &cpu_info[1], &cpu_info[2], &cpu_info[3]);
 #endif
-    if (cpu_info[0] >= 0x16) {
+    // CPUID leaf 0x16 (Processor Frequency Information) is Intel-specific;
+    // AMD CPUs commonly report a max leaf above 0x16 but return garbage for it.
+    char vendor_id[13];
+    memcpy(&vendor_id[0], &cpu_info[1], 4);
+    memcpy(&vendor_id[4], &cpu_info[3], 4);
+    memcpy(&vendor_id[8], &cpu_info[2], 4);
+    vendor_id[12] = 0;
+    bool is_intel = (strcmp(vendor_id, "GenuineIntel") == 0);
+    if (is_intel && cpu_info[0] >= 0x16) {
 #if defined(_INTELCOMPILER_)
         __cpuid(cpu_info, 0x16);
 #else
@@ -932,21 +940,18 @@ void tractor::init(void)
             fclose(tfp);
         }
     }
-    //            if(proc_freq[0] == 0 && proc_freq[1] == 0) calc_freq();
-    if (proc_freq[0] == 0) {
+    if (proc_freq[0] == 0 && proc_freq[1] == 0) {
         calc_freq();
-#ifdef USE_NANO_TIMER
-        freq_ratio = freq_ratio_uncorrected = calc_ratio();
-#else
-        freq_ratio = freq_ratio_uncorrected = 1.0;
-#endif
     } else {
-#ifdef USE_NANO_TIMER
-        freq_ratio = freq_ratio_uncorrected = (double)proc_freq[0] / (double)PEAT_BILLION;
-#else
-        freq_ratio = freq_ratio_uncorrected = 1.0;
-#endif
+        if (proc_freq[0] == 0 && proc_freq[1] != 0) proc_freq[0] = proc_freq[1];
+        if (proc_freq[0] != 0 && proc_freq[1] == 0) proc_freq[1] = proc_freq[0];
     }
+    //            if(proc_freq[0] == 0 && proc_freq[1] == 0) calc_freq();
+#ifdef USE_NANO_TIMER
+    freq_ratio = freq_ratio_uncorrected = (double)proc_freq[0] / (double)PEAT_BILLION;
+#else
+    freq_ratio = freq_ratio_uncorrected = 1.0;
+#endif
     debug_printf("Rank %d: Prolog finished...\n", t_mpi_rank);
     tractor_initialized = 1;
     counting_permit = !pcontrol;

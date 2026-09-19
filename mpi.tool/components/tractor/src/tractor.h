@@ -182,6 +182,8 @@ struct tractor : t_base_event {
     int use_ptpd;
     char ptpd_in_libpath[MAX_PATH];
     char ptpd_in_binpath[MAX_PATH];
+#endif
+
 #ifdef USE_NANO_TIMER
     int t_runtime_correction;
 #endif
