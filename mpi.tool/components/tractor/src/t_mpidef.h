@@ -145,9 +145,6 @@ void T_MPID_Request_release(MPID_Request *request)
 #ifndef _TRACTOR_PASSTHROUGH_
     int rv, i, temp_index = 0;
     long long tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
-#ifdef USE_NANO_TIMER
-    long long nsec_entry;
-#endif
     pid_t tid_in;
     int tid, flag = 0;
     msl_extras_counters counters;
@@ -157,11 +154,10 @@ void T_MPID_Request_release(MPID_Request *request)
     MPI_Request mpi_req;
 
     if (__builtin_expect((counting_permission[MPID_REQUEST_RELEASE_ID_THROUGH] > 0 && !l_skip_parse), 1)) {
-        tsc_entry = rdtscta(&tid_in);
-#ifdef USE_NANO_TIMER
-        nsec_entry = peat_get_nano_sec();
-#endif
+        tsc_entry = peat_get_time_tid(&tid_in);
+#ifndef USE_NANO_TIMER
         tsc_entry = (rdtsca() + tsc_entry * 3) / 4;
+#endif
         tid = __msl_get_tid(tid_in);
         __msl_allocate_event(tid, 1, &event, &counters);
         first_progress_entry_colt[tid] = last_progress_exit_colt[tid] = 0;
@@ -175,7 +171,7 @@ void T_MPID_Request_release(MPID_Request *request)
         gt_info(mprof).get_mem_status(&counters.mems[0]);
 #endif
         in_mpi_call[tid] = 1;
-        tsc_mpi_entry = rdtsca();
+        tsc_mpi_entry = peat_get_time();
         // PMPI_Request_get_status(mpi_req,&flag,&status);
     } // if(__builtin_expect((counting_permission[MPID_REQUEST_RELEASE_ID_THROUGH]>0 && !l_skip_parse),1))
 #else
@@ -187,7 +183,7 @@ void T_MPID_Request_release(MPID_Request *request)
 #endif
 #ifndef _TRACTOR_PASSTHROUGH_
     if (__builtin_expect((counting_permission[MPID_REQUEST_RELEASE_ID_THROUGH] > 0 && !l_skip_parse), 1)) {
-        tsc_mpi_exit = rdtsca();
+        tsc_mpi_exit = peat_get_time();
         in_mpi_call[tid] = 0;
         stack_unwind_colt(gt_info(max_ret_level), counters.addrs, gt_info(ret_levels));
         event->func_id[0] = MPID_REQUEST_RELEASE_ID;
@@ -197,11 +193,7 @@ void T_MPID_Request_release(MPID_Request *request)
         event->requests.request_addr = (PEAT_Addr)request;
 
         event->requests.num_colts = 0;
-#ifdef USE_NANO_TIMER
-        event->tscs[0] = nsec_entry;
-#else
         event->tscs[0] = tsc_entry;
-#endif
         event->tscs[1] = tsc_mpi_entry - tsc_entry;
         event->tscs[2] = tsc_mpi_exit - tsc_entry;
 #ifdef _HWCOUNTERS_ENABLED_
@@ -223,7 +215,7 @@ void T_MPID_Request_release(MPID_Request *request)
                 __msl_record_longs_colt (tid,TSC,4);
             }
         */
-        tsc_exit = rdtsca();
+        tsc_exit = peat_get_time();
         event->tscs[3] = tsc_exit - tsc_entry;
         local_tool_overhead = tsc_mpi_entry - tsc_entry + tsc_exit - tsc_mpi_exit;
         global_mpi_time += tsc_mpi_exit - tsc_mpi_entry;

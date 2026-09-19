@@ -18,7 +18,7 @@
 
 #ifndef _TRACTOR_PASSTHROUGH_
 //    if (__builtin_expect((counting_permission[fidc]>0 && !l_skip_parse),1)) {
-tsc_mpi_exit = rdtsca();
+tsc_mpi_exit = peat_get_time();
 in_mpi_call[tid] = 0;
 event->func_id[0] = fid;
 event->func_id[1] = fidc;
@@ -26,11 +26,7 @@ __write_comms__
     event->comms.num_colts = num_colts[tid];
 memcpy(counters.addrs, p_entrys, sizeof(void *) * gt_info(num_addrs));
 //    } // if (__builtin_expect((counting_permission[fidc]>0 && !l_skip_parse),1))
-#ifdef USE_NANO_TIMER
-gt_info(local_comms)->comm_begin(event->comms.newcomm, (PEAT_Clock)((double)nsec_entry) * freq_ratio);
-#else
-gt_info(local_comms)->comm_begin(event->comms.newcomm, tsc_entry);
-#endif
+gt_info(local_comms)->comm_begin(event->comms.newcomm, (PEAT_Clock)((double)tsc_entry * freq_ratio));
 #ifdef _HWCOUNTERS_ENABLED_
 memcpy(counters.hwcs, l_hwcs, num_hwcs * sizeof(l_hwcs[0]));
 gt_info(hwc).get_all_counters(&counters.hwcs[num_hwcs]);
@@ -39,14 +35,10 @@ gt_info(hwc).get_all_counters(&counters.hwcs[num_hwcs]);
 counters.mems[0] = l_mem;
 gt_info(mprof).get_mem_status(&counters.mems[1]);
 #endif
-#ifdef USE_NANO_TIMER
-event->tscs[0] = nsec_entry;
-#else
 event->tscs[0] = tsc_entry;
-#endif
 event->tscs[1] = tsc_mpi_entry - tsc_entry;
 event->tscs[2] = tsc_mpi_exit - tsc_entry;
-tsc_exit = rdtsca();
+tsc_exit = peat_get_time();
 event->tscs[3] = tsc_exit - tsc_entry;
 __msl_check_chain(tid);
 local_tool_overhead = tsc_mpi_entry - tsc_entry + tsc_exit - tsc_mpi_exit;

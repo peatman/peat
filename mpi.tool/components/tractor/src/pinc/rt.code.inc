@@ -28,9 +28,6 @@ $prototype {
     int reused=0;
     long long tsc_entry,tsc_exit,tsc_mpi_entry,tsc_mpi_exit,local_tool_overhead,local_mpi_time;
     const PEAT_MPI_Func_ID_Through fidc=$funcid_through;
-#ifdef USE_NANO_TIMER
-    long long nsec_entry;
-#endif
     pid_t tid_in;
     int tid;
     msl_extras_counters counters;
@@ -47,10 +44,7 @@ $prototype {
 
     $declare_ignore_status
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
-#ifdef USE_NANO_TIMER
-        nsec_entry=peat_get_nano_sec();
-#endif
-        tsc_entry = rdtscta(&tid_in);
+        tsc_entry = peat_get_time_tid(&tid_in);
         tid=__msl_get_tid(tid_in);
         __msl_allocate_event(tid,1,&event,&counters); //unconditional allocate
         $get_datasize
@@ -65,7 +59,7 @@ $prototype {
         gt_info(mprof).get_mem_status(&l_mem);
 #endif
         in_mpi_call[tid]=1;
-        tsc_mpi_entry=rdtsca();
+        tsc_mpi_entry=peat_get_time();
     } //if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1))
 #else
     int rv;
@@ -76,7 +70,7 @@ $prototype {
 #ifndef _TRACTOR_PASSTHROUGH_
     $skip_parse_update //conditional discard (potential reuse below)
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
-        tsc_mpi_exit = rdtsca();
+        tsc_mpi_exit = peat_get_time();
         in_mpi_call[tid]=0;
         $reused if (event==NULL) __msl_allocate_event(tid,1,&event,&counters); //conditional allocate (if discared but couldn't be reused)
         if (!reused) stack_unwind$colt(gt_info(max_ret_level),counters.addrs,gt_info(ret_levels));
@@ -101,15 +95,11 @@ $prototype {
 #endif
 
         if (!reused) {
-#ifdef USE_NANO_TIMER
-            event->tscs[0]=nsec_entry;
-#else
             event->tscs[0]=tsc_entry;
-#endif
             event->tscs[1]=tsc_mpi_entry - tsc_entry;
             event->tscs[2]=tsc_mpi_exit - tsc_entry;
         } else {
-            event->tscs[2]=tsc_mpi_exit - __msl_freq_scale(event->tscs[0]);
+            event->tscs[2]=tsc_mpi_exit - event->tscs[0];
         }
 #ifdef _HWCOUNTERS_ENABLED_
         memcpy(counters.hwcs,l_hwcs,num_hwcs*sizeof(l_hwcs[0]));
@@ -120,18 +110,18 @@ $prototype {
         gt_info(mprof).get_mem_status(&counters.mems[1]);
 #endif
         // counting_permit-=2*counting_permission_pcontrol[$funcid_through];
-        tsc_exit = rdtsca();
+        tsc_exit = peat_get_time();
         if (!reused) {
             event->tscs[3]=tsc_exit - tsc_entry;
         } else {
-            event->tscs[3]=tsc_exit - __msl_freq_scale(event->tscs[0]);
+            event->tscs[3]=tsc_exit - event->tscs[0];
         }
 
 #if $is_not_colt
         __msl_check_chain(tid);
 #endif
         local_tool_overhead=tsc_mpi_entry-tsc_entry+tsc_exit-tsc_mpi_exit;
-        $global_mpi_time 
+        $global_mpi_time
         global_tool_overhead += local_tool_overhead;
 #ifdef _TRACTOR_COLLECT_STAT_
         overall_durations[$funcid_through]+=tsc_mpi_exit-tsc_mpi_entry;

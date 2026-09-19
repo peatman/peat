@@ -26,9 +26,6 @@ $prototype {
     MPI_Aint s_data_size = 0, r_data_size = 0;
     long long tsc_entry,tsc_exit,tsc_mpi_entry,tsc_mpi_exit,local_tool_overhead;
     const PEAT_MPI_Func_ID_Through fidc=$funcid_through;
-#ifdef USE_NANO_TIMER
-    long long nsec_entry;
-#endif
     pid_t tid_in;
     int tid;
     msl_extras_counters counters[2];
@@ -45,10 +42,7 @@ $prototype {
 
     MPI_Status local_status;
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
-#ifdef USE_NANO_TIMER
-        nsec_entry=peat_get_nano_sec();
-#endif
-        tsc_entry = rdtscta(&tid_in);
+        tsc_entry = peat_get_time_tid(&tid_in);
         $datasize;
         if (status==MPI_STATUS_IGNORE) status=&local_status;
         counting_permit+=4*counting_permission_pcontrol[$funcid_through];
@@ -62,7 +56,7 @@ $prototype {
         gt_info(mprof).get_mem_status(&l_mem);
 #endif
         in_mpi_call[tid]=1;
-        tsc_mpi_entry=rdtsca();
+        tsc_mpi_entry=peat_get_time();
     } //if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1))
 #else
     int rv;
@@ -72,11 +66,11 @@ $prototype {
 #endif
 #ifndef _TRACTOR_PASSTHROUGH_
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
-        tsc_mpi_exit = rdtsca();
+        tsc_mpi_exit = peat_get_time();
         in_mpi_call[tid]=0;
         __msl_allocate_event(tid,1,&event[0],&counters[0]);
         stack_unwind$colt(gt_info(max_ret_level),counters[0].addrs,gt_info(ret_levels));
-        
+
         event[0]->func_id[0] = $funcid;
         event[0]->func_id[1] = $funcid_through;
         event[0]->p2p_pr_pb.comm=$comm;
@@ -93,11 +87,7 @@ $prototype {
 #ifdef _TRACTOR_EXTRA_FIELDS_
         $event_buf
 #endif
-#ifdef USE_NANO_TIMER
-        event[0]->tscs[0]=nsec_entry;
-#else
         event[0]->tscs[0]=tsc_entry;
-#endif
         event[0]->tscs[1]=tsc_mpi_entry-tsc_entry;
         event[0]->tscs[2]=tsc_mpi_exit-tsc_entry;
 
@@ -112,13 +102,9 @@ $prototype {
         memcpy(counters[1].mems,counters[0].mems,sizeof(t_memory_event)*2);
 #endif
         // counting_permit-=4*counting_permission_pcontrol[$funcid_through];
-        tsc_exit = rdtsca();
+        tsc_exit = peat_get_time();
         event[0]->tscs[3]=tsc_exit-tsc_entry;
-#ifdef USE_NANO_TIMER
-        event[1]->tscs[0]=nsec_entry;
-#else
         event[1]->tscs[0]=tsc_entry;
-#endif
         event[1]->tscs[1]=
         event[1]->tscs[2]=
         event[1]->tscs[3]=0;

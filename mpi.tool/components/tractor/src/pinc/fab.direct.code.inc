@@ -25,9 +25,6 @@ $prototype {
     int i,temp_index=0;
     long long tsc_entry,tsc_exit,tsc_mpi_entry,tsc_mpi_exit,local_tool_overhead;
     const PEAT_MPI_Func_ID_Through fidc=$funcid_through;
-#ifdef USE_NANO_TIMER
-    long long nsec_entry;
-#endif
     pid_t tid_in;
     int tid;
     msl_event *f_event;
@@ -35,13 +32,10 @@ $prototype {
     $rtdl // if necessary initialize pointer
     // init_fab_hooks();
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
-#ifdef USE_NANO_TIMER
-        nsec_entry=peat_get_nano_sec();
-#endif
-        tsc_entry = rdtscta(&tid_in);
+        tsc_entry = peat_get_time_tid(&tid_in);
         tid=__msl_get_tid(tid_in);
         __msl_fab_allocate_event(tid,&f_event,$funcid_through);
-        tsc_mpi_entry=rdtsca();
+        tsc_mpi_entry=peat_get_time();
     } // if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1))
 #else
     $declare
@@ -51,18 +45,14 @@ $prototype {
 #endif
 #ifndef _TRACTOR_PASSTHROUGH_
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
-        tsc_mpi_exit = rdtsca();
+        tsc_mpi_exit = peat_get_time();
         f_event->func_id[0] = $funcid;
         f_event->func_id[1] = $funcid_through;
-#ifdef USE_NANO_TIMER
-        f_event->tscs[0]=nsec_entry;
-#else
         f_event->tscs[0]=tsc_entry;
-#endif
         f_event->tscs[1]=tsc_mpi_entry-tsc_entry;
         f_event->fab.num_calls=1;
         f_event->fab.total_clocks_bitween_calls=0;
-        tsc_exit = rdtsca();
+        tsc_exit = peat_get_time();
         f_event->tscs[2]=tsc_exit - tsc_mpi_exit;
         f_event->tscs[3]=tsc_exit - tsc_entry;
         f_event->fab.num_calls=1;

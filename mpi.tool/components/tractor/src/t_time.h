@@ -210,6 +210,53 @@ static __inline__ PEAT_Clock rdtscptca(pid_t *tid, PEAT_Proc *core_id)
 #define rdtscptca rdtscpt
 #endif
 
+// Node-wide, core-invariant timer: under USE_NANO_TIMER, backed by clock_gettime
+// (comparable across cores/threads); otherwise falls back to the calibrated TSC.
+// Callers get the value in whatever unit the rest of the pipeline expects at
+// capture time (raw nanoseconds under USE_NANO_TIMER, clockticks otherwise) -
+// conversion to clockticks happens once, at trace finalization.
+static __inline__ PEAT_Clock peat_get_time(void)
+{
+#ifdef USE_NANO_TIMER
+    return peat_get_nano_sec();
+#else
+    return rdtsca();
+#endif
+}
+
+static __inline__ PEAT_Clock peat_get_time_tid(pid_t *tid)
+{
+#ifdef USE_NANO_TIMER
+    *tid = gettid();
+    return peat_get_nano_sec();
+#else
+    return rdtscta(tid);
+#endif
+}
+
+// core_id is only meaningful to the TSC-calibration path; under USE_NANO_TIMER
+// it is unused (clock_gettime is core-invariant by construction) and set to 0.
+static __inline__ PEAT_Clock peat_get_time_core(PEAT_Proc *core_id)
+{
+#ifdef USE_NANO_TIMER
+    *core_id = 0;
+    return peat_get_nano_sec();
+#else
+    return rdtscca(core_id);
+#endif
+}
+
+static __inline__ PEAT_Clock peat_get_time_tid_core(pid_t *tid, PEAT_Proc *core_id)
+{
+#ifdef USE_NANO_TIMER
+    *tid = gettid();
+    *core_id = 0;
+    return peat_get_nano_sec();
+#else
+    return rdtscptca(tid, core_id);
+#endif
+}
+
 #define IA32_TSC_ADJUST 0x3b
 
 static __inline__ PEAT_Clock rdtsc_adjust(void)

@@ -19,9 +19,6 @@
 int rv;
 int i;
 PEAT_Clock tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
-#ifdef USE_NANO_TIMER
-long long nsec_entry;
-#endif
 int tid;
 pid_t tid_in;
 msl_extras_counters counters;
@@ -36,10 +33,7 @@ long long l_hwcs[num_hwcs];
 t_memory_event l_mem;
 #endif
 
-#ifdef USE_NANO_TIMER
-nsec_entry = peat_get_nano_sec();
-#endif
-tsc_entry = rdtscta(&tid_in);
+tsc_entry = peat_get_time_tid(&tid_in);
 //    if (__builtin_expect((counting_permission[fidc]>0 && !l_skip_parse),1)) {
 last_coll_comm = MPI_COMM_WORLD;
 counting_permit += 2 * counting_permission_pcontrol[fidc];
@@ -54,5 +48,5 @@ gt_info(hwc).get_all_counters(l_hwcs);
 gt_info(mprof).get_mem_status(&l_mem);
 #endif
 in_mpi_call[tid] = 1;
-tsc_mpi_entry = rdtsca();
+tsc_mpi_entry = peat_get_time();
 //    } // if (__builtin_expect((counting_permission[fidc]>0 && !l_skip_parse),1))

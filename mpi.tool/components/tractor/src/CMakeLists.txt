@@ -66,10 +66,40 @@ message(STATUS "tractor: COMPILER=${TRACTOR_COMPILER} (CXX compiler id: ${CMAKE_
 
 # ---------------------------------------------------------------------------
 # 2. MPI vendor + version -> Makefile-style TARGET
-#    (override with -DTRACTOR_TARGET=impi|mpich4|mpich5|mvapich2|mvapich4|openmpi
-#    to skip auto-detection)
+#    -DTRACTOR_TARGET=auto (default) probes CMAKE_CXX_COMPILER to detect the
+#    vendor/version; set it to impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|
+#    cray|fab_layers to skip probing and use that flavor directly ('cray' is
+#    just an alias that normalizes to mpich4 - same MPICH-family struct layout).
 # ---------------------------------------------------------------------------
-if(NOT TRACTOR_TARGET)
+set(TRACTOR_TARGET "auto" CACHE STRING
+  "MPI flavor: auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|fab_layers. \
+'auto' detects the vendor/version from CMAKE_CXX_COMPILER; any other value is used \
+directly and skips probing.")
+set_property(CACHE TRACTOR_TARGET PROPERTY STRINGS auto impi mpich4 mpich5 mvapich2 mvapich4 openmpi cray fab_layers)
+string(TOLOWER "${TRACTOR_TARGET}" _tractor_target_lower)
+
+if(_tractor_target_lower STREQUAL "cray")
+  set(_tractor_target_lower mpich4) # Cray MPICH builds like stock MPICH 4.x
+  set(TRACTOR_TARGET mpich4 CACHE STRING "MPI flavor: auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|fab_layers" FORCE)
+endif()
+
+if(NOT _tractor_target_lower MATCHES "^(auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|fab_layers)$")
+  message(FATAL_ERROR "tractor: invalid TRACTOR_TARGET='${TRACTOR_TARGET}' (expected auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|fab_layers)")
+endif()
+
+if(NOT _tractor_target_lower STREQUAL "auto" AND NOT _tractor_target_lower STREQUAL "fab_layers")
+  # derive an informational vendor name for the status message below - no probing needed
+  if(_tractor_target_lower MATCHES "^mpich")
+    set(TRACTOR_MPI_VENDOR mpich CACHE STRING "MPI vendor (from explicit TRACTOR_TARGET)" FORCE)
+  elseif(_tractor_target_lower MATCHES "^mvapich")
+    set(TRACTOR_MPI_VENDOR mvapich CACHE STRING "MPI vendor (from explicit TRACTOR_TARGET)" FORCE)
+  else()
+    set(TRACTOR_MPI_VENDOR ${_tractor_target_lower} CACHE STRING "MPI vendor (from explicit TRACTOR_TARGET)" FORCE)
+  endif()
+  set(TRACTOR_MPI_VERSION "" CACHE STRING "MPI version (unknown - TRACTOR_TARGET set explicitly)" FORCE)
+endif()
+
+if(_tractor_target_lower STREQUAL "auto")
   set(_mpi_vendor "")
   set(_mpi_version "")
 
@@ -77,12 +107,17 @@ if(NOT TRACTOR_TARGET)
                    OUTPUT_VARIABLE _mpi_v_out ERROR_VARIABLE _mpi_v_err
                    OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_STRIP_TRAILING_WHITESPACE
                    RESULT_VARIABLE _mpi_v_rc)
-  set(_mpi_v "${_mpi_v_out} ${_mpi_v_err}")
+  # newer Intel oneAPI mpiicpx/mpiicx wrappers only forward -v to the underlying
+  # icpx/icx (no MPI banner); -V is what unconditionally prints "Intel(R) MPI
+  # Library" regardless of environment, so probe both and merge
+  execute_process(COMMAND ${CMAKE_CXX_COMPILER} -V
+                   OUTPUT_VARIABLE _mpi_V_out ERROR_VARIABLE _mpi_V_err
+                   OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_STRIP_TRAILING_WHITESPACE
+                   RESULT_VARIABLE _mpi_V_rc)
+  set(_mpi_v "${_mpi_v_out} ${_mpi_v_err} ${_mpi_V_out} ${_mpi_V_err}")
 
-#  if(DEFINED ENV{I_MPI_ROOT} OR _mpi_v MATCHES "Intel\\(R\\) MPI")
   if(_mpi_v MATCHES "Intel\\(R\\) MPI")
     set(_mpi_vendor impi)
-#  elseif(DEFINED ENV{CRAY_MPICH_DIR} OR DEFINED ENV{CRAYPE_VERSION} OR _mpi_v MATCHES "[Cc]ray")
   elseif(_mpi_v MATCHES "[Cc]ray")
     set(_mpi_vendor cray)
   else()
@@ -163,9 +198,8 @@ if(NOT TRACTOR_TARGET)
 
   set(TRACTOR_MPI_VENDOR  ${_mpi_vendor}  CACHE STRING "detected MPI vendor (mpich|mvapich|openmpi|impi|cray)" FORCE)
   set(TRACTOR_MPI_VERSION "${_mpi_version}" CACHE STRING "detected MPI version" FORCE)
-  set(TRACTOR_TARGET ${_tractor_target} CACHE STRING "MPI flavor: impi|mpich4|mpich5|mvapich2|mvapich4|openmpi" FORCE)
+  set(TRACTOR_TARGET ${_tractor_target} CACHE STRING "MPI flavor: auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|fab_layers" FORCE)
 endif()
-set_property(CACHE TRACTOR_TARGET PROPERTY STRINGS impi mpich4 mpich5 mvapich2 mvapich4 openmpi fab_layers)
 message(STATUS "tractor: MPI vendor=${TRACTOR_MPI_VENDOR} version=${TRACTOR_MPI_VERSION} -> TARGET=${TRACTOR_TARGET}")
 
 # ---------------------------------------------------------------------------
@@ -186,6 +220,16 @@ set_property(CACHE FABRIC PROPERTY STRINGS off on PSM2 VERBS PSM3 UCX OFI)
 
 set(OMPT       ON  CACHE BOOL "OpenMP interception")
 set(PTPD_BUILD ON  CACHE BOOL "build the ptpd PTP-daemon binary")
+
+set(PEAT_TIMER "tsc" CACHE STRING
+  "timer backend for entry/exit timestamps: tsc|nano. 'tsc' uses raw/calibrated TSC reads \
+(rdtsc family); 'nano' uses clock_gettime (via peat_get_time()) for a node-wide, core-invariant \
+timer, at the cost of slightly higher per-call overhead (USE_NANO_TIMER).")
+set_property(CACHE PEAT_TIMER PROPERTY STRINGS tsc nano)
+string(TOLOWER "${PEAT_TIMER}" _timer_lower)
+if(NOT _timer_lower MATCHES "^(tsc|nano)$")
+  message(FATAL_ERROR "tractor: invalid PEAT_TIMER='${PEAT_TIMER}' (expected tsc|nano)")
+endif()
 
 set(BUILD_TRACTOR_ENGINEERING_VERSION "auto" CACHE STRING
   "collective-timeline (\"colt\"/PARSE_COLT) engineering build, needs a patched MPI: auto|off|on.")
@@ -404,6 +448,10 @@ endif()
 if(OMPT)
   list(APPEND TRACTOR_SOURCES t_ompt.cpp)
   list(APPEND TRACTOR_CONTROLS _T_OMPT_)
+endif()
+
+if(_timer_lower STREQUAL "nano")
+  list(APPEND TRACTOR_CONTROLS USE_NANO_TIMER)
 endif()
 
 if(NOT _hwc_lower STREQUAL "off")

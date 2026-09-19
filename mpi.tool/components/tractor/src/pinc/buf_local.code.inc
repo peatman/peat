@@ -26,9 +26,6 @@ $prototype {
     MPI_Aint data_size=0;
     long long tsc_entry,tsc_exit,tsc_mpi_entry,tsc_mpi_exit,local_tool_overhead;
     const PEAT_MPI_Func_ID_Through fidc=$funcid_through;
-#ifdef USE_NANO_TIMER
-    long long nsec_entry;
-#endif
     pid_t tid_in;
     int tid;
     msl_extras_counters counters;
@@ -44,10 +41,7 @@ $prototype {
 #endif
 
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
-#ifdef USE_NANO_TIMER
-        nsec_entry=peat_get_nano_sec();
-#endif
-        tsc_entry = rdtscta(&tid_in);
+        tsc_entry = peat_get_time_tid(&tid_in);
         counting_permit+=2*counting_permission_pcontrol[$funcid_through];
         tid=__msl_get_tid(tid_in);
         first_progress_entry[tid]=last_progress_exit[tid]=0;
@@ -58,7 +52,7 @@ $prototype {
         gt_info(mprof).get_mem_status(&l_mem);
 #endif
         in_mpi_call[tid]=1;
-        tsc_mpi_entry=rdtsca();
+        tsc_mpi_entry=peat_get_time();
     }//if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1))
 #else
     int rv;
@@ -68,7 +62,7 @@ $prototype {
 #endif
 #ifndef _TRACTOR_PASSTHROUGH_
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
-        tsc_mpi_exit = rdtsca();
+        tsc_mpi_exit = peat_get_time();
         in_mpi_call[tid]=0;
         __msl_allocate_event(tid,0,&event,&counters);
         stack_unwind(gt_info(max_ret_level),counters.addrs,gt_info(ret_levels));
@@ -81,11 +75,7 @@ $prototype {
         $event_sbuf
         $event_rbuf
 #endif
-#ifdef USE_NANO_TIMER
-        event->tscs[0]=nsec_entry;
-#else
         event->tscs[0]=tsc_entry;
-#endif
         event->tscs[1]=tsc_mpi_entry-tsc_entry;
         event->tscs[2]=tsc_mpi_exit-tsc_entry;
 #ifdef _HWCOUNTERS_ENABLED_
@@ -96,7 +86,7 @@ $prototype {
         counters.mems[0]=l_mem;
         gt_info(mprof).get_mem_status(&counters.mems[1]);
 #endif
-        tsc_exit = rdtsca();
+        tsc_exit = peat_get_time();
         // counting_permit-=2*counting_permission_pcontrol[$funcid_through];
         event->tscs[3]=tsc_exit-tsc_entry;
         __msl_check_chain(tid);

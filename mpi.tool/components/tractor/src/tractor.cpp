@@ -217,7 +217,6 @@ tractor::tractor(void)
     grp_master = MPI_GROUP_NULL;
     start_sync = stop_sync = NULL;
 #ifdef USE_NANO_TIMER
-    t_runtime_correction = 0;
     char *temp = __msl_getenv("PEAT_TRACTOR_SYSTIMER");
     if (temp)
         default_timer = (clockid_t)atoi(temp);
@@ -714,9 +713,6 @@ void tractor::parse_env_vars(void)
         calls_limit = 0;
     }
 
-#ifdef USE_NANO_TIMER
-    t_runtime_correction = is_true(__msl_getenv("PEAT_TRACTOR_CORRECT_EVENTS"), t_runtime_correction);
-#endif
 #ifdef _T_OMPT_
     parse_openmp = is_true(__msl_getenv("PEAT_TRACTOR_PARSE_OPENMP"), parse_openmp);
 #endif
@@ -1401,6 +1397,16 @@ void tractor::end(void)
     PEAT_LNum max_memory_application_rs_scorrected = max_memory_application_rss - ((tractor_allocated /* + (mprof.get_total_events() * sizeof(memory_profiler_event))*/) / 1024); // in kibibytes
 #endif
     tractor_initialized = 0;
+    // one-shot conversion of the run-wide accumulators from nanosec (USE_NANO_TIMER) to
+    // clockticks; a no-op when !USE_NANO_TIMER since freq_ratio==1.0 there. Must happen
+    // before write_trace()/write_stat_com_file() or the ratio math below reads these.
+    global_tool_overhead *= freq_ratio;
+    global_mpi_time *= freq_ratio;
+    global_gpu_time *= freq_ratio;
+    for (int f = MPI_MIN_FUNCID_THROUGH; f < MPI_MAX_FUNCID_THROUGH; f++) {
+        overall_tool_overhead[f] *= freq_ratio;
+        overall_durations[f] *= freq_ratio;
+    }
     if (global_mpi_time > 0)
         write_trace(); // in case LD_PRELOAD was used with 'wrong' app (like mpiexec.hydra etc)
     if (gt_ninfo)
@@ -1735,10 +1741,6 @@ int tractor::write_trace(void)
     }
     //    }
 
-#ifdef USE_NANO_TIMER
-    if (t_runtime_correction)
-        correct_events();
-#endif
     num_processed_events events_num = write_main_files(/*l_user_region_store*/);
     PEAT_Clock time_symbols_search = 0;
     // apply_shared_object_info_to_regions(l_user_region_store);
@@ -1872,156 +1874,6 @@ void tractor::update_extras_pointers(int tid, long long *max_ext_count, msl_extr
     }
 }
 
-void tractor::correct_events(void)
-{
-    __DEBUG_PROLOG_TRACTOR_LAYER__
-    msl_adv_chain *current_chain[t_max_threads];
-
-    msl_event *current_array[t_max_threads];
-    long long max_events[t_max_threads];
-
-    std::map<t_timeline, int> timeline;
-
-    if (use_realtime_dump) {
-        for (int i = 0; i < t_tid_counter; i++) {
-            rewind(fps_events[i]);
-            rewind(fps_extras[i]);
-            rewind(fps_c_extras[i]);
-            current_array[i] = (msl_event *)t_malloc((onetimealloc + 1) * sizeof(msl_event), 128);
-            max_events[i] = 0; // reset it in case if eof reached
-            fread(&max_events[i], 4, 1, fps_events[i]);
-            long tmp_mi = fread(current_array[i], sizeof(msl_event), max_events[i], fps_events[i]);
-            if (tmp_mi != max_events[i]) {
-                debug_printf("TID %d, %ld!=%ld events read count mismatch.\n", i, max_events[i], tmp_mi);
-            }
-            fseek(fps_events[i], sizeof(void *) * num_addrs * max_events[i], SEEK_CUR);
-            /*tmp_mi=fread(current_addrs_array[i],sizeof(void*)*num_addrs,max_events[i],fps_events[i]);
-            if (tmp_mi!=max_events[i]) {
-                debug_printf("TID %d, %ld!=%ld events read count mismatch.\n",i, max_events[i],tmp_mi);
-            }*/
-#ifdef _HWCOUNTERS_ENABLED_
-            fseek(fps_events[i], sizeof(long long) * num_hwcs * 2 * max_events[i], SEEK_CUR);
-            /*current_hwc_array[i]=(long long *)t_malloc((onetimealloc+1)*sizeof(long long)*num_hwcs*2,128);
-            tmp_mi=fread(current_hwc_array[i],sizeof(long long)*num_hwcs*2,max_events[i],fps_events[i]);
-            if (tmp_mi!=max_events[i]) {
-                debug_printf("TID %d, %ld!=%ld events read count mismatch.\n",i, max_events[i],tmp_mi);
-            }*/
-#endif
-#ifdef _MEMPROFILE_STORE_
-            fseek(fps_events[i], sizeof(void *) * t_memory_event_size * 2 * max_events[i], SEEK_CUR);
-            /*current_mems_array[i]=(t_memory_event *)t_malloc((onetimealloc+1)*t_memory_event_size*2,128);
-            tmp_mi=fread(current_mems_array[i],sizeof(void*)*t_memory_event_size*2,max_events[i],fps_events[i]);
-            if (tmp_mi!=max_events[i]) {
-                debug_printf("TID %d, %ld!=%ld events read count mismatch.\n",i, max_events[i],tmp_mi);
-            }*/
-#endif
-            debug_printf("TID %d, %ld events read back.\n", i, max_events[i]);
-            t_timeline t_tl(current_array[i][0].tscs[0], i);
-            if (max_events[i] > 0)
-                timeline[t_tl] = i;
-        }
-    } else {
-        for (int i = 0; i < t_tid_counter; i++) {
-            current_chain[i] = events_start_chain[i];
-            max_events[i] = (current_chain[i]->next == NULL) ? event_index[i] : onetimealloc;
-            current_array[i] = (msl_event *)current_chain[i]->events_array;
-        }
-    }
-
-#define freq_threshold 1000000
-    // (1 msec)
-    double corrected_ratio = freq_ratio;
-    for (int tid = 0; tid < t_tid_counter; tid++) {
-        PEAT_Clock prev_end_tsc = 0, prev_start_tsc = 0, cur_start_tsc = 0;
-        PEAT_Clock prev_start_nsec = 0, cur_start_nsec = 0;
-        short prev_func_id = 0, cur_func_id = 0;
-        long record_counter = 0, prev_record_counter = 0;
-        do {
-            bool is_2nd_sendrecv = (current_array[tid][record_counter].tscs[1] == 0);
-
-            if (!is_2nd_sendrecv) {
-                cur_start_nsec = current_array[tid][record_counter].tscs[0];
-                cur_start_tsc = cur_start_nsec * freq_ratio; // nanosec-> clockticks
-                cur_func_id = current_array[tid][record_counter].func_id[1];
-                if (cur_start_tsc < prev_end_tsc) {
-                    PEAT_Clock minimal_distance_tsc = prev_end_tsc - prev_start_tsc + 8; // just a small number
-                    PEAT_Clock distance_nsec = cur_start_nsec - prev_start_nsec;
-                    if (distance_nsec > freq_threshold) { // long distance, probably freq scaling error
-                        double this_ratio = (double)minimal_distance_tsc / (double)distance_nsec;
-                        if (this_ratio > corrected_ratio)
-                            corrected_ratio = this_ratio;
-
-                        debug_printf("Frequency Inconsistence (clk) %lld<%lld. Ratio (c:t:o) %lf:%lf:%lf. Functions %s(%d) <-> %s(%d)-(%d).\n",
-                                     cur_start_tsc - prev_start_tsc, minimal_distance_tsc,
-                                     corrected_ratio, this_ratio, freq_ratio,
-                                     mpi_function_names[prev_func_id], prev_record_counter,
-                                     mpi_function_names[cur_func_id], record_counter, tid);
-
-                    } else { // small difference - time error
-                        PEAT_Clock minimal_distance_nsec = (PEAT_Clock)(((double)minimal_distance_tsc) / freq_ratio);
-
-                        debug_printf("Time Inconsistence (clk) %lld<%lld. Functions %s(%d) <-> %s(%d)-(%d). Time shift (nsec) %lld -> %lld \n",
-                                     cur_start_tsc - prev_start_tsc, minimal_distance_tsc,
-                                     mpi_function_names[prev_func_id], prev_record_counter,
-                                     mpi_function_names[cur_func_id], record_counter, tid,
-                                     distance_nsec, minimal_distance_nsec);
-
-                        current_array[tid][record_counter].tscs[0] = cur_start_nsec = prev_start_nsec + minimal_distance_nsec;
-                        cur_start_tsc = prev_start_tsc + minimal_distance_tsc;
-                        // cur_start_tsc=cur_start_nsec*freq_ratio; // nanosec-> clockticks
-                    }
-                }
-                prev_start_nsec = cur_start_nsec;
-                prev_start_tsc = cur_start_tsc;
-                prev_end_tsc = prev_start_tsc + current_array[tid][record_counter].tscs[3];
-                prev_func_id = cur_func_id;
-                prev_record_counter = record_counter;
-            }
-
-            record_counter++;
-
-            if (record_counter >= max_events[tid]) {
-                if (use_realtime_dump) {
-                    fseek(fps_events[tid], -sizeof(msl_event) * max_events[tid], SEEK_CUR);
-                    fwrite(current_array[tid], sizeof(msl_event), max_events[tid], fps_events[tid]);
-                    max_events[tid] = 0; // reset it in case if eof reached
-                    fread(&max_events[tid], 4, 1, fps_events[tid]);
-                    long tmp_mi = fread(current_array[tid], sizeof(msl_event), max_events[tid], fps_events[tid]);
-                    if (tmp_mi != max_events[tid]) {
-                        debug_printf("TID %d, %ld!=%ld events read count mismatch.\n", tid, max_events[tid], tmp_mi);
-                    }
-                    fseek(fps_events[tid], sizeof(void *) * num_addrs * max_events[tid], SEEK_CUR);
-                    /*
-                    tmp_mi=fread(current_addrs_array[tid],sizeof(void*)*num_addrs,max_events[tid],fps_events[tid]);
-                    */
-#ifdef _HWCOUNTERS_ENABLED_
-                    fseek(fps_events[tid], sizeof(long long) * num_hwcs * 2 * max_events[tid], SEEK_CUR);
-#endif
-#ifdef _MEMPROFILE_STORE_
-                    fseek(fps_events[tid], sizeof(void *) * t_memory_event_size * 2 * max_events[tid], SEEK_CUR);
-#endif
-                    debug_printf("TID %d, %ld events read back.\n", tid, max_events[tid]);
-                } else {
-                    if (current_chain[tid]->next != NULL) {
-                        current_chain[tid] = (msl_adv_chain *)current_chain[tid]->next;
-                        max_events[tid] = (current_chain[tid]->next == NULL) ? event_index[tid] : onetimealloc;
-                        current_array[tid] = (msl_event *)current_chain[tid]->events_array;
-                    } else {
-                        max_events[tid] = 0;
-                    }
-                }
-                record_counter = 0;
-            }
-        } while (max_events[tid] > 0);
-    }
-    if (use_realtime_dump) {
-        for (int i = 0; i < t_tid_counter; i++) {
-            t_free(current_array[i], (onetimealloc + 1) * sizeof(msl_event));
-        }
-    }
-    freq_ratio = corrected_ratio;
-    __DEBUG_EPILOG_TRACTOR_LAYER__
-}
 
 #ifdef GPUPARSE
 
@@ -2289,6 +2141,9 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
         PEAT_Clock l_tscs[4];
         bool is_colt = is_coll_transfer(current_array[tid][record_counter[tid]].func_id[0]);
         current_array[tid][record_counter[tid]].tscs[0] *= freq_ratio; // nanosec-> clockticks
+        current_array[tid][record_counter[tid]].tscs[1] *= freq_ratio; // nanosec-> clockticks
+        current_array[tid][record_counter[tid]].tscs[2] *= freq_ratio; // nanosec-> clockticks
+        current_array[tid][record_counter[tid]].tscs[3] *= freq_ratio; // nanosec-> clockticks
 
         l_tscs[0] = current_array[tid][record_counter[tid]].tscs[0];
         l_tscs[1] = current_array[tid][record_counter[tid]].tscs[1];
