@@ -31,8 +31,6 @@ static inline pid_t gettid(void) { return syscall(SYS_gettid); }
 #endif
 
 extern long long proc_freq[2];
-extern double freq_ratio;
-extern double freq_ratio_uncorrected;
 extern PEAT_Clock t_tsc_init;
 
 #define PEAT_BILLION 1E9
@@ -90,17 +88,6 @@ static __inline__ PEAT_Clock rdtsct(pid_t *tid)
 
 extern PEAT_Clock t_nano_init;
 
-#define MAX_CORE_ID 4096
-struct t_tsc_core_adjust {
-    PEAT_Clock tsc = 0;
-    PEAT_Clock tsc_diff = 0;
-    PEAT_Clock nanosec = 0;
-};
-
-extern PEAT_Clock tsc_adjustments[MAX_CORE_ID];
-extern PEAT_Byte tsc_adjustments_made[MAX_CORE_ID];
-extern t_tsc_core_adjust tsc_core_adjust[MAX_CORE_ID];
-extern PEAT_Proc lead_core_id;
 extern clockid_t default_timer;
 
 static __inline__ PEAT_Clock peat_get_nano_sec()
@@ -113,62 +100,25 @@ static __inline__ void peat_init_nano_sec()
     t_nano_init = peat_get_time_nano_sec(default_timer);
 }
 
-static __inline__ void make_tsc_adjustment()
-{
-    PEAT_Proc begin_core, end_core;
-    PEAT_Clock before_tsc = rdtscp(&begin_core);
-    PEAT_Clock nanosec = peat_get_time_nano_sec(default_timer);
-    PEAT_Clock after_tsc = rdtscp(&end_core);
-
-    if (begin_core != end_core)
-        return;
-    PEAT_Proc cid = begin_core;
-    if (lead_core_id == -1)
-        lead_core_id = cid;
-
-    tsc_core_adjust[cid].nanosec = nanosec;
-    tsc_core_adjust[cid].tsc = (after_tsc + before_tsc) / 2;
-    tsc_core_adjust[cid].tsc_diff = after_tsc - before_tsc;
-    PEAT_Ratio ratio = (PEAT_Ratio)proc_freq[0] / (PEAT_Ratio)PEAT_BILLION;
-    PEAT_Clock nano_difference = tsc_core_adjust[cid].nanosec - tsc_core_adjust[lead_core_id].nanosec;
-    PEAT_Clock projected_tsc_difference = PEAT_Clock((PEAT_Ratio)nano_difference * ratio);
-    // tsc_adjustments[cid]=tsc_core_adjust[lead_core_id].tsc + projected_tsc_difference - tsc_core_adjust[cid].tsc;
-
-    PEAT_Clock tsc_difference = tsc_core_adjust[cid].tsc - tsc_core_adjust[lead_core_id].tsc;
-    tsc_adjustments[cid] = tsc_difference - projected_tsc_difference;
-
-    tsc_adjustments_made[cid] = 1;
-}
-
 static __inline__ PEAT_Clock rdtsca(void)
 {
     unsigned long long high, low, tsc;
     unsigned long c;
     PEAT_Proc core_id;
-    do {
-        __asm__ __volatile__("rdtscp" : "=a"(low), "=d"(high), "=c"(c));
-        core_id = c & 0xfff;
-        if (tsc_adjustments_made[core_id] == 0) {
-            make_tsc_adjustment();
-        }
-    } while (tsc_adjustments_made[core_id] == 0);
+    __asm__ __volatile__("rdtscp" : "=a"(low), "=d"(high), "=c"(c));
+    core_id = c & 0xfff;
     tsc = (high << 32) + low;
-    return tsc + tsc_adjustments[core_id] - t_tsc_init;
+    return tsc + t_tsc_init;
 }
 
 static __inline__ PEAT_Clock rdtscca(PEAT_Proc *core_id)
 {
     unsigned long long high, low, tsc;
     unsigned long c;
-    do {
-        __asm__ __volatile__("rdtscp" : "=a"(low), "=d"(high), "=c"(c));
-        *core_id = c & 0xfff;
-        if (tsc_adjustments_made[*core_id] == 0) {
-            make_tsc_adjustment();
-        }
-    } while (tsc_adjustments_made[*core_id] == 0);
+    __asm__ __volatile__("rdtscp" : "=a"(low), "=d"(high), "=c"(c));
+    *core_id = c & 0xfff;
     tsc = (high << 32) + low;
-    return tsc + tsc_adjustments[*core_id] - t_tsc_init;
+    return tsc - t_tsc_init;
 }
 
 static __inline__ PEAT_Clock rdtscta(pid_t *tid)
@@ -177,15 +127,10 @@ static __inline__ PEAT_Clock rdtscta(pid_t *tid)
     unsigned long long high, low, tsc;
     unsigned long c;
     PEAT_Proc core_id;
-    do {
-        __asm__ __volatile__("rdtscp" : "=a"(low), "=d"(high), "=c"(c));
-        core_id = c & 0xfff;
-        if (tsc_adjustments_made[core_id] == 0) {
-            make_tsc_adjustment();
-        }
-    } while (tsc_adjustments_made[core_id] == 0);
+    __asm__ __volatile__("rdtscp" : "=a"(low), "=d"(high), "=c"(c));
+    core_id = c & 0xfff;
     tsc = (high << 32) + low;
-    return tsc + tsc_adjustments[core_id] - t_tsc_init;
+    return tsc - t_tsc_init;
 }
 
 static __inline__ PEAT_Clock rdtscptca(pid_t *tid, PEAT_Proc *core_id)
@@ -193,15 +138,10 @@ static __inline__ PEAT_Clock rdtscptca(pid_t *tid, PEAT_Proc *core_id)
     *tid = gettid();
     unsigned long long high, low, tsc;
     unsigned long c;
-    do {
-        __asm__ __volatile__("rdtscp" : "=a"(low), "=d"(high), "=c"(c));
-        *core_id = c & 0xfff;
-        if (!tsc_adjustments_made[*core_id]) {
-            make_tsc_adjustment();
-        }
-    } while (tsc_adjustments_made[*core_id] == 0);
+    __asm__ __volatile__("rdtscp" : "=a"(low), "=d"(high), "=c"(c));
+    *core_id = c & 0xfff;
     tsc = (high << 32) + low;
-    return tsc + tsc_adjustments[*core_id] - t_tsc_init;
+    return tsc - t_tsc_init;
 }
 #else
 #define rdtsca rdtsc
@@ -210,14 +150,53 @@ static __inline__ PEAT_Clock rdtscptca(pid_t *tid, PEAT_Proc *core_id)
 #define rdtscptca rdtscpt
 #endif
 
-#define IA32_TSC_ADJUST 0x3b
-
-static __inline__ PEAT_Clock rdtsc_adjust(void)
+// Node-wide, core-invariant timer: under USE_NANO_TIMER, backed by clock_gettime
+// (comparable across cores/threads); otherwise falls back to the calibrated TSC.
+// Callers get the value in whatever unit the rest of the pipeline expects at
+// capture time (raw nanoseconds under USE_NANO_TIMER, clockticks otherwise) -
+// conversion to clockticks happens once, at trace finalization.
+static __inline__ PEAT_Clock peat_get_time(void)
 {
-    unsigned long long high, low;
-    __asm__ __volatile__("rdmsr" : "=a"(low), "=d"(high) : "c"(IA32_TSC_ADJUST));
-    return (high << 32) + low;
+#ifdef USE_NANO_TIMER
+    return peat_get_nano_sec();
+#else
+    return rdtsca();
+#endif
 }
+
+static __inline__ PEAT_Clock peat_get_time_tid(pid_t *tid)
+{
+#ifdef USE_NANO_TIMER
+    *tid = gettid();
+    return peat_get_nano_sec();
+#else
+    return rdtscta(tid);
+#endif
+}
+
+// core_id is only meaningful to the TSC-calibration path; under USE_NANO_TIMER
+// it is unused (clock_gettime is core-invariant by construction) and set to 0.
+static __inline__ PEAT_Clock peat_get_time_core(PEAT_Proc *core_id)
+{
+#ifdef USE_NANO_TIMER
+    *core_id = 0;
+    return peat_get_nano_sec();
+#else
+    return rdtscca(core_id);
+#endif
+}
+
+static __inline__ PEAT_Clock peat_get_time_tid_core(pid_t *tid, PEAT_Proc *core_id)
+{
+#ifdef USE_NANO_TIMER
+    *tid = gettid();
+    *core_id = 0;
+    return peat_get_nano_sec();
+#else
+    return rdtscptca(tid, core_id);
+#endif
+}
+
 
 static __inline__ PEAT_Proc get_core_id()
 {

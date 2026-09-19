@@ -39,9 +39,6 @@ static msl_event *record_ompt_event(short func0, short func1, const void *pcode)
     msl_event *t_event = NULL;
 #ifndef _TRACTOR_PASSTHROUGH_
     long long tsc_entry;
-#ifdef USE_NANO_TIMER
-    long long nsec_entry;
-#endif
     pid_t tid_in;
     int tid;
     const PEAT_MPI_Func_ID_Through fidc = (PEAT_MPI_Func_ID_Through)func1;
@@ -49,10 +46,7 @@ static msl_event *record_ompt_event(short func0, short func1, const void *pcode)
     msl_extras_counters counters;
     if (gt_info(tractor_initialized) < 1)
         return;
-#ifdef USE_NANO_TIMER
-    nsec_entry = peat_get_nano_sec();
-#endif
-    tsc_entry = rdtscptca(&tid_in, &core_id);
+    tsc_entry = peat_get_time_tid_core(&tid_in, &core_id);
     tid = __msl_get_tid(tid_in);
     __msl_allocate_event(tid, 0, &t_event, &counters);
     if (gt_info(full_ompt_unwind)) {
@@ -62,15 +56,11 @@ static msl_event *record_ompt_event(short func0, short func1, const void *pcode)
     }
     t_event->func_id[0] = func0;
     t_event->func_id[1] = func1;
-#ifdef USE_NANO_TIMER
-    t_event->tscs[0] = nsec_entry;
-#else
     t_event->tscs[0] = tsc_entry;
-#endif
     t_event->tscs[3] = tsc_entry;
     t_event->tscs[2] = tid;
     t_event->ompt.pcode = (PEAT_Addr)pcode;
-    t_event->tscs[1] = rdtscca(&core_id) - tsc_entry;
+    t_event->tscs[1] = peat_get_time_core(&core_id) - tsc_entry;
 #endif
     __DEBUG_EPILOG_OMPT_LAYER__
     return t_event;
@@ -326,7 +316,7 @@ static void t_ompt_callback_sync_region(
     pid_t tid_in;
     PEAT_Proc core_id;
     // if (kind==ompt_sync_region_barrier_implicit_workshare || kind==ompt_sync_region_barrier_implicit_parallel) return; // no need these 'trash' callbacks
-    long long tsc_entry = rdtscptca(&tid_in, &core_id);
+    long long tsc_entry = peat_get_time_tid_core(&tid_in, &core_id);
 #if 0
         event=record_ompt_event(OMPT_SYNC_REGION_ID,OMPT_SYNC_REGION_ID_THROUGH,codeptr_ra);
         if (endpoint==ompt_scope_begin) {
@@ -345,7 +335,7 @@ static void t_ompt_callback_sync_region(
             event->ompt.task_data = ompt_data_value(task_data);
             event->ompt.parallel_data = ompt_data_value(parallel_data);
             event->tscs[2] = tsc_entry - event->tscs[3];
-            event->tscs[3] = rdtscca(&core_id) - event->tscs[3];
+            event->tscs[3] = peat_get_time_core(&core_id) - event->tscs[3];
 #ifdef _TRACTOR_COLLECT_STAT_
             overall_durations[OMPT_SYNC_REGION_ID_THROUGH] += event->tscs[2] - event->tscs[1];
             overall_entries[OMPT_SYNC_REGION_ID_THROUGH]++;
@@ -365,7 +355,7 @@ static void t_ompt_callback_sync_region(
             event->ompt.task_data = ompt_data_value(task_data);
             event->ompt.parallel_data = ompt_data_value(parallel_data);
             event->tscs[2] = tsc_entry - event->tscs[3];
-            event->tscs[3] = rdtscca(&core_id) - event->tscs[3];
+            event->tscs[3] = peat_get_time_core(&core_id) - event->tscs[3];
 #ifdef _TRACTOR_COLLECT_STAT_
             overall_durations[OMPT_SYNC_REGION_ID_THROUGH] += event->tscs[2] - event->tscs[1];
             overall_entries[OMPT_SYNC_REGION_ID_THROUGH]++;
@@ -391,7 +381,7 @@ static void t_ompt_callback_sync_region_wait(
     pid_t tid_in;
     PEAT_Proc core_id;
     // if (kind==ompt_sync_region_barrier_implicit_workshare || kind==ompt_sync_region_barrier_implicit_parallel) return; // no need these 'trash' callbacks
-    long long tsc_entry = rdtscptca(&tid_in, &core_id);
+    long long tsc_entry = peat_get_time_tid_core(&tid_in, &core_id);
 #if 0
         event=record_ompt_event(OMPT_SYNC_REGION_ID,OMPT_SYNC_REGION_ID_THROUGH,codeptr_ra);
         if (endpoint==ompt_scope_begin) {
@@ -410,7 +400,7 @@ static void t_ompt_callback_sync_region_wait(
             event->ompt.task_data = ompt_data_value(task_data);
             event->ompt.parallel_data = ompt_data_value(parallel_data);
             event->tscs[2] = tsc_entry - event->tscs[3];
-            event->tscs[3] = rdtscca(&core_id) - event->tscs[3];
+            event->tscs[3] = peat_get_time_core(&core_id) - event->tscs[3];
 #ifdef _TRACTOR_COLLECT_STAT_
             overall_durations[OMPT_SYNC_REGION_WAIT_ID_THROUGH] += event->tscs[2] - event->tscs[1];
             overall_entries[OMPT_SYNC_REGION_WAIT_ID_THROUGH]++;
@@ -430,7 +420,7 @@ static void t_ompt_callback_sync_region_wait(
             event->ompt.task_data = ompt_data_value(task_data);
             event->ompt.parallel_data = ompt_data_value(parallel_data);
             event->tscs[2] = tsc_entry - event->tscs[3];
-            event->tscs[3] = rdtscca(&core_id) - event->tscs[3];
+            event->tscs[3] = peat_get_time_core(&core_id) - event->tscs[3];
 #ifdef _TRACTOR_COLLECT_STAT_
             overall_durations[OMPT_SYNC_REGION_WAIT_ID_THROUGH] += event->tscs[2] - event->tscs[1];
             overall_entries[OMPT_SYNC_REGION_WAIT_ID_THROUGH]++;

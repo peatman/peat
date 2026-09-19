@@ -31,9 +31,6 @@ $prototype {
     MPI_Aint s_type_size = 0, r_type_size = 0;
     long long tsc_entry,tsc_exit,tsc_mpi_entry,tsc_mpi_exit,local_tool_overhead;
     const PEAT_MPI_Func_ID_Through fidc=$funcid_through;
-#ifdef USE_NANO_TIMER
-    long long nsec_entry;
-#endif
     pid_t tid_in;
     int tid;
     msl_extras_counters counters;
@@ -49,10 +46,7 @@ $prototype {
 #endif
 
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
-#ifdef USE_NANO_TIMER
-        nsec_entry=peat_get_nano_sec();
-#endif
-        tsc_entry = rdtscta(&tid_in);
+        tsc_entry = peat_get_time_tid(&tid_in);
         counting_permit+=2*counting_permission_pcontrol[$funcid_through];
         tid=__msl_get_tid(tid_in);
         __msl_allocate_event(tid,1,&event,&counters);
@@ -65,7 +59,7 @@ $prototype {
 #endif
         $amiroot
         in_mpi_call[tid]=1;
-        tsc_mpi_entry=rdtsca();
+        tsc_mpi_entry=peat_get_time();
     }//if(__builtin_expect((counting_permission[$funcid_through && !l_skip_parse]>0),1))
 #else
     int rv;
@@ -75,7 +69,7 @@ $prototype {
 #endif
 #ifndef _TRACTOR_PASSTHROUGH_
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
-        tsc_mpi_exit = rdtsca();
+        tsc_mpi_exit = peat_get_time();
         in_mpi_call[tid]=0;
         stack_unwind(gt_info(max_ret_level),counters.addrs,gt_info(ret_levels));
         event->func_id[0] = $funcid;
@@ -93,11 +87,7 @@ $prototype {
         $event_rbuf
 #endif
         $event_request
-#ifdef USE_NANO_TIMER
-        event->tscs[0]=nsec_entry;
-#else
         event->tscs[0]=tsc_entry;
-#endif
         event->tscs[1]=tsc_mpi_entry-tsc_entry;
         event->tscs[2]=tsc_mpi_exit-tsc_entry;
 #ifdef _HWCOUNTERS_ENABLED_
@@ -109,7 +99,7 @@ $prototype {
         gt_info(mprof).get_mem_status(&counters.mems[1]);
 #endif
         // counting_permit-=2*counting_permission_pcontrol[$funcid_through];
-        tsc_exit = rdtsca();
+        tsc_exit = peat_get_time();
         event->tscs[3]=tsc_exit-tsc_entry;
         __msl_check_chain(tid);
         local_tool_overhead=tsc_mpi_entry-tsc_entry+tsc_exit-tsc_mpi_exit;

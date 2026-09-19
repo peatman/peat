@@ -60,6 +60,7 @@ extern ompt_finalize_tool_t ompt_finalize_tool;
 int gettimeofday_counter = 0;
 int clock_gettime_counter = 0;
 MPI_Request (*MPI_Check_dummy_prev)(MPI_Request request) = 0;
+long long cpu_proc_freq[2] = {0, 0};
 
 static int MPI_Check_dummy_failed = 0;
 MPI_Request MPI_Check_dummy(MPI_Request request)
@@ -175,9 +176,6 @@ tractor::tractor(void)
     full_ompt_unwind = 0;
     abort_sleep = 300;
     resolve_comms_and_ranks = 1;
-#ifdef USE_NANO_TIMER
-    t_runtime_correction = 0;
-#endif
     highval = (void *)0x7FFFFFFFFFFFFFFF;
     binval = (void *)0x7FFFFFFFFFFFFFFF;
     lowval = (void *)0;
@@ -303,13 +301,13 @@ static void calc_freq(void)
 
     char *freq_template = getenv("PEAT_TRACTOR_FREQUENCY");
     if (freq_template) {
-        proc_freq[0] = atoll(freq_template); /* in Hz */
+        cpu_proc_freq[0] = atoll(freq_template); /* in Hz */
     } else {
         PEAT_Clock fc, sc;
         sc = rdtsc();
         sleep(FDELAY);
         fc = rdtsc();
-        proc_freq[0] = (long long)((double)(fc - sc) / ((double)FDELAY)); /* in Hz */
+        cpu_proc_freq[0] = (long long)((double)(fc - sc) / ((double)FDELAY)); /* in Hz */
     }
 }
 
@@ -706,9 +704,6 @@ void tractor::parse_env_vars(void)
         calls_limit = 0;
     }
 
-#ifdef USE_NANO_TIMER
-    t_runtime_correction = is_true(__msl_getenv("PEAT_TRACTOR_CORRECT_EVENTS"), t_runtime_correction);
-#endif
 #ifdef _T_OMPT_
     parse_openmp = is_true(__msl_getenv("PEAT_TRACTOR_PARSE_OPENMP"), parse_openmp);
 #endif
@@ -886,10 +881,10 @@ void tractor::init(void)
 #else
         __get_cpuid(0x16, &cpu_info[0], &cpu_info[1], &cpu_info[2], &cpu_info[3]);
 #endif
-        proc_freq[0] = cpu_info[0];
-        proc_freq[1] = cpu_info[1];
-        proc_freq[0] *= 1000000;
-        proc_freq[1] *= 1000000;
+        cpu_proc_freq[0] = cpu_info[0];
+        cpu_proc_freq[1] = cpu_info[1];
+        cpu_proc_freq[0] *= 1000000;
+        cpu_proc_freq[1] *= 1000000;
     } else {
         sprintf(tbuf, "/proc/cpuinfo");
         tfp = fopen(tbuf, "rt");
@@ -897,7 +892,7 @@ void tractor::init(void)
             while (!feof(tfp)) {
                 tbuf[0] = 0;
                 fgets(tbuf, MAX_PATH, tfp);
-                if (strstr(tbuf, "model name") && proc_freq[0] == 0) {
+                if (strstr(tbuf, "model name") && cpu_proc_freq[0] == 0) {
                     char *freq_start = strstr(tbuf, "@");
                     if (freq_start) {
                         int i = 0;
@@ -913,13 +908,13 @@ void tractor::init(void)
                             power = 1000;
                         freq_start[i] = 0;
                         strcpy(tbuf, freq_start);
-                        proc_freq[0] = (long long)(strtod(tbuf, &freq_start) * power);
-                        if (proc_freq[0] > 0 && proc_freq[1] > 0)
+                        cpu_proc_freq[0] = (long long)(strtod(tbuf, &freq_start) * power);
+                        if (cpu_proc_freq[0] > 0 && cpu_proc_freq[1] > 0)
                             break;
                     }
                 }
 
-                if (strstr(tbuf, "cpu MHz") && proc_freq[1] == 0) {
+                if (strstr(tbuf, "cpu MHz") && cpu_proc_freq[1] == 0) {
                     char *freq_start = strstr(tbuf, ":");
                     if (freq_start) {
                         int i = 0;
@@ -929,8 +924,8 @@ void tractor::init(void)
                         int power = 1000000;
                         freq_start[i] = 0;
                         strcpy(tbuf, freq_start);
-                        proc_freq[1] = (long long)(strtod(tbuf, &freq_start) * power);
-                        if (proc_freq[0] > 0 && proc_freq[1] > 0)
+                        cpu_proc_freq[1] = (long long)(strtod(tbuf, &freq_start) * power);
+                        if (cpu_proc_freq[0] > 0 && cpu_proc_freq[1] > 0)
                             break;
                     }
                 }
@@ -940,17 +935,17 @@ void tractor::init(void)
             fclose(tfp);
         }
     }
-    if (proc_freq[0] == 0 && proc_freq[1] == 0) {
+    if (cpu_proc_freq[0] == 0 && cpu_proc_freq[1] == 0) {
         calc_freq();
     } else {
-        if (proc_freq[0] == 0 && proc_freq[1] != 0) proc_freq[0] = proc_freq[1];
-        if (proc_freq[0] != 0 && proc_freq[1] == 0) proc_freq[1] = proc_freq[0];
+        if (cpu_proc_freq[0] == 0 && cpu_proc_freq[1] != 0) cpu_proc_freq[0] = cpu_proc_freq[1];
+        if (cpu_proc_freq[0] != 0 && cpu_proc_freq[1] == 0) cpu_proc_freq[1] = cpu_proc_freq[0];
     }
-    //            if(proc_freq[0] == 0 && proc_freq[1] == 0) calc_freq();
 #ifdef USE_NANO_TIMER
-    freq_ratio = freq_ratio_uncorrected = (double)proc_freq[0] / (double)PEAT_BILLION;
+    proc_freq[0] = proc_freq[1] = PEAT_BILLION;
 #else
-    freq_ratio = freq_ratio_uncorrected = 1.0;
+    proc_freq[0] = cpu_proc_freq[0];
+    proc_freq[1] = cpu_proc_freq[1];
 #endif
     debug_printf("Rank %d: Prolog finished...\n", t_mpi_rank);
     tractor_initialized = 1;
@@ -1303,21 +1298,21 @@ void tractor::end(void)
     double p2dratio, m2pratio, t2pratio, g2pratio;
     PEAT_Clock init_tool_overhead = overall_tool_overhead[MPI_INIT_ID_THROUGH] + overall_tool_overhead[MPI_INIT_THREAD_ID_THROUGH] + overall_tool_overhead[MPI_FINALIZE_ID_THROUGH];
     PEAT_Clock mpi_init_time = overall_durations[MPI_INIT_ID_THROUGH] + overall_durations[MPI_INIT_THREAD_ID_THROUGH] + overall_durations[MPI_FINALIZE_ID_THROUGH];
-    PEAT_Clock total_app_time_correted = (last_tsc - first_tsc) * freq_ratio - overall_tool_overhead[MPI_INIT_ID_THROUGH] - overall_tool_overhead[MPI_INIT_THREAD_ID_THROUGH] - overall_tool_overhead[MPI_FINALIZE_ID_THROUGH];
-    p2dratio = ((double)(((last_par_tsc - first_par_tsc) * freq_ratio + mpi_init_time) * 100.0)) / ((double)(total_app_time_correted));
-    m2pratio = ((double)(global_mpi_time * 100.0)) / ((double)(last_par_tsc - first_par_tsc) * freq_ratio + mpi_init_time);
-    t2pratio = ((double)(global_tool_overhead * 100.0)) / ((double)(last_par_tsc - first_par_tsc) * freq_ratio);
-    g2pratio = ((double)(global_gpu_time * 100.0)) / ((double)(last_par_tsc - first_par_tsc) * freq_ratio);
+    PEAT_Clock total_app_time_correted = (last_tsc - first_tsc) - overall_tool_overhead[MPI_INIT_ID_THROUGH] - overall_tool_overhead[MPI_INIT_THREAD_ID_THROUGH] - overall_tool_overhead[MPI_FINALIZE_ID_THROUGH];
+    p2dratio = ((double)(((last_par_tsc - first_par_tsc) + mpi_init_time) * 100.0)) / ((double)(total_app_time_correted));
+    m2pratio = ((double)(global_mpi_time * 100.0)) / ((double)(last_par_tsc - first_par_tsc) + mpi_init_time);
+    t2pratio = ((double)(global_tool_overhead * 100.0)) / ((double)(last_par_tsc - first_par_tsc));
+    g2pratio = ((double)(global_gpu_time * 100.0)) / ((double)(last_par_tsc - first_par_tsc));
     if (fps_com) {
 #if 0
         gzprintf(fps_com, "%d:Application Ends.\n%d:Duration:%lld.\n",
                  PEAT_RT_Remark,
                  PEAT_RT_Remark,
-                 (PEAT_Clock)((last_tsc - first_tsc)*freq_ratio)); 
+                 (PEAT_Clock)((last_tsc - first_tsc)));
 
         gzprintf(fps_com, "%d:Parallel Time: %lld(%.2lf%).\n",
                  PEAT_RT_Remark,
-                 ((PEAT_Clock)((last_par_tsc - first_par_tsc)*freq_ratio)) + mpi_init_time, p2dratio);
+                 ((PEAT_Clock)((last_par_tsc - first_par_tsc))) + mpi_init_time, p2dratio);
 
         gzprintf(fps_com, "%d:MPI Time: %lld(%.2lf%).\n",
                  PEAT_RT_Remark,
@@ -1334,9 +1329,9 @@ void tractor::end(void)
         gzprintf(fps_com, "%d:Application Ends.\n%d:Duration:%lld.\n%d:Parallel Time: %lld(%.2lf%).\n%d:MPI Time: %lld(%.2lf%).\n%d:GPU Time: %lld(%.2lf%).\n%d:Internal Tool overhead: %lld(%.2lf%).\n%d:Init/Finalize Tool overhead: %lld.\n",
                  PEAT_RT_Remark,
                  PEAT_RT_Remark,
-                 (PEAT_Clock)((last_tsc - first_tsc) * freq_ratio),
+                 (PEAT_Clock)((last_tsc - first_tsc)),
                  PEAT_RT_Remark,
-                 ((PEAT_Clock)((last_par_tsc - first_par_tsc) * freq_ratio)) + mpi_init_time, p2dratio,
+                 ((PEAT_Clock)((last_par_tsc - first_par_tsc))) + mpi_init_time, p2dratio,
                  PEAT_RT_Remark,
                  global_mpi_time, m2pratio,
                  PEAT_RT_Remark,
@@ -1408,10 +1403,10 @@ void tractor::end(void)
 void tractor::get_rank_time(PEAT_Clock *start, PEAT_Clock *start_parallel, PEAT_Clock *end_parallel, PEAT_Clock *end, PEAT_Clock *overall_tool_overhead, PEAT_Clock *overall_MPI, PEAT_Clock *overall_GPU)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
-    *start = first_tsc * freq_ratio;
-    *start_parallel = first_par_tsc * freq_ratio;
-    *end = last_tsc * freq_ratio;
-    *end_parallel = last_par_tsc * freq_ratio;
+    *start = first_tsc ;
+    *start_parallel = first_par_tsc;
+    *end = last_tsc;
+    *end_parallel = last_par_tsc;
     *overall_tool_overhead = global_tool_overhead;
     *overall_MPI = global_mpi_time;
     *overall_GPU = global_gpu_time;
@@ -1442,7 +1437,7 @@ void tractor::nodes_info(t_nodes_info *ninfo)
     }
     PMPI_Barrier(TRACTOR_COMM_WORLD);
 #ifdef USE_NANO_TIMER
-    PEAT_Clock local_clck = peat_get_nano_sec() * freq_ratio;
+    PEAT_Clock local_clck = peat_get_nano_sec();
 #else
     PEAT_Clock local_clck = rdtsca();
 #endif
@@ -1487,9 +1482,9 @@ void tractor::nodes_info(t_nodes_info *ninfo)
 
     PEAT_Clock local_tscs_in[3];
     PEAT_Clock local_tscs[3];
-    local_tscs_in[0] = first_tsc * freq_ratio;
-    local_tscs_in[1] = first_par_tsc * freq_ratio;
-    local_tscs_in[2] = last_par_tsc * freq_ratio;
+    local_tscs_in[0] = first_tsc;
+    local_tscs_in[1] = first_par_tsc;
+    local_tscs_in[2] = last_par_tsc;
     PMPI_Reduce(local_tscs_in, local_tscs, 2, MPI_LONG_LONG_INT, MPI_MIN, 0, comm_smp);
     PMPI_Reduce(&local_tscs_in[2], &local_tscs[2], 1, MPI_LONG_LONG_INT, MPI_MAX, 0, comm_smp);
 
@@ -1512,8 +1507,10 @@ void tractor::nodes_info(t_nodes_info *ninfo)
             int displ[size_cw];
             int smp_sizes[size_cw];
             long long all_proc_freqs[2 * size_cw];
+            long long all_cpu_proc_freqs[2 * size_cw];
             PEAT_Clock all_tscs[size_cw * 3];
             PMPI_Gather(proc_freq, 2, MPI_DOUBLE, all_proc_freqs, 2, MPI_DOUBLE, 0, comm_master);
+            PMPI_Gather(cpu_proc_freq, 2, MPI_DOUBLE, all_cpu_proc_freqs, 2, MPI_DOUBLE, 0, comm_master);
             PMPI_Gather(localhost, MAX_HOSTNAME, MPI_BYTE, all_hosts, MAX_HOSTNAME, MPI_BYTE, 0, comm_master);
             PMPI_Gather(local_tscs, 3, MPI_DOUBLE, all_tscs, 3, MPI_DOUBLE, 0, comm_master);
             if (ninfo)
@@ -1528,6 +1525,8 @@ void tractor::nodes_info(t_nodes_info *ninfo)
                     ninfo->nodes[i].set_hostname(&all_hosts[i * MAX_HOSTNAME]);
                     ninfo->nodes[i].proc_freq[0] = all_proc_freqs[i * 2 + 0];
                     ninfo->nodes[i].proc_freq[1] = all_proc_freqs[i * 2 + 1];
+                    ninfo->nodes[i].cpu_proc_freq[0] = all_cpu_proc_freqs[i * 2 + 0];
+                    ninfo->nodes[i].cpu_proc_freq[1] = all_cpu_proc_freqs[i * 2 + 1];
                     ninfo->nodes[i].t_time[0] = all_tscs[i * 3 + 0];
                     ninfo->nodes[i].t_time[1] = all_tscs[i * 3 + 1];
                     ninfo->nodes[i].t_time[2] = all_tscs[i * 3 + 2];
@@ -1619,10 +1618,6 @@ int tractor::write_trace(void)
     }
     //    }
 
-#ifdef USE_NANO_TIMER
-    if (t_runtime_correction)
-        correct_events();
-#endif
     num_processed_events events_num = write_main_files(/*l_user_region_store*/);
     PEAT_Clock time_symbols_search = 0;
     // apply_shared_object_info_to_regions(l_user_region_store);
@@ -1754,157 +1749,6 @@ void tractor::update_extras_pointers(int tid, long long *max_ext_count, msl_extr
         *max_ext_count = fread(*cur_exts_array, sizeof(msl_extra_info), onetimealloc, fps_ext);
         debug_printf("TID %d, %ld %s extras read back.\n", tid, *max_ext_count, is_colt_txt);
     }
-}
-
-void tractor::correct_events(void)
-{
-    __DEBUG_PROLOG_TRACTOR_LAYER__
-    msl_adv_chain *current_chain[t_max_threads];
-
-    msl_event *current_array[t_max_threads];
-    long long max_events[t_max_threads];
-
-    std::map<t_timeline, int> timeline;
-
-    if (use_realtime_dump) {
-        for (int i = 0; i < t_tid_counter; i++) {
-            rewind(fps_events[i]);
-            rewind(fps_extras[i]);
-            rewind(fps_c_extras[i]);
-            current_array[i] = (msl_event *)t_malloc((onetimealloc + 1) * sizeof(msl_event), 128);
-            max_events[i] = 0; // reset it in case if eof reached
-            fread(&max_events[i], 4, 1, fps_events[i]);
-            long tmp_mi = fread(current_array[i], sizeof(msl_event), max_events[i], fps_events[i]);
-            if (tmp_mi != max_events[i]) {
-                debug_printf("TID %d, %ld!=%ld events read count mismatch.\n", i, max_events[i], tmp_mi);
-            }
-            fseek(fps_events[i], sizeof(void *) * num_addrs * max_events[i], SEEK_CUR);
-            /*tmp_mi=fread(current_addrs_array[i],sizeof(void*)*num_addrs,max_events[i],fps_events[i]);
-            if (tmp_mi!=max_events[i]) {
-                debug_printf("TID %d, %ld!=%ld events read count mismatch.\n",i, max_events[i],tmp_mi);
-            }*/
-#ifdef _HWCOUNTERS_ENABLED_
-            fseek(fps_events[i], sizeof(long long) * num_hwcs * 2 * max_events[i], SEEK_CUR);
-            /*current_hwc_array[i]=(long long *)t_malloc((onetimealloc+1)*sizeof(long long)*num_hwcs*2,128);
-            tmp_mi=fread(current_hwc_array[i],sizeof(long long)*num_hwcs*2,max_events[i],fps_events[i]);
-            if (tmp_mi!=max_events[i]) {
-                debug_printf("TID %d, %ld!=%ld events read count mismatch.\n",i, max_events[i],tmp_mi);
-            }*/
-#endif
-#ifdef _MEMPROFILE_STORE_
-            fseek(fps_events[i], sizeof(void *) * t_memory_event_size * 2 * max_events[i], SEEK_CUR);
-            /*current_mems_array[i]=(t_memory_event *)t_malloc((onetimealloc+1)*t_memory_event_size*2,128);
-            tmp_mi=fread(current_mems_array[i],sizeof(void*)*t_memory_event_size*2,max_events[i],fps_events[i]);
-            if (tmp_mi!=max_events[i]) {
-                debug_printf("TID %d, %ld!=%ld events read count mismatch.\n",i, max_events[i],tmp_mi);
-            }*/
-#endif
-            debug_printf("TID %d, %ld events read back.\n", i, max_events[i]);
-            t_timeline t_tl(current_array[i][0].tscs[0], i);
-            if (max_events[i] > 0)
-                timeline[t_tl] = i;
-        }
-    } else {
-        for (int i = 0; i < t_tid_counter; i++) {
-            current_chain[i] = events_start_chain[i];
-            max_events[i] = (current_chain[i]->next == NULL) ? event_index[i] : onetimealloc;
-            current_array[i] = (msl_event *)current_chain[i]->events_array;
-        }
-    }
-
-#define freq_threshold 1000000
-    // (1 msec)
-    double corrected_ratio = freq_ratio;
-    for (int tid = 0; tid < t_tid_counter; tid++) {
-        PEAT_Clock prev_end_tsc = 0, prev_start_tsc = 0, cur_start_tsc = 0;
-        PEAT_Clock prev_start_nsec = 0, cur_start_nsec = 0;
-        short prev_func_id = 0, cur_func_id = 0;
-        long record_counter = 0, prev_record_counter = 0;
-        do {
-            bool is_2nd_sendrecv = (current_array[tid][record_counter].tscs[1] == 0);
-
-            if (!is_2nd_sendrecv) {
-                cur_start_nsec = current_array[tid][record_counter].tscs[0];
-                cur_start_tsc = cur_start_nsec * freq_ratio; // nanosec-> clockticks
-                cur_func_id = current_array[tid][record_counter].func_id[1];
-                if (cur_start_tsc < prev_end_tsc) {
-                    PEAT_Clock minimal_distance_tsc = prev_end_tsc - prev_start_tsc + 8; // just a small number
-                    PEAT_Clock distance_nsec = cur_start_nsec - prev_start_nsec;
-                    if (distance_nsec > freq_threshold) { // long distance, probably freq scaling error
-                        double this_ratio = (double)minimal_distance_tsc / (double)distance_nsec;
-                        if (this_ratio > corrected_ratio)
-                            corrected_ratio = this_ratio;
-
-                        debug_printf("Frequency Inconsistence (clk) %lld<%lld. Ratio (c:t:o) %lf:%lf:%lf. Functions %s(%d) <-> %s(%d)-(%d).\n",
-                                     cur_start_tsc - prev_start_tsc, minimal_distance_tsc,
-                                     corrected_ratio, this_ratio, freq_ratio,
-                                     mpi_function_names[prev_func_id], prev_record_counter,
-                                     mpi_function_names[cur_func_id], record_counter, tid);
-
-                    } else { // small difference - time error
-                        PEAT_Clock minimal_distance_nsec = (PEAT_Clock)(((double)minimal_distance_tsc) / freq_ratio);
-
-                        debug_printf("Time Inconsistence (clk) %lld<%lld. Functions %s(%d) <-> %s(%d)-(%d). Time shift (nsec) %lld -> %lld \n",
-                                     cur_start_tsc - prev_start_tsc, minimal_distance_tsc,
-                                     mpi_function_names[prev_func_id], prev_record_counter,
-                                     mpi_function_names[cur_func_id], record_counter, tid,
-                                     distance_nsec, minimal_distance_nsec);
-
-                        current_array[tid][record_counter].tscs[0] = cur_start_nsec = prev_start_nsec + minimal_distance_nsec;
-                        cur_start_tsc = prev_start_tsc + minimal_distance_tsc;
-                        // cur_start_tsc=cur_start_nsec*freq_ratio; // nanosec-> clockticks
-                    }
-                }
-                prev_start_nsec = cur_start_nsec;
-                prev_start_tsc = cur_start_tsc;
-                prev_end_tsc = prev_start_tsc + current_array[tid][record_counter].tscs[3];
-                prev_func_id = cur_func_id;
-                prev_record_counter = record_counter;
-            }
-
-            record_counter++;
-
-            if (record_counter >= max_events[tid]) {
-                if (use_realtime_dump) {
-                    fseek(fps_events[tid], -sizeof(msl_event) * max_events[tid], SEEK_CUR);
-                    fwrite(current_array[tid], sizeof(msl_event), max_events[tid], fps_events[tid]);
-                    max_events[tid] = 0; // reset it in case if eof reached
-                    fread(&max_events[tid], 4, 1, fps_events[tid]);
-                    long tmp_mi = fread(current_array[tid], sizeof(msl_event), max_events[tid], fps_events[tid]);
-                    if (tmp_mi != max_events[tid]) {
-                        debug_printf("TID %d, %ld!=%ld events read count mismatch.\n", tid, max_events[tid], tmp_mi);
-                    }
-                    fseek(fps_events[tid], sizeof(void *) * num_addrs * max_events[tid], SEEK_CUR);
-                    /*
-                    tmp_mi=fread(current_addrs_array[tid],sizeof(void*)*num_addrs,max_events[tid],fps_events[tid]);
-                    */
-#ifdef _HWCOUNTERS_ENABLED_
-                    fseek(fps_events[tid], sizeof(long long) * num_hwcs * 2 * max_events[tid], SEEK_CUR);
-#endif
-#ifdef _MEMPROFILE_STORE_
-                    fseek(fps_events[tid], sizeof(void *) * t_memory_event_size * 2 * max_events[tid], SEEK_CUR);
-#endif
-                    debug_printf("TID %d, %ld events read back.\n", tid, max_events[tid]);
-                } else {
-                    if (current_chain[tid]->next != NULL) {
-                        current_chain[tid] = (msl_adv_chain *)current_chain[tid]->next;
-                        max_events[tid] = (current_chain[tid]->next == NULL) ? event_index[tid] : onetimealloc;
-                        current_array[tid] = (msl_event *)current_chain[tid]->events_array;
-                    } else {
-                        max_events[tid] = 0;
-                    }
-                }
-                record_counter = 0;
-            }
-        } while (max_events[tid] > 0);
-    }
-    if (use_realtime_dump) {
-        for (int i = 0; i < t_tid_counter; i++) {
-            t_free(current_array[i], (onetimealloc + 1) * sizeof(msl_event));
-        }
-    }
-    freq_ratio = corrected_ratio;
-    __DEBUG_EPILOG_TRACTOR_LAYER__
 }
 
 #ifdef GPUPARSE
@@ -2172,7 +2016,6 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
             max_thread_id = tid;
         PEAT_Clock l_tscs[4];
         bool is_colt = is_coll_transfer(current_array[tid][record_counter[tid]].func_id[0]);
-        current_array[tid][record_counter[tid]].tscs[0] *= freq_ratio; // nanosec-> clockticks
 
         l_tscs[0] = current_array[tid][record_counter[tid]].tscs[0];
         l_tscs[1] = current_array[tid][record_counter[tid]].tscs[1];
@@ -2935,7 +2778,7 @@ void tractor::write_stat_com_file(void)
         if (print_all + overall_entries[f] > 0) {
             double ratio = ((double)(overall_tool_overhead[f] * 100.0)) / ((double)(overall_durations[f]));
             total += overall_tool_overhead[f];
-            double fratio = ((double)(overall_durations[f] * 100.0)) / ((double)(last_par_tsc - first_par_tsc) * freq_ratio);
+            double fratio = ((double)(overall_durations[f] * 100.0)) / ((double)(last_par_tsc - first_par_tsc));
 
             if (f >= MPI_P2P_TRANSFER_START_THROUGH && f <= MPI_END_LOCAL_GROUP_THROUGH) {
                 double fratio_mpi = ((double)(overall_durations[f] * 100.0)) / ((double)(global_mpi_time));
@@ -2980,7 +2823,7 @@ void tractor::write_stat_com_file(void)
             if (print_all + total_transfers > 0) {
                 gzprintf(fps_com, "%d:%34s|", PEAT_RT_Remark, mpi_function_names[f]);
                 for (int g = 0; g < gt_func_stat.bound_num - 1; g++) {
-                    double ratio = 100.0 * gt_func_stat.stat_for_func[f].durations[g] / ((double)(last_par_tsc - first_par_tsc) * freq_ratio);
+                    double ratio = 100.0 * gt_func_stat.stat_for_func[f].durations[g] / ((double)(last_par_tsc - first_par_tsc));
                     char tmp[1024];
                     if (gt_func_stat.stat_for_func[f].occurences[g] > 0) {
                         sprintf(tmp, "%lld:%lld:%lld:%.2f",
@@ -3042,17 +2885,7 @@ void tractor::write_com_file(const num_processed_events &num_of_events, /*user_r
 
     gzprintf(fps_com, "%d:%lld:%lld:%lld:%lld\n", PEAT_RT_App_Start_Stop_Info, app_start, app_end, app_end - app_start, t_tsc_init);
     gzprintf(fps_com, "%d:%lld:%lld:%lld:%lld\n", PEAT_RT_MPM_Rank_Time_Stamp, app_start, app_start_parallel, app_end_parallel, app_end);
-    gzprintf(fps_com, "%d:%d:%lld:%lld:%lf:%lf\n", PEAT_RT_CPU_Freq, 0, proc_freq[0], proc_freq[1], freq_ratio, freq_ratio_uncorrected);
-#ifdef USE_NANO_TIMER
-    gzprintf(fps_com, "%d:%lld:%d", PEAT_RT_Sync_Point, t_nano_init, lead_core_id);
-    for (int i = 0; i < MAX_CORE_ID; ++i) {
-        if (tsc_adjustments_made[i] == 1) {
-            gzprintf(fps_com, ":%d:%lld:%lld:%lld:%lld", i, tsc_adjustments[i], tsc_core_adjust[i].tsc_diff, tsc_core_adjust[i].tsc, tsc_core_adjust[i].nanosec);
-        }
-    }
-    gzprintf(fps_com, "\n");
-#endif
-
+    gzprintf(fps_com, "%d:%d:%lld:%lld\n", PEAT_RT_CPU_Freq, 0, proc_freq[0], proc_freq[1]);
     gzprintf(fps_com, "%d:%lld:%lld:%lld\n", PEAT_RT_Number_Of_Events, num_of_events.processed_events, num_of_events.max_uniq_idx, num_of_events.max_thread_id);
     gzprintf(fps_com, "%d:%d\n", PEAT_RT_HWLOC_Proc_Record, core_id);
     if (node_topology.length() > 0)
@@ -3078,8 +2911,6 @@ void tractor::write_com_file(const num_processed_events &num_of_events, /*user_r
     mprof.print_memory_profile_report(fps_com, PEAT_RT_Memory_Profile_Report, PEAT_RT_Memory_Profile_Report_Total);
 #endif
 
-    //    gzprintf(fps_com, "%d:Collector time (MPI excluded): %lld ( %f sec)\n", PEAT_RT_Remark, overall_coll - overall_MPI, PEAT_Ratio(overall_tool_overhead - overall_MPI) / get_freq_to_seconds_ratio());
-    //    gzprintf(fps_com, "%d:Rank full time: %lld ( %f sec)\n", PEAT_RT_Remark, app_end - app_start, PEAT_Ratio(app_end - app_start) / get_freq_to_seconds_ratio());
     gzprintf(fps_com, "%d:%d:%x:%x:%x:%x:%d:%d:%d:%x\n", PEAT_RT_MPI_Predefined, MPI_SUCCESS, MPI_UNDEFINED, MPI_COMM_WORLD, MPI_COMM_SELF, MPI_COMM_NULL, MPI_PROC_NULL, MPI_ANY_TAG, MPI_ANY_SOURCE, MPI_REQUEST_NULL);
     write_stat_com_file();
     __DEBUG_EPILOG_TRACTOR_LAYER__
@@ -3188,7 +3019,7 @@ void tractor::write_app_file(t_nodes_info *ninfo)
             for (int i = 0, masters = 0; i < ninfo->nodes_num; ++i) { // print node information only from master rank
                 gzprintf(fps_app, "%d", PEAT_RT_MPM_Ranks_And_PPN);
                 gzprintf(fps_app, ":%*s", name_len, ninfo->nodes[i].hostname);
-                gzprintf(fps_app, ":%*lld", name_len, ninfo->nodes[i].proc_freq[0]);
+                gzprintf(fps_app, ":%*lld", name_len, ninfo->nodes[i].cpu_proc_freq[0]);
                 gzprintf(fps_app, ":%*d", field_len, ninfo->nodes[i].mpi_rank_num);
                 gzprintf(fps_app, ":%*d", field_len, masters);
                 char delim = ':';

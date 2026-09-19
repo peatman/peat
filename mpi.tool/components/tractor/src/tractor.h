@@ -184,10 +184,6 @@ struct tractor : t_base_event {
     char ptpd_in_binpath[MAX_PATH];
 #endif
 
-#ifdef USE_NANO_TIMER
-    int t_runtime_correction;
-#endif
-
     char gz_mode[16];
     FILE **fps_events;
     FILE **fps_extras;
@@ -235,7 +231,6 @@ struct tractor : t_base_event {
     PEAT_Rank get_real_rank(MPI_Comm comm, PEAT_Rank rank_in, PEAT_Clock tsc);
     PEAT_MPI_Comm get_global_comm_id(MPI_Comm comm, PEAT_Clock tsc);
     num_processed_events write_main_files(/*,user_region_store &user_region_store*/);
-    void correct_events(void);
 
     //    void calculate_us_sd_dev(user_region_store &user_region_store);
     void write_com_file(const num_processed_events &num_of_events, /* user_region_store &user_region_store,*/ const PEAT_Clock time_symbols_search);
@@ -290,10 +285,6 @@ int get_group(long long num) {
 extern PEAT_Addr highfort;
 extern PEAT_Addr lowfort;
 const int minonetimealloc = 16;
-static inline PEAT_Ratio get_freq_to_seconds_ratio(void)
-{
-    return 1000 * 1000 * 1000 / (PEAT_Ratio)proc_freq[0];
-}
 
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
 }

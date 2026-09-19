@@ -116,7 +116,11 @@ void ptp_rank_timer_init(char *filename, char *mode)
     PMPI_Group_incl(grp_world, local_ranks_num, local_ranks, &grp_master);
     PMPI_Comm_create(MPI_COMM_WORLD, grp_master, &comm_master);
 #ifdef USE_NANO_TIMER
-    // since it's all now using nanosec this code is no longer required
+    // delay[] is captured in real nanosec below, so report a matching 1GHz
+    // "frequency" (nanosec already IS ticks-at-1GHz) rather than this node's
+    // actual CPU frequency, which would be the wrong unit for downstream math.
+    proc_freq[0] = proc_freq[1] = PEAT_BILLION;
+#else
     sprintf(tbuf, "/proc/cpuinfo");
     tfp = fopen(tbuf, "rt");
     if (tfp) {
@@ -166,8 +170,6 @@ void ptp_rank_timer_init(char *filename, char *mode)
         };
         fclose(tfp);
     }
-#else
-    proc_freq[0] = proc_freq[1] = PEAT_BILLION;
 #endif
     if (comm_master != MPI_COMM_NULL) {
         PMPI_Comm_rank(comm_master, &rank_master);

@@ -41,6 +41,7 @@ struct t_node_info {
     PEAT_Clock t_time[3];
     PEAT_Clock init_delay;
     PEAT_Clock proc_freq[2];
+    PEAT_Clock cpu_proc_freq[2];
     int mpi_rank_num;
     int *mpi_ranks;
     t_node_info() : mpi_rank_num(0), mpi_ranks(NULL), init_delay(0) {}

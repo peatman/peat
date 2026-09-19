@@ -62,17 +62,11 @@ static int MPI_Init_internal(int *argc, char ***argv, void **p_entrys)
     const PEAT_MPI_Func_ID fid = MPI_INIT_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_INIT_ID_THROUGH;
     long long tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
-#ifdef USE_NANO_TIMER
-    long long nsec_entry;
-#endif
     int tid;
     msl_extras_counters counters;
     msl_event *event;
     pid_t tid_in;
-#ifdef USE_NANO_TIMER
-    nsec_entry = peat_get_nano_sec();
-#endif
-    tsc_entry = rdtscta(&tid_in);
+    tsc_entry = peat_get_time_tid(&tid_in);
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     counting_permit += 2;
     tid = __msl_get_tid(tid_in);
@@ -89,7 +83,7 @@ static int MPI_Init_internal(int *argc, char ***argv, void **p_entrys)
 #ifdef _MEMPROFILE_STORE_
     gt_info(mprof).get_mem_status(&counters.mems[0]);
 #endif
-    tsc_mpi_entry = rdtsca();
+    tsc_mpi_entry = peat_get_time();
     //    } // if (counting_permission[fidc]>0 )
     debug_printf("Rank %d: before mpi_init...\n", t_mpi_rank);
 #endif
@@ -99,19 +93,15 @@ static int MPI_Init_internal(int *argc, char ***argv, void **p_entrys)
     //    }
     debug_printf("Rank %d: after mpi_init...\n", t_mpi_rank);
 
-    tsc_mpi_exit = global_parallel_start = rdtsca();
+    tsc_mpi_exit = global_parallel_start = peat_get_time();
     gt_info(post_mpi_init());
 #endif
 #ifdef _TRACTOR_USE_PTPD_
     gt_info(ptpd_init());
 #endif
     // counting_permit-=2;
-    tsc_exit = rdtsca();
-#ifdef USE_NANO_TIMER
-    event->tscs[0] = nsec_entry;
-#else
+    tsc_exit = peat_get_time();
     event->tscs[0] = tsc_entry;
-#endif
     event->tscs[1] = tsc_mpi_entry - tsc_entry;
     event->tscs[2] = tsc_mpi_exit - tsc_entry;
 #ifdef _HWCOUNTERS_ENABLED_
@@ -159,17 +149,11 @@ static int MPI_Init_thread_internal(int *argc, char ***argv, int requested, int 
     const PEAT_MPI_Func_ID fid = MPI_INIT_THREAD_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_INIT_THREAD_ID_THROUGH;
     long long tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
-#ifdef USE_NANO_TIMER
-    long long nsec_entry;
-#endif
     int tid;
     pid_t tid_in;
     msl_extras_counters counters;
     msl_event *event;
-#ifdef USE_NANO_TIMER
-    nsec_entry = peat_get_nano_sec();
-#endif
-    tsc_entry = rdtscta(&tid_in);
+    tsc_entry = peat_get_time_tid(&tid_in);
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     counting_permit += 2;
     tid = __msl_get_tid(tid_in);
@@ -186,7 +170,7 @@ static int MPI_Init_thread_internal(int *argc, char ***argv, int requested, int 
 #ifdef _MEMPROFILE_STORE_
     gt_info(mprof).get_mem_status(&counters.mems[0]);
 #endif
-    tsc_mpi_entry = rdtsca();
+    tsc_mpi_entry = peat_get_time();
     //    } // if (__builtin_expect((counting_permission[fidc]>0),1))
     debug_printf("Rank %d: before mpi_init_thread...\n", t_mpi_rank);
 #endif
@@ -195,7 +179,7 @@ static int MPI_Init_thread_internal(int *argc, char ***argv, int requested, int 
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     //    }
     debug_printf("Rank %d: after mpi_init_thread...\n", t_mpi_rank);
-    tsc_mpi_exit = global_parallel_start = rdtsca();
+    tsc_mpi_exit = global_parallel_start = peat_get_time();
 #ifndef _TRACTOR_PASSTHROUGH_
     gt_info(post_mpi_init());
 #endif
@@ -203,12 +187,8 @@ static int MPI_Init_thread_internal(int *argc, char ***argv, int requested, int 
     gt_info(ptpd_init());
 #endif
     // counting_permit-=2;
-    tsc_exit = rdtsca();
-#ifdef USE_NANO_TIMER
-    event->tscs[0] = nsec_entry;
-#else
+    tsc_exit = peat_get_time();
     event->tscs[0] = tsc_entry;
-#endif
     event->tscs[1] = tsc_mpi_entry - tsc_entry;
     event->tscs[2] = tsc_mpi_exit - tsc_entry;
 #ifdef _HWCOUNTERS_ENABLED_
@@ -256,17 +236,11 @@ static int MPI_Finalize_internal(void **p_entrys)
     const PEAT_MPI_Func_ID fid = MPI_FINALIZE_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_FINALIZE_ID_THROUGH;
     long long tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
-#ifdef USE_NANO_TIMER
-    long long nsec_entry;
-#endif
     int tid;
     pid_t tid_in;
     msl_extras_counters counters;
     msl_event *event;
-#ifdef USE_NANO_TIMER
-    nsec_entry = peat_get_nano_sec();
-#endif
-    tsc_entry = rdtscta(&tid_in);
+    tsc_entry = peat_get_time_tid(&tid_in);
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     counting_permit += 2;
     tid = __msl_get_tid(tid_in);
@@ -289,20 +263,16 @@ static int MPI_Finalize_internal(void **p_entrys)
     gt_info(ptpd_finalize());
 #endif
     // PMPI_Barrier(gt_info(TRACTOR_COMM_WORLD));
-    tsc_mpi_entry = rdtsca();
+    tsc_mpi_entry = peat_get_time();
 #endif
     rv = PMPI_Finalize();
 #ifndef _TRACTOR_PASSTHROUGH_
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     //    }
-    tsc_mpi_exit = rdtsca();
+    tsc_mpi_exit = peat_get_time();
     // counting_permit-=2;
-    tsc_exit = rdtsca();
-#ifdef USE_NANO_TIMER
-    event->tscs[0] = nsec_entry;
-#else
+    tsc_exit = peat_get_time();
     event->tscs[0] = tsc_entry;
-#endif
     event->tscs[1] = tsc_mpi_entry - tsc_entry;
     event->tscs[2] = tsc_mpi_exit - tsc_entry;
 #ifdef _HWCOUNTERS_ENABLED_
@@ -352,17 +322,11 @@ static int MPI_Abort_internal(MPI_Comm comm, int errorcode, void **p_entrys)
     const PEAT_MPI_Func_ID fid = MPI_ABORT_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_ABORT_ID_THROUGH;
     long long tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
-#ifdef USE_NANO_TIMER
-    long long nsec_entry;
-#endif
     int tid;
     pid_t tid_in;
     msl_extras_counters counters;
     msl_event *event;
-#ifdef USE_NANO_TIMER
-    nsec_entry = peat_get_nano_sec();
-#endif
-    tsc_entry = rdtscta(&tid_in);
+    tsc_entry = peat_get_time_tid(&tid_in);
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     counting_permit += 2;
     tid = __msl_get_tid(tid_in);
@@ -384,19 +348,15 @@ static int MPI_Abort_internal(MPI_Comm comm, int errorcode, void **p_entrys)
     gt_info(ptpd_finalize());
 #endif
     gt_info(pre_finalize(1));
-    tsc_mpi_entry = rdtsca();
+    tsc_mpi_entry = peat_get_time();
 #endif
 #ifndef _TRACTOR_PASSTHROUGH_
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     //    }
-    tsc_mpi_exit = rdtsca();
+    tsc_mpi_exit = peat_get_time();
     // counting_permit-=2;
-    tsc_exit = rdtsca();
-#ifdef USE_NANO_TIMER
-    event->tscs[0] = nsec_entry;
-#else
+    tsc_exit = peat_get_time();
     event->tscs[0] = tsc_entry;
-#endif
     event->tscs[1] = tsc_mpi_entry - tsc_entry;
     event->tscs[2] = tsc_mpi_exit - tsc_entry;
 #ifdef _HWCOUNTERS_ENABLED_
@@ -448,19 +408,13 @@ int MPI_Pcontrol_internal(const int ctl, void **p_entrys)
     __DEBUG_PROLOG_MPI_LAYER__
 #ifndef _TRACTOR_PASSTHROUGH_
     long long tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
-#ifdef USE_NANO_TIMER
-    long long nsec_entry;
-#endif
     pid_t tid_in;
     int tid;
     msl_extras_counters counters;
     msl_event *event;
     bool l_skip_parse = skip_parse;
 //    if(__builtin_expect(!l_skip_parse,1)) {
-#ifdef USE_NANO_TIMER
-    nsec_entry = peat_get_nano_sec();
-#endif
-    tsc_entry = rdtscta(&tid_in);
+    tsc_entry = peat_get_time_tid(&tid_in);
     counting_permit += 2;
     tid = __msl_get_tid(tid_in);
     __msl_allocate_event(tid, 0, &event, &counters);
@@ -472,23 +426,19 @@ int MPI_Pcontrol_internal(const int ctl, void **p_entrys)
     gt_info(mprof).get_mem_status(&counters.mems[0]);
 #endif
     in_mpi_call[tid] = 1;
-    tsc_mpi_entry = rdtsca();
+    tsc_mpi_entry = peat_get_time();
 //    }//if(__builtin_expect((counting_permission[MPI_PCONTROL_ID_THROUGH]>0 && !l_skip_parse),1))
 #endif
     gt_info(pc_change_state(ctl));
 #ifndef _TRACTOR_PASSTHROUGH_
     //    if(__builtin_expect(!l_skip_parse,1)) {
-    tsc_mpi_exit = rdtsca();
+    tsc_mpi_exit = peat_get_time();
     in_mpi_call[tid] = 0;
     memcpy(counters.addrs, p_entrys, sizeof(void *) * gt_info(num_addrs));
     event->func_id[0] = MPI_PCONTROL_ID;
     event->func_id[1] = MPI_PCONTROL_ID_THROUGH;
     event->pcontrol.ctl = ctl;
-#ifdef USE_NANO_TIMER
-    event->tscs[0] = nsec_entry;
-#else
     event->tscs[0] = tsc_entry;
-#endif
     event->tscs[1] = tsc_mpi_entry - tsc_entry;
     event->tscs[2] = tsc_mpi_exit - tsc_entry;
 #ifdef _HWCOUNTERS_ENABLED_
@@ -498,7 +448,7 @@ int MPI_Pcontrol_internal(const int ctl, void **p_entrys)
     gt_info(mprof).get_mem_status(&counters.mems[1]);
 #endif
     // counting_permit-=2;
-    tsc_exit = rdtsca();
+    tsc_exit = peat_get_time();
     event->tscs[3] = tsc_exit - tsc_entry;
     local_tool_overhead = tsc_mpi_entry - tsc_entry + tsc_exit - tsc_mpi_exit;
     global_mpi_time += tsc_mpi_exit - tsc_mpi_entry;
