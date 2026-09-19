@@ -223,10 +223,6 @@ void t_fab_profiler::write_fab_file(bool print_names)
             }
 
             long long l_tscs[4];
-            current_array[tid][record_counter[tid]].tscs[0] *= freq_ratio; // nanosec-> clockticks
-            current_array[tid][record_counter[tid]].tscs[1] *= freq_ratio; // nanosec-> clockticks
-            current_array[tid][record_counter[tid]].tscs[2] *= freq_ratio; // nanosec-> clockticks
-            current_array[tid][record_counter[tid]].tscs[3] *= freq_ratio; // nanosec-> clockticks
             l_tscs[0] = current_array[tid][record_counter[tid]].tscs[0];
             l_tscs[1] = current_array[tid][record_counter[tid]].tscs[1];
             l_tscs[2] = current_array[tid][record_counter[tid]].tscs[2];
@@ -234,7 +230,7 @@ void t_fab_profiler::write_fab_file(bool print_names)
             l_tscs[0] -= tsc_counter;
             tsc_counter = current_array[tid][record_counter[tid]].tscs[0];
             int l_num_calls = current_array[tid][record_counter[tid]].fab.num_calls;
-            long long total_clocks_bitween_calls = current_array[tid][record_counter[tid]].fab.total_clocks_bitween_calls * freq_ratio; // nanosec-> clockticks
+            long long total_clocks_bitween_calls = current_array[tid][record_counter[tid]].fab.total_clocks_bitween_calls;
             gzprintf(fps, ":%lld:%lld:%lld:%lld:%lld:%d\n", l_tscs[0], l_tscs[1], l_tscs[2], l_tscs[3], total_clocks_bitween_calls, l_num_calls);
             record_counter[tid]++;
             if (record_counter[tid] >= max_events[tid]) {

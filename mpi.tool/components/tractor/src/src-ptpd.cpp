@@ -73,10 +73,6 @@ unsigned long update_interval; // in usec
 int exit_flag = 0, start_counting = 1, stop_counting = 0, sigterm_received = 0;
 MPI_Request Rstart, Rstop;
 MPI_Status Sstart, Sstop;
-// This process never runs the tractor init sequence, so the global freq_ratio
-// is never computed here; this node's own nanosec-> clockticks ratio instead
-// (1.0, i.e. a no-op, when !USE_NANO_TIMER since delay[] is already clockticks).
-static double ptp_freq_ratio = 1.0;
 
 void ptp_rank_timer_init(char *filename, char *mode)
 {
@@ -120,9 +116,11 @@ void ptp_rank_timer_init(char *filename, char *mode)
     PMPI_Group_incl(grp_world, local_ranks_num, local_ranks, &grp_master);
     PMPI_Comm_create(MPI_COMM_WORLD, grp_master, &comm_master);
 #ifdef USE_NANO_TIMER
-    // gathered here (despite ptpd being unrelated to trace collection) to
-    // convert this node's own nanosec captures back to clockticks below,
-    // since the global freq_ratio is never computed in this process.
+    // delay[] is captured in real nanosec below, so report a matching 1GHz
+    // "frequency" (nanosec already IS ticks-at-1GHz) rather than this node's
+    // actual CPU frequency, which would be the wrong unit for downstream math.
+    proc_freq[0] = proc_freq[1] = PEAT_BILLION;
+#else
     sprintf(tbuf, "/proc/cpuinfo");
     tfp = fopen(tbuf, "rt");
     if (tfp) {
@@ -172,10 +170,6 @@ void ptp_rank_timer_init(char *filename, char *mode)
         };
         fclose(tfp);
     }
-    if (proc_freq[0] > 0)
-        ptp_freq_ratio = (double)proc_freq[0] / (double)PEAT_BILLION;
-#else
-    proc_freq[0] = proc_freq[1] = PEAT_BILLION;
 #endif
     if (comm_master != MPI_COMM_NULL) {
         PMPI_Comm_rank(comm_master, &rank_master);
@@ -230,7 +224,7 @@ void ptp_rank_timer_step(void)
                     PMPI_Ssend(delay[j], 0, MPI_DOUBLE, i, TAG_SYNC, comm_master);
                     //                    usleep(USLEEP_TIME);
 #ifdef USE_NANO_TIMER
-                    delay[j][0] = (long long)(peat_get_nano_sec() * ptp_freq_ratio); // nanosec-> clockticks
+                    delay[j][0] = peat_get_nano_sec();
 #else
                     delay[j][0] = rdtsc();
 #endif
@@ -238,7 +232,7 @@ void ptp_rank_timer_step(void)
                     //                    PMPI_Recv(delay[j], 0, MPI_DOUBLE, i, TAG_SYNC, comm_master, &mpi_stat_tmp);
                     PMPI_Recv(delay[j], 0, MPI_DOUBLE, i, TAG_DELAY_REQ, comm_master, &mpi_stat_tmp);
 #ifdef USE_NANO_TIMER
-                    delay[j][1] = (long long)(peat_get_nano_sec() * ptp_freq_ratio); // nanosec-> clockticks
+                    delay[j][1] = peat_get_nano_sec();
 #else
                     delay[j][1] = rdtsc();
 #endif
@@ -275,14 +269,14 @@ void ptp_rank_timer_step(void)
                 PMPI_Recv(delay[j], 0, MPI_DOUBLE, 0, TAG_SYNC, comm_master, &mpi_stat_tmp);
                 PMPI_Recv(delay[j], 0, MPI_DOUBLE, 0, TAG_FOLLOWUP, comm_master, &mpi_stat_tmp);
 #ifdef USE_NANO_TIMER
-                delay[j][0] = (long long)(peat_get_nano_sec() * ptp_freq_ratio); // nanosec-> clockticks
+                delay[j][0] = peat_get_nano_sec();
 #else
                 delay[j][0] = rdtsc();
 #endif
                 //                PMPI_Ssend(delay[j], 0, MPI_DOUBLE, 0, TAG_SYNC, comm_master);
                 //                usleep(USLEEP_TIME);
 #ifdef USE_NANO_TIMER
-                delay[j][1] = (long long)(peat_get_nano_sec() * ptp_freq_ratio); // nanosec-> clockticks
+                delay[j][1] = peat_get_nano_sec();
 #else
                 delay[j][1] = rdtsc();
 #endif

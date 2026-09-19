@@ -385,7 +385,6 @@ extern  ompt_finalize_tool_t ompt_finalize_tool;
 
 #define __msl_allocate_event(tid_in, skip_write, event, counters) gt_info(allocate_event(tid_in, skip_write, event, counters))
 #define __msl_reuse_event(tid_in, event, counters, funcid) gt_info(reuse_event(tid_in, event, counters, funcid))
-#define __msl_freq_scale(nanotime) (nanotime) * (freq_ratio)
 #define __msl_fab_allocate_event(tid_in, event, funcid) gt_info(t_fab_prof).allocate_event(tid_in, event, funcid)
 #define __msl_fab_reuse_event(tid_in, event, funcid) gt_info(t_fab_prof).reuse_event(tid_in, event, funcid)
 

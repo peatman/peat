@@ -11,11 +11,13 @@ rm -rf $src_tmp
 mkdir -p $src_tmp
 cd $src_tmp
 
-cmake -DCMAKE_CXX_COMPILER=$MPICXX \
+cmake -DCMAKE_CXX_COMPILER=$MPICXX -DPEAT_TIMER=nano \
     ../src
 
 cmake --build .
 cmake --build . -- install
+
+exit
 
 rm -rf *
 

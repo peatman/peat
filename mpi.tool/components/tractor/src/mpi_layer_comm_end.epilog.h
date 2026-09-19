@@ -26,7 +26,7 @@ event->comms.comm = lcomm;
 event->comms.num_colts = num_colts[tid];
 memcpy(counters.addrs, p_entrys, sizeof(void *) * gt_info(num_addrs));
 //    } // if (__builtin_expect((counting_permission[fidc]>0 && !l_skip_parse),1))
-gt_info(local_comms)->comm_end(lcomm, (PEAT_Clock)((double)tsc_mpi_exit * freq_ratio));
+gt_info(local_comms)->comm_end(lcomm, tsc_mpi_exit);
 
 #ifdef _HWCOUNTERS_ENABLED_
 memcpy(counters.hwcs, l_hwcs, num_hwcs * sizeof(l_hwcs[0]));

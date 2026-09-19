@@ -23,16 +23,10 @@ extern "C" {
 #endif
 #ifdef USE_NANO_TIMER
 PEAT_Clock t_nano_init = 0;
-PEAT_Clock tsc_adjustments[MAX_CORE_ID];
-PEAT_Byte tsc_adjustments_made[MAX_CORE_ID];
-t_tsc_core_adjust tsc_core_adjust[MAX_CORE_ID];
-PEAT_Proc lead_core_id = -1;
 #endif
 PEAT_Clock t_tsc_init = 0;
 long long proc_freq[2] = {0, 0};
 clockid_t default_timer = CLOCK_MONOTONIC_RAW;
-double freq_ratio = 1.0;
-double freq_ratio_uncorrected = 1.0;
 
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
 }

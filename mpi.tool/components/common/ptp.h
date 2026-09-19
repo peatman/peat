@@ -163,7 +163,6 @@ class PTP
     std::map<PEAT_Rank, PEAT_Num> lower_boundaries_index;
     std::map<PEAT_Rank, PEAT_Clock> upper_boundaries;
     std::map<PEAT_Rank, PEAT_Clock> start_sync, end_sync;
-    std::map<PEAT_Rank, PEAT_Clock> init_nsec;
 
     std::map<PEAT_Rank, PEAT_Ratio> freq_scale;
 

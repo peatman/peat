@@ -26,7 +26,7 @@ __write_comms__
     event->comms.num_colts = num_colts[tid];
 memcpy(counters.addrs, p_entrys, sizeof(void *) * gt_info(num_addrs));
 //    } // if (__builtin_expect((counting_permission[fidc]>0 && !l_skip_parse),1))
-gt_info(local_comms)->comm_begin(event->comms.newcomm, (PEAT_Clock)((double)tsc_entry * freq_ratio));
+gt_info(local_comms)->comm_begin(event->comms.newcomm, tsc_entry);
 #ifdef _HWCOUNTERS_ENABLED_
 memcpy(counters.hwcs, l_hwcs, num_hwcs * sizeof(l_hwcs[0]));
 gt_info(hwc).get_all_counters(&counters.hwcs[num_hwcs]);

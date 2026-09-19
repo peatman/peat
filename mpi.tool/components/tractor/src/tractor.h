@@ -312,10 +312,6 @@ int get_group(long long num) {
 extern PEAT_Addr highfort;
 extern PEAT_Addr lowfort;
 const int minonetimealloc = 16;
-static inline PEAT_Ratio get_freq_to_seconds_ratio(void)
-{
-    return 1000 * 1000 * 1000 / (PEAT_Ratio)proc_freq[0];
-}
 
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
 }
