@@ -13,7 +13,7 @@ Performance Estimation & Analysing Toolkit (PEAT): a collection of tools to coll
 - `components/common/` - shared C++ sources used by all analysis tools: MPI function ID tables, communicator/transport modelling, PTP time correction, common file I/O and utility helpers.
 - `components/tractor/` - the trace collector runtime (`libtractor.*.so`, `LD_PRELOAD`-based), the core data-gathering piece that produces the raw trace files consumed by everything else. See [components/tractor/README.md](components/tractor/README.md).
 - `components/Tune/` - sample captured traces and small standalone MPI test programs (`tune_pet.c`) used to tune/validate PET's performance model.
-- `components/mat/` - Matching and Statistic Module (mat): matches P2P/collective/GPU trace records across ranks and builds per-call statistics. See [components/mat/README.md](components/mat/README.md).
+- `components/mat/` - Matching Tool (mat): matches P2P/collective/GPU trace records across ranks and builds per-call statistics. See [components/mat/README.md](components/mat/README.md).
 - `components/ctt/` - Calls Tracing Tool (ctt): post-processes traces into call-level timing/classification reports. See [components/ctt/README.md](components/ctt/README.md).
 - `components/urpu/` - User Regions Processing Utility (urpu): aggregates statistics for user-instrumented code regions. See [components/urpu/README.md](components/urpu/README.md).
 - `components/pet/` - Performance Estimation Tool (PET): models/predicts MPI performance using collected traces and network profiles. See [components/pet/README.md](components/pet/README.md).
