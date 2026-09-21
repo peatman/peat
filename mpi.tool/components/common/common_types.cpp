@@ -287,6 +287,9 @@ void Address_File_Storage::parse(const String_Split &lines, const PEAT_Rank rank
             if (lines.size() > 3)
                 extract(last_thread_Id, lines.at(3));
             last_thread_idx[rank] = last_thread_Id;
+            if (lines.size() > 4)
+                extract(last_event_id, lines.at(4));
+            last_fab_event_idx[rank] = last_event_id;
             break;
         }
         case PEAT_RT_User_Regions_Total: {

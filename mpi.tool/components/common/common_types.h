@@ -775,6 +775,7 @@ struct Address_File_Storage {
     std::map<PEAT_Rank, std::map<PEAT_UID, User_Address_Info>> appAddresses;
     std::map<PEAT_Rank, std::map<User_Address_Key, PEAT_Ratio>> mAddresses; // addresses from input model
     std::map<PEAT_Rank, PEAT_UID> last_event_idx;
+    std::map<PEAT_Rank, PEAT_UID> last_fab_event_idx;
     std::map<PEAT_Rank, PEAT_Thread> last_thread_idx;
     File_Storage_GZ *UR_File;
     const Model_ID *m_id;

@@ -58,6 +58,8 @@ export HYDRA_TOPO_DEBUG=1
 export MPICH_POSIX_NUM_COLLS_THRESHOLD=9999 # should be quite big but this one is enought for the example
 
 mpiexec.hydra -launcher ssh -genvall -bind-to hwthread -map-by core  $LD_PRELOAD $PBS_NF -ppn $ppn -np $ranks $GDB ./alltoall $nnodes $ppn 4194304 10 #24
+rm -f alltoall
+
 #mpiexec.hydra -launcher ssh -genvall -bind-to hwthread -map-by core  $LD_PRELOAD $PBS_NF -ppn $ppn -np $ranks $GDB ./repro_final 
 
 

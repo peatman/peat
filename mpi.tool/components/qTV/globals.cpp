@@ -82,6 +82,7 @@ TV_Global_Colors::TV_Global_Colors() : TV_Colors()
     event_brushes[TV_BRUSH_EVENT_TYPE_OMPT_LOCAL].setColor(Qt::darkCyan);
     event_brushes[TV_BRUSH_EVENT_TYPE_GPU].setColor(Qt::darkGreen);
     event_brushes[TV_BRUSH_EVENT_TYPE_PE].setColor(Qt::darkCyan);
+    event_brushes[TV_BRUSH_EVENT_TYPE_FAB].setColor(Qt::darkYellow);
 
     event_brushes[TV_BRUSH_EVENT_TYPE_USER_CODE].setStyle(Qt::SolidPattern);
     event_brushes[TV_BRUSH_EVENT_TYPE_SOURCE].setStyle(Qt::SolidPattern);
@@ -95,6 +96,7 @@ TV_Global_Colors::TV_Global_Colors() : TV_Colors()
     event_brushes[TV_BRUSH_EVENT_TYPE_OMPT_LOCAL].setStyle(Qt::SolidPattern);
     event_brushes[TV_BRUSH_EVENT_TYPE_GPU].setStyle(Qt::SolidPattern);
     event_brushes[TV_BRUSH_EVENT_TYPE_PE].setStyle(Qt::SolidPattern);
+    event_brushes[TV_BRUSH_EVENT_TYPE_FAB].setStyle(Qt::SolidPattern);
 }
 
 void TV_Global_Colors::load()

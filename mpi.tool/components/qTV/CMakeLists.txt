@@ -51,9 +51,11 @@ set(SOURCES
 		cutoffdialog.ui
 		legenddialog.cpp
 		legenddialog.ui
-	colorlistwidget.cpp 
-		messagestabwidget.cpp 
+		colorlistwidget.cpp
+		messagestabwidget.cpp
 		messagestabwidget.ui
+		functionstabwidget.cpp
+		functionstabwidget.ui
 		textviewer.cpp
 		icons.qrc
 		../common/file_io.cpp
@@ -78,7 +80,8 @@ set(HEADERS
         textviewer.h
         tvmainwindow.h
         tracedialog.h
-        messagestabwidget.h 
+        messagestabwidget.h
+        functionstabwidget.h
         ../common/file_io.h
         ../common/common_types.h
         ../common/func_id.h

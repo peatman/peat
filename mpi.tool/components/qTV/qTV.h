@@ -52,6 +52,7 @@
 #include "globals.h"
 // #include "messagesdialog.h"
 #include "elements.h"
+#include "functionstabwidget.h"
 #include "messagestabwidget.h"
 class TV : public QWidget
 {
@@ -199,6 +200,7 @@ class TV : public QWidget
     std::map<PEAT_Rank, std::string> mpi_file_names;
     std::map<PEAT_Rank, std::string> hwc_file_names;
     std::map<PEAT_Rank, std::string> bind_file_names;
+    std::map<PEAT_Rank, std::string> fab_file_names;
 
     bool back_to_full_view;
     bool drag;
@@ -213,7 +215,7 @@ class TV : public QWidget
 
     QPoint cursor_point;
     PEAT_Rank filter_rank;
-    QTableWidget *functions_view;
+    FunctionsTabWidget *functions_view;
     QTreeWidget *info_view;
     MessagesTabWidget *messages_view;
     // QTableWidget *messages_view;
