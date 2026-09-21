@@ -77,13 +77,13 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);src;..\common;..\contrib\zlib\install\include;..\contrib\getopt\include</IncludePath>
-    <LibraryPath>$(ICInstallDir)\compiler\lib\intel64_win;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);..\contrib\zlib\install\lib;$(ICInstallDir)\lib</LibraryPath>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);src;..\common;..\contrib\zlib\install\msvc\include;..\contrib\getopt\include</IncludePath>
+    <LibraryPath>$(ICInstallDir)\compiler\lib\intel64_win;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);..\contrib\zlib\install\msvc\lib;$(ICInstallDir)\lib</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);src;..\common;..\contrib\zlib\install\include;..\contrib\getopt\include</IncludePath>
-    <LibraryPath>$(ICInstallDir)\compiler\lib\intel64_win;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);..\contrib\zlib\install\lib;$(ICInstallDir)\lib</LibraryPath>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);src;..\common;..\contrib\zlib\install\msvc\include;..\contrib\getopt\include</IncludePath>
+    <LibraryPath>$(ICInstallDir)\compiler\lib\intel64_win;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);..\contrib\zlib\install\msvc\lib;$(ICInstallDir)\lib</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>

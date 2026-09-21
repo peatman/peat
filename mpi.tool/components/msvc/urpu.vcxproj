@@ -107,27 +107,27 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\include;..\contrib\getopt\include;</IncludePath>
-    <LibraryPath>..\contrib\zlib\install\lib\;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);</LibraryPath>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\msvc\include;..\contrib\getopt\include;</IncludePath>
+    <LibraryPath>..\contrib\zlib\install\msvc\lib\;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);</LibraryPath>
     <ExecutablePath>$(VC_ExecutablePath_x64);$(WindowsSDK_ExecutablePath);$(VS_ExecutablePath);$(MSBuild_ExecutablePath);$(FxCopDir);$(PATH)</ExecutablePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug.MPI|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>$(I_MPI_ROOT)\include;$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\include;..\contrib\getopt\include;</IncludePath>
-    <LibraryPath>$(I_MPI_ROOT)\lib\mpi\debug;$(I_MPI_ROOT)\lib;..\contrib\zlib\install\lib\;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);</LibraryPath>
+    <IncludePath>$(I_MPI_ROOT)\include;$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\msvc\include;..\contrib\getopt\include;</IncludePath>
+    <LibraryPath>$(I_MPI_ROOT)\lib\mpi\debug;$(I_MPI_ROOT)\lib;..\contrib\zlib\install\msvc\lib\;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);</LibraryPath>
     <ExecutablePath>$(I_MPI_ROOT)\bin\mpi\debug;$(I_MPI_ROOT)\bin;$(VC_ExecutablePath_x64);$(WindowsSDK_ExecutablePath);$(VS_ExecutablePath);$(MSBuild_ExecutablePath);$(FxCopDir);$(PATH)</ExecutablePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\include;..\contrib\getopt\include;</IncludePath>
-    <LibraryPath>..\contrib\zlib\install\lib\;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);</LibraryPath>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\msvc\include;..\contrib\getopt\include;</IncludePath>
+    <LibraryPath>..\contrib\zlib\install\msvc\lib\;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);</LibraryPath>
     <LibraryWPath>$(WindowsSDK_MetadataPath);</LibraryWPath>
     <ExecutablePath>$(VC_ExecutablePath_x64);$(WindowsSDK_ExecutablePath);$(VS_ExecutablePath);$(MSBuild_ExecutablePath);$(FxCopDir);$(PATH);</ExecutablePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release.MPI|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>$(I_MPI_ROOT)\include;$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\include;..\contrib\getopt\include;</IncludePath>
-    <LibraryPath>$(I_MPI_ROOT)\lib;..\contrib\zlib\install\lib\;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);</LibraryPath>
+    <IncludePath>$(I_MPI_ROOT)\include;$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\msvc\include;..\contrib\getopt\include;</IncludePath>
+    <LibraryPath>$(I_MPI_ROOT)\lib;..\contrib\zlib\install\msvc\lib\;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);</LibraryPath>
     <LibraryWPath>$(WindowsSDK_MetadataPath);</LibraryWPath>
     <ExecutablePath>$(I_MPI_ROOT)\bin;$(VC_ExecutablePath_x64);$(WindowsSDK_ExecutablePath);$(VS_ExecutablePath);$(MSBuild_ExecutablePath);$(FxCopDir);$(PATH);</ExecutablePath>
   </PropertyGroup>

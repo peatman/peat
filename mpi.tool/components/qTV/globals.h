@@ -46,6 +46,7 @@ struct TV_TraceParts {
     bool mpi_messages[4] = {true, true, true, true};
     bool omp_functions[5] = {true, true, true, true, true};
     bool gpu_functions[3] = {true, true, true};
+    bool fab_functions = true;
     /*
     bool
         mpi_local_functions=true,

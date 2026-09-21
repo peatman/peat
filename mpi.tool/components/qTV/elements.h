@@ -78,9 +78,10 @@ class Elements
     String_Split trace_line_fab;
     String_Split translated_hwc;
 #endif
-    PTP *ptp; // only set when falling back to raw (unprocessed) .mpi/.hwc files, see parse_trace_info_file
-    Model_ID *model_id; // must outlive ptp: PTP keeps a pointer to it (see PTP::m_id)
+    PTP *ptp; 
+    Model_ID *model_id; 
     std::vector<PEAT_Clock> tsc_predictor;
+    std::vector<PEAT_Clock> fab_tsc_predictor;
     void translate_hwc_line(const PEAT_Rank rank, const PEAT_MPI_Func_ID func_id, const bool is_second_line, PTP *ptp, const String_Split &hwc, String_Split &out_hwc);
   public:
     Elements(QFileInfo &name, TV_TraceParts *swn);
@@ -329,7 +330,6 @@ class Elements
     std::vector<PEAT_Thread> max_fab_tid;
     std::vector<PEAT_Thread> max_omp_tid;
     std::vector<PEAT_Thread> max_gpu_tid;
-    std::vector<PEAT_Clock> fab_tsc_predictor; // per-rank running accumulator, see get_fab_event()
 
     // Messages related data structures
     std::vector<std::map<PEAT_UID, TV_Message>> messages;

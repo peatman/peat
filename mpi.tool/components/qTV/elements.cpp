@@ -448,7 +448,7 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
         }
         pb->setFormat("Reading fab files " + prog_bar_text + " done");
         QApplication::processEvents();
-        if (!fab_file_names.empty()) {
+        if (!fab_file_names.empty() && tp.fab_functions) {
             std::vector<PEAT_Rank> fab_ranks;
             fab_ranks.reserve(fab_file_names.size());
             for (std::map<PEAT_Rank, std::string>::const_iterator it = fab_file_names.begin(); it != fab_file_names.end(); ++it) {
@@ -1300,7 +1300,7 @@ bool Elements::add_event(TV_Event *event, TV_TraceParts &tp)
 
 bool Elements::add_fab_event(TV_Fab_Event* event, TV_TraceParts& tp)
 {
-    if (event->get_event_type() == TV_EVENT_TYPE_FAB && !tp.mpi_functions[0])
+    if (!tp.fab_functions)
         return false;
 
     try {

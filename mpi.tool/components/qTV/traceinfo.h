@@ -29,6 +29,7 @@ class TraceInfo
   public:
     TraceInfo();
     bool parse_trace_info_file(QFileInfo &tracefile);
+    bool has_fab_files() const;
     void update_src_dirs();
     static QString make_absolute_path(const QString &file_path, const QString &relative_dir);
 

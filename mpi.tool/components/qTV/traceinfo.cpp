@@ -181,6 +181,21 @@ bool TraceInfo::parse_trace_info_file(QFileInfo &tracefile)
 
     return true;
 }
+bool TraceInfo::has_fab_files() const
+{
+    // fab files are always raw (see Elements::parse_trace_info_file), so - unlike mpi/hwc - they
+    // live in `path`, not next to trace.info. fab_files isn't always recorded into trace.info
+    // (e.g. older traces), default to ".fab" like mat/pet/Elements do in that case.
+    if (path.isEmpty() || trace_files.isEmpty())
+        return false;
+    std::string fab_ext = fab_files.isEmpty() ? ".fab" : fab_files.toStdString();
+    try {
+        std::map<PEAT_Rank, std::string> found = get_file_names(path.toStdString(), trace_files.toStdString(), fab_ext, false);
+        return !found.empty();
+    } catch (const std::runtime_error &) {
+        return false;
+    }
+}
 void TraceInfo::update_src_dirs()
 {
     std::string filename = trace_info_file.toStdString();
