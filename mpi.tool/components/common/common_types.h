@@ -1141,7 +1141,7 @@ struct PEAT_Event_Delivery {
 
 #define PRINT_PARAMETERS(width, string) int((width + strlen(string) + 1) / 2), string, int(width - strlen(string)) / 2, ""
 
-static bool is_mpi(T_property func_class)
+static bool is_mpi(PEAT_Property func_class)
 {
     switch (func_class) {
     case PEAT_PROP_CLASS_START:
@@ -1158,7 +1158,7 @@ static bool is_mpi(T_property func_class)
     }
     return false;
 }
-static bool is_omp(T_property func_class)
+static bool is_omp(PEAT_Property func_class)
 {
     return func_class == PEAT_PROP_CLASS_OMPT;
 }

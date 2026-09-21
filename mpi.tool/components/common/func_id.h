@@ -40,8 +40,8 @@ class Func_ID
     const char *name_by_idx(PEAT_MPI_Func_ID idx) const;
     PEAT_MPI_Func_ID idx_by_name(const char *name) const;
     // const char *func_idOrNameByIdx(PEAT_MPI_Func_ID idx) const;//respects nameInsteadIdx. if nameInsteadIdx=true, returns name. Overwise return ID.
-    // T_property event_dataByIdx(const PEAT_MPI_Func_ID id) const;
-    PEAT_Bool check_property(const PEAT_MPI_Func_ID id, T_property property_id) const;
+    // PEAT_Property event_dataByIdx(const PEAT_MPI_Func_ID id) const;
+    PEAT_Bool check_property(const PEAT_MPI_Func_ID id, PEAT_Property property_id) const;
     PEAT_Bool check_tx(const PEAT_MPI_Func_ID id)
     {
         return check_property(id, PEAT_PROP_DATA_TX) || check_property(id, PEAT_PROP_DATA_TXRX);
@@ -61,7 +61,7 @@ class Func_ID
         const char *suffix;
         const char *extra_out;
         struct {
-            const T_property prop[16];
+            const PEAT_Property prop[16];
         };
     };
     static const MPIFuncs mpi_funcs_static[];
@@ -81,6 +81,6 @@ class Func_ID
 };
 extern Func_ID global_func_id;
 
-std::ostream &operator<<(std::ostream &dbg, const T_property &data);
+std::ostream &operator<<(std::ostream &dbg, const PEAT_Property &data);
 
 #endif // __FUNC_ID_H__

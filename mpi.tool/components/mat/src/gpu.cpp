@@ -49,6 +49,7 @@ GPU::~GPU()
 void GPU::print_GPU_out(const Tractor_Event &event)
 {
     // cerr << "Local. Rank:" << local_record.rank << ". uniq_id:" << local_record.ph[0].uniq_id << endl;
+#ifdef MAT_PROCESS_HWC_MPI_OUTPUT
     output_MPI->printf(event.rank, "%lld:%lld:%d:%s", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id));
 #if 0
     output_HWC->printf(event.rank, "%lld:%lld:%d:%lld:%lld:%lld:%lld:%lld:%lld", event.primary_id, event.secondary_id, event.thread_id,
@@ -67,7 +68,7 @@ void GPU::print_GPU_out(const Tractor_Event &event)
                        event.tsc_time.pe.out);
 #endif
     for (PEAT_Num i = 0; i < event.addrs.size(); i++) {
-        output_HWC->printf(event.rank, ":%llx", event.addrs.at(i));
+        output_HWC->printf(event.rank, ":%lld", event.addrs.at(i));
     }
     output_HWC->printf(event.rank, "\n");
     size_t num_params = event.params.size();
@@ -81,6 +82,7 @@ void GPU::print_GPU_out(const Tractor_Event &event)
         output_MPI->printf(event.rank, ":%llx", event.out_params[p]);
     }
     output_MPI->printf(event.rank, "\n");
+#endif
     print_GPU_bind(event);
 }
 

@@ -50,49 +50,51 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
     extract(primary_id, line_mpi.at(0));
     extract(secondary_id, line_mpi.at(1));
     extract(thread_id, line_mpi.at(2));
-    PEAT_UID l_primary_id, l_secondary_id;
-    PEAT_Thread l_thread_id;
-    extract(l_primary_id, line_hwc.at(0));
-    extract(l_secondary_id, line_hwc.at(1));
-    extract(l_thread_id, line_hwc.at(2));
-    assert(l_primary_id == primary_id);
-    assert(l_secondary_id == secondary_id);
-    assert(l_thread_id == thread_id);
-    extract(tsc_time.func.in, line_hwc.at(3), 10);
-    extract(tsc_time.mpi.in, line_hwc.at(4), 10);
-    extract(tsc_time.mpi.out, line_hwc.at(5), 10);
-    extract(tsc_time.func.out, line_hwc.at(6), 10);
-    for (int i = 0; i < (int)num_addrs; i++) {
-        PEAT_UID addr;
-        extract(addr, line_hwc.at(7 + i));
-        addrs.push_back(addr);
-        // addrs.push_back(user_region_file->get_addr_by_id(rank, addr)->addr);
-    }
-    //  Hardware counters are following to addrs (num_hwcs)
-    // memory info is 8 cells, since not widely used  skip for now
-    PEAT_Num hwc_size = (PEAT_Num)line_hwc.size();
-    for (PEAT_Num i = 7 + num_hwcs + num_addrs; i < hwc_size; i += 2) {
-        PEAT_MPI_Memory_Buffer buf;
-        if (strlen(line_hwc.at(i)) > 0) { // bug in soe versions of tractor
-            extract(buf.addr, line_hwc.at(i), 16);
-            extract(buf.size, line_hwc.at(i + 1));
+    if (!line_hwc.empty()) { // line_hwc is empty when hwc files aren't read (matching_only on)
+        PEAT_UID l_primary_id, l_secondary_id;
+        PEAT_Thread l_thread_id;
+        extract(l_primary_id, line_hwc.at(0));
+        extract(l_secondary_id, line_hwc.at(1));
+        extract(l_thread_id, line_hwc.at(2));
+        assert(l_primary_id == primary_id);
+        assert(l_secondary_id == secondary_id);
+        assert(l_thread_id == thread_id);
+        extract(tsc_time.func.in, line_hwc.at(3), 10);
+        extract(tsc_time.mpi.in, line_hwc.at(4), 10);
+        extract(tsc_time.mpi.out, line_hwc.at(5), 10);
+        extract(tsc_time.func.out, line_hwc.at(6), 10);
+        for (int i = 0; i < (int)num_addrs; i++) {
+            PEAT_UID addr;
+            extract(addr, line_hwc.at(7 + i));
+            addrs.push_back(addr);
+            // addrs.push_back(user_region_file->get_addr_by_id(rank, addr)->addr);
         }
-        buffers.push_back(buf);
-    }
+        //  Hardware counters are following to addrs (num_hwcs)
+        // memory info is 8 cells, since not widely used  skip for now
+        PEAT_Num hwc_size = (PEAT_Num)line_hwc.size();
+        for (PEAT_Num i = 7 + num_hwcs + num_addrs; i < hwc_size; i += 2) {
+            PEAT_MPI_Memory_Buffer buf;
+            if (strlen(line_hwc.at(i)) > 0) { // bug in soe versions of tractor
+                extract(buf.addr, line_hwc.at(i), 16);
+                extract(buf.size, line_hwc.at(i + 1));
+            }
+            buffers.push_back(buf);
+        }
 
 #if 0
-    assert(tsc_time.func.in >= 0);
-    assert(tsc_time.mpi.in >= 0);
-    assert(tsc_time.mpi.out >= 0);
-    assert(tsc_time.func.out >= 0);
+        assert(tsc_time.func.in >= 0);
+        assert(tsc_time.mpi.in >= 0);
+        assert(tsc_time.mpi.out >= 0);
+        assert(tsc_time.func.out >= 0);
 #else // correction instead of assert
-    assert(tsc_time.func.in >= 0);
-    assert(tsc_time.mpi.in >= 0);
-    if (tsc_time.mpi.out < tsc_time.mpi.in)
-        tsc_time.mpi.out = tsc_time.mpi.in;
-    if (tsc_time.func.out < tsc_time.mpi.out)
-        tsc_time.func.out = tsc_time.mpi.out;
+        assert(tsc_time.func.in >= 0);
+        assert(tsc_time.mpi.in >= 0);
+        if (tsc_time.mpi.out < tsc_time.mpi.in)
+            tsc_time.mpi.out = tsc_time.mpi.in;
+        if (tsc_time.func.out < tsc_time.mpi.out)
+            tsc_time.func.out = tsc_time.mpi.out;
 #endif
+    }
     if (func_id == MPI_PCONTROL_ID) {
         extract(PControl.ctl, line_mpi.at(4));
     }

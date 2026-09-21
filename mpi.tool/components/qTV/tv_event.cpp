@@ -30,7 +30,7 @@ TV_Event::~TV_Event()
         delete addrs;
 }
 
-PEAT_Bool TV_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Num num_addrs)
+PEAT_Bool TV_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs)
 {
     // basic info
     rank = r_rank;
@@ -47,14 +47,20 @@ PEAT_Bool TV_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string,
     assert(sec_id == secondary_id);
     assert(thread_id == thread);
     // TSCs block
-    extract(e_time.func.in, hwc_string.at(3), 10);
-    extract(e_time.func.out, hwc_string.at(4), 10);
-    extract(e_time.pe.in, hwc_string.at(5), 10);
-    extract(e_time.pe.out, hwc_string.at(6), 10);
+    if (evt_time.func.out > 0) { // read and corrected in get_event
+        e_time = evt_time;
+    }
+    else { // hasn't read and corrected in get_event
+        extract(e_time.func.in, hwc_string.at(3), 10);
+        extract(e_time.func.out, hwc_string.at(4), 10);
+        extract(e_time.pe.in, hwc_string.at(5), 10);
+        extract(e_time.pe.out, hwc_string.at(6), 10);
+
+    }
     addrs = new Event_Address_Info(num_addrs);
     for (int i = 0; i < (int)num_addrs; i++) {
         PEAT_UID addr;
-        extract(addr, hwc_string.at(3 + 4 + 0 + i), 16);
+        extract(addr, hwc_string.at(3 + 4 + 0 + i));
         addrs->addr[i] = addr;
     }
     // sanity check (and if pe information was not written)
@@ -64,7 +70,7 @@ PEAT_Bool TV_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string,
         e_time.pe.out = e_time.func.out;
     return true;
 }
-PEAT_Bool TV_Local_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Num num_addrs)
+PEAT_Bool TV_Local_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs)
 {
     rank = r_rank;
     extract(primary_id, mpi_string.at(0));
@@ -77,18 +83,18 @@ PEAT_Bool TV_Local_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_s
     } /*else {
         func_id = get_core()->model_id.modelFunctionTags.at((PEAT_MPI_Func_ID)funcid);
     }*/
-    TV_Event::read_event(r_rank, mpi_string, hwc_string, num_addrs);
+    TV_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs);
     if (func_id == MPI_PCONTROL_ID) {
         extract(p_control_id, mpi_string.at(3), 10, false);
     }
     // update_pending();
     return true;
 }
-PEAT_Bool TV_Local_Buf_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Num num_addrs)
+PEAT_Bool TV_Local_Buf_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs)
 {
-    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, num_addrs);
-    extract(inbuf_size, mpi_string.at(4));
-    extract(outbuf_size, mpi_string.at(5));
+    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs);
+    extract(inbuf_size, mpi_string.at(4), 16);
+    extract(outbuf_size, mpi_string.at(5), 16);
     return true;
 }
 TV_Coll_Event::~TV_Coll_Event()
@@ -103,9 +109,9 @@ TV_Coll_Event::~TV_Coll_Event()
     */
 }
 
-PEAT_Bool TV_Collective_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Num num_addrs)
+PEAT_Bool TV_Collective_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs)
 {
-    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, num_addrs);
+    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs);
     extract(comm, mpi_string.at(4), 16);
     extract(root, mpi_string.at(5));
     extract(request, mpi_string.at(6), 16);
@@ -142,9 +148,9 @@ PEAT_Bool TV_Collective_Event::read_event(PEAT_Rank r_rank, const String_Split &
     return true;
 }
 
-PEAT_Bool TV_Comm_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Num num_addrs)
+PEAT_Bool TV_Comm_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs)
 {
-    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, num_addrs);
+    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs);
     extract(comm, mpi_string.at(4), 16);
     extract(newcomm, mpi_string.at(5), 16);
     extract(remotecomm, mpi_string.at(6), 16);
@@ -162,9 +168,9 @@ TV_Start_Event::~TV_Start_Event()
         delete *event_it;
     }
 }
-PEAT_Bool TV_Start_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Num num_addrs)
+PEAT_Bool TV_Start_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs)
 {
-    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, num_addrs);
+    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs);
     extract(input_request_num, mpi_string.at(4));
     extract(triggered_request_num, mpi_string.at(5));
     extract(flag, mpi_string.at(6));
@@ -230,9 +236,9 @@ PEAT_Bool TV_Start_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_s
     }
     return true;
 }
-PEAT_Bool TV_Completion_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Num num_addrs)
+PEAT_Bool TV_Completion_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs)
 {
-    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, num_addrs);
+    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs);
     extract(input_request_num, mpi_string.at(4));
     extract(triggered_request_num, mpi_string.at(5));
     extract(flag, mpi_string.at(6));
@@ -274,9 +280,9 @@ PEAT_Bool TV_Completion_Event::read_event(PEAT_Rank r_rank, const String_Split &
     return true;
 }
 
-PEAT_Bool TV_ToR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Num num_addrs)
+PEAT_Bool TV_ToR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs)
 {
-    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, num_addrs);
+    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs);
     extract(comm, mpi_string.at(4), 16);
     extract(peer_rank, mpi_string.at(5));
     extract(request, mpi_string.at(6), 16);
@@ -289,10 +295,10 @@ PEAT_Bool TV_ToR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_str
     return true;
 }
 
-PEAT_Bool TV_TaR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Num num_addrs)
+PEAT_Bool TV_TaR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs)
 {
     if (!process_second_line) {
-        TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, num_addrs);
+        TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs);
         extract(comm, mpi_string.at(4), 16);
         extract(peer_rank, mpi_string.at(5)); // COMMWORLD based No need to translate
         /*
@@ -311,12 +317,12 @@ PEAT_Bool TV_TaR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_str
     return true;
 }
 
-PEAT_Bool TV_OMPT_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Num num_addrs)
+PEAT_Bool TV_OMPT_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs)
 {
-    return TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, num_addrs);
+    return TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs);
 }
 
-PEAT_Bool TV_GPU_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Num num_addrs)
+PEAT_Bool TV_GPU_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs)
 {
-    return TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, num_addrs);
+    return TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs);
 }

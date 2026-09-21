@@ -513,8 +513,8 @@ const char* printTCommonFileRecordType( PEAT_func_idNum id )
 
 #endif
 
-enum T_property {
-    T_PROPERTY_NONE,
+enum PEAT_Property {
+    PEAT_PROPERTY_NONE,
     PEAT_PROP_CLASS_START,
     PEAT_PROP_CLASS_P2P,
     PEAT_PROP_CLASS_PROBE,
@@ -607,9 +607,9 @@ enum T_property {
     PEAT_PROP_BUILTIN,
     PEAT_PROP_NON_DETERMINISTIC,
     PEAT_PROP_SIZE,
-    T_PROPERTY_SIZE
+    PEAT_POPERTY_SIZE
 };
-static const char *print_record_properties(T_property id)
+static const char *print_record_properties(PEAT_Property id)
 {
     switch (id) {
     case PEAT_PROP_CODE_TRACTOR_OVERHEAD:

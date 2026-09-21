@@ -579,6 +579,7 @@ void Request::print_req_out(const Tractor_Event &event)
 {
     if (event.Requests.flag == 0 && skip_locals)
         return; // skip missed Tests
+#ifdef MAT_PROCESS_HWC_MPI_OUTPUT
     output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%d:%d:%d:%d:%llx", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id),
                        event.Requests.input_request_num,
                        event.Requests.triggered_request_num,
@@ -608,9 +609,10 @@ void Request::print_req_out(const Tractor_Event &event)
                        event.tsc_time.pe.out);
 #endif
     for (PEAT_Num i = 0; i < event.addrs.size(); i++) {
-        output_HWC->printf(event.rank, ":%llx", event.addrs.at(i));
+        output_HWC->printf(event.rank, ":%lld", event.addrs.at(i));
     }
     output_HWC->printf(event.rank, "\n");
+#endif
 }
 
 #ifdef PEAT_MPI

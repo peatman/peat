@@ -90,6 +90,11 @@ set(HEADERS
 #find_library(zlib zlib ../external/zlib/lib64)
 include_directories(.)
 
+# By default, qTV ignores mat's processed .mpi/.hwc output and always reads the original raw
+# trace files (doing its own PTP correction). Remove this define to make qTV prefer mat's
+# processed .mpi/.hwc output when present, falling back to raw only if it's missing.
+add_compile_definitions(TV_IGNORE_PROCESSED_OUTPUT)
+
 if (${MSVC})
 #include_directories(../contrib/zlib/install/include ../contrib/jemalloc/include ../contrib/jemalloc/include/msvc_compat)
 include_directories(../contrib/zlib/install/include)

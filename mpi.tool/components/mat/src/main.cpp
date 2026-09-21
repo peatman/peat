@@ -77,6 +77,7 @@ void help(int rank)
         printf("--input=<mask> (-i) select input file mask (default tractor_t)\n");
         printf("--output=<dir> (-o) select output directory (default ./out)\n");
         printf("--wdir=<dir> (-w) select working (input) directory (default current one)\n");
+        printf("--matching-only (-m) only write .bind files, don't rewrite .mpi/.hwc, don't open .hwc input, and skip negative-time correction/imbalance calculation (default off)\n");
         printf("--verbose (-v) print additional info\n");
         printf("\n");
     }
@@ -119,20 +120,23 @@ int main(int argc, char **argv)
         {"wdir", required_argument, 0, 'w'},
         {"skip", no_argument, 0, 's'},
         {"pc_levels", required_argument, 0, 'l'},
-        {"cycle-event", required_argument, 0, 'l'},
+        {"matching-only", no_argument, 0, 'm'},
         {"print_on_send", no_argument, 0, 'p'},
         {"verbose", no_argument, 0, 'v'},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0},
     };
     do {
-        res = getopt_long(argc, argv, "i:w:o:l:c:phvs ", long_options, &option_index);
+        res = getopt_long(argc, argv, "i:w:o:l:c:phvsm", long_options, &option_index);
         switch (res) {
         case 'i':
             glob_param.trace_files = optarg;
             break;
         case 'w':
             glob_param.input_path = optarg;
+            break;
+        case 'm':
+            glob_param.matching_only = 1;
             break;
         case 'o':
             glob_param.output_path = optarg;
@@ -209,7 +213,10 @@ int main(int argc, char **argv)
         model_id_storage.initialize(glob_param);
 
         std::map<PEAT_Rank, std::string> MPI_files = get_file_names(glob_param.input_path, glob_param.trace_files, glob_param.mpi_files, true);
-        std::map<PEAT_Rank, std::string> HWC_files = get_file_names(glob_param.input_path, glob_param.trace_files, glob_param.hwc_files, true);
+        std::map<PEAT_Rank, std::string> HWC_files;
+        if (!glob_param.matching_only) {
+            HWC_files = get_file_names(glob_param.input_path, glob_param.trace_files, glob_param.hwc_files, true);
+        }
         glob_param.trace_comm_size = MPI_files.size();
         peat_mkdir(glob_param.output_path, glob_param.verbose);
         trace_info_file = make_out_file_name(glob_param.output_path, glob_param.trace_files, ".trace.info", "");
@@ -230,11 +237,15 @@ int main(int argc, char **argv)
         for (std::vector<PEAT_Rank>::const_iterator it = glob_param.my_ranks.cbegin(); it != glob_param.my_ranks.cend(); ++it) {
             {
                 glob_param.pe_MPI_files_in_rank[*it] = MPI_files.at(*it);
-                glob_param.pe_HWC_files_in_rank[*it] = HWC_files.at(*it);
-                glob_param.pe_HWC_files_in_rank_out[*it] = make_out_file_name(glob_param.output_path, HWC_files.at(*it), glob_param.output_files, ".gz");
-                glob_param.pe_MPI_files_in_rank_out[*it] = make_out_file_name(glob_param.output_path, MPI_files.at(*it), glob_param.output_files, ".gz");
-                glob_param.pe_bind_files_in_rank_out[*it] = glob_param.pe_MPI_files_in_rank_out.at(*it);
-                glob_param.pe_bind_files_in_rank_out[*it].replace(glob_param.pe_bind_files_in_rank_out[*it].rfind(glob_param.mpi_files), glob_param.mpi_files.length(), glob_param.bind_files);
+                std::string mpi_out_name = make_out_file_name(glob_param.output_path, MPI_files.at(*it), glob_param.output_files, ".gz");
+                std::string bind_out_name = mpi_out_name;
+                bind_out_name.replace(bind_out_name.rfind(glob_param.mpi_files), glob_param.mpi_files.length(), glob_param.bind_files);
+                glob_param.pe_bind_files_in_rank_out[*it] = bind_out_name;
+                if (!glob_param.matching_only) {
+                    glob_param.pe_HWC_files_in_rank[*it] = HWC_files.at(*it);
+                    glob_param.pe_HWC_files_in_rank_out[*it] = make_out_file_name(glob_param.output_path, HWC_files.at(*it), glob_param.output_files, ".gz");
+                    glob_param.pe_MPI_files_in_rank_out[*it] = mpi_out_name;
+                }
             }
         }
         Mat mat(glob_param, model_id_storage);

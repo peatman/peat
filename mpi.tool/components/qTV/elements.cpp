@@ -29,6 +29,7 @@
 #include <stdexcept>
 
 #include "../common/common_types.h"
+#include "../common/model_id.h"
 #include "elements.h"
 #include "globals.h"
 #ifdef _OPENMP
@@ -38,7 +39,7 @@
 #define heightPercent 1.0
 #define showElementsThreshold 1 // 0.3
 #define MAX_SIZE 100
-Elements::Elements(QFileInfo &name, TV_TraceParts *swn) : trace_info_file(name), shown(swn), user_regions(NULL)
+Elements::Elements(QFileInfo &name, TV_TraceParts *swn) : trace_info_file(name), shown(swn), ptp(NULL), model_id(NULL), user_regions(NULL)
 #ifdef _OPENMP
                                                           ,
                                                           locks(NULL)
@@ -64,6 +65,10 @@ Elements::~Elements()
     clear();
     if (user_regions)
         delete user_regions;
+    if (ptp)
+        delete ptp;
+    if (model_id)
+        delete model_id;
 #ifdef _OPENMP
     if (locks)
         delete[] locks;
@@ -315,7 +320,7 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
                 max_clock = LLONG_MAX;
             do {
                 TV_Event *event = NULL;
-                rc = get_event(ranks_to_load_v[r], &mpi_files, &hwc_files, min_clock, max_clock, &event);
+                rc = get_event(ranks_to_load_v[r], &mpi_files, &hwc_files, min_clock, max_clock, &event, ptp);
 
 #ifdef _OPENMP
                 if (omp_get_thread_num() == 0)
@@ -417,12 +422,14 @@ bool Elements::parse_trace_info_file(
         PEAT_Rank rank = file_splitted.at(2).toInt();
         QString type = "." + file_splitted.at(1);
 
+#ifndef TV_IGNORE_PROCESSED_OUTPUT
         if (type == trace_info.mpi_files && ranks_to_load.count(rank) == 1) {
             mpi_file_names[rank] = it->absoluteFilePath().toStdString();
         }
         if (type == trace_info.hwc_files && ranks_to_load.count(rank) == 1) {
             hwc_file_names[rank] = it->absoluteFilePath().toStdString();
         }
+#endif
         if (type == trace_info.bind_files) { // bind files all to be read
             bind_file_names[rank] = it->absoluteFilePath().toStdString();
         }
@@ -444,6 +451,48 @@ bool Elements::parse_trace_info_file(
     user_regions = new Address_File_Storage(glob, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL);
 
     // user_regions = new Address_File_Storage(trace_info.path.toStdString(), "", trace_info.trace_files.toStdString(), trace_info.com_ext.toStdString(), trace_info.app_ext.toStdString(), rank_set, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE,NULL);
+
+    if (ptp) {
+        delete ptp;
+        ptp = NULL;
+    }
+    if (model_id) {
+        delete model_id;
+        model_id = NULL;
+    }
+    if (mpi_file_names.empty() && hwc_file_names.empty() && !ranks_to_load.empty()) {
+        // Either mat was run with --matching-only (no processed .mpi/.hwc files exist in the
+        // output directory, only .bind), or TV_IGNORE_PROCESSED_OUTPUT is defined (default) so
+        // processed .mpi/.hwc files are never read even when present. Either way, fall back to the
+        // original raw trace files and do our own PTP real-time correction (mat always writes .bind
+        // + trace.info, but only writes the per-rank timing sync boundaries into trace.info, not
+        // per-event corrected timestamps).
+        glob.mpi_files = trace_info.mpi_files.toStdString();
+        glob.hwc_files = trace_info.hwc_files.toStdString();
+        glob.ptpd_ext = ".ptp";
+        std::map<PEAT_Rank, std::string> raw_mpi_names = get_file_names(glob.input_path, glob.trace_files, glob.mpi_files, true);
+        std::map<PEAT_Rank, std::string> raw_hwc_names = get_file_names(glob.input_path, glob.trace_files, glob.hwc_files, true);
+        for (std::map<PEAT_Rank, std::string>::const_iterator it = raw_mpi_names.begin(); it != raw_mpi_names.end(); ++it) {
+            if (ranks_to_load.count(it->first) == 1)
+                mpi_file_names[it->first] = it->second;
+        }
+        for (std::map<PEAT_Rank, std::string>::const_iterator it = raw_hwc_names.begin(); it != raw_hwc_names.end(); ++it) {
+            if (ranks_to_load.count(it->first) == 1)
+                hwc_file_names[it->first] = it->second;
+        }
+
+        model_id = new Model_ID();
+        model_id->initialize(glob);
+        std::map<PEAT_Rank, std::string> file_input_com_names = get_file_names(glob.input_path, glob.trace_files, glob.com_ext, true);
+        std::map<PEAT_Rank, std::string> file_input_app_names;
+        file_input_app_names[0] = glob.input_path + DIR_DELIMITER + glob.trace_files + glob.app_ext;
+        std::map<PEAT_Rank, std::string> file_input_ptp_names;
+        file_input_ptp_names[0] = glob.input_path + DIR_DELIMITER + glob.trace_files + glob.ptpd_ext;
+        ptp = new PTP(glob);
+        ptp->initialize(file_input_com_names, file_input_ptp_names, file_input_app_names, model_id);
+
+        tsc_predictor.assign(ranks_to_load.empty() ? 0 : (*ranks_to_load.rbegin() + 1), 0);
+    }
     eventsV.resize(user_regions->last_event_idx.size());
     events_tr.resize(user_regions->last_event_idx.size());
     // PEAT_Rank_Pair p(user_regions->last_event_idx.size());
@@ -1743,7 +1792,7 @@ TV_Event *Elements::get_event(int x, int y, int width) const
     return NULL;
 }
 
-PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, File_Storage_GZ *input_HWC, PEAT_Clock min_clock, PEAT_Clock max_clock, TV_Event **event)
+PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, File_Storage_GZ *input_HWC, PEAT_Clock min_clock, PEAT_Clock max_clock, TV_Event **event, PTP *ptp)
 {
     // PEAT_Bool possible_colt_included = false;
     *event = NULL;
@@ -1770,19 +1819,40 @@ PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, 
         peat_warning(tmp);
         return false;
     }
-
-    PEAT_Clock func_start = 0, func_stop = 0;
-    extract(func_start, trace_line_HWC.at(3), 10, false);
-    extract(func_stop, trace_line_HWC.at(4), 10, false);
-    if (func_stop < min_clock)
-        return true;
-    if (func_start > max_clock)
-        return false;
     PEAT_MPI_Func_ID func_id = TMPI_FUNC_ID_NONE;
     extract(func_id, trace_line_MPI.at(3), 10, false);
     if (func_id == 0) {
         func_id = global_func_id.idx_by_name(trace_line_MPI.at(3));
     }
+    PEAT_Time evt_time;
+    PEAT_Clock func_start = 0, func_stop = 0;
+    if (ptp) {
+        extract(evt_time.func.in, trace_line_HWC.at(3), 10);
+        extract(evt_time.mpi.in, trace_line_HWC.at(4), 10);
+        extract(evt_time.mpi.out, trace_line_HWC.at(5), 10);
+        extract(evt_time.func.out, trace_line_HWC.at(6), 10);
+
+        evt_time.func.in += tsc_predictor.at(rank);
+        if (!global_func_id.check_property(func_id, PEAT_PROP_COLT)) {
+            tsc_predictor[rank] = evt_time.func.in;
+        }
+        evt_time.mpi.in += evt_time.func.in;
+        evt_time.mpi.out += evt_time.func.in;
+        evt_time.func.out += evt_time.func.in;
+        evt_time.func.in = ptp->get_real_time(evt_time.func.in, rank);
+        evt_time.func.out = ptp->get_real_time(evt_time.func.out, rank);
+        evt_time.mpi.in = ptp->get_real_time(evt_time.mpi.in, rank);
+        evt_time.mpi.out = ptp->get_real_time(evt_time.mpi.out, rank);
+        func_start = evt_time.func.in;
+        func_stop = evt_time.func.out;
+    } else {
+        extract(func_start, trace_line_HWC.at(3), 10, false);
+        extract(func_stop, trace_line_HWC.at(4), 10, false);
+    }
+    if (func_stop < min_clock)
+        return true;
+    if (func_start > max_clock)
+        return false;
 
     if (func_id >= MPI_START_FILE_GROUP && func_id < MPI_END_FILE_GROUP) {
         *event = new TV_Local_Event();
@@ -1825,7 +1895,7 @@ PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, 
         *event = new TV_Local_Event();
     }
 
-    if (!(*event)->read_event(rank, trace_line_MPI, trace_line_HWC, trace_info.num_addrs)) {
+    if (!(*event)->read_event(rank, trace_line_MPI, trace_line_HWC, evt_time, trace_info.num_addrs)) {
         delete *event;
         *event = NULL;
         return true;
@@ -1868,7 +1938,7 @@ PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, 
     if (func_id == MPI_SENDRECV_ID || func_id == MPI_SENDRECV_REPLACE_ID || func_id == MPIC_SENDRECV_ID || func_id == MPIC_SENDRECV_REPLACE_ID) {
         input_MPI->read_lines(trace_line_MPI, rank, ':', ';');
         input_HWC->read_lines(trace_line_HWC, rank, ':', ';');
-        (*event)->read_event(rank, trace_line_MPI, trace_line_HWC, trace_info.num_addrs);
+        (*event)->read_event(rank, trace_line_MPI, trace_line_HWC, evt_time, trace_info.num_addrs);
     }
     return true;
 }

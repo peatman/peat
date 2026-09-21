@@ -90,7 +90,7 @@ PEAT_MPI_Func_ID Func_ID::idx_by_name(const char *name) const
 }
 
 /*
-T_property Func_ID::event_dataByIdx(const PEAT_MPI_Func_ID id) const
+PEAT_Property Func_ID::event_dataByIdx(const PEAT_MPI_Func_ID id) const
 {
     if(!funcStore.empty()) {
         try {
@@ -103,9 +103,9 @@ T_property Func_ID::event_dataByIdx(const PEAT_MPI_Func_ID id) const
             throw out_of_range(tmp.str());
         }
     }
-    return T_PROPERTY_NONE;
+    return PEAT_PROPERTY_NONE;
 }*/
-PEAT_Bool Func_ID::check_property(const PEAT_MPI_Func_ID id, T_property property_id) const
+PEAT_Bool Func_ID::check_property(const PEAT_MPI_Func_ID id, PEAT_Property property_id) const
 {
     if (id == TMPI_FUNC_ID_NONE)
         return false;
@@ -141,7 +141,7 @@ std::ostream &operator<<(std::ostream &dbg, const Func_ID *me)
     return dbg;
 }
 
-std::ostream &operator<<(std::ostream &dbg, const T_property &data)
+std::ostream &operator<<(std::ostream &dbg, const PEAT_Property &data)
 {
     switch (data) {
     case PEAT_PROP_DATA_TX:
@@ -156,7 +156,7 @@ std::ostream &operator<<(std::ostream &dbg, const T_property &data)
     case PEAT_PROP_DATA_LOCAL:
         dbg << "LOCAL";
         break;
-    case T_PROPERTY_NONE:
+    case PEAT_PROPERTY_NONE:
         dbg << "NONE";
         break;
     default:

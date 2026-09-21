@@ -50,11 +50,12 @@ Collectives::~Collectives()
 }
 void Collectives::print_collective_out(const Tractor_Event &event)
 {
+#ifdef MAT_PROCESS_HWC_MPI_OUTPUT
     if (event.func_class == PEAT_PROP_CLASS_FIO) {
-        output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%d:%llx:%llx:%lld:%lld", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id),
+        output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%x:%llx:%llx:%lld:%lld", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id),
                            event.MPIFIO.comm, event.MPIFIO.fh, event.MPIFIO.request, event.MPIFIO.offset, event.MPIFIO.bytes);
     } else {
-        output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%d:%d:%llx:%d:%d:%d", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id),
+        output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%x:%d:%llx:%d:%d:%d", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id),
                            event.Collective.comm, event.Collective.root, event.Collective.request, event.Collective.rw_fields0, event.Collective.rw_fields1, event.num_colts);
         for (PEAT_Signed_Num j = 0; j < event.Collective.rw_fields0; j++) {
             output_MPI->printf(event.rank, ":%lld", event.send_bytes[j]);
@@ -81,10 +82,11 @@ void Collectives::print_collective_out(const Tractor_Event &event)
                        event.tsc_time.pe.out);
 #endif
     for (PEAT_Num i = 0; i < event.addrs.size(); i++) {
-        output_HWC->printf(event.rank, ":%llx", event.addrs.at(i));
+        output_HWC->printf(event.rank, ":%lld", event.addrs.at(i));
     }
     output_HWC->printf(event.rank, "\n");
     output_MPI->printf(event.rank, "\n");
+#endif
 }
 void Collectives::print_collective_err(const MAT_Collective &record)
 {
@@ -164,7 +166,7 @@ void Collectives::print_collective_bind(const MAT_Collective &record)
     }
 #ifdef PRINT_STAT
     /***************************************************************************/
-    if (!record.coll_events_list.empty()) {
+    if (!record.coll_events_list.empty() && output_HWC->get_number_of_files() > 0) { // no timing data to compute stats/imbalance from when hwc files aren't read
         // col_file->write_line(header);
         // col_file->put_records(record);
         PEAT_Collective_Record r_col;

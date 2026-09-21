@@ -56,7 +56,8 @@ P2PAL::~P2PAL()
 
 void P2PAL::print_P2PL(const Tractor_Event &event)
 {
-    output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%d:%d:%llx:%llx:%d:%lld\n", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id),
+#ifdef MAT_PROCESS_HWC_MPI_OUTPUT
+    output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%x:%d:%llx:%llx:%d:%lld\n", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id),
                        event.P2P.comm, event.P2P.peer, event.P2P.request, event.P2P.message, event.P2P.tag, event.P2P.transfered_bytes);
 
 #if 0
@@ -76,9 +77,10 @@ void P2PAL::print_P2PL(const Tractor_Event &event)
                        event.tsc_time.pe.out);
 #endif
     for (PEAT_Num i = 0; i < event.addrs.size(); i++) {
-        output_HWC->printf(event.rank, ":%llx", event.addrs.at(i));
+        output_HWC->printf(event.rank, ":%lld", event.addrs.at(i));
     }
     output_HWC->printf(event.rank, "\n");
+#endif
 }
 void P2PAL::print_P2PE(const MAT_Record &event)
 {
@@ -157,7 +159,7 @@ void P2PAL::print_P2PF(const MAT_Record &left, const MAT_Record &right)
         output_bind->puts(right.rank, &tbuf[4]);
     }
 #ifdef PRINT_STAT
-    {
+    if (output_HWC->get_number_of_files() > 0) { // no timing data to compute stats/imbalance from when hwc files aren't read
         int pc_level = left.pc_level;
         PEAT_P2P_Record r_left;
         r_left.func_id[0] = left.ph[0].func_id;
@@ -196,7 +198,9 @@ void P2PAL::print_P2PF(const MAT_Record &left, const MAT_Record &right)
             right_clock.max_c = duration;
         // printed_p2p[pc_level][r_right] = right_clock;
         add_imbalance(left, right, left_clock,right_clock);
+    }
 
+    {
         if (left.comm != right.comm) {
             fprintf(stderr, "p2p. Ranks:%d,%d ids:%lld,%lld,%lld (%lld) => (%lld) %lld,%lld,%lld\n", left.rank, right.rank,
                     left.ph[0].primary_id, left.ph[1].primary_id, left.ph[2].primary_id,
@@ -236,8 +240,9 @@ void P2PAL::print_Local(const Tractor_Event &event)
     // cerr << "Local. Rank:" << local_record.rank << ". uniq_id:" << local_record.ph[0].uniq_id << endl;
     if (skip_locals)
         return;
+#ifdef MAT_PROCESS_HWC_MPI_OUTPUT
     if (event.landbuf.inbuf_size >= 0 || event.landbuf.outbuf_size >= 0) {
-        output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%d:%d\n", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id), event.landbuf.inbuf_size, event.landbuf.outbuf_size);
+        output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%x:%x\n", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id), event.landbuf.inbuf_size, event.landbuf.outbuf_size);
     } else {
         output_MPI->printf(event.rank, "%lld:%lld:%d:%s\n", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id));
     }
@@ -259,9 +264,10 @@ void P2PAL::print_Local(const Tractor_Event &event)
 
 #endif
     for (PEAT_Num i = 0; i < event.addrs.size(); i++) {
-        output_HWC->printf(event.rank, ":%llx", event.addrs.at(i));
+        output_HWC->printf(event.rank, ":%lld", event.addrs.at(i));
     }
     output_HWC->printf(event.rank, "\n");
+#endif
 }
 
 bool P2PAL::match_peer(matching_event_type &queues, std::list<MAT_Record *>::iterator &ret_it, const MAT_Record &input_record) const
