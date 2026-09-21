@@ -2796,7 +2796,7 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
 
 #if defined(_FAB_PROFILE_)
     if (t_write_main_files && t_collect_fab && t_mpi_rank >= 0)
-        t_fab_prof.write_fab_file(print_names);
+        ret.max_fab_uniq_idx = t_fab_prof.write_fab_file(print_names);
 #endif
     __DEBUG_EPILOG_TRACTOR_LAYER__
     return (ret);
@@ -3014,7 +3014,7 @@ void tractor::write_com_file(const num_processed_events &num_of_events, /*user_r
     gzprintf(fps_com, "%d:%lld:%lld:%lld:%lld\n", PEAT_RT_App_Start_Stop_Info, app_start, app_end, app_end - app_start, t_tsc_init);
     gzprintf(fps_com, "%d:%lld:%lld:%lld:%lld\n", PEAT_RT_MPM_Rank_Time_Stamp, app_start, app_start_parallel, app_end_parallel, app_end);
     gzprintf(fps_com, "%d:%d:%lld:%lld\n", PEAT_RT_CPU_Freq, 0, proc_freq[0], proc_freq[1]);
-    gzprintf(fps_com, "%d:%lld:%lld:%lld\n", PEAT_RT_Number_Of_Events, num_of_events.processed_events, num_of_events.max_uniq_idx, num_of_events.max_thread_id);
+    gzprintf(fps_com, "%d:%lld:%lld:%lld:%lld\n", PEAT_RT_Number_Of_Events, num_of_events.processed_events, num_of_events.max_uniq_idx, num_of_events.max_thread_id, num_of_events.max_fab_uniq_idx);
     gzprintf(fps_com, "%d:%d\n", PEAT_RT_HWLOC_Proc_Record, core_id);
     if (node_topology.length() > 0)
         gzprintf(fps_com, "%d%s\n", PEAT_RT_HWLOC_Node_Record, node_topology.c_str());

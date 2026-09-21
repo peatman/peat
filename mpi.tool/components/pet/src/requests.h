@@ -24,7 +24,7 @@
 
 struct Request {
     Request() : request(-1), rank(-1), peer_rank(-1), tag(0), acknowledgement_sent(false),
-                comm(0), size(0), start_time(-1), start_time_orig(-1), uniq_id(-1), func_id(TMPI_FUNC_ID_NONE), kind(T_PROPERTY_NONE), completed(false), canceled(false), persistent(false) {}
+                comm(0), size(0), start_time(-1), start_time_orig(-1), uniq_id(-1), func_id(TMPI_FUNC_ID_NONE), kind(PEAT_PROPERTY_NONE), completed(false), canceled(false), persistent(false) {}
 
     PEAT_MPI_Request request; // ID of the request
     PEAT_Rank rank;           // TODO. delete as ambiguous
@@ -37,7 +37,7 @@ struct Request {
     PEAT_Clock start_time_orig;
     PEAT_UID uniq_id;
     PEAT_MPI_Func_ID func_id;
-    T_property kind;             // DATA_TX, DATA_RX, etc.
+    PEAT_Property kind;          // DATA_TX, DATA_RX, etc.
     mutable PEAT_Bool completed; // message belongs to the request received
     PEAT_Bool canceled;          // MPI_CANCEL
     PEAT_Bool persistent;        // MPI_Send_init, MPI_Recv_init

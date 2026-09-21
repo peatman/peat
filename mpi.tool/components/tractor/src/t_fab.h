@@ -71,7 +71,7 @@ typedef enum {
 struct t_fab_profiler : t_base_event {
     t_fab_profiler();
     ~t_fab_profiler();
-    void write_fab_file(bool);
+    long long write_fab_file(bool);
     // void init_hooks();
     void init(int max_threads, char *_stat_dir, char *_tmp_dir, char *_stat_template, int _use_realtime_dump);
     char *gz_ext;

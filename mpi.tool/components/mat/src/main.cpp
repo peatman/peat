@@ -112,6 +112,7 @@ int main(int argc, char **argv)
     glob_param.hwc_files = ".hwc";
     glob_param.app_ext = ".app";
     glob_param.bind_files = ".bind";
+    glob_param.fab_files = ".fab";
     glob_param.input_path = ".";
 
     struct option long_options[] = {

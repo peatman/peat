@@ -73,7 +73,7 @@ struct PEAT_Single_Event_Clock {
 };
 
 struct Tractor_Event : public Phase {
-    T_property func_class;
+    PEAT_Property func_class;
     PEAT_Rank rank;
     PEAT_Signed_Num num_colts;
     std::vector<PEAT_ULNum> params, out_params, extra_params;
@@ -82,7 +82,7 @@ struct Tractor_Event : public Phase {
     std::vector<PEAT_UID> addrs;
     std::vector<PEAT_MPI_Memory_Buffer> buffers;
 
-    Tractor_Event() : func_class(T_PROPERTY_NONE), rank(-1), num_colts(0) {}
+    Tractor_Event() : func_class(PEAT_PROPERTY_NONE), rank(-1), num_colts(0) {}
     Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, const String_Split &line_hwc, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file, const Communicators *com_store);
     void get_extra_txrx(const String_Split &line, const Communicators *com_store);
     ~Tractor_Event()

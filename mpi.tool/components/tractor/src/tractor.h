@@ -76,6 +76,7 @@ struct t_bin {
 struct num_processed_events {
     long processed_events = 0;
     long max_uniq_idx = 0;
+    long max_fab_uniq_idx = 0;
     long max_thread_id = 0;
 };
 

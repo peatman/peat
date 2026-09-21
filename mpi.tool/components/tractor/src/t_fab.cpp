@@ -130,17 +130,20 @@ void t_fab_profiler::dump_events(pid_t tid, msl_adv_chain **chain)
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
 
-void t_fab_profiler::write_fab_file(bool print_names)
+long long t_fab_profiler::write_fab_file(bool print_names)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
-    if (calls_limit == 0)
-        return;
+    if (calls_limit == 0) {
+    __DEBUG_EPILOG_TRACTOR_LAYER__
+        return 0;
+    }
     char tfilename[1024];
     char filename[1024];
     char pid[16];
     char gz_mode[16];
     pid_t upid = getpid();
     sprintf(tfilename, "%s/%s", stat_dir, stat_template);
+    long long uniq_index = 0;
     // strcpy(tfilename, stat_template);
     strcpy(gz_mode, "w"); // simple text output for all files
     if (compression || Z_DEFAULT_COMPRESSION != compression_level) {
@@ -162,12 +165,10 @@ void t_fab_profiler::write_fab_file(bool print_names)
     if (fps) {
         int tsc_mpi_entry_ind = 1;
         int tsc_mpi_exit_ind = 2;
-        long processed_events = 0;
         long long tsc_counter = 0;
         msl_adv_chain *current_chain[t_max_threads];
         msl_event *current_array[t_max_threads];
 
-        long long uniq_index = 0;
         long long record_counter[t_max_threads];
         long long max_events[t_max_threads];
         std::map<t_timeline, int> timeline;
@@ -208,7 +209,6 @@ void t_fab_profiler::write_fab_file(bool print_names)
             }
             int tid = timeline_it->second;
             timeline.erase(timeline_it);
-            processed_events++;
             uniq_index++;
             if (print_names) {
                 gzprintf(fps, "%lld:%d:%s",
@@ -261,6 +261,7 @@ void t_fab_profiler::write_fab_file(bool print_names)
         }
         gzclose(fps);
     }
+    return uniq_index;
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
 #if defined(_FAB_PROFILE_)

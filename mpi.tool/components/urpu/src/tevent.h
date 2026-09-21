@@ -42,8 +42,6 @@ struct PEAT_MPI_R4Status {
 
 struct Tractor_Event {
     Tractor_Event(const PEAT_Rank r, const String_Split &line_hwc, const PEAT_Num num_tscs, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file);
-
-    T_property mpi_func_class;
     PEAT_Rank rank;
     PEAT_Signed_Num num_colts;
     PEAT_UID uniq_id;

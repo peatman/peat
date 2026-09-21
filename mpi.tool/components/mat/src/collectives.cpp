@@ -166,7 +166,7 @@ void Collectives::print_collective_bind(const MAT_Collective &record)
     }
 #ifdef PRINT_STAT
     /***************************************************************************/
-    if (!record.coll_events_list.empty() && output_HWC->get_number_of_files() > 0) { // no timing data to compute stats/imbalance from when hwc files aren't read
+    if (!record.coll_events_list.empty() && output_HWC && output_HWC->get_number_of_files() > 0) { // no timing data to compute stats/imbalance from when hwc files aren't read
         // col_file->write_line(header);
         // col_file->put_records(record);
         PEAT_Collective_Record r_col;

@@ -159,7 +159,7 @@ void P2PAL::print_P2PF(const MAT_Record &left, const MAT_Record &right)
         output_bind->puts(right.rank, &tbuf[4]);
     }
 #ifdef PRINT_STAT
-    if (output_HWC->get_number_of_files() > 0) { // no timing data to compute stats/imbalance from when hwc files aren't read
+    if (output_HWC && output_HWC->get_number_of_files() > 0) { // no timing data to compute stats/imbalance from when hwc files aren't read
         int pc_level = left.pc_level;
         PEAT_P2P_Record r_left;
         r_left.func_id[0] = left.ph[0].func_id;
