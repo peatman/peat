@@ -241,8 +241,8 @@ void P2PAL::print_Local(const Tractor_Event &event)
     if (skip_locals)
         return;
 #ifdef MAT_PROCESS_HWC_MPI_OUTPUT
-    if (event.landbuf.inbuf_size >= 0 || event.landbuf.outbuf_size >= 0) {
-        output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%x:%x\n", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id), event.landbuf.inbuf_size, event.landbuf.outbuf_size);
+    if (event.landbuf.buf_size >= 0 || event.landbuf.buf_count >= 0) {
+        output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%lld:%lld\n", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id), event.landbuf.buf_count, event.landbuf.buf_size);
     } else {
         output_MPI->printf(event.rank, "%lld:%lld:%d:%s\n", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id));
     }

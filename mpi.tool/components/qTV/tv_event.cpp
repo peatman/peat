@@ -93,8 +93,8 @@ PEAT_Bool TV_Local_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_s
 PEAT_Bool TV_Local_Buf_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs)
 {
     TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs);
-    extract(inbuf_size, mpi_string.at(4), 16);
-    extract(outbuf_size, mpi_string.at(5), 16);
+    extract(buf_count, mpi_string.at(4));
+    extract(buf_size, mpi_string.at(5));
     return true;
 }
 TV_Coll_Event::~TV_Coll_Event()

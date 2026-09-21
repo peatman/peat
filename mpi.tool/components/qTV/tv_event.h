@@ -104,11 +104,11 @@ struct TV_Local_Event : public TV_Event {
 };
 
 struct TV_Local_Buf_Event : public TV_Local_Event {
-    PEAT_Signed_Num inbuf_size, outbuf_size;
+    PEAT_Signed_Num buf_size, buf_count;
 
   public:
     virtual TV_Event_Type get_event_type() const { return TV_EVENT_TYPE_LOCAL_BUF; }
-    TV_Local_Buf_Event() : TV_Local_Event(), inbuf_size(-1), outbuf_size(-1) {}
+    TV_Local_Buf_Event() : TV_Local_Event(), buf_size(-1), buf_count(-1) {}
     virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs);
 };
 struct TV_ToR_Event : public TV_Local_Event {
