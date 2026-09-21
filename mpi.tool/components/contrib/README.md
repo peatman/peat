@@ -15,9 +15,8 @@ Code in this directory may have a different licence and copyright than `peat` an
 These directories contain upstream or separately maintained code. Keep local changes focused on integration requirements and preserve the original component documentation.
 
 
-# configure and build zlib under windows
-# assuming QT in in C:/Qt
-# QT_DIR=C:/Qt
+# configure and build zlib in windows
+# assuming QT_DIR=C:/Qt
 
 "${QT_DIR}/Tools/CMake_64/bin/cmake.exe" \
     -S ${PEAT_TOP}/mpi.tool/components/contrib/zlib \
@@ -38,4 +37,5 @@ These directories contain upstream or separately maintained code. Keep local cha
 # 3. install into contrib/zlib/install/mingw
 "${QT_DIR}/Tools/CMake_64/bin/cmake.exe" --install C:/Users/mgs/zlib-mingw-build
 
-# for MSVC build use built-in MSVC cmake install it into  contrib/zlib/install/msvc
+# for MSVC build use built-in MSVC cmake. 
+# Install it into contrib/zlib/install/msvc.
