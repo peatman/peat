@@ -112,7 +112,7 @@ struct Tractor_Event : public Phase {
 
         struct {
             PEAT_MPI_Comm comm = 0;
-            PEAT_Signed_Num inbuf_size = -1, outbuf_size = -1;
+            PEAT_Signed_Num buf_size = -1, buf_count = -1;
         } landbuf;
 
         struct {

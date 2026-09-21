@@ -54,7 +54,7 @@ PEAT_Bool TV_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string,
     addrs = new Event_Address_Info(num_addrs);
     for (int i = 0; i < (int)num_addrs; i++) {
         PEAT_UID addr;
-        extract(addr, hwc_string.at(3 + 4 + 0 + i), 16);
+        extract(addr, hwc_string.at(3 + 4 + 0 + i));
         addrs->addr[i] = addr;
     }
     // sanity check (and if pe information was not written)
@@ -87,8 +87,8 @@ PEAT_Bool TV_Local_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_s
 PEAT_Bool TV_Local_Buf_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Num num_addrs)
 {
     TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, num_addrs);
-    extract(inbuf_size, mpi_string.at(4));
-    extract(outbuf_size, mpi_string.at(5));
+    extract(buf_count, mpi_string.at(4));
+    extract(buf_size, mpi_string.at(5));
     return true;
 }
 TV_Coll_Event::~TV_Coll_Event()

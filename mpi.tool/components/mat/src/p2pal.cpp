@@ -56,7 +56,7 @@ P2PAL::~P2PAL()
 
 void P2PAL::print_P2PL(const Tractor_Event &event)
 {
-    output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%d:%d:%llx:%llx:%d:%lld\n", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id),
+    output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%x:%d:%llx:%llx:%d:%lld\n", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id),
                        event.P2P.comm, event.P2P.peer, event.P2P.request, event.P2P.message, event.P2P.tag, event.P2P.transfered_bytes);
 
 #if 0
@@ -76,7 +76,7 @@ void P2PAL::print_P2PL(const Tractor_Event &event)
                        event.tsc_time.pe.out);
 #endif
     for (PEAT_Num i = 0; i < event.addrs.size(); i++) {
-        output_HWC->printf(event.rank, ":%llx", event.addrs.at(i));
+        output_HWC->printf(event.rank, ":%lld", event.addrs.at(i));
     }
     output_HWC->printf(event.rank, "\n");
 }
@@ -236,8 +236,8 @@ void P2PAL::print_Local(const Tractor_Event &event)
     // cerr << "Local. Rank:" << local_record.rank << ". uniq_id:" << local_record.ph[0].uniq_id << endl;
     if (skip_locals)
         return;
-    if (event.landbuf.inbuf_size >= 0 || event.landbuf.outbuf_size >= 0) {
-        output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%d:%d\n", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id), event.landbuf.inbuf_size, event.landbuf.outbuf_size);
+    if (event.landbuf.buf_size >= 0 || event.landbuf.buf_count >= 0) {
+        output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%lld:%lld\n", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id), event.landbuf.buf_count, event.landbuf.buf_size);
     } else {
         output_MPI->printf(event.rank, "%lld:%lld:%d:%s\n", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id));
     }
@@ -259,7 +259,7 @@ void P2PAL::print_Local(const Tractor_Event &event)
 
 #endif
     for (PEAT_Num i = 0; i < event.addrs.size(); i++) {
-        output_HWC->printf(event.rank, ":%llx", event.addrs.at(i));
+        output_HWC->printf(event.rank, ":%lld", event.addrs.at(i));
     }
     output_HWC->printf(event.rank, "\n");
 }

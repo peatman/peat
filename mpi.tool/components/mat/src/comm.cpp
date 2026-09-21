@@ -54,8 +54,8 @@ void Comm::print_comm_out(const Tractor_Event &event)
     output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%x:%x:%x:%x:%llx:%d", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id),
                        event.Comms.comm,
                        event.Comms.newcomm,
-                       event.Comms.inter_comm,
                        event.Comms.remote_comm,
+                       event.Comms.inter_comm,
                        event.Comms.request,
                        event.num_colts);
     output_MPI->printf(event.rank, "\n");
@@ -76,7 +76,7 @@ void Comm::print_comm_out(const Tractor_Event &event)
                        event.tsc_time.pe.out);
 #endif
     for (PEAT_Num i = 0; i < event.addrs.size(); i++) {
-        output_HWC->printf(event.rank, ":%llx", event.addrs.at(i));
+        output_HWC->printf(event.rank, ":%lld", event.addrs.at(i));
     }
     output_HWC->printf(event.rank, "\n");
 }

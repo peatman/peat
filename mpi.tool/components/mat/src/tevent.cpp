@@ -98,8 +98,8 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
     }
 
     func_class = PEAT_PROP_CLASS_LOCAL; /* (default decision) */
-    landbuf.inbuf_size = -1;
-    landbuf.outbuf_size = -1;
+    landbuf.buf_size = -1;
+    landbuf.buf_count = -1;
     // class dependent part
     if (func_id >= MPI_START_FILE_GROUP && func_id < MPI_END_FILE_GROUP) {
         func_class = PEAT_PROP_CLASS_FIO;
@@ -112,8 +112,8 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
 
     if (func_id >= MPI_START_BUFFERED_LOCAL_GROUP && func_id < MPI_END_BUFFERED_LOCAL_GROUP) {
         func_class = PEAT_PROP_CLASS_BUF_LOCAL;
-        extract(landbuf.inbuf_size, line_mpi.at(4), 16);
-        extract(landbuf.outbuf_size, line_mpi.at(5), 16);
+        extract(landbuf.buf_count, line_mpi.at(4));
+        extract(landbuf.buf_size, line_mpi.at(5));
     }
     if (((func_id >= MPI_START_COMM_COLLECTIVE_GROUP) && (func_id < MPI_END_COMM_COLLECTIVE_GROUP)) || (func_id == MPI_COMM_FREE_ID)) {
         func_class = PEAT_PROP_CLASS_COMM;

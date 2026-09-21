@@ -51,10 +51,10 @@ Collectives::~Collectives()
 void Collectives::print_collective_out(const Tractor_Event &event)
 {
     if (event.func_class == PEAT_PROP_CLASS_FIO) {
-        output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%d:%llx:%llx:%lld:%lld", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id),
+        output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%x:%llx:%llx:%lld:%lld", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id),
                            event.MPIFIO.comm, event.MPIFIO.fh, event.MPIFIO.request, event.MPIFIO.offset, event.MPIFIO.bytes);
     } else {
-        output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%d:%d:%llx:%d:%d:%d", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id),
+        output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%x:%d:%llx:%d:%d:%d", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id),
                            event.Collective.comm, event.Collective.root, event.Collective.request, event.Collective.rw_fields0, event.Collective.rw_fields1, event.num_colts);
         for (PEAT_Signed_Num j = 0; j < event.Collective.rw_fields0; j++) {
             output_MPI->printf(event.rank, ":%lld", event.send_bytes[j]);
@@ -81,7 +81,7 @@ void Collectives::print_collective_out(const Tractor_Event &event)
                        event.tsc_time.pe.out);
 #endif
     for (PEAT_Num i = 0; i < event.addrs.size(); i++) {
-        output_HWC->printf(event.rank, ":%llx", event.addrs.at(i));
+        output_HWC->printf(event.rank, ":%lld", event.addrs.at(i));
     }
     output_HWC->printf(event.rank, "\n");
     output_MPI->printf(event.rank, "\n");
