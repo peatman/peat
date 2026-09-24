@@ -208,7 +208,7 @@ while( <IN> ) {
   $line=~s/\/\/.*//g;
   $line=~s/,//g;
   $line=~s/ //g;
-  if ($line =~ "^MPI" || $line =~ "^SMP" || $line =~ "^PSM" || $line =~ "^IBV" || $line =~ "^PROCESS" || $line =~ "^CL" || $line =~ "^ZE" || $line =~ "^OMPT" || $line =~ "^UCX" || $line =~ "^UCP" || $line =~ "^OFI" || $line =~ "^FI") {
+  if ($line =~ "^MPI" || $line =~ "^OMPI" ||$line =~ "^SMP" || $line =~ "^PSM" || $line =~ "^IBV" || $line =~ "^PROCESS" || $line =~ "^CL" || $line =~ "^ZE" || $line =~ "^OMPT" || $line =~ "^UCX" || $line =~ "^UCP" || $line =~ "^OFI" || $line =~ "^FI") {
     my @line1 = split('=',$line);
 #    print STDERR "$line1[0]  $line1[1] \n";
     if ($line1[1] eq "") {

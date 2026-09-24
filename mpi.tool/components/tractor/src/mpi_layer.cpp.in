@@ -49,7 +49,8 @@ static PEAT_Clock last_progress_exit_colt[4096];
 static PEAT_Clock num_colts[4096];
 static PEAT_Clock in_mpi_call[4096];
 static MPI_Comm last_coll_comm = MPI_COMM_WORLD;
-int skip_parse = 0;
+int mpi_skip_parse = 0;
+int gpu_skip_parse = 0;
 
 #include "t_extradef.h"
 #include "t_mpidef.h"
@@ -132,11 +133,11 @@ int MPI_Init(int *argc, char ***argv)
 {
     __DEBUG_PROLOG_MPI_LAYER__
     void *return_addr[gt_info(num_addrs)];
-    skip_parse = 1;
+    mpi_skip_parse = 1;
     // gt_info(init());
     stack_unwind0(gt_info(max_ret_level), return_addr, gt_info(ret_levels));
     int ierr = MPI_Init_internal(argc, argv, return_addr);
-    skip_parse = 0;
+    mpi_skip_parse = 0;
     __DEBUG_EPILOG_MPI_LAYER__
     return ierr;
 }
@@ -218,12 +219,12 @@ static int MPI_Init_thread_internal(int *argc, char ***argv, int requested, int 
 int MPI_Init_thread(int *argc, char ***argv, int requested, int *provided)
 {
     __DEBUG_PROLOG_MPI_LAYER__
-    skip_parse = 1;
+    mpi_skip_parse = 1;
     void *return_addr[gt_info(num_addrs)];
     // gt_info(init());
     stack_unwind0(gt_info(max_ret_level), return_addr, gt_info(ret_levels));
     int ierr = MPI_Init_thread_internal(argc, argv, requested, provided, return_addr);
-    skip_parse = 0;
+    mpi_skip_parse = 0;
     __DEBUG_EPILOG_MPI_LAYER__
     return ierr;
 }
@@ -303,13 +304,13 @@ int MPI_Finalize(void)
 {
     __DEBUG_PROLOG_MPI_LAYER__
     debug_printf("Rank %d: called mpi_finalize...\n", t_mpi_rank);
-    skip_parse = 1;
+    mpi_skip_parse = 1;
     void *return_addr[gt_info(num_addrs)];
     stack_unwind0(gt_info(max_ret_level), return_addr, gt_info(ret_levels));
     debug_printf("Rank %d: before mpi_finalize...\n", t_mpi_rank);
     int rv = MPI_Finalize_internal(return_addr);
     debug_printf("Rank %d: after mpi_finalize...\n", t_mpi_rank);
-    skip_parse = 0;
+    mpi_skip_parse = 0;
     __DEBUG_EPILOG_MPI_LAYER__
     return rv;
 }
@@ -391,14 +392,14 @@ int MPI_Abort(MPI_Comm comm, int errorcode)
     const PEAT_MPI_Func_ID fid = MPI_ABORT_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_ABORT_ID_THROUGH;
     debug_printf("Rank %d: called mpi_abort...\n", t_mpi_rank);
-    skip_parse = 1;
+    mpi_skip_parse = 1;
     void *return_addr[gt_info(num_addrs)];
     stack_unwind(gt_info(max_ret_level), return_addr, gt_info(ret_levels));
     debug_printf("Rank %d: before mpi_abort...\n", t_mpi_rank);
     int rv = MPI_Abort_internal(comm, errorcode, return_addr);
     // this code is probably never executed
     debug_printf("Rank %d: after mpi_abort...\n", t_mpi_rank);
-    skip_parse = 0;
+    mpi_skip_parse = 0;
     __DEBUG_EPILOG_MPI_LAYER__
     return rv;
 }
@@ -412,7 +413,7 @@ int MPI_Pcontrol_internal(const int ctl, void **p_entrys)
     int tid;
     msl_extras_counters counters;
     msl_event *event;
-    bool l_skip_parse = skip_parse;
+    bool l_skip_parse = mpi_skip_parse;
 //    if(__builtin_expect(!l_skip_parse,1)) {
     tsc_entry = peat_get_time_tid(&tid_in);
     counting_permit += 2;

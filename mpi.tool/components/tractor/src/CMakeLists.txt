@@ -19,7 +19,7 @@
 # CMake build for tractor (mirrors src/Makefile), including the
 # TARGET=fab_layers standalone shim build and the legacy single-fabric
 # FABRIC=PSM2/VERBS/PSM3/UCX/OFI modes. BUILD_TRACTOR_ENGINEERING_VERSION=auto
-# detects a patched MPI by trying to link against MPI_MPID_comm_translate_rank
+# detects a patched MPI by trying to link against mpi_internal_comm_translate_rank
 # (an MPICH_API_PUBLIC symbol every ../../patches/* patch adds) - see its
 # definition below for the reasoning and caveats.
 #
@@ -242,18 +242,18 @@ if(_eng_lower STREQUAL "auto")
   else()
     # every patch under ../../patches (mpich-4.3.2, mpich-5.0.1, mvapich-2.3.5,
     # mvapich-4.1) adds the same MPICH_API_PUBLIC (exported) symbol
-    # MPI_MPID_comm_translate_rank(); a stock/unpatched MPI never defines it, so
+    # mpi_internal_comm_translate_rank(); a stock/unpatched MPI never defines it, so
     # trying to link a program that references it tells us the install is patched
     # - this assumes CMAKE_C_COMPILER is the MPI wrapper (mpicc), same as elsewhere
     include(CheckFunctionExists)
     set(CMAKE_REQUIRED_QUIET ON)
-    check_function_exists(MPI_MPID_comm_translate_rank TRACTOR_MPI_PATCHED)
+    check_function_exists(mpi_internal_comm_translate_rank TRACTOR_MPI_PATCHED)
     unset(CMAKE_REQUIRED_QUIET)
     if(TRACTOR_MPI_PATCHED)
-      message(STATUS "tractor: BUILD_TRACTOR_ENGINEERING_VERSION=auto -> 'on' (MPI_MPID_comm_translate_rank found: patched/engineering MPI)")
+      message(STATUS "tractor: BUILD_TRACTOR_ENGINEERING_VERSION=auto -> 'on' (mpi_internal_comm_translate_rank found: patched/engineering MPI)")
       set(_eng_lower on)
     else()
-      message(STATUS "tractor: BUILD_TRACTOR_ENGINEERING_VERSION=auto -> 'off' (MPI_MPID_comm_translate_rank not found: stock MPI)")
+      message(STATUS "tractor: BUILD_TRACTOR_ENGINEERING_VERSION=auto -> 'off' (mpi_internal_comm_translate_rank not found: stock MPI)")
       set(_eng_lower off)
     endif()
   endif()
@@ -314,7 +314,7 @@ find_program(TRACTOR_CPP_EXE NAMES cpp REQUIRED)
 # the Makefile's ifeq blocks
 # ---------------------------------------------------------------------------
 set(TRACTOR_CONTROLS
-  _TRACTOR_COLLECT_STAT_ _T_PER_INRTERVAL_STAT_WRITE_ _USE_COMM_DISAMBIGUATION_ _TRACTOR_PCALL_
+  _TRACTOR_COLLECT_STAT_ _T_PER_INTERVAL_STAT_WRITE_ _USE_COMM_DISAMBIGUATION_ _TRACTOR_PCALL_
   _TRACTOR_MAJOR_VERSION_=${TRACTOR_MAJOR} _TRACTOR_MINOR_VERSION_=${TRACTOR_MINOR}
   _TRACTOR_BUILD_DATE_="${TRACTOR_BUILD_DATE}"
   _USE_SIGNALS_

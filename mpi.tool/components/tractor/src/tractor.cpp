@@ -162,6 +162,9 @@ int parse_event_mask(char *events, char c_p[MPI_MAX_FUNCID_THROUGH])
 }
 
 int level0 = 0;
+extern int mpi_skip_parse;
+extern int gpu_skip_parse;
+
 tractor::tractor(void)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
@@ -170,6 +173,8 @@ tractor::tractor(void)
     stat_template = "tractor_t";
     stat_dir = ".";
     tmp_dir = ".";
+    mpi_skip_parse = 1; // no mpi tracing until MPI_Init or MPI_Init_thread
+    gpu_skip_parse = 0; // gpu tracing is always allowed
     print_names = 0;
     t_mpi_rank = -1;
     first_par_tsc = 0;
@@ -1095,8 +1100,6 @@ void tractor::post_ptpd_init(void)
     debug_printf("rank %d: msl_post_ptpd_init called...\n", t_mpi_rank);
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
-extern int skip_parse;
-extern int f_skip_parse;
 
 void tractor::post_mpi_init(void)
 {
@@ -1104,7 +1107,7 @@ void tractor::post_mpi_init(void)
     debug_printf("rank %d: msl_post_mpi_init called...\n", t_mpi_rank);
     if (tractor_initialized < 1)
         return;
-    skip_parse = 1;
+    mpi_skip_parse = 1;
     if (t_mpi_rank >= 0) {
         PMPI_Comm_dup(MPI_COMM_WORLD, &TRACTOR_COMM_WORLD);
         gt_ninfo = new t_nodes_info;
@@ -1112,7 +1115,7 @@ void tractor::post_mpi_init(void)
         local_comms = new t_local_comms;
         local_comms->init();
     }
-    skip_parse = 0;
+    mpi_skip_parse = 0;
 #ifdef _USE_SIGNALS_
     //  protect writing trace
     if (t_use_signals)
@@ -1134,7 +1137,7 @@ void tractor::pre_finalize(int abort)
 #ifdef _FAB_PROFILE_
     t_permit_collect_fab = 0;
 #endif
-    skip_parse = 1;
+    mpi_skip_parse = 1;
     if (t_mpi_rank >= 0 && abort == 0) {
         nodes_info(gt_ninfo);
         global_comms.bind_local_comms();
@@ -1153,7 +1156,7 @@ void tractor::pre_finalize(int abort)
             PMPI_Group_free(&grp_world);
         local_comms->finalize();
     }
-    skip_parse = 0;
+    mpi_skip_parse = 0;
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
 
@@ -1256,10 +1259,10 @@ void tractor::ptpd_init(void)
         ptpd_argv[4] = NULL;
         int r_size_master = size_master + ((int)(ptpd_timenode != NULL));
         debug_printf("Rank 0: MPI_Comm_spawn (%d %s %s %s %s) is being executed.\n", r_size_master, ptpd_execfile, ptpd_ui, ptpd_fn, gz_mode);
-        skip_parse = 1;
+        mpi_skip_parse = 1;
 
         PMPI_Comm_spawn(ptpd_execfile, ptpd_argv, r_size_master, ptpd_info, 0, MPI_COMM_SELF, &ptpd_comm, ptpd_errcodes);
-        skip_parse = 0;
+        mpi_skip_parse = 0;
         if (ptpd_errcodes)
             t_free(ptpd_errcodes, (size_master + 2) * sizeof(int));
         if (ptpd_argv)
@@ -2251,14 +2254,14 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                        current_array[tid][record_counter[tid]].buf_local.count, // 4
                        current_array[tid][record_counter[tid]].buf_local.size   // 5
             );
-#ifdef _T_PER_INRTERVAL_STAT_WRITE_
+#ifdef _T_PER_INTERVAL_STAT_WRITE_
             int group = gt_func_stat.get_group(current_array[tid][record_counter[tid]].buf_local.size);
             int func_id_t = current_array[tid][record_counter[tid]].func_id[1];
             gt_func_stat.stat_for_func[func_id_t].durations[group] += tsc_mpi_exit - tsc_mpi_entry;
             gt_func_stat.stat_for_func[func_id_t].occurences[group]++;
             gt_func_stat.stat_for_func[func_id_t].sizes[group] += current_array[tid][record_counter[tid]].buf_local.size;
             stat_processed = 1;
-#endif // _T_PER_INRTERVAL_STAT_WRITE_
+#endif // _T_PER_INTERVAL_STAT_WRITE_
         }
 
 /***********************************************************************************************************************************************************************************************/
@@ -2424,7 +2427,7 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                 break;
             }
 
-#ifdef _T_PER_INRTERVAL_STAT_WRITE_
+#ifdef _T_PER_INTERVAL_STAT_WRITE_
             if (size > 0) {
                 int group = gt_func_stat.get_group(size);
                 int func_id_t = current_array[tid][record_counter[tid]].func_id[1];
@@ -2433,7 +2436,7 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                 gt_func_stat.stat_for_func[func_id_t].sizes[group] += size;
                 stat_processed = 1;
             }
-#endif // _T_PER_INRTERVAL_STAT_WRITE_
+#endif // _T_PER_INTERVAL_STAT_WRITE_
         }
 #endif
         /***********************************************************************************************************************************************************************************************/
@@ -2472,14 +2475,14 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                        current_array[tid][record_counter[tid]].p2p_pr_pb.transfer_bytes            // 9
             );
 
-#ifdef _T_PER_INRTERVAL_STAT_WRITE_
+#ifdef _T_PER_INTERVAL_STAT_WRITE_
             int group = gt_func_stat.get_group(current_array[tid][record_counter[tid]].p2p_pr_pb.transfer_bytes);
             int func_id_t = current_array[tid][record_counter[tid]].func_id[1];
             gt_func_stat.stat_for_func[func_id_t].durations[group] += tsc_mpi_exit - tsc_mpi_entry;
             gt_func_stat.stat_for_func[func_id_t].occurences[group]++;
             gt_func_stat.stat_for_func[func_id_t].sizes[group] += current_array[tid][record_counter[tid]].p2p_pr_pb.transfer_bytes;
             stat_processed = 1;
-#endif                                                                                                                                                                                                // _T_PER_INRTERVAL_STAT_WRITE_
+#endif                                                                                                                                                                                                // _T_PER_INTERVAL_STAT_WRITE_
             req_comm[MPI_Check_dummy(current_array[tid][record_counter[tid]].p2p_pr_pb.request)] = T_MPI_Comm(current_array[tid][record_counter[tid]].p2p_pr_pb.comm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
         }
 
@@ -2499,14 +2502,14 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                        current_array[tid][record_counter[tid]].p2p_pr_pb.transfer_bytes            // 9
             );
 
-#ifdef _T_PER_INRTERVAL_STAT_WRITE_
+#ifdef _T_PER_INTERVAL_STAT_WRITE_
             int group = gt_func_stat.get_group(current_array[tid][record_counter[tid]].p2p_pr_pb.transfer_bytes);
             int func_id_t = current_array[tid][record_counter[tid]].func_id[1];
             gt_func_stat.stat_for_func[func_id_t].durations[group] += tsc_mpi_exit - tsc_mpi_entry;
             gt_func_stat.stat_for_func[func_id_t].occurences[group]++;
             gt_func_stat.stat_for_func[func_id_t].sizes[group] += current_array[tid][record_counter[tid]].p2p_pr_pb.transfer_bytes;
             stat_processed = 1;
-#endif                                                                                                                                                                                                // _T_PER_INRTERVAL_STAT_WRITE_
+#endif                                                                                                                                                                                                // _T_PER_INTERVAL_STAT_WRITE_
             req_comm[MPI_Check_dummy(current_array[tid][record_counter[tid]].p2p_pr_pb.request)] = T_MPI_Comm(current_array[tid][record_counter[tid]].p2p_pr_pb.comm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
         }
 
@@ -2528,14 +2531,14 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                        current_array[tid][record_counter[tid]].one_sided_comm.size,                     // 8
                        current_array[tid][record_counter[tid]].one_sided_comm.transfer_bytes            // 9
             );
-#ifdef _T_PER_INRTERVAL_STAT_WRITE_
+#ifdef _T_PER_INTERVAL_STAT_WRITE_
             int group = gt_func_stat.get_group(current_array[tid][record_counter[tid]].one_sided_comm.transfer_bytes);
             int func_id_t = current_array[tid][record_counter[tid]].func_id[1];
             gt_func_stat.stat_for_func[func_id_t].durations[group] += tsc_mpi_exit - tsc_mpi_entry;
             gt_func_stat.stat_for_func[func_id_t].occurences[group]++;
             gt_func_stat.stat_for_func[func_id_t].sizes[group] += current_array[tid][record_counter[tid]].one_sided_comm.transfer_bytes;
             stat_processed = 1;
-#endif                                                                                                                                                                                                          // _T_PER_INRTERVAL_STAT_WRITE_
+#endif                                                                                                                                                                                                          // _T_PER_INTERVAL_STAT_WRITE_
             req_comm[MPI_Check_dummy(current_array[tid][record_counter[tid]].one_sided_comm.request)] = T_MPI_Comm(current_array[tid][record_counter[tid]].one_sided_comm.comm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
         }
 
@@ -2667,20 +2670,20 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                 }
                 cumulative_size += (*cur_exts_array)[*ext_count].value;
             }
-#ifdef _T_PER_INRTERVAL_STAT_WRITE_
+#ifdef _T_PER_INTERVAL_STAT_WRITE_
             int group = gt_func_stat.get_group(cumulative_size);
             int func_id_t = current_array[tid][record_counter[tid]].func_id[1];
             gt_func_stat.stat_for_func[func_id_t].durations[group] += tsc_mpi_exit - tsc_mpi_entry;
             gt_func_stat.stat_for_func[func_id_t].occurences[group]++;
             gt_func_stat.stat_for_func[func_id_t].sizes[group] += cumulative_size;
             stat_processed = 1;
-#endif                                                                                                                                                                                                  // _T_PER_INRTERVAL_STAT_WRITE_
+#endif                                                                                                                                                                                                  // _T_PER_INTERVAL_STAT_WRITE_
             req_comm[MPI_Check_dummy(current_array[tid][record_counter[tid]].collective.request)] = T_MPI_Comm(current_array[tid][record_counter[tid]].collective.comm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
         }
 
 /***********************************************************************************************************************************************************************************************/
 #if 0
-#ifdef _T_PER_INRTERVAL_STAT_WRITE_
+#ifdef _T_PER_INTERVAL_STAT_WRITE_
             if(stat_processed != 1) {
                 int group=gt_func_stat.get_group(0);
                 int func_id_t=current_array[tid][record_counter[tid]].func_id[1];
@@ -2689,7 +2692,7 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                 gt_func_stat.stat_for_func[func_id_t].sizes[group]+=0;
                 stat_processed = 1;
             }
-#endif // _T_PER_INRTERVAL_STAT_WRITE_
+#endif // _T_PER_INTERVAL_STAT_WRITE_
 #endif
 
 #ifdef _TRACTOR_EXTRA_FIELDS_
@@ -2930,7 +2933,7 @@ void tractor::write_stat_com_file(void)
     SEPARATOR(2 + 34 + 19 + 36 + 38 + 4);
 #endif
 
-#if 1 // def _T_PER_INRTERVAL_STAT_WRITE_
+#if 1 // def _T_PER_INTERVAL_STAT_WRITE_
     SEPARATOR(38 * (gt_func_stat.bound_num - 1) + 33);
     gzprintf(fps_com, "%d:%34s|", PEAT_RT_Remark, "Function");
     for (int g = 0; g < gt_func_stat.bound_num - 1; g++) {
@@ -2978,7 +2981,7 @@ void tractor::write_stat_com_file(void)
 #endif
     __DEBUG_EPILOG_TRACTOR_LAYER__
 
-#endif // _T_PER_INRTERVAL_STAT_WRITE_
+#endif // _T_PER_INTERVAL_STAT_WRITE_
 }
 
 void tractor::write_com_file(const num_processed_events &num_of_events, /*user_region_store &user_region_store,*/ const PEAT_Clock time_symbols_search)

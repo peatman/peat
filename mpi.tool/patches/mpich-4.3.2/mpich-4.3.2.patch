@@ -92,16 +92,16 @@
  
  void MPIR_Comm_set_session_ptr(MPIR_Comm * comm_ptr, MPIR_Session * session_ptr);
 +
-+int MPI_MPID_comm_translate_rank(MPIR_Comm *comm, int rank) MPICH_API_PUBLIC;
-+void MPI_MPID_print_comm_tree(MPIR_Comm *comm, int depth) MPICH_API_PUBLIC;
-+int MPI_MPID_comm_translate_rank_verbose(MPIR_Comm *comm, int rank) MPICH_API_PUBLIC;
-+int MPI_MPID_request_translate_rank(MPIR_Request *request, int rank) MPICH_API_PUBLIC;
-+MPI_Request MPI_MPID_get_request(MPIR_Request *request) MPICH_API_PUBLIC;
-+int MPI_MPID_get_requests(int inum, MPIR_Request **requests_in, MPI_Request *requests_out) MPICH_API_PUBLIC;
++int mpi_internal_comm_translate_rank(MPIR_Comm *comm, int rank) MPICH_API_PUBLIC;
++void mpi_internal_print_comm_tree(MPIR_Comm *comm, int depth) MPICH_API_PUBLIC;
++int mpi_internal_comm_translate_rank_verbose(MPIR_Comm *comm, int rank) MPICH_API_PUBLIC;
++int mpi_internal_request_translate_rank(MPIR_Request *request, int rank) MPICH_API_PUBLIC;
++MPI_Request mpi_internal_get_request(MPIR_Request *request) MPICH_API_PUBLIC;
++int mpi_internal_get_requests(int inum, MPIR_Request **requests_in, MPI_Request *requests_out) MPICH_API_PUBLIC;
 +MPI_Request MPI_Check_dummy(MPI_Request request) MPICH_API_PUBLIC;
-+MPIR_Comm* MPI_MPID_get_comm(MPIR_Request *request) MPICH_API_PUBLIC;
-+int MPI_MPID_get_comms(int inum,MPIR_Request **requests_in, MPIR_Comm **comms_out) MPICH_API_PUBLIC;
-+MPI_Comm MPI_MPID_get_mpicomm_from_mpidcomm(MPIR_Comm *comm) MPICH_API_PUBLIC;
++MPIR_Comm* mpi_internal_get_comm(MPIR_Request *request) MPICH_API_PUBLIC;
++int mpi_internal_get_comms(int inum,MPIR_Request **requests_in, MPIR_Comm **comms_out) MPICH_API_PUBLIC;
++MPI_Comm mpi_internal_get_mpicomm_from_mpidcomm(MPIR_Comm *comm) MPICH_API_PUBLIC;
 +
  #endif /* MPIR_COMM_H_INCLUDED */
 --- a/src/mpi/coll/helper_fns.c
@@ -494,7 +494,7 @@
      goto fn_exit;
  }
 +
-+int MPI_MPID_comm_translate_rank(MPIR_Comm *comm, int rank)
++int mpi_internal_comm_translate_rank(MPIR_Comm *comm, int rank)
 +{
 +    int  rank_out=MPI_UNDEFINED;
 +//    if (rank ==  comm->rank) return rank;
@@ -540,7 +540,7 @@
 +               if (parent_comm->intranode_table_rev[rank] < 0) {
 +                  // fprintf (stderr,"Recursive node (intranode_table_rev) is not initialized for %d,%d\n",rank,parent_comm->intranode_table_rev[rank]);
 +               }
-+               return MPI_MPID_comm_translate_rank(parent_comm,parent_comm->intranode_table_rev[rank]);
++               return mpi_internal_comm_translate_rank(parent_comm,parent_comm->intranode_table_rev[rank]);
 +           }
 +           if(parent_comm->node_roots_comm==comm) {
 +               if(parent_comm->internode_table_rev==NULL) {
@@ -559,7 +559,7 @@
 +               if (parent_comm->internode_table_rev[rank] < 0) {
 +                  // fprintf (stderr,"Recursive node roots (internode_table_rev) is not initialized for %d,%d\n",rank,parent_comm->internode_table_rev[rank]);
 +               }
-+               return MPI_MPID_comm_translate_rank(parent_comm,parent_comm->internode_table_rev[rank]);
++               return mpi_internal_comm_translate_rank(parent_comm,parent_comm->internode_table_rev[rank]);
 +           }
 +       }
 +    }
@@ -575,23 +575,23 @@
 +    return rank_out;
 +}
 +
-+void MPI_MPID_print_comm_tree(MPIR_Comm *comm, int depth) {
++void mpi_internal_print_comm_tree(MPIR_Comm *comm, int depth) {
 +    if (depth==0) fprintf(stderr,"=========================================\n");
 +    fprintf(stderr,"%*s current comm %p-%x - parent comm %p\n",depth*8," ", comm, comm->handle, comm->parent_comm);
 +    if (comm->node_comm)  {
 +        fprintf(stderr,"%*s Node comm\n",depth*8," ");
-+        MPI_MPID_print_comm_tree(comm->node_comm, depth+1);
++        mpi_internal_print_comm_tree(comm->node_comm, depth+1);
 +    }
 +    if (comm->node_roots_comm) {
 +        fprintf(stderr,"%*s Node root comm\n",depth*8," ");
-+        MPI_MPID_print_comm_tree(comm->node_roots_comm,depth+1);
++        mpi_internal_print_comm_tree(comm->node_roots_comm,depth+1);
 +    }
 +}
 +
-+int MPI_MPID_comm_translate_rank_verbose(MPIR_Comm *comm, int rank)
++int mpi_internal_comm_translate_rank_verbose(MPIR_Comm *comm, int rank)
 +{
 +    int  rank_out=MPI_UNDEFINED;
-+    fprintf (stderr,"Begin MPI_MPID_comm_translate_rank_verbose for %x - %d\n",comm->handle, rank);
++    fprintf (stderr,"Begin mpi_internal_comm_translate_rank_verbose for %x - %d\n",comm->handle, rank);
 +//    if (rank ==  comm->rank) return rank;
 +    if (comm->comm_kind == MPIR_COMM_KIND__INTRACOMM ) {
 +        if (rank > comm->local_size || rank < 0) {
@@ -635,7 +635,7 @@
 +               if (parent_comm->intranode_table_rev[rank] < 0) {
 +                  fprintf (stderr,"Recursive node (intranode_table_rev) of %x is not initialized for %d,%d\n",comm->handle,rank,parent_comm->intranode_table_rev[rank]);
 +               }
-+               return MPI_MPID_comm_translate_rank_verbose(parent_comm,parent_comm->intranode_table_rev[rank]);
++               return mpi_internal_comm_translate_rank_verbose(parent_comm,parent_comm->intranode_table_rev[rank]);
 +           }
 +           if(parent_comm->node_roots_comm==comm) {
 +               if(parent_comm->internode_table_rev==NULL) {
@@ -654,7 +654,7 @@
 +               if (parent_comm->internode_table_rev[rank] < 0) {
 +                  fprintf (stderr,"Recursive node roots (internode_table_rev) for %x is not initialized for %d,%d\n",comm->handle,rank,parent_comm->internode_table_rev[rank]);
 +               }
-+               return MPI_MPID_comm_translate_rank_verbose(parent_comm,parent_comm->internode_table_rev[rank]);
++               return mpi_internal_comm_translate_rank_verbose(parent_comm,parent_comm->internode_table_rev[rank]);
 +           }
 +       }
 +    }
@@ -668,27 +668,27 @@
 +            }
 +        }
 +    }
-+    fprintf (stderr,"End MPI_MPID_comm_translate_rank_verbose for %d->%d\n",rank,rank_out);
++    fprintf (stderr,"End mpi_internal_comm_translate_rank_verbose for %d->%d\n",rank,rank_out);
 +    if (rank_out==MPI_UNDEFINED) {
 +        fprintf (stderr,"Rank not found comm=%p,%x. groups=%p,%p\n",comm,comm->handle,comm->local_group,comm->remote_group);
-+        MPI_MPID_print_comm_tree(comm,0);
++        mpi_internal_print_comm_tree(comm,0);
 +    } else {
 +        fprintf (stderr,"Rank found comm=%p,%x. groups=%p,%p\n",comm,comm->handle,comm->local_group,comm->remote_group);
-+        MPI_MPID_print_comm_tree(comm,0);
++        mpi_internal_print_comm_tree(comm,0);
 +    }
 +    return rank_out;
 +}
 +
-+int MPI_MPID_request_translate_rank(MPIR_Request *request, int rank)
++int mpi_internal_request_translate_rank(MPIR_Request *request, int rank)
 +{
-+    return MPI_MPID_comm_translate_rank(request->comm,rank);
++    return mpi_internal_comm_translate_rank(request->comm,rank);
 +}
 +
 +#ifdef CHANNEL_MRAIL
 +extern MPID_Request *mv2_dummy_request;
 +#endif
 +
-+MPI_Request MPI_MPID_get_request(MPIR_Request *request)
++MPI_Request mpi_internal_get_request(MPIR_Request *request)
 +{
 +#ifdef CHANNEL_MRAIL
 +    if (request==mv2_dummy_request) return 0;
@@ -696,7 +696,7 @@
 +    return request->handle;
 +}
 +
-+int MPI_MPID_get_requests(int inum, MPIR_Request **requests_in, MPI_Request *requests_out)
++int mpi_internal_get_requests(int inum, MPIR_Request **requests_in, MPI_Request *requests_out)
 +{
 +    int i;
 +    for (i=0;i<inum;i++)  {
@@ -716,7 +716,7 @@
 +    return request;
 +}
 +
-+MPIR_Comm* MPI_MPID_get_comm(MPIR_Request *request)
++MPIR_Comm* mpi_internal_get_comm(MPIR_Request *request)
 +{
 +    if(request->handle==MPI_REQUEST_NULL || request->kind != MPIR_REQUEST_KIND__RECV) {
 +        return NULL;
@@ -725,7 +725,7 @@
 +    }
 +}
 +
-+int MPI_MPID_get_comms(int inum,MPIR_Request **requests_in, MPIR_Comm **comms_out)
++int mpi_internal_get_comms(int inum,MPIR_Request **requests_in, MPIR_Comm **comms_out)
 +{
 +    int i;
 +    for (i=0;i<inum;i++)  {
@@ -738,9 +738,9 @@
 +    return 0;
 +}
 +
-+MPI_Comm MPI_MPID_get_mpicomm_from_mpidcomm(MPIR_Comm *comm)
++MPI_Comm mpi_internal_get_mpicomm_from_mpidcomm(MPIR_Comm *comm)
 +{
-+    if (comm->parent_comm) return MPI_MPID_get_mpicomm_from_mpidcomm(comm->parent_comm);
++    if (comm->parent_comm) return mpi_internal_get_mpicomm_from_mpidcomm(comm->parent_comm);
 +    return comm->handle;
 +}
 --- a/src/mpid/common/sched/mpidu_sched.c

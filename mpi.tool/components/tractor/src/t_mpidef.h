@@ -61,9 +61,9 @@ static int __msl_record_requests(const int tid, const MPI_Request *values, const
 #endif
 
 #define get_rank_from_req(x, y) (y)
-// #define get_rank_from_req_colt(x,y) MPI_MPID_request_translate_rank(x,y)
-#define get_rank_from_req_colt(x, y) MPI_MPID_comm_translate_rank(x, y)
-#define get_rank_from_req_colt_v(x, y) MPI_MPID_comm_translate_rank_verbose(x, y)
+// #define get_rank_from_req_colt(x,y) mpi_internal_request_translate_rank(x,y)
+#define get_rank_from_req_colt(x, y) mpi_internal_comm_translate_rank(x, y)
+#define get_rank_from_req_colt_v(x, y) mpi_internal_comm_translate_rank_verbose(x, y)
 // #define get_rank_from_req_colt(x,y) (y)
 #define is_empty(status) (status->MPI_TAG == MPI_ANY_TAG || status->MPI_SOURCE == MPI_ANY_SOURCE)
 
@@ -90,41 +90,47 @@ int T_Type_size(MPI_Datatype datatype, MPI_Aint *size)
 
 struct MPID_Comm;
 struct MPID_Request;
-int MPI_MPID_comm_translate_rank(MPID_Comm *comm, int rank);
-int MPI_MPID_comm_translate_rank_verbose(MPID_Comm *comm, int rank);
-int MPI_MPID_request_translate_rank(MPID_Request *request, int rank);
-MPI_Request MPI_MPID_get_request(const MPID_Request *request);
-int MPI_MPID_get_requests(int inum, const MPID_Request **requests_in, MPI_Request *request_out);
-MPID_Comm *MPI_MPID_get_comm(MPID_Request *request);
-int MPI_MPID_get_comms(int inum, MPID_Request **requests_in, MPID_Comm **comms_out);
-MPI_Comm MPI_MPID_get_mpicomm_from_mpidcomm(MPID_Comm *comm);
-int MPI_MPID_print_comm_tree(MPID_Comm *comm, int depth);
+/* stub for openmpi */
+#ifdef _OPENMPI_ 
+int mpi_internal_get_comms(int inum, MPI_Request *requests_in, MPI_Comm *comms_out);
+MPI_Comm mpi_internal_get_comm(MPI_Request request);
+MPI_Request mpi_internal_get_request(MPI_Request request) {return request;};
+MPI_Request __msl_get_drequest(MPI_Request request) {return request;};
+// int mpi_internal_get_requests(int inum, const MPI_Request *requests_in, MPI_Request *requests_out) {for (int i=0;i<inum;i++) requests_out[i]=requests_in[i];};
+MPI_Comm mpi_internal_get_mpicomm_from_mpidcomm(MPI_Comm comm) {return comm;};
+int mpi_internal_comm_translate_rank(MPI_Comm comm, int rank); 
+int mpi_internal_comm_translate_rank_verbose(MPI_Comm comm, int rank);
+int mpi_internal_request_translate_rank(MPI_Request request, int rank);
 
+static MPI_Request __msl_record_drequest_colt(const int tid, MPI_Request request)
+{
+    __msl_record_long_colt(tid, (const long long ) request);
+    return (request);
+}
+
+static int __msl_record_drequests_colt(const int tid, MPI_Request *requests, const int num)
+{
+    return (__msl_record_longs_colt(tid, (const long long *) requests, num));
+}
+
+#else // for mpich based mpi there is internal function incorporated to source tree via patch provided in PEAT
+int mpi_internal_get_comms(int inum, MPID_Request **requests_in, MPID_Comm **comms_out);
+MPID_Comm *mpi_internal_get_comm(MPID_Request *request);
+int mpi_internal_get_requests(int inum, const MPID_Request **requests_in, MPI_Request *requests_out);
+MPI_Request mpi_internal_get_request(const MPID_Request *request);
+MPI_Comm mpi_internal_get_mpicomm_from_mpidcomm(MPID_Comm *comm);
+int mpi_internal_comm_translate_rank(MPID_Comm *comm, int rank);
+int mpi_internal_comm_translate_rank_verbose(MPID_Comm *comm, int rank);
+int mpi_internal_request_translate_rank(MPID_Request *request, int rank);
 static MPI_Request __msl_get_drequest(const MPID_Request *value)
 {
-    MPI_Request mpi_req = MPI_MPID_get_request(value);
+    MPI_Request mpi_req = mpi_internal_get_request(value);
     return (mpi_req);
-}
-
-static void __msl_cvt_drequests(MPI_Request *out, const MPID_Request **values, const int num)
-{
-    MPI_MPID_get_requests(num, values, out);
-}
-
-static MPI_Request __msl_record_request_colt(const int tid, const MPI_Request value)
-{
-    __msl_record_int_colt(tid, value);
-    return (value);
-}
-
-static int __msl_record_requests_colt(const int tid, const MPI_Request *values, const int num)
-{
-    return (__msl_record_ints_colt(tid, values, num));
 }
 
 static MPI_Request __msl_record_drequest_colt(const int tid, const MPID_Request *value)
 {
-    MPI_Request mpi_req = MPI_MPID_get_request(value);
+    MPI_Request mpi_req = mpi_internal_get_request(value);
     __msl_record_int_colt(tid, mpi_req);
     return (mpi_req);
 }
@@ -132,9 +138,39 @@ static MPI_Request __msl_record_drequest_colt(const int tid, const MPID_Request 
 static int __msl_record_drequests_colt(const int tid, const MPID_Request **values, const int num)
 {
     MPI_Request local_reqs[num];
-    MPI_MPID_get_requests(num, values, local_reqs);
+    mpi_internal_get_requests(num, values, local_reqs);
     return (__msl_record_ints_colt(tid, local_reqs, num));
 }
+
+static void __msl_cvt_drequests(MPI_Request *out, const MPID_Request **values, const int num)
+{
+    mpi_internal_get_requests(num, values, out);
+}
+
+#endif
+int mpi_internal_print_comm_tree(MPID_Comm *comm, int depth);
+
+
+static MPI_Request __msl_record_request_colt(const int tid, const MPI_Request value)
+{
+#ifdef _OPENMPI_ //64 bits in openmpi
+    __msl_record_long_colt(tid, (const long long) value);
+#else //assuming mpich based 
+    __msl_record_int_colt(tid, value);
+#endif
+    return (value);
+}
+
+static int __msl_record_requests_colt(const int tid, const MPI_Request *values, const int num)
+{
+#ifdef _OPENMPI_ //64 bits in openmpi
+    return (__msl_record_longs_colt(tid, (const long long *) values, num));
+#else //assuming mpich based 
+    return (__msl_record_ints_colt(tid, values, num));
+#endif
+}
+
+#ifndef _OPENMPI_ // MPICH (based) specifics
 
 void PT_MPID_Request_release(MPID_Request *request);
 int PT_MPID_Request_complete(MPID_Request *request);
@@ -149,7 +185,7 @@ void T_MPID_Request_release(MPID_Request *request)
     int tid, flag = 0;
     msl_extras_counters counters;
     msl_event *event;
-    bool l_skip_parse = skip_parse;
+    bool l_skip_parse = mpi_skip_parse;
     MPI_Status status;
     MPI_Request mpi_req;
 
@@ -231,6 +267,7 @@ void T_MPID_Request_release(MPID_Request *request)
     __DEBUG_EPILOG_MPI_LAYER__
     return;
 }
+#endif
 
 #if 0
 
@@ -246,7 +283,7 @@ int T_MPID_Request_complete(MPID_Request *request) {
     int tid,flag=0;
     msl_extras_counters counters;
     msl_event *event;
-    bool l_skip_parse=skip_parse;
+    bool l_skip_parse=mpi_skip_parse;
     MPI_Status status;
     MPI_Request mpi_req;
     
@@ -368,6 +405,30 @@ int PMPIC_Waitany(int numreq, MPID_Request *requests[], int *index, MPI_Status *
 #endif
 #endif
 
+
+#ifdef _OPENMPI_
+#if (_OPENMPI_==5)  
+int Pompi_coll_p2p_send(const void *buf, size_t count, MPI_Datatype datatype, int dst, int tag, int mode, MPI_Comm comm);
+int Pompi_coll_p2p_recv(void *buf, size_t count, MPI_Datatype datatype, int src, int tag, MPI_Comm comm, MPI_Status *status);
+int Pompi_coll_p2p_isend(const void *buf, size_t count, MPI_Datatype datatype, int dst, int tag, int mode, MPI_Comm comm, MPI_Request *request);
+int Pompi_coll_p2p_irecv(void *buf, size_t count, MPI_Datatype datatype, int src, int tag, MPI_Comm comm, MPI_Request *request);
+int Pompi_coll_p2p_send_init(const void *buf, size_t count, MPI_Datatype datatype, int dst, int tag, int mode, MPI_Comm comm,MPI_Request *request);
+int Pompi_coll_p2p_recv_init(void *buf, size_t count, MPI_Datatype datatype, int src, int tag, MPI_Comm comm, MPI_Request *request);
+int Pompi_coll_p2p_start(size_t count, MPI_Request *requests);
+int Pompi_coll_p2p_wait(MPI_Request request, MPI_Status *status);
+int Pompi_coll_p2p_wait_all(size_t inum, MPI_Request *requests, MPI_Status *statuses);
+int Pompi_coll_p2p_wait_any(size_t inum, MPI_Request *requests, int *index, MPI_Status *status);
+int Pompi_coll_p2p_wait_some(size_t inum, MPI_Request *requests, int *outcount, int *indices, MPI_Status *statuses);
+int Pompi_coll_p2p_test(MPI_Request request, int *flag, MPI_Status *status);
+int Pompi_coll_p2p_test_any(size_t inum, MPI_Request *requests, int *index, int *completed, MPI_Status *status);
+int Pompi_coll_p2p_test_all(size_t inum, MPI_Request *requests, int *flag, MPI_Status *statuses);
+int Pompi_coll_p2p_test_some(size_t inum, MPI_Request *requests, int *outcount, int *indices, MPI_Status *statuses);
+int Pompi_coll_p2p_wait_completion(MPI_Request request);
+int Pompi_coll_p2p_cancel(MPI_Request request);
+int Pompi_coll_p2p_free(MPI_Request *request);
+#endif
+#endif
+
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
 }
 #endif
@@ -377,16 +438,15 @@ int PMPIC_Waitany(int numreq, MPID_Request *requests[], int *index, MPI_Status *
 
 #define MPIO_Request MPI_Request // mpich5 doesn't have separate MPIO_Request
 
-int MPI_MPID_Type_size(MPI_Datatype datatype, MPI_Aint * size); // mpich5 does have separate internal datatypes
+int mpi_internal_type_size(MPI_Datatype datatype, MPI_Aint * size); // mpich5 does have separate internal datatypes
 
 int T_Type_size_colt(MPI_Datatype datatype, MPI_Aint *size)
 {
     debug_printf("T_Type_size_colt (5) called with %x %p\n", (int) datatype, size);
 
-    return MPI_MPID_Type_size(datatype, size);
+    return mpi_internal_type_size(datatype, size);
 }
-#else
-
+#else //mpich based but not  mpich 5
 int T_Type_size_colt(MPI_Datatype datatype, MPI_Aint *size)
 {
     debug_printf("T_Type_size_colt (4) called with %x %p\n", (int) datatype, size);
@@ -395,6 +455,13 @@ int T_Type_size_colt(MPI_Datatype datatype, MPI_Aint *size)
 }
 
 #endif
+#else // openmpi
+int T_Type_size_colt(MPI_Datatype datatype, MPI_Aint *size)
+{
+    debug_printf("T_Type_size_colt (4) called with %x %p\n", (int) datatype, size);
+
+    return PMPI_Type_size(datatype, (int *) size);
+}
 #endif
 
 #endif //__T_MPIDEF_H__

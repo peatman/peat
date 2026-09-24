@@ -28,8 +28,11 @@ export FABRIC=on
 
 #exit
 # build fab layers (mpi doesn't matter here so use mpich) 
-# do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng        fab_layers off   off  off  off off off
-# do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng        fab_layers off   on  off  off off off
+#do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng          fab_layers off   off  off  off off off
+#do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng          fab_layers off   on  off  off off off
+#do_not_remove=1 ./Build.sh mpich:5.0.1x-mt-ofi-eng           mpich5     off   on  off  off off off
+#do_not_remove=1 ./Build.sh openmpi:5.0.10x-eng               openmpi5   off   on  off  off off off 
+#do_not_remove=1 ./Build.sh openmpi:5.0.10x                   openmpi5   off   on  off  off off off 
 
 # exit
 
@@ -38,16 +41,19 @@ export FABRIC=on
 
 unset FABRIC
 
-# fab layer and colletive transfers are explicitly turned off for Intel MPI (no source in public) and openmpi (for now)
+# fab layer and colletive transfers are explicitly turned off for Intel MPI (no source in public) 
 #          mpi_type                         target  mem  diag  GPU  buf v2p  hwc  
 ./Build.sh impi                               impi  off   off  off  off off off &
-./Build.sh impi                               impi  off   off  on   off off off &
+#./Build.sh impi                               impi  off   off  on   off off off &
 ./Build.sh impi                               impi  off   on   off  off off off &
-./Build.sh impi                               impi  off   on   on   off off off &
+#./Build.sh impi                               impi  off   on   on   off off off &
 
 
-./Build.sh openmpi:5.0.10x                  openmpi   off   off  off  off off off &
-./Build.sh openmpi:5.0.10x                  openmpi   off   on   off  off off off &
+./Build.sh openmpi:5.0.10x                  openmpi5   off   off  off  off off off &
+./Build.sh openmpi:5.0.10x                  openmpi5   off   on   off  off off off &
+
+./Build.sh openmpi:5.0.10x-eng              openmpi5   off   off  off  off off off &
+./Build.sh openmpi:5.0.10x-eng              openmpi5   off   on   off  off off off &
 
 # export ENG_MPI_BUILD=on
 #          1                                  2       3    4     5    6   7    8 

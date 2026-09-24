@@ -398,6 +398,7 @@ extern  ompt_finalize_tool_t ompt_finalize_tool;
 #define __msl_record_low_longs(tid, value, nums) gt_info(record_low_longs(tid, value, nums))
 
 #define __msl_record_int_colt(tid, value) gt_info(record_int_colt(tid, value))
+#define __msl_record_long_colt(tid, value) gt_info(record_long_colt(tid, value))
 #define __msl_record_ints_colt(tid, value, nums) gt_info(record_ints_colt(tid, value, nums))
 #define __msl_record_longs_colt(tid, value, nums) gt_info(record_longs_colt(tid, value, nums))
 #define __msl_record_low_longs_colt(tid, value, nums) gt_info(record_low_longs_colt(tid, value, nums))

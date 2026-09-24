@@ -6,8 +6,8 @@ export libfabric_eng='-eng'
 . env.sh
 set -x
 
-LD_PRELOAD=../../lib/intel/libtractor.mpich5.eng.so 
-LD_PRELOAD="$LD_PRELOAD:../../lib/intel/libtractor_fab_ofi.so"
+LD_PRELOAD=../../lib/intel/libtractor_dbg.mpich5.eng.so 
+#LD_PRELOAD="$LD_PRELOAD:../../lib/intel/libtractor_fab_ofi.so"
 
 
 export PEAT_TRACTOR_PRINT_FUNC_NAMES=1
@@ -56,7 +56,7 @@ export HYDRA_TOPO_DEBUG=1
 #export FI_HMEM=none
 export MPICH_POSIX_NUM_COLLS_THRESHOLD=9999 # should be quite big but this one is enought for the example
 
-mpiexec.hydra -launcher ssh -genvall -bind-to hwthread -map-by core  $LD_PRELOAD $PBS_NF -ppn $ppn -np $ranks $GDB ./alltoall $nnodes $ppn 4194304 10 #24
+mpiexec.hydra -launcher ssh -genvall  -bind-to hwthread -map-by core  $LD_PRELOAD $PBS_NF -ppn $ppn -np $ranks $GDB ./alltoall $nnodes $ppn 4194304 10 #24
 rm -f alltoall
 
 #mpiexec.hydra -launcher ssh -genvall -bind-to hwthread -map-by core  $LD_PRELOAD $PBS_NF -ppn $ppn -np $ranks $GDB ./repro_final 

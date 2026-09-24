@@ -23,7 +23,7 @@ int tid;
 pid_t tid_in;
 msl_extras_counters counters;
 msl_event *event;
-bool l_skip_parse = skip_parse;
+bool l_skip_parse = mpi_skip_parse;
 
 #ifdef _HWCOUNTERS_ENABLED_
 int num_hwcs = gt_info(num_hwcs);

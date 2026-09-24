@@ -29,7 +29,7 @@ $prototype {
     int tid;
     msl_extras_counters counters;
     msl_event *t_event;
-    bool l_skip_parse=skip_parse;
+    bool l_skip_parse=gpu_skip_parse;
 
 #ifdef _HWCOUNTERS_ENABLED_
     int num_hwcs=gt_info(num_hwcs);
