@@ -47,7 +47,12 @@ $prototype {
         tsc_entry = peat_get_time_tid(&tid_in);
         counting_permit+=2*counting_permission_pcontrol[$funcid_through];
         tid=__msl_get_tid(tid_in);
+#if $is_not_colt
         __msl_allocate_event(tid,1,&event,&counters);
+#else
+        /* colt (internal) completion calls may drive further traced calls from progress:
+           take the event slot at exit (like sendrecv) so slot order matches the extras stream */
+#endif
         first_progress_entry$colt [tid] = last_progress_exit$colt [tid] = 0;
         $save_input_request
         $num_colts

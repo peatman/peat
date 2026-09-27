@@ -61,9 +61,9 @@ static int __msl_record_requests(const int tid, const MPI_Request *values, const
 #endif
 
 #define get_rank_from_req(x, y) (y)
-// #define get_rank_from_req_colt(x,y) MPI_MPID_request_translate_rank(x,y)
-#define get_rank_from_req_colt(x, y) MPI_MPID_comm_translate_rank(x, y)
-#define get_rank_from_req_colt_v(x, y) MPI_MPID_comm_translate_rank_verbose(x, y)
+// #define get_rank_from_req_colt(x,y) mpi_internal_request_translate_rank(x,y)
+#define get_rank_from_req_colt(x, y) mpi_internal_comm_translate_rank(x, y)
+#define get_rank_from_req_colt_v(x, y) mpi_internal_comm_translate_rank_verbose(x, y)
 // #define get_rank_from_req_colt(x,y) (y)
 #define is_empty(status) (status->MPI_TAG == MPI_ANY_TAG || status->MPI_SOURCE == MPI_ANY_SOURCE)
 
@@ -90,25 +90,25 @@ int T_Type_size(MPI_Datatype datatype, MPI_Aint *size)
 
 struct MPID_Comm;
 struct MPID_Request;
-int MPI_MPID_comm_translate_rank(MPID_Comm *comm, int rank);
-int MPI_MPID_comm_translate_rank_verbose(MPID_Comm *comm, int rank);
-int MPI_MPID_request_translate_rank(MPID_Request *request, int rank);
-MPI_Request MPI_MPID_get_request(const MPID_Request *request);
-int MPI_MPID_get_requests(int inum, const MPID_Request **requests_in, MPI_Request *request_out);
-MPID_Comm *MPI_MPID_get_comm(MPID_Request *request);
-int MPI_MPID_get_comms(int inum, MPID_Request **requests_in, MPID_Comm **comms_out);
-MPI_Comm MPI_MPID_get_mpicomm_from_mpidcomm(MPID_Comm *comm);
-int MPI_MPID_print_comm_tree(MPID_Comm *comm, int depth);
+int mpi_internal_comm_translate_rank(MPID_Comm *comm, int rank);
+int mpi_internal_comm_translate_rank_verbose(MPID_Comm *comm, int rank);
+int mpi_internal_request_translate_rank(MPID_Request *request, int rank);
+MPI_Request mpi_internal_get_request(const MPID_Request *request);
+int mpi_internal_get_requests(int inum, const MPID_Request **requests_in, MPI_Request *request_out);
+MPID_Comm *mpi_internal_get_comm(MPID_Request *request);
+int mpi_internal_get_comms(int inum, MPID_Request **requests_in, MPID_Comm **comms_out);
+MPI_Comm mpi_internal_get_mpicomm_from_mpidcomm(MPID_Comm *comm);
+int mpi_internal_print_comm_tree(MPID_Comm *comm, int depth);
 
 static MPI_Request __msl_get_drequest(const MPID_Request *value)
 {
-    MPI_Request mpi_req = MPI_MPID_get_request(value);
+    MPI_Request mpi_req = mpi_internal_get_request(value);
     return (mpi_req);
 }
 
 static void __msl_cvt_drequests(MPI_Request *out, const MPID_Request **values, const int num)
 {
-    MPI_MPID_get_requests(num, values, out);
+    mpi_internal_get_requests(num, values, out);
 }
 
 static MPI_Request __msl_record_request_colt(const int tid, const MPI_Request value)
@@ -124,7 +124,7 @@ static int __msl_record_requests_colt(const int tid, const MPI_Request *values, 
 
 static MPI_Request __msl_record_drequest_colt(const int tid, const MPID_Request *value)
 {
-    MPI_Request mpi_req = MPI_MPID_get_request(value);
+    MPI_Request mpi_req = mpi_internal_get_request(value);
     __msl_record_int_colt(tid, mpi_req);
     return (mpi_req);
 }
@@ -132,7 +132,7 @@ static MPI_Request __msl_record_drequest_colt(const int tid, const MPID_Request 
 static int __msl_record_drequests_colt(const int tid, const MPID_Request **values, const int num)
 {
     MPI_Request local_reqs[num];
-    MPI_MPID_get_requests(num, values, local_reqs);
+    mpi_internal_get_requests(num, values, local_reqs);
     return (__msl_record_ints_colt(tid, local_reqs, num));
 }
 
@@ -377,13 +377,13 @@ int PMPIC_Waitany(int numreq, MPID_Request *requests[], int *index, MPI_Status *
 
 #define MPIO_Request MPI_Request // mpich5 doesn't have separate MPIO_Request
 
-int MPI_MPID_Type_size(MPI_Datatype datatype, MPI_Aint * size); // mpich5 does have separate internal datatypes
+int mpi_internal_type_size(MPI_Datatype datatype, MPI_Aint * size); // mpich5 does have separate internal datatypes
 
 int T_Type_size_colt(MPI_Datatype datatype, MPI_Aint *size)
 {
     debug_printf("T_Type_size_colt (5) called with %x %p\n", (int) datatype, size);
 
-    return MPI_MPID_Type_size(datatype, size);
+    return mpi_internal_type_size(datatype, size);
 }
 #else
 

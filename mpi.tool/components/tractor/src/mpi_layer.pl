@@ -130,7 +130,7 @@ if ($properties=~/INPUT_REQUEST_MULTIPLE/) {
    $save_input_request="__msl_dup_requests(t_req, requests, inum);"; 
    $save_input_request="__msl_cvt_drequests(t_req,(const MPID_Request **) requests, inum);" if $properties =~/COLT/;
 
-   $save_local_comms="MPI_MPID_get_comms(inum,requests,local_comms);" if $properties =~/COLT/;
+   $save_local_comms="mpi_internal_get_comms(inum,requests,local_comms);" if $properties =~/COLT/;
    $record_input_request="__msl_record_requests$colt(tid,t_req,inum);";
 
    $event_record_input_request="event->requests.input_request_num=inum;";
@@ -146,7 +146,7 @@ if ($properties=~/INPUT_REQUEST_SINGLE/) {
    $save_input_request="t_req=request;" if $properties =~/PEAT_PROP_REQUEST_DIRECT/;  
    $save_input_request="t_req=__msl_get_drequest((const MPID_Request *) request);" if $properties =~/COLT/;
 
-   $save_local_comms="local_comm=MPI_MPID_get_comm(request);" if $properties =~/COLT/;
+   $save_local_comms="local_comm=mpi_internal_get_comm(request);" if $properties =~/COLT/;
 
    $record_input_request="__msl_record_request$colt(tid,t_req);";
 
@@ -190,6 +190,7 @@ if ($properties=~/MSTATUSES/) {
     $declare_ignore_status="MPI_Status local_status[inum];"
 } else {
     if ($properties=~/STATUS/ ) { # wait test, ANY
+        my $lcomm=($properties=~/INPUT_REQUEST_SINGLE/) ? "local_comm" : "local_comms[temp_index]";
         $event_sbuf="event->requests.statuses.virt_addr=status;event->requests.statuses.size=sizeof(MPI_Status);" if $print_extended_stuff;
         $event_status="
         if (event->requests.flag) { 
@@ -197,7 +198,7 @@ if ($properties=~/MSTATUSES/) {
             long long TSC[4];
             TSC[0]=temp_index;
             TSC[1]=status->MPI_TAG;
-            TSC[2]=get_rank_from_req$colt(local_comms[temp_index],status->MPI_SOURCE);
+            TSC[2]=get_rank_from_req$colt($lcomm,status->MPI_SOURCE);
             TSC[3]=MPI_STATUS_GET_COUNT_P(status);
            __msl_record_longs$colt (tid,TSC,4);
         }";
@@ -211,6 +212,7 @@ if ($properties=~/MSTATUSES/) {
    } else {
         $event_status="
         {
+            event->requests.triggered_request_num=1;
             long long TSC[4];
             MPI_Status status;int flag=0;
             PMPI_Request_get_status(t_req,&flag,&status);
@@ -227,7 +229,7 @@ if ($properties=~/MSTATUSES/) {
             }
            __msl_record_longs$colt (tid,TSC,4);
        }
-       " if $properties =~/COLT/; #only apply to MPIC_XXX routines. Exclude MPI_STARTXXX.
+       " if $properties =~/COLT/ && $properties =~/INPUT_REQUEST_SINGLE/ && !($properties =~/PERSISTENT_REQUEST_START/); #only apply to single-request MPIC_XXX completion routines. Exclude MPI_STARTXXX.
    }
 
 }
@@ -268,7 +270,7 @@ if ($properties =~/DATA_TXRX/) {
 my $comm="comm";
 #$comm="MPI_COMM_WORLD" if $properties =~/COLT/;
 #$comm="(long long) comm" if $properties=~/COMM/ && $properties=~/COLT/ ;
-$comm="MPI_MPID_get_mpicomm_from_mpidcomm(comm)" if $properties=~/COMM/ && $properties=~/COLT/;
+$comm="mpi_internal_get_mpicomm_from_mpidcomm(comm)" if $properties=~/COMM/ && $properties=~/COLT/;
 #$comm="last_coll_comm" if $properties =~/COLT/;
 my $stag="stag";
 my $dest="dest";
@@ -325,7 +327,7 @@ my $event_status_begin="{";
 my $event_status_end="}";
 
 $event_request="event->$basic_struct.request=*request;" if $properties=~/REQUEST/;
-$event_request="event->$basic_struct.request=MPI_MPID_get_request(*request);" if $properties=~/REQUEST/ && $properties=~/COLT/; #casting from MPID_Request*
+$event_request="event->$basic_struct.request=mpi_internal_get_request(*request);" if $properties=~/REQUEST/ && $properties=~/COLT/; #casting from MPID_Request*
 $tag_peer="event->$basic_struct.tag=tag;" if $properties=~/TAG/;
 $tag_peer="$tag_peer event->$basic_struct.peer=peer_rank;" if $properties=~/PEER/;
 
@@ -341,7 +343,7 @@ $event_message="event->$basic_struct.message=*message;" if $properties=~/MESSAGE
 $comm="event->$basic_struct.comm=comm;" if $properties=~/COMM/;
 #$comm="event->$basic_struct.comm=(long long) comm;" if $properties=~/COMM/ && $properties=~/COLT/ ;
 #$comm="event->$basic_struct.comm=MPI_COMM_WORLD;" if $properties=~/COMM/ && $properties=~/COLT/;
-$comm="event->$basic_struct.comm=MPI_MPID_get_mpicomm_from_mpidcomm(comm);" if $properties=~/COMM/ && $properties=~/COLT/;
+$comm="event->$basic_struct.comm=mpi_internal_get_mpicomm_from_mpidcomm(comm);" if $properties=~/COMM/ && $properties=~/COLT/;
 #$comm="event->$basic_struct.comm=last_coll_comm;" if $properties=~/COMM/ && $properties=~/COLT/;
 $get_datasize="T_Type_size$colt(type,&data_size);"if $properties=~/BYTES/;
 $transfer_bytes="event->$basic_struct.transfer_bytes=(count*data_size);"if $properties=~/BYTES/;
@@ -378,12 +380,12 @@ if ($properties=~/STATUS/) {
 #    if (event->$basic_struct.peer<0 ) {
 #        fprintf(stderr,\"Incorrect rank translation: %d->%d on comm %lx\\n\",peer_rank, event->$basic_struct.peer,comm);
 #        event->$basic_struct.peer=get_rank_from_req_colt_v(comm,peer_rank>=0 ? peer_rank : status->MPI_SOURCE);
-#        MPI_MPID_print_comm_tree(comm,0);
+#        mpi_internal_print_comm_tree(comm,0);
 #        //MPI_Abort(MPI_COMM_WORLD,0);
 #    } else {
 #        fprintf(stderr,\"Correct rank translation: %d->%d on comm %lx\\n\",peer_rank, event->$basic_struct.peer,comm);
 #        event->$basic_struct.peer=get_rank_from_req_colt_v(comm,peer_rank>=0 ? peer_rank : status->MPI_SOURCE);
-#        MPI_MPID_print_comm_tree(comm,0);
+#        mpi_internal_print_comm_tree(comm,0);
 #    }
 #    }
 #    " if $funcid=~/MPIC_RECV_ID/;# ||  $funcid=~/MPIC_SEND_ID/; 
