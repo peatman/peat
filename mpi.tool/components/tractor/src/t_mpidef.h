@@ -415,11 +415,11 @@ int Pompi_coll_p2p_irecv(void *buf, size_t count, MPI_Datatype datatype, int src
 int Pompi_coll_p2p_send_init(const void *buf, size_t count, MPI_Datatype datatype, int dst, int tag, int mode, MPI_Comm comm,MPI_Request *request);
 int Pompi_coll_p2p_recv_init(void *buf, size_t count, MPI_Datatype datatype, int src, int tag, MPI_Comm comm, MPI_Request *request);
 int Pompi_coll_p2p_start(size_t count, MPI_Request *requests);
-int Pompi_coll_p2p_wait(MPI_Request request, MPI_Status *status);
+int Pompi_coll_p2p_wait(MPI_Request *request, MPI_Status *status);
 int Pompi_coll_p2p_wait_all(size_t inum, MPI_Request *requests, MPI_Status *statuses);
 int Pompi_coll_p2p_wait_any(size_t inum, MPI_Request *requests, int *index, MPI_Status *status);
 int Pompi_coll_p2p_wait_some(size_t inum, MPI_Request *requests, int *outcount, int *indices, MPI_Status *statuses);
-int Pompi_coll_p2p_test(MPI_Request request, int *flag, MPI_Status *status);
+int Pompi_coll_p2p_test(MPI_Request *request, int *flag, MPI_Status *status);
 int Pompi_coll_p2p_test_any(size_t inum, MPI_Request *requests, int *index, int *completed, MPI_Status *status);
 int Pompi_coll_p2p_test_all(size_t inum, MPI_Request *requests, int *flag, MPI_Status *statuses);
 int Pompi_coll_p2p_test_some(size_t inum, MPI_Request *requests, int *outcount, int *indices, MPI_Status *statuses);

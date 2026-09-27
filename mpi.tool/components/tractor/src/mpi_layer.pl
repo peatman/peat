@@ -224,6 +224,7 @@ if ($properties=~/MSTATUSES/) {
     $declare_ignore_status="MPI_Status local_statuses[inum];"
 } else {
     if ($properties=~/STATUS/ ) { # wait test, ANY
+        my $lcomm=($properties=~/INPUT_REQUEST_SINGLE/) ? "local_comm" : "local_comms[temp_index]";
         $event_sbuf="event->requests.statuses.virt_addr=status;event->requests.statuses.size=sizeof(MPI_Status);" if $print_extended_stuff;
         $event_status="
         if (event->requests.flag) { 
@@ -231,7 +232,7 @@ if ($properties=~/MSTATUSES/) {
             long long TSC[4];
             TSC[0]=temp_index;
             TSC[1]=status->MPI_TAG;
-            TSC[2]=get_rank_from_req$colt(local_comms[temp_index],status->MPI_SOURCE);
+            TSC[2]=get_rank_from_req$colt($lcomm,status->MPI_SOURCE);
             TSC[3]=MPI_STATUS_GET_COUNT_P(status);
            __msl_record_longs$colt (tid,TSC,4);
         }";
@@ -245,6 +246,7 @@ if ($properties=~/MSTATUSES/) {
    } else {
         $event_status="
         {
+            event->requests.triggered_request_num=1;
             long long TSC[4];
             MPI_Status status;int flag=0;
             PMPI_Request_get_status(t_req,&flag,&status);
@@ -261,7 +263,7 @@ if ($properties=~/MSTATUSES/) {
             }
            __msl_record_longs$colt (tid,TSC,4);
        }
-       " if $properties =~/COLT/; #only apply to MPIC_XXX routines. Exclude MPI_STARTXXX.
+       " if $properties =~/COLT/ && $properties =~/INPUT_REQUEST_SINGLE/ && !($properties =~/PERSISTENT_REQUEST_START/); #only apply to single-request MPIC_XXX / ompi_coll_p2p completion routines. Exclude MPI_STARTXXX.
    }
 
 }

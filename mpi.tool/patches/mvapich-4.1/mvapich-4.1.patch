@@ -22,38 +22,6 @@
 +m4_define([libyaksa_so_version_m4],[17:0:5])dnl
  
  [#] end of __file__
---- a/src/binding/fortran/mpif_h/mpi_fortimpl.h
-+++ b/src/binding/fortran/mpif_h/mpi_fortimpl.h
-@@ -411,4 +411,7 @@
- extern FORT_DLL_SPEC void FORT_CALL mpi_alloc_mem_cptr_(MPI_Aint * size, MPI_Fint * info,
-                                                         void **baseptr, MPI_Fint * ierr);
- 
-+#define MPICH_MPI_FROM_PMPI
-+#define USE_ONLY_MPI_NAMES
-+
- #endif /* MPI_FORTIMPL_H_INCLUDED */
---- a/src/binding/fortran/use_mpi_f08/wrappers_c/comm_spawn_c.c
-+++ b/src/binding/fortran/use_mpi_f08/wrappers_c/comm_spawn_c.c
-@@ -22,7 +22,7 @@
-     }
- 
-     mpi_errno =
--        PMPI_Comm_spawn(command, argv_c, maxprocs, info, root, comm, intercomm, array_of_errcodes);
-+        MPI_Comm_spawn(command, argv_c, maxprocs, info, root, comm, intercomm, array_of_errcodes);
- 
-     if (argv_c != MPI_ARGV_NULL) {
-         free(argv_c);
---- a/src/binding/fortran/use_mpi_f08/wrappers_c/comm_spawn_multiple_c.c
-+++ b/src/binding/fortran/use_mpi_f08/wrappers_c/comm_spawn_multiple_c.c
-@@ -110,7 +110,7 @@
-         free(buf);
-     }
- 
--    mpi_errno = PMPI_Comm_spawn_multiple(count, array_of_commands_c, array_of_argv_c,
-+    mpi_errno = MPI_Comm_spawn_multiple(count, array_of_commands_c, array_of_argv_c,
-                                          array_of_maxprocs, array_of_info, root, comm, intercomm,
-                                          array_of_errcodes);
- 
 --- a/src/include/mpir_coll.h
 +++ b/src/include/mpir_coll.h
 @@ -24,26 +24,49 @@
@@ -1030,18 +998,3 @@
 +m4_define([libmpi_so_version_m4],[17:0:5])dnl
  
  [#] end of __file__
---- a/maint/local_python/binding_f08.py
-+++ b/maint/local_python/binding_f08.py
-@@ -809,10 +809,10 @@
-     elif RE.match(r'mpi_op_create', func['name'], re.IGNORECASE) and not is_large:
-         # defined in src/binding/fortran/mpif_h/user_proxy.c
-         c_name = "MPII_op_create"
-     else:
--        # uses PMPI c binding directly
--        c_name = 'P' + get_function_name(func, is_large)
-+        # uses MPI c binding 
-+        c_name = get_function_name(func, is_large)
-     dump_interface_function(func, name, c_name, is_large)
- 
- def dump_interface_function(func, name, c_name, is_large):
-     c_mapping = get_kind_map('C', is_large)
