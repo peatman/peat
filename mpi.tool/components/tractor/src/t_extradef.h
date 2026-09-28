@@ -30,6 +30,7 @@ extern long long overall_durations[MPI_MAX_FUNCID_THROUGH];
 extern long long overall_entries[MPI_MAX_FUNCID_THROUGH];
 extern char *mpi_function_names[MPI_MAX_FUNCID_THROUGH];
 #endif
+extern int mpi_func_ids_trans[MPI_MAX_FUNCID_THROUGH]; /* through id -> base id */
 extern char counting_permission[MPI_MAX_FUNCID_THROUGH];
 extern char counting_permission_pcontrol[MPI_MAX_FUNCID_THROUGH];
 extern char fullstack_permission[MPI_MAX_FUNCID_THROUGH];

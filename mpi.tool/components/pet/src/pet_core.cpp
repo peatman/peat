@@ -190,7 +190,7 @@ PEAT_Bool PET_Core::get_coll(const PET_Coll_Event *event, std::list<Coll_Storage
     if (!coll_store.empty()) {
         for (std::list<Coll_Storage>::iterator coll_it = coll_store[event->comm].begin(); coll_it != coll_store[event->comm].end(); ++coll_it) {
             if (coll_it->events.count(event->rank) == 1) {
-                if (coll_it->events.at(event->rank)->primary_id == event->primary_id) {
+                if (coll_it->events.at(event->rank)->ids[0] == event->ids[0]) {
                     collective = coll_it;
                     return true;
                 }
@@ -205,7 +205,7 @@ PEAT_Bool PET_Core::get_coll_const(const PET_Coll_Event *event, std::list<Coll_S
     if (!coll_store.empty()) {
         for (std::list<Coll_Storage>::const_iterator coll_it = coll_store[event->comm].cbegin(); coll_it != coll_store[event->comm].cend(); ++coll_it) {
             if (coll_it->events.count(event->rank) == 1) {
-                if (coll_it->events.at(event->rank)->primary_id == event->primary_id) {
+                if (coll_it->events.at(event->rank)->ids[0] == event->ids[0]) {
                     collective = coll_it;
                     return true;
                 }
@@ -247,7 +247,7 @@ PEAT_Bool PET_Core::handle_coll(PET_Coll_Event *event)
     }
     if (find_coll(event, collective)) {
         collective->events[event->rank] = event;
-        collective->coll_uids[event->rank] = event->primary_id;
+        collective->coll_uids[event->rank] = event->ids;
         {
             collective->expected_ranks.erase(event->rank);
         }
@@ -701,7 +701,7 @@ void PET_Core::cache()
             trace_line_MPI.clear();
             trace_line_HWC.clear();
             event = get_event(rank, trace_line_MPI, trace_line_HWC, NULL);
-        } while (event->primary_id < events_to_read);
+        } while (event->ids[0] < events_to_read);
         PEAT_Ratio time = Wtime() - start_caching;
         PEAT_Ratio cache_bw = (events_to_read + 1) / time;
 #pragma omp critical
@@ -711,6 +711,76 @@ void PET_Core::cache()
             fflush(stdout);
         }
     }
+}
+
+static void dump_event_line(FILE *fp, const char *indent, PET_Event *evt)
+{
+    fprintf(fp, "%s%s(%s) t=%d in=%lld out=%lld written=%d initiated=%d started=%d finished=%d estimated=%d bound=%d reason=%d ee=%lld nested=%lld\n",
+            indent, global_func_id.name_by_idx(evt->func_id), evt->ids_str().c_str(), (int)evt->thread_id,
+            (long long)evt->e_time.func.in, (long long)evt->e_time.func.out,
+            (int)evt->is_written, (int)evt->is_initiated, (int)evt->estimation_started, (int)evt->finish_calculations,
+            (int)evt->is_estimated(), (int)evt->is_bound(), (int)evt->pending_reason, (long long)evt->remaining_ee_events, (long long)evt->nested_events.size());
+}
+
+void pet_dump_event_tree(FILE *fp, int depth, PET_Event *evt)
+{
+    char indent[64];
+    snprintf(indent, sizeof(indent), "%*s", depth * 4, "");
+    dump_event_line(fp, indent, evt);
+    if (depth < 4) {
+        PEAT_Num size = evt->nested_events.size();
+        for (PEAT_Num i = 0; i < size; i++) {
+            pet_dump_event_tree(fp, depth + 1, evt->nested_events[i]);
+        }
+    }
+}
+
+void PET_Core::dump_stall_state(FILE *fp)
+{
+    fprintf(fp, "==== estimation stalled: %lld events processed, %ld useless / %ld useful iterations ====\n", (long long)event_processed, useless_iterations, useful_iterations);
+    for (std::vector<PET_Node>::iterator node_it = nodes.begin(); node_it != nodes.end(); ++node_it) {
+        Estimation_Event *ee = node_it->e_timeline.get_min_event();
+        if (ee) {
+            fprintf(fp, "node pending estimation event: type=%d start=%lld owner=%s(%lld) submiter=%s(%lld)\n", (int)ee->type, (long long)ee->start,
+                    ee->owner ? global_func_id.name_by_idx(ee->owner->func_id) : "-", ee->owner ? (long long)ee->owner->ids[0] : -1LL,
+                    ee->submiter ? global_func_id.name_by_idx(ee->submiter->func_id) : "-", ee->submiter ? (long long)ee->submiter->ids[0] : -1LL);
+        }
+        for (std::map<PEAT_Rank, PET_Rank>::iterator rank_it = node_it->ranks.begin(); rank_it != node_it->ranks.end(); ++rank_it) {
+            fprintf(fp, "rank %d read=%d\n", rank_it->first, (int)is_rank_read(rank_it->first));
+            for (std::vector<PET_Thread *>::iterator thread_it = rank_it->second.threads.begin(); thread_it != rank_it->second.threads.end(); ++thread_it) {
+                int shown = 0;
+                for (std::list<PET_Event *>::iterator event_it = (*thread_it)->active_events.begin(); event_it != (*thread_it)->active_events.end() && shown < 6; ++event_it) {
+                    PET_Event *evt = *event_it;
+                    if (evt->is_written)
+                        continue;
+                    pet_dump_event_tree(fp, 1, evt);
+                    if (shown == 0 && !evt->estimation_started) { // what handle_event() would decide for the head event
+                        PEAT_Bool b = evt->bind();
+                        PEAT_Bool r = b ? evt->ready_to_estimate() : false;
+                        fprintf(fp, "      head: bind()=%d ready_to_estimate()=%d\n", (int)b, (int)r);
+                        std::list<Coll_Storage>::const_iterator collective;
+                        PET_Coll_Event *cevt = dynamic_cast<PET_Coll_Event *>(evt);
+                        if (cevt && get_coll_const(cevt, collective)) {
+                            fprintf(fp, "      collective: assembled=%d members=%lld/%lld expected=%lld\n", (int)collective->assembled, (long long)collective->events.size(), (long long)collective->size, (long long)collective->expected_ranks.size());
+                            for (std::map<PEAT_Rank, PET_Coll_Event *>::const_iterator m = collective->events.cbegin(); m != collective->events.cend(); ++m) {
+                                fprintf(fp, "      member rank %d: %s(%lld) bound=%d ready_to_bind=%d estimated=%d written=%d\n", m->first, global_func_id.name_by_idx(m->second->func_id), (long long)m->second->ids[0], (int)m->second->is_bound(), (int)m->second->ready_to_bind(), (int)m->second->is_estimated(), (int)m->second->is_written);
+                                for (PET_Event *kid = m->second->get_first_child_event(); kid != m->second; kid = m->second->get_next_child_event()) {
+                                    fprintf(fp, "         kid %s(%s) bound=%d completion=%d\n", global_func_id.name_by_idx(kid->func_id), kid->ids_str().c_str(), (int)kid->is_bound(), (int)kid->completion_received());
+                                }
+                            }
+                        }
+                        const std::vector<PET_Event *> &kids = evt->child_iteration_list();
+                        for (PEAT_Num k = 0; k < kids.size(); k++) {
+                            if (kids[k])
+                                fprintf(fp, "      kid %s(%s) bound=%d ready=%d completion=%d\n", global_func_id.name_by_idx(kids[k]->func_id), kids[k]->ids_str().c_str(), (int)kids[k]->is_bound(), (int)kids[k]->ready_to_estimate(), (int)kids[k]->completion_received());
+                        }
+                    }
+                    shown++;
+                }
+            }
+        }
+    }
+    fflush(fp);
 }
 
 void PET_Core::estimate()
@@ -732,9 +802,20 @@ void PET_Core::estimate()
     bool finished = false;
 
     PEAT_UID prev_event_num = 0;
+    PEAT_UID stall_event_num = event_processed;
+    PEAT_Ratio stall_start = Wtime();
     do {
         finished = process_events();
         process_exhaust_events();
+        if (globals.verbose) { // stall detector: nothing estimated for a while
+            if (event_processed != stall_event_num) {
+                stall_event_num = event_processed;
+                stall_start = Wtime();
+            } else if (Wtime() - stall_start > 20.0) {
+                dump_stall_state(stderr);
+                throw std::runtime_error("Estimation stalled (see the state dump above).");
+            }
+        }
         // Progress bar
         if (0 == globals.comm_rank) {
             if (event_processed > total_event_num * cur_percent / 100) {
@@ -752,6 +833,12 @@ void PET_Core::estimate()
             }
         }
     } while (event_processed < total_event_num && !finished);
+    if (event_processed < total_event_num) {
+        fprintf(stderr, "Warning: estimation ended with %lld of %lld events processed; the remaining ones could not be estimated (output is incomplete).\n",
+                (long long)event_processed, (long long)total_event_num);
+        if (globals.verbose)
+            dump_stall_state(stderr);
+    }
     write_ompt_regions();
     std::ostringstream msg;
     msg << "(rank " << globals.comm_rank << ": Loop counter " << loop_counter << " Perf metric: " << ")\n"; // todo insert metric here
@@ -833,7 +920,7 @@ PEAT_Bool PET_Core::write_event_and_update_stat(PET_Event *event)
         if (event->is_written)
             return false;
     }
-    std::cerr << global_func_id.name_by_idx(event->func_id) << " Rank:" << event->rank << "(" << event->thread_id << ").ID:" << event->primary_id << "," << event->secondary_id << ". Done." << std::endl;
+    std::cerr << global_func_id.name_by_idx(event->func_id) << " Rank:" << event->rank << "(" << event->thread_id << ").ID:" << event->ids_str() << ". Done." << std::endl;
     event = event->write_event(output_MPI, output_HWC, output_bind);
     if (!event)
         return false;
@@ -871,26 +958,38 @@ PEAT_Bool PET_Core::write_event_and_update_stat(PET_Event *event)
             //		stat.add_ts_fs_event_stat(Event_Set_Stat::tst_post, event);
         }
 
+        // time this call spent progressing other (nonblocking) collectives is not its own: subtract it here, credit the owners below
+        PEAT_Clock foreign_orig = event->foreign_progress_time(0), foreign_trc = event->foreign_progress_time(1), foreign_post = event->foreign_progress_time(2);
         stat.add_mpi_event_stat(Event_Set_Stat::tst_orig, event->rank, event->func_id,
                                 event->o_time.func.in,
                                 event->o_time.func.out,
-                                event->o_time.func.duration(),
+                                event->o_time.func.duration() - foreign_orig,
                                 event->o_event_parts.prolog + event->o_event_parts.epilog +
                                     event->o_time.mpi.in - event->o_time.func.in + event->o_time.func.out - event->o_time.mpi.out);
         stat.add_mpi_event_stat(Event_Set_Stat::tst_trc, event->rank, event->func_id,
                                 event->t_time.func.in,
                                 event->t_time.func.out,
-                                event->t_time.func.duration(),
+                                event->t_time.func.duration() - foreign_trc,
                                 event->o_event_parts.prolog + event->o_event_parts.epilog);
         if (!get_mo()) {
             stat.add_mpi_event_stat(Event_Set_Stat::tst_post, event->rank, event->func_id,
                                     event->e_time.func.in,
                                     event->e_time.func.out,
-                                    event->e_time.func.duration(),
+                                    event->e_time.func.duration() - foreign_post,
                                     event->event_parts.prolog + event->event_parts.epilog);
         }
         if (event->get_first_child_event() != event) {
             for (PET_Event *evt = event->get_first_child_event(); evt != event; evt = event->get_next_child_event()) {
+                PEAT_MPI_Func_ID stat_parent_func = event->parent_func_id;
+                if (evt->is_foreign_progress()) { // owned by another collective: its statistics go there
+                    stat_parent_func = evt->progress_owner->func_id;
+                    if (evt->container_event == NULL || !evt->container_event->is_foreign_progress()) { // count a foreign subtree once
+                        stat.add_progress_stat(Event_Set_Stat::tst_orig, evt->rank, stat_parent_func, evt->o_time.func.duration());
+                        stat.add_progress_stat(Event_Set_Stat::tst_trc, evt->rank, stat_parent_func, evt->t_time.func.duration());
+                        if (!get_mo())
+                            stat.add_progress_stat(Event_Set_Stat::tst_post, evt->rank, stat_parent_func, evt->e_time.func.duration());
+                    }
+                }
                 if (evt->check_real_tx()) {
                     stat.add_mpi_length_stat(Event_Set_Stat::tst_orig, evt->rank, evt->func_id, evt->get_real_tx_bytes(), evt->o_event_parts.meat);
                     stat.add_mpi_length_stat(Event_Set_Stat::tst_trc, evt->rank, evt->func_id, evt->get_real_tx_bytes(), evt->o_event_parts.meat);
@@ -906,14 +1005,14 @@ PEAT_Bool PET_Core::write_event_and_update_stat(PET_Event *event)
                         is_not_verified = evt_x->guess_blocking();
                     }
                 }
-                stat.add_event_stat(Event_Set_Stat::tst_orig, evt->get_msg_transport_id(), evt->rank, evt->func_id, event->parent_func_id, evt->get_ranks_num(), evt->get_real_tx_bytes(), evt->get_real_rx_bytes(),
+                stat.add_event_stat(Event_Set_Stat::tst_orig, evt->get_msg_transport_id(), evt->rank, evt->func_id, stat_parent_func, evt->get_ranks_num(), evt->get_real_tx_bytes(), evt->get_real_rx_bytes(),
                                     evt->o_event_parts.prolog, evt->o_event_parts.meat, evt->get_centre_code(Event_Set_Stat::tst_orig), evt->o_event_parts.epilog,
                                     evt->o_event_parts.stat.wait, evt->o_event_parts.stat.overlap, is_rndv, is_not_verified);
-                stat.add_event_stat(Event_Set_Stat::tst_trc, evt->get_msg_transport_id(), evt->rank, evt->func_id, event->parent_func_id, evt->get_ranks_num(), evt->get_real_tx_bytes(), evt->get_real_rx_bytes(),
+                stat.add_event_stat(Event_Set_Stat::tst_trc, evt->get_msg_transport_id(), evt->rank, evt->func_id, stat_parent_func, evt->get_ranks_num(), evt->get_real_tx_bytes(), evt->get_real_rx_bytes(),
                                     evt->o_event_parts.prolog, evt->o_event_parts.meat, evt->get_centre_code(Event_Set_Stat::tst_trc), evt->o_event_parts.epilog,
                                     evt->o_event_parts.stat.wait, evt->o_event_parts.stat.overlap, is_rndv, is_not_verified);
                 if (!get_mo()) {
-                    stat.add_event_stat(Event_Set_Stat::tst_post, evt->get_msg_transport_id(), evt->rank, evt->func_id, event->parent_func_id, evt->get_ranks_num(), evt->get_real_tx_bytes(), evt->get_real_rx_bytes(),
+                    stat.add_event_stat(Event_Set_Stat::tst_post, evt->get_msg_transport_id(), evt->rank, evt->func_id, stat_parent_func, evt->get_ranks_num(), evt->get_real_tx_bytes(), evt->get_real_rx_bytes(),
                                         evt->event_parts.prolog, evt->event_parts.stat.fabric, evt->get_centre_code(Event_Set_Stat::tst_post), evt->event_parts.epilog,
                                         evt->event_parts.stat.wait, evt->event_parts.stat.overlap, is_rndv, is_not_verified);
                 }

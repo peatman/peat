@@ -37,41 +37,41 @@
 #include <mpi.h>
 #endif
 
-PEAT_Bool PET_TaR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host)
+PEAT_Bool PET_TaR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
     if (!process_second_line) {
-        PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host);
-        extract(comm, mpi_string.at(4), 16);
-        extract(peer_rank, mpi_string.at(5)); // COMMWORLD based No need to translate
+        PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
+        extract(comm, mpi_string.at(hdr.payload + 1), 16);
+        extract(peer_rank, mpi_string.at(hdr.payload + 2)); // COMMWORLD based No need to translate
                                               /*        PEAT_MPI_Request request;
-                                              extract(request, mpi_string.at(5),16);
-                                              extract(message, mpi_string.at(6),16);*/
-        extract(tag, mpi_string.at(8));
-        extract(t_bytes, mpi_string.at(9));
+                                              extract(request, mpi_string.at(hdr.payload + 2),16);
+                                              extract(message, mpi_string.at(hdr.payload + 3),16);*/
+        extract(tag, mpi_string.at(hdr.payload + 5));
+        extract(t_bytes, mpi_string.at(hdr.payload + 6));
         process_second_line = true;
     } else {
-        extract(peer_rank_2, mpi_string.at(5)); // COMMWORLD based No need to translate
-        extract(tag_2, mpi_string.at(8));
-        extract(t_bytes_2, mpi_string.at(9));
+        extract(peer_rank_2, mpi_string.at(hdr.payload + 2)); // COMMWORLD based No need to translate
+        extract(tag_2, mpi_string.at(hdr.payload + 5));
+        extract(t_bytes_2, mpi_string.at(hdr.payload + 6));
     }
     return true;
 }
 PEAT_Bool PET_TaR_Event::write_bind(File_Storage_GZ *gz_bind)
 {
-    gz_bind->printf(rank, "%d:%s:%d:%lld:%lld:%s:%d:%lld:%lld:%lld\n", PEAT_RT_Bind_Peer,
+    gz_bind->printf(rank, "%d:%s:%d:%s:%s:%d:%s:%lld\n", PEAT_RT_Bind_Peer,
                     global_func_id.name_by_idx(func_id),
-                    rank, primary_id, secondary_id,
+                    rank, ids_str().c_str(),
                     global_func_id.name_by_idx(peer_completion_func_id_2),
-                    peer_rank, peer_completion_primary_id_2, peer_completion_secondary_id_2, t_bytes);
+                    peer_rank, peat_ids_string(peer_completion_ids_2).c_str(), t_bytes);
 
     /*  //don't write receive part
         gz_bind->printf(rank, "%d:%s:%s:%d:%lld:%s:%s:%d:%lld\n", PEAT_RT_Bind_Peer,
             global_func_id.name_by_idx(peer_completion_func_id_2),
             global_func_id.name_by_idx(peer_func_id_2),
-            peer_rank_2, peer_primary_id_2,
+            peer_rank_2, peat_ids_string(peer_ids_2).c_str(),
             global_func_id.name_by_idx(parent_func_id),
             global_func_id.name_by_idx(func_id),
-            rank, primary_id);
+            rank, ids_str().c_str());
     */
     get_core()->messages_bound[rank]++;
     return true;
@@ -85,11 +85,14 @@ PET_Event *PET_TaR_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *
     PET_Local_Event::write_event(gz_MPI, gz_HWC, gz_bind, "", hwc_eol);
     gz_MPI->printf(rank, ":%d:%d:%llx:%llx:%d:%lld%s",
                    comm, peer_rank, request, message, tag, t_bytes, mpi_eol);
+    header_second_line = true; // the second line repeats the ids with num_children = 0
     PET_Local_Event::write_event(gz_MPI, gz_HWC, gz_bind, "", hwc_eol);
+    header_second_line = false;
     gz_MPI->printf(rank, ":%d:%d:%llx:%llx:%d:%lld%s",
                    comm, peer_rank_2, request, message, tag_2, t_bytes_2, mpi_eol);
 
     write_bind(gz_bind);
+    write_nested_records(gz_MPI, gz_HWC, gz_bind, mpi_eol, hwc_eol); // progress engine records issued inside this call
     // TODO: check send/recv pointers
     return this;
 }
@@ -154,6 +157,8 @@ PEAT_Bool PET_TaR_Event::estimate(Estimation_Event *event)
     // }
     if (is_estimated() || finish_calculations)
         return true;
+    if (has_nested() && !nested_all_estimated())
+        return true; // wait for the records issued from progress inside this call
     if (estimation_started) {
         PEAT_Clock sub_t = 0;
         PEAT_Clock f_in = e_time.mpi.in + event_parts.prolog;
@@ -178,6 +183,7 @@ PEAT_Bool PET_TaR_Event::estimate(Estimation_Event *event)
             //} else {
             //	sub_t = f_out - m_r_out;
             //}
+            sub_t = clamp_sub_t_to_nested(sub_t, f_out);
             if (sub_t > event_parts.meat)
                 sub_t = event_parts.meat;
             event_parts.adjust(0, sub_t, 0);

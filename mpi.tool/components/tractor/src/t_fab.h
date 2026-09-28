@@ -83,8 +83,8 @@ struct t_fab_profiler : t_base_event {
 
     bool compression;
     int compression_level;
-    virtual void dump_extras(pid_t tid, msl_base_chain **chain, int is_colt);
-    virtual void dump_events(pid_t tid, msl_adv_chain **chain);
+    virtual void dump_extras(pid_t tid, int level, msl_base_chain **chain);
+    virtual void dump_events(pid_t tid, int level, msl_adv_chain **chain);
 };
 #include <infiniband/verbs.h>
 

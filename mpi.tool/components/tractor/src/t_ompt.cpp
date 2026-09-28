@@ -48,14 +48,14 @@ static msl_event *record_ompt_event(short func0, short func1, const void *pcode)
         return;
     tsc_entry = peat_get_time_tid_core(&tid_in, &core_id);
     tid = __msl_get_tid(tid_in);
-    __msl_allocate_event(tid, 0, &t_event, &counters);
+    /* an OMPT record is a point in time: it takes the level of the call it happens in, without opening one */
+    __msl_allocate_event(tid, __msl_current_level(tid), 0, &t_event, &counters);
     if (gt_info(full_ompt_unwind)) {
         stack_unwind(gt_info(max_ret_level), counters.addrs, gt_info(ret_levels));
     } else {
         stack_unwind0(gt_info(max_ret_level), counters.addrs, gt_info(ret_levels));
     }
-    t_event->func_id[0] = func0;
-    t_event->func_id[1] = func1;
+    t_event->func_id = func1;
     t_event->tscs[0] = tsc_entry;
     t_event->tscs[3] = tsc_entry;
     t_event->tscs[2] = tid;

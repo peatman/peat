@@ -22,11 +22,13 @@ $prototype {
     int rv;
 #ifndef _TRACTOR_PASSTHROUGH_
     int i;
-    long long tsc_entry,tsc_exit,tsc_mpi_entry,tsc_mpi_exit,local_tool_overhead;
-    const PEAT_MPI_Func_ID_Through fidc=$funcid_through;
     int ranks;
     int nranks;
     MPI_Group cwg,group;
+    int level=-1;              /* nesting level of this call, -1 if not traced */
+    long long children_base=0; /* records of the next level existing at entry */
+    long long tsc_entry,tsc_exit,tsc_mpi_entry,tsc_mpi_exit,local_tool_overhead;
+    const PEAT_MPI_Func_ID_Through fidc=$funcid_through;
     pid_t tid_in;
     int tid;
     msl_extras_counters counters;
@@ -41,32 +43,32 @@ $prototype {
     t_memory_event l_mem;
 #endif
 
-    if (__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
+    if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
         tsc_entry = peat_get_time_tid(&tid_in);
         counting_permit+=2*counting_permission_pcontrol[$funcid_through];
         tid=__msl_get_tid(tid_in);
-        first_progress_entry[tid]=last_progress_exit[tid]=0;
+        level=__msl_enter_call(tid);
+        children_base=__msl_child_base(tid,level);
+        __msl_allocate_event(tid,level,0,&event,&counters);
 #ifdef _HWCOUNTERS_ENABLED_
-        gt_info(hwc).get_all_counters(&counters.hwcs[0]);
+        gt_info(hwc).get_all_counters(l_hwcs);
 #endif
 #ifdef _MEMPROFILE_STORE_
-        gt_info(mprof).get_mem_status(&counters.mems[0]);
+        gt_info(mprof).get_mem_status(&l_mem);
 #endif
-        in_mpi_call[tid]=1;
         tsc_mpi_entry=peat_get_time();
-    } // if (__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1))
+    } //if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1))
 #endif
 #ifdef _TRACTOR_PCALL_
     $Preturn=P$c_call;
 #endif
 #ifndef _TRACTOR_PASSTHROUGH_
-    if (__builtin_expect((counting_permission[$funcid_through]>0),1) && !l_skip_parse) {
+    if (level>=0) __msl_leave_call(tid); /* also when the record was discarded */
+    if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
         tsc_mpi_exit = peat_get_time();
-        in_mpi_call[tid]=0;
-        __msl_allocate_event(tid,0,&event,&counters);
         stack_unwind(gt_info(max_ret_level),counters.addrs,gt_info(ret_levels));
-        event->func_id[0] = $funcid;
-        event->func_id[1] = $funcid_through;
+        event->func_id = $funcid_through;
+        event->num_children += (short)(__msl_child_base(tid,level) - children_base);
         event->$basic_struct.comm=$comm;
         $size
 #ifdef _TRACTOR_EXTRA_FIELDS_
@@ -87,7 +89,7 @@ $prototype {
         // counting_permit-=2*counting_permission_pcontrol[$funcid_through];
         tsc_exit = peat_get_time();
         event->tscs[3]=tsc_exit-tsc_entry;
-        __msl_check_chain(tid);
+        __msl_check_chain(tid,level);
         local_tool_overhead=tsc_mpi_entry-tsc_entry+tsc_exit-tsc_mpi_exit;
         global_mpi_time+=tsc_mpi_exit-tsc_mpi_entry;
         global_tool_overhead += local_tool_overhead;
@@ -96,7 +98,7 @@ $prototype {
         overall_entries[$funcid_through]++;
         overall_tool_overhead[$funcid_through] += local_tool_overhead;
 #endif
-    } // if (__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1))
+    } //if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1))
 #endif
     __DEBUG_EPILOG_MPI_LAYER__
     $return

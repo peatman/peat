@@ -46,11 +46,11 @@
 #define P2PDELIM '|'
 #define SEC_OUTPUT(x) fixed << setprecision(0) << x << " ( " << setprecision(2) << x / freq << " sec)"
 
-PEAT_Bool PET_Local_Buf_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host)
+PEAT_Bool PET_Local_Buf_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
-    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host);
-    extract(inbuf_size, mpi_string.at(4));
-    extract(outbuf_size, mpi_string.at(5));
+    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
+    extract(inbuf_size, mpi_string.at(hdr.payload + 1));
+    extract(outbuf_size, mpi_string.at(hdr.payload + 2));
     return true;
 }
 

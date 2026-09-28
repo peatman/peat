@@ -26,6 +26,8 @@ $prototype {
     int rv, i, comm_rank;
     MPI_Aint data_size = 0;
     int reused=0;
+    int level=-1;              /* nesting level of this call, -1 if not traced */
+    long long children_base=0; /* records of the next level existing at entry */
     long long tsc_entry,tsc_exit,tsc_mpi_entry,tsc_mpi_exit,local_tool_overhead,local_mpi_time;
     const PEAT_MPI_Func_ID_Through fidc=$funcid_through;
     pid_t tid_in;
@@ -46,19 +48,18 @@ $prototype {
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
         tsc_entry = peat_get_time_tid(&tid_in);
         tid=__msl_get_tid(tid_in);
-        __msl_allocate_event(tid,1,&event,&counters); //unconditional allocate
+        level=__msl_enter_call(tid);
+        children_base=__msl_child_base(tid,level);
+        __msl_allocate_event(tid,level,1,&event,&counters); //unconditional allocate
         $get_datasize
         $if_ignore_status
         counting_permit+=2*counting_permission_pcontrol[$funcid_through];
-        first_progress_entry$colt [tid] = last_progress_exit$colt [tid] = 0;
-        $num_colts
 #ifdef _HWCOUNTERS_ENABLED_
         gt_info(hwc).get_all_counters(l_hwcs);
 #endif
 #ifdef _MEMPROFILE_STORE_
         gt_info(mprof).get_mem_status(&l_mem);
 #endif
-        in_mpi_call[tid]=1;
         tsc_mpi_entry=peat_get_time();
     } //if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1))
 #else
@@ -69,13 +70,13 @@ $prototype {
 #endif
 #ifndef _TRACTOR_PASSTHROUGH_
     $skip_parse_update //conditional discard (potential reuse below)
+    if (level>=0) __msl_leave_call(tid); /* also when the record was discarded */
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
         tsc_mpi_exit = peat_get_time();
-        in_mpi_call[tid]=0;
-        $reused if (event==NULL) __msl_allocate_event(tid,1,&event,&counters); //conditional allocate (if discared but couldn't be reused)
+        $reused if (event==NULL) __msl_allocate_event(tid,level,1,&event,&counters); //conditional allocate (if discared but couldn't be reused)
         if (!reused) stack_unwind$colt(gt_info(max_ret_level),counters.addrs,gt_info(ret_levels));
-        event->func_id[0] = $funcid;
-        event->func_id[1] = $funcid_through;
+        event->func_id = $funcid_through;
+        event->num_children += (short)(__msl_child_base(tid,level) - children_base);
         $transfer_bytes
         $comm
         $tag_peer
@@ -116,10 +117,7 @@ $prototype {
         } else {
             event->tscs[3]=tsc_exit - event->tscs[0];
         }
-
-#if $is_not_colt
-        __msl_check_chain(tid);
-#endif
+        __msl_check_chain(tid,level);
         local_tool_overhead=tsc_mpi_entry-tsc_entry+tsc_exit-tsc_mpi_exit;
         $global_mpi_time
         global_tool_overhead += local_tool_overhead;

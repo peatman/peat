@@ -52,11 +52,13 @@ void Collectives::print_collective_out(const Tractor_Event &event)
 {
 #ifdef MAT_PROCESS_HWC_MPI_OUTPUT
     if (event.func_class == PEAT_PROP_CLASS_FIO) {
-        output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%x:%llx:%llx:%lld:%lld", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id),
+        output_MPI->printf(event.rank, "%s:%s:%x:%llx:%llx:%lld:%lld", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id),
                            event.MPIFIO.comm, event.MPIFIO.fh, event.MPIFIO.request, event.MPIFIO.offset, event.MPIFIO.bytes);
     } else {
-        output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%x:%d:%llx:%d:%d:%d", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id),
-                           event.Collective.comm, event.Collective.root, event.Collective.request, event.Collective.rw_fields0, event.Collective.rw_fields1, event.num_colts);
+        output_MPI->printf(event.rank, "%s:%s:%x:%d:%llx:%d:%d", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id),
+                           event.Collective.comm, event.Collective.root, event.Collective.request, event.Collective.rw_fields0, event.Collective.rw_fields1);
+        if (!event.nested)
+            output_MPI->printf(event.rank, ":%d", event.num_children); // legacy num_colts
         for (PEAT_Signed_Num j = 0; j < event.Collective.rw_fields0; j++) {
             output_MPI->printf(event.rank, ":%lld", event.send_bytes[j]);
         }
@@ -66,7 +68,7 @@ void Collectives::print_collective_out(const Tractor_Event &event)
     }
 
 #if 0
-    output_HWC->printf(event.rank, "%lld:%lld:%d:%lld:%lld:%lld:%lld:%lld:%lld", event.primary_id, event.secondary_id, event.thread_id,
+    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
             event.tsc_time.func.in,
             event.tsc_time.mpi.in,
             event.tsc_time.mpi.out,
@@ -75,7 +77,7 @@ void Collectives::print_collective_out(const Tractor_Event &event)
             event.tsc_time.pe.out);
 
 #else
-    output_HWC->printf(event.rank, "%lld:%lld:%d:%lld:%lld:%lld:%lld", event.primary_id, event.secondary_id, event.thread_id,
+    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
                        event.tsc_time.mpi.in,
                        event.tsc_time.mpi.out,
                        event.tsc_time.pe.in,
@@ -97,13 +99,13 @@ void Collectives::print_collective_err(const MAT_Collective &record)
         for (std::map<PEAT_Rank, Collective_Event>::const_iterator it = record.coll_events_list.begin(); it != record.coll_events_list.end(); ++it) {
             const PEAT_Rank rank = it->first;
             const Collective_Event &prop = it->second;
-            char local_uids[32];
-            sprintf(local_uids, ":%d:%lld", rank, prop.primary_id);
+            char local_uids[128];
+            snprintf(local_uids, sizeof(local_uids), ":%d:%s", rank, peat_ids_string(prop.ids).c_str());
             uids = uids + local_uids;
         }
         for (Collective_Ranks::const_iterator it = record.expected_ranks.begin(); it != record.expected_ranks.end(); ++it) {
             const PEAT_Rank rank = *it;
-            char local_uids[32];
+            char local_uids[128];
             sprintf(local_uids, ":%d", rank);
             missing_ranks = missing_ranks + local_uids;
         }
@@ -128,8 +130,8 @@ void Collectives::print_collective_bind(const MAT_Collective &record)
         for (std::map<PEAT_Rank, Collective_Event>::const_iterator it = record.coll_events_list.begin(); it != record.coll_events_list.end(); ++it) {
             const PEAT_Rank rank = it->first;
             const Collective_Event &prop = it->second;
-            char local_uids[32];
-            sprintf(local_uids, ":%d:%lld", rank, prop.primary_id);
+            char local_uids[128];
+            snprintf(local_uids, sizeof(local_uids), ":%d:%s", rank, peat_ids_string(prop.ids).c_str());
             uids = uids + local_uids;
         }
         sprintf(header, "%d:%s", PEAT_RT_Bind_Collective, global_func_id.name_by_idx(record.func_id));
@@ -182,8 +184,8 @@ void Collectives::print_collective_bind(const MAT_Collective &record)
             // if (prop.permanent_request > 0) r_col.comp_funcs[rank] = global_func_id.name_by_idx(prop.completion.func_id);
             if (prop.permanent_request > 0)
                 r_col.comp_func = global_func_id.name_by_idx(prop.completion.func_id); // TODO remove
-            char local_uids[32];
-            sprintf(local_uids, " %d,%lld", rank, prop.primary_id);
+            char local_uids[128];
+            snprintf(local_uids, sizeof(local_uids), " %d,%s", rank, peat_ids_string(prop.ids).c_str());
             uids = uids + local_uids;
         }
         r_col.root = record.root;
@@ -337,8 +339,7 @@ void Collectives::parse_collective(const PEAT_Rank rank, const Tractor_Event &ev
                 col_prop.tsc_time = event.tsc_time;
                 col_prop.tsc_u_time = event.tsc_u_time;
                 col_prop.addrs = event.addrs;
-                col_prop.primary_id = event.primary_id;
-                col_prop.secondary_id = event.secondary_id;
+                col_prop.ids = event.ids;
                 col_prop.request = col_prop.permanent_request = event.func_class == PEAT_PROP_CLASS_FIO ? event.MPIFIO.request : event.Collective.request;
                 expected_ranks.erase(rank);
 #if defined PROCESS_WHOLE_EVENT
@@ -389,8 +390,7 @@ void Collectives::parse_collective(const PEAT_Rank rank, const Tractor_Event &ev
             properties.tsc_time = event.tsc_time;
             properties.tsc_u_time = event.tsc_u_time;
             properties.addrs = event.addrs;
-            properties.primary_id = event.primary_id;
-            properties.secondary_id = event.secondary_id;
+            properties.ids = event.ids;
             properties.request = properties.permanent_request = event.func_class == PEAT_PROP_CLASS_FIO ? event.MPIFIO.request : event.Collective.request;
 #if defined PROCESS_WHOLE_EVENT
             if (event.func_class == PEAT_PROP_CLASS_COLLECTIVE) {
@@ -446,8 +446,7 @@ void Collectives::parse_collective(const PEAT_Rank rank, const Tractor_Event &ev
             ph.tsc_time = event.tsc_time;
             ph.tsc_u_time = event.tsc_u_time;
             ph.addrs = event.addrs;
-            ph.primary_id = event.primary_id;
-            ph.secondary_id = event.secondary_id;
+            ph.ids = event.ids;
             record.ph[0] = record.ph[1] = record.ph[2] = ph;
             fio_requests[rank][record.request] = record;
         }
@@ -593,8 +592,7 @@ void Collectives::send_collective(PEAT_Rank rank, const Tractor_Event &event)
 #endif
         MAT_Request_Record record;
         record.peer = mat_peer;
-        record.primary_id = event.primary_id;
-        record.secondary_id = event.secondary_id;
+        record.ids = event.ids;
         PEAT_MPI_Request request = event.func_class == PEAT_PROP_CLASS_FIO ? event.MPIFIO.request : event.Collective.request;
         if (request > 0) {
             record.request = request;

@@ -25,13 +25,13 @@
 #include <string>
 #include <vector>
 struct Phase {
-    Phase() : func_id(TMPI_FUNC_ID_NONE), primary_id(-1LL), secondary_id(-1LL), thread_id(-1) {}
+    Phase() : func_id(TMPI_FUNC_ID_NONE), ids(2, -1), thread_id(-1) {}
     ~Phase()
     {
         addrs.clear();
     }
     PEAT_MPI_Func_ID func_id;
-    PEAT_UID primary_id, secondary_id;
+    PEAT_Event_IDs ids; // id path as written in the trace: ids[0] is the top-level id (2 entries in the legacy format)
     PEAT_UID thread_id;
     // std::vector<PEAT_Addr> addrs;
     std::vector<PEAT_UID> addrs;
@@ -41,8 +41,7 @@ struct Phase {
         return tsc_u_time.pack_size() +
                tsc_time.pack_size() +
                sizeof(func_id) +
-               sizeof(primary_id) +
-               sizeof(secondary_id) +
+               pack_pod_size(ids) +
                sizeof(thread_id) +
                pack_pod_size(addrs);
     }
@@ -54,12 +53,7 @@ struct Phase {
         ssize = sizeof(func_id);
         memcpy(ptr + ptr_it, &func_id, ssize);
         ptr_it += ssize;
-        ssize = sizeof(primary_id);
-        memcpy(ptr + ptr_it, &primary_id, ssize);
-        ptr_it += ssize;
-        ssize = sizeof(secondary_id);
-        memcpy(ptr + ptr_it, &secondary_id, ssize);
-        ptr_it += ssize;
+        ptr_it += pack_pod(ptr + ptr_it, ids);
         ssize = sizeof(thread_id);
         memcpy(ptr + ptr_it, &thread_id, ssize);
         ptr_it += ssize;
@@ -74,12 +68,7 @@ struct Phase {
         ssize = sizeof(func_id);
         memcpy(&func_id, ptr + ptr_it, ssize);
         ptr_it += ssize;
-        ssize = sizeof(primary_id);
-        memcpy(&primary_id, ptr + ptr_it, ssize);
-        ptr_it += ssize;
-        ssize = sizeof(secondary_id);
-        memcpy(&secondary_id, ptr + ptr_it, ssize);
-        ptr_it += ssize;
+        ptr_it += unpack_pod(ptr + ptr_it, ids);
         ssize = sizeof(thread_id);
         memcpy(&thread_id, ptr + ptr_it, ssize);
         ptr_it += ssize;

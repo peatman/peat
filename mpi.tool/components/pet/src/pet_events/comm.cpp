@@ -37,31 +37,36 @@
 #include <mpi.h>
 #endif
 
-PEAT_Bool PET_Comm_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host)
+PEAT_Bool PET_Comm_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
-    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host);
-    extract(comm, mpi_string.at(4), 16);
-    extract(newcomm, mpi_string.at(5), 16);
-    extract(remotecomm, mpi_string.at(6), 16);
-    extract(intercomm, mpi_string.at(7), 16);
-    extract(request, mpi_string.at(8), 16);
-    int num_colts;
-    extract(num_colts, mpi_string.at(9)); // number of collective transfers followed by
-    t_events.resize(num_colts, NULL);
+    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
+    extract(comm, mpi_string.at(hdr.payload + 1), 16);
+    extract(newcomm, mpi_string.at(hdr.payload + 2), 16);
+    extract(remotecomm, mpi_string.at(hdr.payload + 3), 16);
+    extract(intercomm, mpi_string.at(hdr.payload + 4), 16);
+    extract(request, mpi_string.at(hdr.payload + 5), 16);
+    if (!hdr.nested) { // legacy: number of collective transfers followed by
+        int num_colts;
+        extract(num_colts, mpi_string.at(hdr.payload + 6));
+        t_events.resize(num_colts, NULL);
+    }
     return true;
 }
 
 PET_Event *PET_Comm_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
 {
     PET_Local_Event::write_event(gz_MPI, gz_HWC, gz_bind, "", hwc_eol);
-    gz_MPI->printf(rank, ":%x:%x:%x:%x:%x:%d%s", comm, newcomm, remotecomm, intercomm, request, t_events.size(), mpi_eol);
+    gz_MPI->printf(rank, ":%x:%x:%x:%x:%x", comm, newcomm, remotecomm, intercomm, request);
+    if (!nested_format())
+        gz_MPI->printf(rank, ":%d", host_event ? 0 : nested_count_total()); // legacy num_colts
+    gz_MPI->printf(rank, "%s", mpi_eol);
     std::list<Coll_Storage>::iterator collective;
     if (get_core()->get_coll(this, collective)) {
-        std::map<PEAT_Rank, PEAT_UID>::iterator coll_it = collective->coll_uids.begin();
+        std::map<PEAT_Rank, PEAT_Event_IDs>::iterator coll_it = collective->coll_uids.begin();
         if (coll_it->first == rank) { // only write collectives once (for 1st rank)
             gz_bind->printf(rank, "%d:%s", PEAT_RT_Bind_Collective, global_func_id.name_by_idx(func_id));
             for (; coll_it != collective->coll_uids.end(); ++coll_it) {
-                gz_bind->printf(rank, ":%d:%lld", coll_it->first, coll_it->second);
+                gz_bind->printf(rank, ":%d:%s", coll_it->first, peat_ids_string(coll_it->second).c_str());
             }
             gz_bind->printf(rank, "\n");
             get_core()->collectives_bound++;

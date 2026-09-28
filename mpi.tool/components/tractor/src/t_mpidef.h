@@ -28,19 +28,19 @@ extern "C" {
 #ifdef _STATUS_LO_HI_
 #define MPI_STATUS_GET_COUNT_P(x) ((long long)((((long long)(((unsigned int)x->count_hi_and_cancelled) >> 1)) << BITS_IN_INT) + (unsigned int)x->count_lo))
 #define MPI_STATUS_GET_COUNT_R(x) ((long long)((((long long)(((unsigned int)x.count_hi_and_cancelled) >> 1)) << BITS_IN_INT) + (unsigned int)x.count_lo))
-static int __msl_record_request(const int tid, const MPI_Request value) { return (gt_info(record_int(tid, (int)value))); }
-static int __msl_record_requests(const int tid, const MPI_Request *values, const int num) { return (gt_info(record_ints(tid, (int *)values, num))); }
+static int __msl_record_request(const int tid, const int level, const MPI_Request value) { return (gt_info(record_int(tid, level, (int)value))); }
+static int __msl_record_requests(const int tid, const int level, const MPI_Request *values, const int num) { return (gt_info(record_ints(tid, level, (int *)values, num))); }
 #else
 #ifdef OPEN_MPI
 #define MPI_STATUS_GET_COUNT_P(x) (((long long)(x)->_ucount))
 #define MPI_STATUS_GET_COUNT_R(x) (((long long)(x)._ucount))
-static int __msl_record_request(const int tid, const MPI_Request value) { return (gt_info(record_long(tid, (long long)value))); }
-static int __msl_record_requests(const int tid, const MPI_Request *values, const int num) { return (gt_info(record_longs(tid, (long long *)values, num))); }
+static int __msl_record_request(const int tid, const int level, const MPI_Request value) { return (gt_info(record_long(tid, level, (long long)value))); }
+static int __msl_record_requests(const int tid, const int level, const MPI_Request *values, const int num) { return (gt_info(record_longs(tid, level, (long long *)values, num))); }
 #else
 #define MPI_STATUS_GET_COUNT_P(x) (((long long)(x)->count))
 #define MPI_STATUS_GET_COUNT_R(x) (((long long)(x).count))
-static int __msl_record_request(const int tid, const MPI_Request value) { return (gt_info(record_int(tid, (int)value))); }
-static int __msl_record_requests(const int tid, const MPI_Request *values, const int num) { return (gt_info(record_ints(tid, (int *)values, num))); }
+static int __msl_record_request(const int tid, const int level, const MPI_Request value) { return (gt_info(record_int(tid, level, (int)value))); }
+static int __msl_record_requests(const int tid, const int level, const MPI_Request *values, const int num) { return (gt_info(record_ints(tid, level, (int *)values, num))); }
 #endif
 #endif
 
@@ -102,15 +102,15 @@ int mpi_internal_comm_translate_rank(MPI_Comm comm, int rank);
 int mpi_internal_comm_translate_rank_verbose(MPI_Comm comm, int rank);
 int mpi_internal_request_translate_rank(MPI_Request request, int rank);
 
-static MPI_Request __msl_record_drequest_colt(const int tid, MPI_Request request)
+static MPI_Request __msl_record_drequest(const int tid, const int level, MPI_Request request)
 {
-    __msl_record_long_colt(tid, (const long long ) request);
+    __msl_record_long(tid, level, (const long long)request);
     return (request);
 }
 
-static int __msl_record_drequests_colt(const int tid, MPI_Request *requests, const int num)
+static int __msl_record_drequests(const int tid, const int level, MPI_Request *requests, const int num)
 {
-    return (__msl_record_longs_colt(tid, (const long long *) requests, num));
+    return (__msl_record_longs(tid, level, (const long long *)requests, num));
 }
 
 #else // for mpich based mpi there is internal function incorporated to source tree via patch provided in PEAT
@@ -128,18 +128,18 @@ static MPI_Request __msl_get_drequest(const MPID_Request *value)
     return (mpi_req);
 }
 
-static MPI_Request __msl_record_drequest_colt(const int tid, const MPID_Request *value)
+static MPI_Request __msl_record_drequest(const int tid, const int level, const MPID_Request *value)
 {
     MPI_Request mpi_req = mpi_internal_get_request(value);
-    __msl_record_int_colt(tid, mpi_req);
+    __msl_record_int(tid, level, mpi_req);
     return (mpi_req);
 }
 
-static int __msl_record_drequests_colt(const int tid, const MPID_Request **values, const int num)
+static int __msl_record_drequests(const int tid, const int level, const MPID_Request **values, const int num)
 {
     MPI_Request local_reqs[num];
     mpi_internal_get_requests(num, values, local_reqs);
-    return (__msl_record_ints_colt(tid, local_reqs, num));
+    return (__msl_record_ints(tid, level, local_reqs, num));
 }
 
 static void __msl_cvt_drequests(MPI_Request *out, const MPID_Request **values, const int num)
@@ -151,25 +151,6 @@ static void __msl_cvt_drequests(MPI_Request *out, const MPID_Request **values, c
 int mpi_internal_print_comm_tree(MPID_Comm *comm, int depth);
 
 
-static MPI_Request __msl_record_request_colt(const int tid, const MPI_Request value)
-{
-#ifdef _OPENMPI_ //64 bits in openmpi
-    __msl_record_long_colt(tid, (const long long) value);
-#else //assuming mpich based 
-    __msl_record_int_colt(tid, value);
-#endif
-    return (value);
-}
-
-static int __msl_record_requests_colt(const int tid, const MPI_Request *values, const int num)
-{
-#ifdef _OPENMPI_ //64 bits in openmpi
-    return (__msl_record_longs_colt(tid, (const long long *) values, num));
-#else //assuming mpich based 
-    return (__msl_record_ints_colt(tid, values, num));
-#endif
-}
-
 #ifndef _OPENMPI_ // MPICH (based) specifics
 
 void PT_MPID_Request_release(MPID_Request *request);
@@ -180,6 +161,8 @@ void T_MPID_Request_release(MPID_Request *request)
     __DEBUG_PROLOG_MPI_LAYER__
 #ifndef _TRACTOR_PASSTHROUGH_
     int rv, i, temp_index = 0;
+    int level = -1;
+    long long children_base = 0;
     long long tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
     pid_t tid_in;
     int tid, flag = 0;
@@ -195,10 +178,10 @@ void T_MPID_Request_release(MPID_Request *request)
         tsc_entry = (rdtsca() + tsc_entry * 3) / 4;
 #endif
         tid = __msl_get_tid(tid_in);
-        __msl_allocate_event(tid, 1, &event, &counters);
-        first_progress_entry_colt[tid] = last_progress_exit_colt[tid] = 0;
-        num_colts[tid]++;
-        mpi_req = __msl_record_drequest_colt(tid, (const MPID_Request *)request);
+        level = __msl_enter_call(tid);
+        children_base = __msl_child_base(tid, level);
+        __msl_allocate_event(tid, level, 1, &event, &counters);
+        mpi_req = __msl_record_drequest(tid, level, (const MPID_Request *)request);
 
 #ifdef _HWCOUNTERS_ENABLED_
         gt_info(hwc).get_all_counters(&counters.hwcs[0]);
@@ -206,9 +189,7 @@ void T_MPID_Request_release(MPID_Request *request)
 #ifdef _MEMPROFILE_STORE_
         gt_info(mprof).get_mem_status(&counters.mems[0]);
 #endif
-        in_mpi_call[tid] = 1;
         tsc_mpi_entry = peat_get_time();
-        // PMPI_Request_get_status(mpi_req,&flag,&status);
     } // if(__builtin_expect((counting_permission[MPID_REQUEST_RELEASE_ID_THROUGH]>0 && !l_skip_parse),1))
 #else
     int rv;
@@ -218,17 +199,17 @@ void T_MPID_Request_release(MPID_Request *request)
     PT_MPID_Request_release(request);
 #endif
 #ifndef _TRACTOR_PASSTHROUGH_
+    if (level >= 0)
+        __msl_leave_call(tid);
     if (__builtin_expect((counting_permission[MPID_REQUEST_RELEASE_ID_THROUGH] > 0 && !l_skip_parse), 1)) {
         tsc_mpi_exit = peat_get_time();
-        in_mpi_call[tid] = 0;
         stack_unwind_colt(gt_info(max_ret_level), counters.addrs, gt_info(ret_levels));
-        event->func_id[0] = MPID_REQUEST_RELEASE_ID;
-        event->func_id[1] = MPID_REQUEST_RELEASE_ID_THROUGH;
+        event->func_id = MPID_REQUEST_RELEASE_ID_THROUGH;
+        event->num_children += (short)(__msl_child_base(tid, level) - children_base);
         event->requests.input_request_num = 1;
         // event->requests.triggered_request_num=1;
         event->requests.request_addr = (PEAT_Addr)request;
 
-        event->requests.num_colts = 0;
         event->tscs[0] = tsc_entry;
         event->tscs[1] = tsc_mpi_entry - tsc_entry;
         event->tscs[2] = tsc_mpi_exit - tsc_entry;
@@ -241,18 +222,9 @@ void T_MPID_Request_release(MPID_Request *request)
 
         event->requests.flag = 1;
 
-        /*
-            if (event->requests.flag) {
-                long long TSC[4];
-                    TSC[0]=0;
-                    TSC[1]=status.MPI_TAG;
-                    TSC[2]=get_rank_from_req_colt(request,status.MPI_SOURCE);
-                    TSC[3]=MPI_STATUS_GET_COUNT_R(status);
-                __msl_record_longs_colt (tid,TSC,4);
-            }
-        */
         tsc_exit = peat_get_time();
         event->tscs[3] = tsc_exit - tsc_entry;
+        __msl_check_chain(tid, level);
         local_tool_overhead = tsc_mpi_entry - tsc_entry + tsc_exit - tsc_mpi_exit;
         global_mpi_time += tsc_mpi_exit - tsc_mpi_entry;
         global_tool_overhead += local_tool_overhead;

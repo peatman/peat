@@ -53,41 +53,22 @@ struct Timeline_Entry {
 
 #ifdef _DEBUG
 #define _DEBUG_CURRENT_EVENTS_
-struct PET_Event_Definition {
+struct PET_Event_Definition { // identity of a trace record: rank, thread and id path
     PEAT_Rank rank;
-    PEAT_UID primary_id, secondary_id;
     PEAT_Thread thread_id;
-    PET_Event_Definition(PEAT_Rank r, PEAT_UID p, PEAT_UID s, PEAT_Thread t) : rank(r), primary_id(p), secondary_id(s), thread_id(t) {};
+    PEAT_Event_IDs ids;
+    PET_Event_Definition(PEAT_Rank r, const PEAT_Event_IDs &i, PEAT_Thread t) : rank(r), thread_id(t), ids(i) {};
     PEAT_Bool operator<(const PET_Event_Definition &rhs) const
     {
-        if (rank < rhs.rank) {
-            return true;
-        }
-        if (rank > rhs.rank) {
-            return false;
-        }
-        if (primary_id < rhs.primary_id) {
-            return true;
-        }
-        if (primary_id > rhs.primary_id) {
-            return false;
-        }
-        if (secondary_id < rhs.secondary_id) {
-            return true;
-        }
-        if (secondary_id > rhs.secondary_id) {
-            return false;
-        }
-        if (thread_id < rhs.thread_id) {
-            return true;
-        }
-        if (thread_id > rhs.thread_id) {
-            return false;
-        }
-        return false;
+        if (rank != rhs.rank)
+            return rank < rhs.rank;
+        if (thread_id != rhs.thread_id)
+            return thread_id < rhs.thread_id;
+        return ids < rhs.ids; // lexicographic over the path
     }
 };
 #endif
+void pet_dump_event_tree(FILE *fp, int depth, PET_Event *evt); // verbose diagnostic: one event and its nested records
 class PET_Core
 {
     std::map<PEAT_Rank, PEAT_Clock> last_read_idx;
@@ -123,6 +104,8 @@ class PET_Core
 
     void register_parallel_region(PET_Event *event) { nodes.at(event->node).ranks.at(event->rank).register_parallel_region(event); }
     PEAT_Thread get_max_thread_id(const PEAT_Rank rank) const { return user_region_file->last_thread_idx.at(rank); }
+    PEAT_Bool is_nested_format(const PEAT_Rank rank) const { return user_region_file->is_nested_format(rank); }
+    int get_id_columns(const PEAT_Rank rank) const { return user_region_file->get_id_columns(rank); }
     PEAT_Addr get_addr_by_id(const PEAT_Rank rank, const PEAT_UID addr) const { return user_region_file->get_addr_by_id(rank, addr)->addr; }
 
     PET_Thread *get_pet_thread(PET_Event *evt)
@@ -206,6 +189,8 @@ class PET_Core
     PET_Event *get_last_event(PET_Event *event);
     PET_Event *get_last_event_long(PET_Event *event);
     void fill_next_event(PET_Event *event);
+    void dump_stall_state(FILE *fp); // verbose diagnostic: what every thread is waiting for
+    friend void pet_dump_event_tree(FILE *fp, int depth, PET_Event *evt);
 #if 0
 	PEAT_Bool remove_entry(PET_Event *event)
 	{
@@ -373,7 +358,9 @@ class PET_Core
         return get_pet_rank(rank)->find_event_by_pers_request(request);
     };
     PET_Event *find_peer(PET_Event *event, PEAT_Bool recv_part = false); // for sendrecv
-    PET_Event *find_peer(PET_Event *event, PET_Coll_Event *host_evt, PEAT_Bool recv_part);
+    PET_Event *find_colt_peer_anywhere(PET_Event *event, PEAT_Rank peer, PEAT_Bool want_receiver); // colt peer driven from progress inside another call
+    void attribute_progress_records(PET_Event *host); // hand records issued for another nonblocking collective to it
+    PET_Event *find_peer(PET_Event *event, PET_Event *host_evt, PEAT_Bool recv_part);
     PEAT_Bool is_rank_read(PEAT_Rank rank)
     {
         return ranks_read.count(rank) > 0;
@@ -430,6 +417,7 @@ class PET_Core
     PEAT_Bool update_time_predictor(PEAT_Clock &, PET_Time_Event *, PET_Event *);
     PEAT_Signed_Num get_pe_type() { return globals.progress_engine; }
     PEAT_Bool get_up_status() { return globals.use_up != 0; }
+    PEAT_Bool is_verbose() const { return globals.verbose != 0; }
     void no_more_events(PEAT_Bool);
     void check_progress(PEAT_Bool, std::list<PET_Event *> &);
     long useless_iterations, useful_iterations;
@@ -452,7 +440,7 @@ class PET_Core
 #endif
     std::vector<std::list<Coll_Storage>> coll_store;
 
-    PET_Event *get_event(const PEAT_Rank rank, String_Split &trace_line_MPI, String_Split &trace_line_HWC, PET_Coll_Event *host_evt);
+    PET_Event *get_event(const PEAT_Rank rank, String_Split &trace_line_MPI, String_Split &trace_line_HWC, PET_Event *host_evt, PET_Event *container = NULL);
     Event_Set_Stat stat;
     PTP *ptp;
     PEAT_Transport *transport;
@@ -484,6 +472,7 @@ class PET_Core
     void write_function_split_profile(const std::string &name);
     PEAT_Bool get_mo() const { return (PEAT_Bool)globals.matching_only; }
     friend PET_Event;
+    friend PET_Coll_Event;
     friend PET_OMPT_Event;
 };
 TE_Event *min_te_event(TE_Event *e, TE_Event *e_tmp);

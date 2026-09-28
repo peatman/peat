@@ -108,13 +108,13 @@ bool Elements::get_message(const PEAT_Rank rank, File_Storage_GZ *input_bind, TV
                 tmp.func_id = func_id;
                 PEAT_Rank rank_num = 0;
                 /*  Following 2 events will be holding conditionaly sender and receiver parts of bytes in case they are different */
-                for (int i = 2; i < line_size; i += 2) {
+                for (int i = 2; i < line_size;) { // rank:ids pairs, ids are the trace's id columns
                     PEAT_Rank rank = -1;
                     extract(rank, trace_line_bind.at(i));
                     rank_num++;
-                    PEAT_UID primary_id = -1;
-                    extract(primary_id, trace_line_bind.at(i + 1));
-                    TV_Coll_Event *evt_tmp = static_cast<TV_Coll_Event *>(find_event(rank, primary_id, -1));
+                    PEAT_Event_IDs coll_ids;
+                    i = bind_ids(trace_line_bind, i + 1, rank, coll_ids);
+                    TV_Coll_Event *evt_tmp = static_cast<TV_Coll_Event *>(find_event(rank, coll_ids));
 
                     if (evt_tmp) {
                         if (evt_tmp->get_event_type() == TV_EVENT_TYPE_COLLECTIVE) { // ignore COMM collective for now
@@ -153,40 +153,31 @@ bool Elements::get_message(const PEAT_Rank rank, File_Storage_GZ *input_bind, TV
                     }
                 }
             } break;
-            case PEAT_RT_Bind_Peer: {
+            case PEAT_RT_Bind_Peer: { // type:func:from_rank:ids:func:to_rank:ids:size
                 PEAT_Rank from_rank = -1;
                 extract(from_rank, trace_line_bind.at(2));
-                PEAT_UID from_primary_id = -1;
-                extract(from_primary_id, trace_line_bind.at(3));
-                PEAT_UID from_secondary_id = -1;
-                extract(from_secondary_id, trace_line_bind.at(4));
+                PEAT_Event_IDs from_ids;
+                int pos = bind_ids(trace_line_bind, 3, from_rank, from_ids);
                 PEAT_Rank to_rank = -1;
-                extract(to_rank, trace_line_bind.at(6));
-                PEAT_UID to_primary_id = -1;
-                extract(to_primary_id, trace_line_bind.at(7));
-                PEAT_UID to_secondary_id = -1;
-                extract(to_secondary_id, trace_line_bind.at(8));
+                extract(to_rank, trace_line_bind.at(pos + 1));
+                PEAT_Event_IDs to_ids;
+                pos = bind_ids(trace_line_bind, pos + 2, to_rank, to_ids);
                 PEAT_Message_Size size = -1;
-                extract(size, trace_line_bind.at(9));
-                TV_Event *from = find_event(from_rank, from_primary_id, from_secondary_id);
-                TV_Event *to = find_event(to_rank, to_primary_id, to_secondary_id);
+                extract(size, trace_line_bind.at(pos));
+                TV_Event *from = find_event(from_rank, from_ids);
+                TV_Event *to = find_event(to_rank, to_ids);
                 if (from && to) {
                     add_message(from, to, TV_PEN_MESSAGE_TYPE_NORMAL, tp);
                 }
             } break;
-            case PEAT_RT_Bind_Completion: {
+            case PEAT_RT_Bind_Completion: { // type:func:ids:func:ids (both records of the file's rank)
                 PEAT_Rank to_rank = rank;
                 PEAT_Rank from_rank = rank;
-                PEAT_UID from_primary_id = -1;
-                extract(from_primary_id, trace_line_bind.at(2));
-                PEAT_UID from_secondary_id = -1;
-                extract(from_secondary_id, trace_line_bind.at(3));
-                PEAT_UID to_primary_id = -1;
-                extract(to_primary_id, trace_line_bind.at(5));
-                PEAT_UID to_secondary_id = -1;
-                extract(to_secondary_id, trace_line_bind.at(6));
-                TV_Event *from = find_event(from_rank, from_primary_id, from_secondary_id);
-                TV_Event *to = find_event(to_rank, to_primary_id, to_secondary_id);
+                PEAT_Event_IDs from_ids, to_ids;
+                int pos = bind_ids(trace_line_bind, 2, from_rank, from_ids);
+                bind_ids(trace_line_bind, pos + 1, to_rank, to_ids);
+                TV_Event *from = find_event(from_rank, from_ids);
+                TV_Event *to = find_event(to_rank, to_ids);
                 if (from && to) {
                     switch (from->func_id) {
                     case ZECOMMANDLISTAPPENDMEMORYCOPY_ID:
@@ -211,19 +202,14 @@ bool Elements::get_message(const PEAT_Rank rank, File_Storage_GZ *input_bind, TV
                     }
                 }
             } break;
-            case PEAT_RT_Bind_Initiation: {
+            case PEAT_RT_Bind_Initiation: { // type:func:ids:func:ids
                 PEAT_Rank to_rank = rank;
                 PEAT_Rank from_rank = rank;
-                PEAT_UID from_primary_id = -1;
-                extract(from_primary_id, trace_line_bind.at(2));
-                PEAT_UID from_secondary_id = -1;
-                extract(from_secondary_id, trace_line_bind.at(3));
-                PEAT_UID to_primary_id = -1;
-                extract(to_primary_id, trace_line_bind.at(5));
-                PEAT_UID to_secondary_id = -1;
-                extract(to_secondary_id, trace_line_bind.at(6));
-                TV_ToR_Event *from = static_cast<TV_ToR_Event *>(find_event(from_rank, from_primary_id, from_secondary_id));
-                TV_Start_Event *to = static_cast<TV_Start_Event *>(find_event(to_rank, to_primary_id, to_secondary_id));
+                PEAT_Event_IDs from_ids, to_ids;
+                int pos = bind_ids(trace_line_bind, 2, from_rank, from_ids);
+                bind_ids(trace_line_bind, pos + 1, to_rank, to_ids);
+                TV_ToR_Event *from = static_cast<TV_ToR_Event *>(find_event(from_rank, from_ids));
+                TV_Start_Event *to = static_cast<TV_Start_Event *>(find_event(to_rank, to_ids));
                 if (from && to) {
                     to->t_events.push_back(from);
                     add_message(from, to, TV_PEN_MESSAGE_TYPE_INITIATION, tp);
@@ -285,9 +271,9 @@ void Elements::compact_events(int nthreads)
             if (evt) {
                 eventsV.at(rank)[index] = evt;
 #ifdef QTV_TR_VECTOR
-                events_tr.at(rank)[evt->primary_id] = index;
+                events_tr.at(rank)[evt->ids[0]] = index;
 #else
-                events_tr.at(rank)[evt->primary_id] = evt;
+                events_tr.at(rank)[evt->ids[0]] = evt;
 #endif
                 ++index;
             }
@@ -307,9 +293,9 @@ void Elements::compact_fab_events(int nthreads)
             if (evt) {
                 events_fabV.at(rank)[index] = evt;
 #ifdef QTV_TR_VECTOR
-                events_fab_tr.at(rank)[evt->primary_id] = index;
+                events_fab_tr.at(rank)[evt->ids[0]] = index;
 #else
-                events_fab_tr.at(rank)[evt->primary_id] = evt;
+                events_fab_tr.at(rank)[evt->ids[0]] = evt;
 #endif
                 ++index;
             }
@@ -401,15 +387,15 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
                         continue;
                     }
                     if (event->e_time.func.in > max_clock && psection[r].empty()) {
-                        // cut_events(ranks_to_load_v[r],event->primary_id);
-                        max_id = event->primary_id;
+                        // cut_events(ranks_to_load_v[r],event->ids[0]);
+                        max_id = event->ids[0];
                         delete event;
                         break;
                     }
                     if (!add_event(event, tp)) {
                         delete event; // event rejected
                     } else {
-                        max_id = event->primary_id + 1;
+                        max_id = event->ids[0] + 1;
                     }
                 }
             } while (rc);
@@ -475,8 +461,8 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
                             continue;
                         }
                         if (fab_event->e_time.func.in > max_clock && psection[r].empty()) {
-                            // cut_events(ranks_to_load_v[r],event->primary_id);
-                            max_id = fab_event->primary_id;
+                            // cut_events(ranks_to_load_v[r],event->ids[0]);
+                            max_id = fab_event->ids[0];
                             delete fab_event;
                             break;
                         }
@@ -484,7 +470,7 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
                             delete fab_event; // event rejected
                         }
                         else {
-                            max_id = fab_event->primary_id + 1;
+                            max_id = fab_event->ids[0] + 1;
                         }
                     }
                 } while (rc);
@@ -752,8 +738,10 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
             }
             if (tid == 0)
                 progress(prevclk, QApplication::processEvents);
-            const TV_Event *cur_func_ptr = cur_func;
-            for (int f = 0; cur_func_ptr != NULL; cur_func_ptr = cur_func->get_child(f++)) {
+            std::vector<const TV_Event *> subtree; // the call and its nested records at every level
+            cur_func->collect_subtree(subtree);
+            for (size_t f = 0; f < subtree.size(); f++) {
+                const TV_Event *cur_func_ptr = subtree[f];
                 long f_width = double(cur_func_ptr->e_time.func.duration()) * pix_in_tic;
                 long pe_width = double(cur_func_ptr->e_time.pe.duration()) * pix_in_tic;
                 if (pe_width == f_width)
@@ -878,7 +866,7 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                 if (f_width > w_min_name_size) {
                     p[tid]->setOpacity(1.0);
                     p[tid]->setPen(tv_colors.func_text);
-                    p[tid]->drawText(rfrom, Qt::AlignLeft | Qt::AlignVCenter, QString(global_func_id.name_by_idx(cur_func_ptr->func_id)) + QString("\nidx:") + QString().setNum(cur_func_ptr->primary_id)); // Slow!
+                    p[tid]->drawText(rfrom, Qt::AlignLeft | Qt::AlignVCenter, QString(global_func_id.name_by_idx(cur_func_ptr->func_id)) + QString("\nidx:") + QString().setNum(cur_func_ptr->ids[0])); // Slow!
                 }
                 /*
                 font.setPointSize(ps);
@@ -948,7 +936,7 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                 if (f_width > w_min_name_size) {
                     p[tid]->setOpacity(1.0);
                     p[tid]->setPen(tv_colors.func_text);
-                    p[tid]->drawText(fab_rfrom, Qt::AlignLeft | Qt::AlignVCenter, QString(global_func_id.name_by_idx(cur_fab->func_id)) + QString("\nidx:") + QString().setNum(cur_fab->primary_id));
+                    p[tid]->drawText(fab_rfrom, Qt::AlignLeft | Qt::AlignVCenter, QString(global_func_id.name_by_idx(cur_fab->func_id)) + QString("\nidx:") + QString().setNum(cur_fab->ids[0]));
                 }
             }
         }
@@ -1115,7 +1103,7 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
 
 bool Elements::find_idx(PEAT_Rank rank, PEAT_UID idx)
 {
-    TV_Event *event = find_event(rank, idx, -1);
+    TV_Event *event = find_event(rank, idx);
     if (event) {
         zoom_time_start = event->e_time.func.in;
         zoom_time_stop = event->e_time.func.out;
@@ -1123,34 +1111,36 @@ bool Elements::find_idx(PEAT_Rank rank, PEAT_UID idx)
     }
     return false;
 }
-TV_Event *Elements::find_event(PEAT_Rank rank, PEAT_UID primary_id, PEAT_UID secondary_id) const
+TV_Event *Elements::find_event(PEAT_Rank rank, PEAT_UID top_id) const
 {
 #ifdef QTV_TR_VECTOR
-    if (events_tr[rank].size() <= primary_id)
+    if (top_id < 0 || events_tr[rank].size() <= static_cast<size_t>(top_id))
         return NULL;
-    if (eventsV[rank].size() <= events_tr[rank][primary_id])
+    if (events_tr[rank][top_id] < 0)
         return NULL;
-    if (events_tr[rank][primary_id] < 0)
+    if (eventsV[rank].size() <= static_cast<size_t>(events_tr[rank][top_id]))
         return NULL;
+    return eventsV[rank][events_tr[rank][top_id]];
 #else
-    if (events_tr.at(rank).count(primary_id) < 1)
+    if (events_tr.at(rank).count(top_id) < 1)
         return NULL;
+    return events_tr.at(rank).at(top_id);
 #endif
-    if (secondary_id < 0) {
-#ifdef QTV_TR_VECTOR
-        return eventsV[rank][events_tr[rank][primary_id]];
-#else
-        return events_tr.at(rank).at(primary_id);
-#endif
-    } else {
-#ifdef QTV_TR_VECTOR
-        TV_Coll_Event *host = static_cast<TV_Coll_Event *>(eventsV[rank][events_tr[rank][primary_id]]);
-#else
-        TV_Coll_Event *host = static_cast<TV_Coll_Event *>(events_tr.at(rank).at(primary_id));
-#endif
-        return host->find_event(secondary_id);
-    }
-    return NULL;
+}
+
+TV_Event *Elements::find_event(PEAT_Rank rank, const PEAT_Event_IDs &ids) const
+{
+    if (ids.empty())
+        return NULL;
+    TV_Event *host = find_event(rank, ids[0]);
+    if (host == NULL || !peat_ids_nested(ids))
+        return host; // a top-level record
+    return host->find_event(ids);
+}
+
+int Elements::bind_ids(const String_Split &line, int pos, PEAT_Rank rank, PEAT_Event_IDs &ids) const
+{
+    return peat_ids_parse(line, pos, user_regions->get_id_columns(rank), ids);
 }
 
 TV_Event *Elements::find_event(PEAT_Rank rank, PEAT_Clock clk, int thread, int selector) const
@@ -1283,13 +1273,14 @@ bool Elements::add_event(TV_Event *event, TV_TraceParts &tp)
             max_tid = &max_mpi_tid;
             break;
         }
-        if (event->secondary_id < 0) {
-            eventsV[event->rank][event->primary_id] = event;
+        if (!event->is_nested()) {
+            eventsV[event->rank][event->ids[0]] = event;
             if (event->thread + 1 > (*max_tid)[event->rank])
                 (*max_tid)[event->rank] = event->thread + 1;
-        } else {
-            TV_Coll_Event *host = static_cast<TV_Coll_Event *>(eventsV[event->rank][event->primary_id]);
-            host->put_event(event);
+        } else { // nested record: attach to its top-level record (any event may host nested records)
+            TV_Event *host = eventsV[event->rank][event->ids[0]];
+            if (!host || !host->put_event(event))
+                return false; // host filtered out or not loaded: reject the nested record too
         }
     } catch (const std::bad_alloc &e) {
         qDebug() << "Elements::addFunction. No memory. Size:" << fsize() << " sizeof " << sizeof(TV_Event) << e.what();
@@ -1311,7 +1302,7 @@ bool Elements::add_fab_event(TV_Fab_Event* event, TV_TraceParts& tp)
         qDebug() << "Elements::addFunction. No memory. Size:" << fsize() << " sizeof " << sizeof(TV_Event) << e.what();
         exit(1);
     }
-    events_fabV[event->rank][event->primary_id] = event;
+    events_fabV[event->rank][event->ids[0]] = event;
     return true;
 }
 
@@ -1470,10 +1461,10 @@ void Elements::get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_t
         rank->setTextAlignment(Qt::AlignHCenter);
         tbl->setItem(row, 1, rank);
         // Uniq Idx
-        QTableWidgetItem *primary_id = new QTableWidgetItem();
-        primary_id->setData(Qt::DisplayRole, cur_func_ptr->primary_id);
-        primary_id->setTextAlignment(Qt::AlignHCenter);
-        tbl->setItem(row, 2, primary_id);
+        QTableWidgetItem *primary_item = new QTableWidgetItem();
+        primary_item->setData(Qt::DisplayRole, cur_func_ptr->ids[0]);
+        primary_item->setTextAlignment(Qt::AlignHCenter);
+        tbl->setItem(row, 2, primary_item);
         // Time In
         QTableWidgetItem *time_in = new QTableWidgetItem(outputDouble(cur_func_ptr->e_time.func.in));
         time_in->setTextAlignment(Qt::AlignRight);
@@ -1502,16 +1493,16 @@ void Elements::get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_t
         tbl->setItem(row, 8, after);
         // Before ID
         QTableWidgetItem *before_id = new QTableWidgetItem();
-        before_id->setData(Qt::DisplayRole, prev_event ? prev_event->primary_id : -1);
+        before_id->setData(Qt::DisplayRole, prev_event ? prev_event->ids[0] : -1);
         before_id->setTextAlignment(Qt::AlignRight);
         tbl->setItem(row, 9, before_id);
         // AfterID
         QTableWidgetItem *after_id = new QTableWidgetItem();
-        after_id->setData(Qt::DisplayRole, next_event ? next_event->primary_id : -1);
+        after_id->setData(Qt::DisplayRole, next_event ? next_event->ids[0] : -1);
         after_id->setTextAlignment(Qt::AlignRight);
         tbl->setItem(row, 10, after_id);
 
-        add_addr_info(primary_id, cur_func_ptr);
+        add_addr_info(primary_item, cur_func_ptr);
         add_addr_info(name, cur_func_ptr); // duplicate for name column
         if (prev_event)
             add_addr_info(before_id, prev_event);
@@ -1648,7 +1639,7 @@ void Elements::get_messages_in_region(QTableWidget *initiation, QTableWidget *co
                 for (std::map<PEAT_Rank, TV_Event *>::const_iterator evt_it = evt->events.cbegin(); evt_it != evt->events.cend(); ++evt_it) {
                     QTreeWidgetItem *func_prop = new QTreeWidgetItem(func_name);
                     func_prop->setText(1, QString("%1").arg(evt_it->second->rank));
-                    func_prop->setText(2, QString("%1").arg(evt_it->second->primary_id));
+                    func_prop->setText(2, QString("%1").arg(evt_it->second->ids[0]));
                     if (user_regions) {
                         QString tt;
                         QString ttf;
@@ -1727,7 +1718,7 @@ void Elements::get_messages_in_region(QTableWidget *initiation, QTableWidget *co
                 tw->setItem(tw->rowCount() - 1, 1, i_from_rank);
                 // Uniq Idx (from)
                 QTableWidgetItem *i_from_idx = new QTableWidgetItem();
-                i_from_idx->setData(Qt::DisplayRole, from->primary_id);
+                i_from_idx->setData(Qt::DisplayRole, from->ids[0]);
                 i_from_idx->setTextAlignment(Qt::AlignHCenter);
                 tw->setItem(tw->rowCount() - 1, 2, i_from_idx);
                 // Time In (from)
@@ -1747,7 +1738,7 @@ void Elements::get_messages_in_region(QTableWidget *initiation, QTableWidget *co
                 tw->setItem(tw->rowCount() - 1, 5, i_to_rank);
                 // UNiq Idx (to)
                 QTableWidgetItem *i_to_idx = new QTableWidgetItem();
-                i_to_idx->setData(Qt::DisplayRole, to->primary_id);
+                i_to_idx->setData(Qt::DisplayRole, to->ids[0]);
                 i_to_idx->setTextAlignment(Qt::AlignHCenter);
                 tw->setItem(tw->rowCount() - 1, 6, i_to_idx);
                 // Time Out (to)
@@ -1885,10 +1876,10 @@ void Elements::get_user_addresses_in_region(QTreeWidget *tw, const PEAT_Clock st
                 continue;
             if (cur_func_prev->e_time.func.in > stop)
                 break;
-            if (cur_func_prev->secondary_id > -1)
-                cur_func_prev = find_event(r, cur_func_prev->primary_id, -1);
-            if (cur_func_next->secondary_id > -1)
-                cur_func_next = find_event(r, cur_func_next->primary_id + 1, -1);
+            if (cur_func_prev->is_nested())
+                cur_func_prev = find_event(r, cur_func_prev->ids[0]);
+            if (cur_func_next->is_nested())
+                cur_func_next = find_event(r, cur_func_next->ids[0] + 1);
             // const StatisticReader &rankStatLocal = ranksStat.at(it_rank->first);
 #ifdef _DEBUG
             regions_added++;
@@ -1897,11 +1888,11 @@ void Elements::get_user_addresses_in_region(QTreeWidget *tw, const PEAT_Clock st
             QStringList itemList1, itemList2;
             itemList1.append(QString("%1").arg(r));
             itemList1.append(global_func_id.name_by_idx(cur_func_prev->func_id)); // itemDescriptionString.str().c_str());
-            itemList1.append(QString("%1").arg(cur_func_prev->primary_id));
+            itemList1.append(QString("%1").arg(cur_func_prev->ids[0]));
             itemList1.append(QString("%1/%2").arg(cur_func_prev->get_tx_bytes()).arg(cur_func_prev->get_rx_bytes()));
             itemList2.append("");
             itemList2.append(global_func_id.name_by_idx(cur_func_next->func_id)); // itemDescriptionString.str().c_str());
-            itemList2.append(QString("%1").arg(cur_func_next->primary_id));
+            itemList2.append(QString("%1").arg(cur_func_next->ids[0]));
             itemList2.append(QString("%1/%2").arg(cur_func_next->get_tx_bytes()).arg(cur_func_next->get_rx_bytes()));
             QTreeWidgetItem *func_name_prev = new QTreeWidgetItem((QTreeWidget *)0, itemList1);
             QFont font1 = func_name_prev->font(1);
@@ -2022,21 +2013,29 @@ PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, 
         peat_warning(tmp);
         return false;
     }
+    PEAT_Record_Header hdr; // ids, thread and nesting of the record
+    user_regions->parse_record_header(hdr, trace_line_MPI, rank);
+    const int b = hdr.payload;      // function name on the .mpi line
+    const int hb = hdr.hwc_payload; // first tsc on the .hwc line
     PEAT_MPI_Func_ID func_id = TMPI_FUNC_ID_NONE;
-    extract(func_id, trace_line_MPI.at(3), 10, false);
+    extract(func_id, trace_line_MPI.at(b), 10, false);
     if (func_id == 0) {
-        func_id = global_func_id.idx_by_name(trace_line_MPI.at(3));
+        func_id = global_func_id.idx_by_name(trace_line_MPI.at(b));
     }
     PEAT_Time evt_time;
     PEAT_Clock func_start = 0, func_stop = 0;
     if (ptp) {
-        extract(evt_time.func.in, trace_line_HWC.at(3), 10);
-        extract(evt_time.mpi.in, trace_line_HWC.at(4), 10);
-        extract(evt_time.mpi.out, trace_line_HWC.at(5), 10);
-        extract(evt_time.func.out, trace_line_HWC.at(6), 10);
+        extract(evt_time.func.in, trace_line_HWC.at(hb), 10);
+        extract(evt_time.mpi.in, trace_line_HWC.at(hb + 1), 10);
+        extract(evt_time.mpi.out, trace_line_HWC.at(hb + 2), 10);
+        extract(evt_time.func.out, trace_line_HWC.at(hb + 3), 10);
+        if (hdr.nested) // nested format: field 2 is the tool epilog (exit - mpi exit), field 3 the duration
+            evt_time.mpi.out = evt_time.func.out - evt_time.mpi.out;
 
         evt_time.func.in += tsc_predictor.at(rank);
-        if (!global_func_id.check_property(func_id, PEAT_PROP_COLT)) {
+        // nested format: every record start is relative to the previous record at any level;
+        // legacy format: colt records are relative to their host, which keeps the predictor
+        if (hdr.nested || !global_func_id.check_property(func_id, PEAT_PROP_COLT)) {
             tsc_predictor[rank] = evt_time.func.in;
         }
         evt_time.mpi.in += evt_time.func.in;
@@ -2049,8 +2048,8 @@ PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, 
         func_start = evt_time.func.in;
         func_stop = evt_time.func.out;
     } else {
-        extract(func_start, trace_line_HWC.at(3), 10, false);
-        extract(func_stop, trace_line_HWC.at(4), 10, false);
+        extract(func_start, trace_line_HWC.at(hb), 10, false);
+        extract(func_stop, trace_line_HWC.at(hb + 1), 10, false);
     }
     if (func_stop < min_clock)
         return true;
@@ -2098,7 +2097,7 @@ PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, 
         *event = new TV_Local_Event();
     }
 
-    if (!(*event)->read_event(rank, trace_line_MPI, trace_line_HWC, evt_time, trace_info.num_addrs)) {
+    if (!(*event)->read_event(rank, trace_line_MPI, trace_line_HWC, evt_time, trace_info.num_addrs, hdr)) {
         delete *event;
         *event = NULL;
         return true;
@@ -2118,7 +2117,7 @@ PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, 
 #endif
         evt->e_time.pe.out = (*event)->e_time.pe.in;
 #if 0
-        for (PEAT_UID idx = evt->primary_id; idx < (*event)->primary_id; idx++) {
+        for (PEAT_UID idx = evt->ids[0]; idx < (*event)->ids[0]; idx++) {
             TV_Event* evt = eventsV[rank][idx];
             if (evt) {
                 if ((evt->func_id == OMPT_SYNC_REGION_ID || evt->func_id == OMPT_SYNC_REGION_WAIT_ID) &&
@@ -2141,7 +2140,7 @@ PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, 
     if (func_id == MPI_SENDRECV_ID || func_id == MPI_SENDRECV_REPLACE_ID || func_id == MPIC_SENDRECV_ID || func_id == MPIC_SENDRECV_REPLACE_ID) {
         input_MPI->read_lines(trace_line_MPI, rank, ':', ';');
         input_HWC->read_lines(trace_line_HWC, rank, ':', ';');
-        (*event)->read_event(rank, trace_line_MPI, trace_line_HWC, evt_time, trace_info.num_addrs);
+        (*event)->read_event(rank, trace_line_MPI, trace_line_HWC, evt_time, trace_info.num_addrs, hdr);
     }
     return true;
 }
@@ -2329,7 +2328,7 @@ QDebug operator<<(QDebug dbg, const Elements &me)
     for (std::vector<std::vector<TV_Event *>>::const_iterator it_rank = me.eventsV.begin(); it_rank != me.eventsV.end(); ++it_rank) {
         for (Elements::EventRankTypeConstIter it = it_rank->begin(); it != it_rank->end(); ++it) {
             const TV_Event *cur_func_ptr = *it;
-            dbg << "[" << cur_func_ptr->rank << "] " << "IDX:" << cur_func_ptr->primary_id << " " << cur_func_ptr << "\n";
+            dbg << "[" << cur_func_ptr->rank << "] " << "IDX:" << cur_func_ptr->ids[0] << " " << cur_func_ptr << "\n";
         }
     }
     dbg << "\nWe have " << me.fsize() << " messages in " << me.get_total_rank_count() << " ranks. Max time is " << me.model_time_stop;

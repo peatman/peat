@@ -32,9 +32,8 @@
 #include <vector>
 
 struct GPU_Event { // tsc_u_time is for debugging purposes only!
-    GPU_Event() : primary_id(-1), secondary_id(-1), request(0) {}
-    PEAT_UID primary_id;
-    PEAT_UID secondary_id;
+    GPU_Event() : ids(2, -1), request(0) {}
+    PEAT_Event_IDs ids;
     PEAT_Collective_Bytes send_bytes, recv_bytes;
     // std::vector<PEAT_Addr> addrs;
     std::vector<PEAT_UID> addrs;
@@ -97,7 +96,7 @@ struct Memory_Region {
 struct PEAT_Reduced_Event_Info {
     PEAT_Time time;
     PEAT_MPI_Func_ID func_id;
-    PEAT_UID primary_id, secondary_id;
+    PEAT_Event_IDs ids;
     PEAT_UID thread_id;
 };
 struct Memory_Transfer {

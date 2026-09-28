@@ -39,15 +39,6 @@ PEAT_Clock global_parallel_stop = 0;
 PEAT_Clock global_progress_calls = 0;
 PEAT_Clock global_progress_yields = 0;
 
-static PEAT_Clock progress_duration;
-static PEAT_Clock yields_duration;
-static PEAT_Clock progress2yield_duration;
-static PEAT_Clock first_progress_entry[4096];
-static PEAT_Clock last_progress_exit[4096];
-static PEAT_Clock first_progress_entry_colt[4096];
-static PEAT_Clock last_progress_exit_colt[4096];
-static PEAT_Clock num_colts[4096];
-static PEAT_Clock in_mpi_call[4096];
 static MPI_Comm last_coll_comm = MPI_COMM_WORLD;
 int mpi_skip_parse = 0;
 int gpu_skip_parse = 0;
@@ -63,7 +54,8 @@ static int MPI_Init_internal(int *argc, char ***argv, void **p_entrys)
     const PEAT_MPI_Func_ID fid = MPI_INIT_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_INIT_ID_THROUGH;
     long long tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
-    int tid;
+    int tid, level = -1;
+    long long children_base = 0;
     msl_extras_counters counters;
     msl_event *event;
     pid_t tid_in;
@@ -71,13 +63,13 @@ static int MPI_Init_internal(int *argc, char ***argv, void **p_entrys)
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     counting_permit += 2;
     tid = __msl_get_tid(tid_in);
-    __msl_allocate_event(tid, 0, &event, &counters);
-    event->func_id[0] = fid;
-    event->func_id[1] = fidc;
+    level = __msl_enter_call(tid);
+    children_base = __msl_child_base(tid, level);
+    __msl_allocate_event(tid, level, 0, &event, &counters);
+    event->func_id = fidc;
     event->collective.comm = last_coll_comm = MPI_COMM_WORLD;
     event->collective.root = -1;
     memcpy(counters.addrs, p_entrys, sizeof(void *) * gt_info(num_addrs));
-    first_progress_entry[tid] = last_progress_exit[tid] = 0;
 #ifdef _HWCOUNTERS_ENABLED_
     gt_info(hwc).get_all_counters(&counters.hwcs[0]);
 #endif
@@ -95,6 +87,8 @@ static int MPI_Init_internal(int *argc, char ***argv, void **p_entrys)
     debug_printf("Rank %d: after mpi_init...\n", t_mpi_rank);
 
     tsc_mpi_exit = global_parallel_start = peat_get_time();
+    __msl_leave_call(tid);
+    event->num_children += (short)(__msl_child_base(tid, level) - children_base);
     gt_info(post_mpi_init());
 #endif
 #ifdef _TRACTOR_USE_PTPD_
@@ -150,7 +144,8 @@ static int MPI_Init_thread_internal(int *argc, char ***argv, int requested, int 
     const PEAT_MPI_Func_ID fid = MPI_INIT_THREAD_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_INIT_THREAD_ID_THROUGH;
     long long tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
-    int tid;
+    int tid, level = -1;
+    long long children_base = 0;
     pid_t tid_in;
     msl_extras_counters counters;
     msl_event *event;
@@ -158,12 +153,12 @@ static int MPI_Init_thread_internal(int *argc, char ***argv, int requested, int 
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     counting_permit += 2;
     tid = __msl_get_tid(tid_in);
-    __msl_allocate_event(tid, 0, &event, &counters);
-    event->func_id[0] = fid;
-    event->func_id[1] = fidc;
+    level = __msl_enter_call(tid);
+    children_base = __msl_child_base(tid, level);
+    __msl_allocate_event(tid, level, 0, &event, &counters);
+    event->func_id = fidc;
     event->collective.comm = last_coll_comm = MPI_COMM_WORLD;
     event->collective.root = -1;
-    first_progress_entry[tid] = last_progress_exit[tid] = 0;
     memcpy(counters.addrs, p_entrys, sizeof(void *) * gt_info(num_addrs));
 #ifdef _HWCOUNTERS_ENABLED_
     gt_info(hwc).get_all_counters(&counters.hwcs[0]);
@@ -181,6 +176,8 @@ static int MPI_Init_thread_internal(int *argc, char ***argv, int requested, int 
     //    }
     debug_printf("Rank %d: after mpi_init_thread...\n", t_mpi_rank);
     tsc_mpi_exit = global_parallel_start = peat_get_time();
+    __msl_leave_call(tid);
+    event->num_children += (short)(__msl_child_base(tid, level) - children_base);
 #ifndef _TRACTOR_PASSTHROUGH_
     gt_info(post_mpi_init());
 #endif
@@ -237,7 +234,8 @@ static int MPI_Finalize_internal(void **p_entrys)
     const PEAT_MPI_Func_ID fid = MPI_FINALIZE_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_FINALIZE_ID_THROUGH;
     long long tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
-    int tid;
+    int tid, level = -1;
+    long long children_base = 0;
     pid_t tid_in;
     msl_extras_counters counters;
     msl_event *event;
@@ -245,12 +243,12 @@ static int MPI_Finalize_internal(void **p_entrys)
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     counting_permit += 2;
     tid = __msl_get_tid(tid_in);
-    __msl_allocate_event(tid, 0, &event, &counters);
-    event->func_id[0] = fid;
-    event->func_id[1] = fidc;
+    level = __msl_enter_call(tid);
+    children_base = __msl_child_base(tid, level);
+    __msl_allocate_event(tid, level, 0, &event, &counters);
+    event->func_id = fidc;
     event->collective.root = -1;
     event->collective.comm = last_coll_comm = MPI_COMM_WORLD;
-    first_progress_entry[tid] = last_progress_exit[tid] = 0;
 #ifdef _HWCOUNTERS_ENABLED_
     gt_info(hwc).get_all_counters(&counters.hwcs[0]);
 #endif
@@ -271,6 +269,8 @@ static int MPI_Finalize_internal(void **p_entrys)
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     //    }
     tsc_mpi_exit = peat_get_time();
+    __msl_leave_call(tid);
+    event->num_children += (short)(__msl_child_base(tid, level) - children_base);
     // counting_permit-=2;
     tsc_exit = peat_get_time();
     event->tscs[0] = tsc_entry;
@@ -323,7 +323,8 @@ static int MPI_Abort_internal(MPI_Comm comm, int errorcode, void **p_entrys)
     const PEAT_MPI_Func_ID fid = MPI_ABORT_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_ABORT_ID_THROUGH;
     long long tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
-    int tid;
+    int tid, level = -1;
+    long long children_base = 0;
     pid_t tid_in;
     msl_extras_counters counters;
     msl_event *event;
@@ -331,12 +332,12 @@ static int MPI_Abort_internal(MPI_Comm comm, int errorcode, void **p_entrys)
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     counting_permit += 2;
     tid = __msl_get_tid(tid_in);
-    __msl_allocate_event(tid, 0, &event, &counters);
-    event->func_id[0] = fid;
-    event->func_id[1] = fidc;
+    level = __msl_enter_call(tid);
+    children_base = __msl_child_base(tid, level);
+    __msl_allocate_event(tid, level, 0, &event, &counters);
+    event->func_id = fidc;
     event->collective.root = -1;
     event->collective.comm = last_coll_comm = MPI_COMM_WORLD;
-    first_progress_entry[tid] = last_progress_exit[tid] = 0;
 #ifdef _HWCOUNTERS_ENABLED_
     gt_info(hwc).get_all_counters(&counters.hwcs[0]);
 #endif
@@ -355,6 +356,8 @@ static int MPI_Abort_internal(MPI_Comm comm, int errorcode, void **p_entrys)
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     //    }
     tsc_mpi_exit = peat_get_time();
+    __msl_leave_call(tid);
+    event->num_children += (short)(__msl_child_base(tid, level) - children_base);
     // counting_permit-=2;
     tsc_exit = peat_get_time();
     event->tscs[0] = tsc_entry;
@@ -410,7 +413,8 @@ int MPI_Pcontrol_internal(const int ctl, void **p_entrys)
 #ifndef _TRACTOR_PASSTHROUGH_
     long long tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
     pid_t tid_in;
-    int tid;
+    int tid, level = -1;
+    long long children_base = 0;
     msl_extras_counters counters;
     msl_event *event;
     bool l_skip_parse = mpi_skip_parse;
@@ -418,15 +422,15 @@ int MPI_Pcontrol_internal(const int ctl, void **p_entrys)
     tsc_entry = peat_get_time_tid(&tid_in);
     counting_permit += 2;
     tid = __msl_get_tid(tid_in);
-    __msl_allocate_event(tid, 0, &event, &counters);
-    first_progress_entry[tid] = last_progress_exit[tid] = 0;
+    level = __msl_enter_call(tid);
+    children_base = __msl_child_base(tid, level);
+    __msl_allocate_event(tid, level, 0, &event, &counters);
 #ifdef _HWCOUNTERS_ENABLED_
     gt_info(hwc).get_all_counters(&counters.hwcs[0]);
 #endif
 #ifdef _MEMPROFILE_STORE_
     gt_info(mprof).get_mem_status(&counters.mems[0]);
 #endif
-    in_mpi_call[tid] = 1;
     tsc_mpi_entry = peat_get_time();
 //    }//if(__builtin_expect((counting_permission[MPI_PCONTROL_ID_THROUGH]>0 && !l_skip_parse),1))
 #endif
@@ -434,10 +438,10 @@ int MPI_Pcontrol_internal(const int ctl, void **p_entrys)
 #ifndef _TRACTOR_PASSTHROUGH_
     //    if(__builtin_expect(!l_skip_parse,1)) {
     tsc_mpi_exit = peat_get_time();
-    in_mpi_call[tid] = 0;
+    __msl_leave_call(tid);
     memcpy(counters.addrs, p_entrys, sizeof(void *) * gt_info(num_addrs));
-    event->func_id[0] = MPI_PCONTROL_ID;
-    event->func_id[1] = MPI_PCONTROL_ID_THROUGH;
+    event->func_id = MPI_PCONTROL_ID_THROUGH;
+    event->num_children += (short)(__msl_child_base(tid, level) - children_base);
     event->pcontrol.ctl = ctl;
     event->tscs[0] = tsc_entry;
     event->tscs[1] = tsc_mpi_entry - tsc_entry;

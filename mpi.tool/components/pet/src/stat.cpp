@@ -211,6 +211,7 @@ std::ostream &operator<<(std::ostream &dbg, const Stat &stat)
         << PEAT_Ratio(stat.uncovered_UR_length) / rank_len << ")"
         << ", mpi_active_len " << stat.cpu_len
         << ", mpi_passive_len " << stat.fabric_len
+        << ", mpi_progress_len " << stat.progress_len_total
         << std::setprecision(2) << "(" << PEAT_Ratio(mpi_func_len) / rank_len << ")";
     return dbg;
 }

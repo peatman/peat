@@ -68,6 +68,7 @@ class PET_Node;
 class PET_Rank;
 class PET_Thread;
 struct PET_Coll_Event;
+struct PET_Collective_Event;
 struct PET_ToR_Event;
 struct PET_OMPT_Event;
 struct PET_Event : public PET_Time_Event {
@@ -77,7 +78,7 @@ struct PET_Event : public PET_Time_Event {
     PET_Thread *pet_thread;
     PEAT_MPI_Func_ID func_id;
     PEAT_MPI_Func_ID parent_func_id;
-    PEAT_UID primary_id, secondary_id;
+    PEAT_Event_IDs ids; // id path as written in the trace, padded to the rank's id columns (2 in the legacy format); ids[0] is the top-level id
     PEAT_Time_Parts event_parts, o_event_parts;
     PEAT_Rank rank;
     PEAT_Node node;
@@ -89,7 +90,19 @@ struct PET_Event : public PET_Time_Event {
     event_pending_reason pending_reason;
     Event_Address_Info addrs;
     PET_Event *parent_event;
-    PET_Coll_Event *host_event;
+    PET_Event *host_event; // the top-level MPI call a nested record belongs to (any event may host nested records)
+    /* Nesting of colt (internal collective transfer) records. Every event may contain the colt records
+       that ran inside it: for a top-level MPI call these are the records the tracer attached to it, for a
+       colt record these are the records the MPI progress engine issued while that record was spinning it.
+       host_event is the top-level MPI call for all of them (collective peer matching needs it), container_event
+       is the direct parent. The tree is built by PET_Coll_Event::build_nesting() from the time intervals. */
+    PET_Event *container_event;
+    std::vector<PET_Event *> nested_events;
+    PEAT_Signed_Num nested_index_being_estimated;
+    /* Foreign progress: a colt record the progress engine issued on behalf of another, still outstanding
+       nonblocking collective (matched by communicator and tag). It stays in its container for the timeline,
+       but its owner accounts for it: completion time and statistics. NULL for the call's own records. */
+    PET_Collective_Event *progress_owner;
     PET_OMPT_Event *parallel_section_begin;
     PET_Event *prev_event; // caching purposes
     PET_Event *next_event; // caching purposes
@@ -116,8 +129,55 @@ struct PET_Event : public PET_Time_Event {
         parent_func_id = p->func_id;
     }
     PET_Event *get_parent_event() { return (parent_event); }
-    void set_host_event(PET_Coll_Event *h) { host_event = h; }
-    PET_Coll_Event *get_host_event() { return host_event; }
+    void set_host_event(PET_Event *h) { host_event = h; }
+    PET_Event *get_host_event() { return host_event; }
+    /* nested records of a top-level call in trace (pre-order) order: iteration and output list.
+       Nested format: filled while reading; legacy format: filled by PET_Coll_Event::build_nesting(). */
+    std::vector<PET_Event *> flat_events;
+    PEAT_Bool force_write;        // set while the top-level call writes its nested records
+    PEAT_Bool header_second_line; // writing the second sendrecv line (header carries num_children = 0)
+    PEAT_UID sub_index() const { return ids.size() > 1 ? ids[1] : -1; } // index inside the top-level call (depth one)
+    void set_sub_index(PEAT_UID index)                                    // synthetic records created by PET (persistent request starts)
+    {
+        PEAT_UID top = ids.empty() ? -1 : ids[0];
+        ids.assign(ids.size() < 2 ? 2 : ids.size(), -1);
+        ids[0] = top;
+        ids[1] = index;
+    }
+    std::string ids_str() const { return peat_ids_string(ids); }
+    virtual PEAT_Bool put_t_event(PET_Event *event) // legacy format: place a colt record at its index (ids[1])
+    {
+        PEAT_UID index = event->sub_index();
+        if (index < 0 || static_cast<size_t>(index) >= nested_events.size())
+            return false;
+        nested_events[index] = event;
+        event->host_event = this;
+        event->container_event = this; // build_nesting() re-parents records issued from progress inside another record
+        return true;
+    }
+    const std::vector<PET_Event *> &child_iteration_list() const
+    {
+        return flat_events.empty() ? nested_events : flat_events;
+    }
+    PEAT_Bool nested_format() const;                     // the rank's trace is in the nested record format
+    PET_Event *get_prev_child_event(PET_Event *event);   // predecessor of a nested record of this call
+    std::string header_str() const;                      // record header for the .mpi output line
+    std::string hwc_header_str() const;                  // record header for the .hwc output line
+    void write_nested_records(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol);
+    /* nesting (see container_event) */
+    PET_Event *get_container_event() const { return container_event; }
+    PEAT_Bool has_nested() const { return !nested_events.empty(); }
+    PET_Event *get_completion_target();                 // who receives EET_CHILD_COMPLETED: container if nested, host otherwise
+    PEAT_Bool is_nested_child(const PET_Event *event) const;
+    PEAT_Bool nested_all_estimated() const;
+    PEAT_Clock get_nested_finish() const;               // latest func.out over nested records, -1 until all of them are estimated
+    PEAT_Bool initiate_nested();                        // start the chain of nested records (called on own EET_FUNC_START)
+    PEAT_Bool handle_nested_completed(Estimation_Event *event); // true if event->submiter is one of nested records
+    PEAT_Clock clamp_sub_t_to_nested(PEAT_Clock sub_t, PEAT_Clock f_out) const; // a container cannot end before its nested records
+    PEAT_Clock move_nested_from(PET_Event *from, PEAT_Clock sub_t);
+    PEAT_Num nested_count_total() const;                // number of records in the nested subtree (colt count for trace output)
+    PEAT_Bool is_foreign_progress() const { return progress_owner != NULL; }
+    PEAT_Clock foreign_progress_time(int which) const;  // time of foreign progress records inside this one: 0 original, 1 traced, 2 estimated
     void assign_parallel_section_begin(PET_OMPT_Event *r) { parallel_section_begin = r; };
     virtual PET_OMPT_Event *get_parallel_section_begin();
     virtual PET_OMPT_Event *get_parallel_section_end();
@@ -155,7 +215,7 @@ struct PET_Event : public PET_Time_Event {
     virtual PEAT_Clock get_overlap() const { return 0; }
     virtual PEAT_Clock get_fabric() const { return 0; }
     virtual PET_Event *get_estimated_event() { return this; }
-    virtual void notify_before_destroy(PET_Event *event) {};
+    virtual void notify_before_destroy(PET_Event *event);
     PEAT_Clock apply_user_code(PEAT_Ratio r, PET_Event *prev_event)
     {
         if (is_user_code_applied)
@@ -171,7 +231,7 @@ struct PET_Event : public PET_Time_Event {
     PEAT_Bool clear_estimated();
     virtual PEAT_Bool can_be_destroyed();
 
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
     virtual void post_read_event() {}
 
     virtual void scale_event();
@@ -218,11 +278,19 @@ struct PET_Event : public PET_Time_Event {
     {
         sub_t_t_t = t_sub_t_t;
         sub_t_ae_t = t_sub_t_ae;
+        PEAT_Num size = nested_events.size();
+        for (PEAT_Num i = 0; i < size; i++) {
+            nested_events[i]->set_sub_t(t_sub_t_t, t_sub_t_ae);
+        }
     }
     virtual PEAT_Clock move_event(PEAT_Clock sub_t)
     {
         e_time.move(sub_t);
         sub_t_ae_t += sub_t;
+        PEAT_Num size = nested_events.size();
+        for (PEAT_Num i = 0; i < size; i++) {
+            nested_events[i]->move_event(sub_t); // nested records live inside this one
+        }
         return sub_t;
     }
     virtual PEAT_Clock adjust_event(PEAT_Clock sub_t)
@@ -336,7 +404,7 @@ struct PET_Local_Event : public PET_Event {
     PEAT_Signed_Num p_control_id;
     PET_Local_Event(PET_Core *p) : PET_Event(p), p_control_id(0) {}
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_LOCAL; }
-    virtual PEAT_Bool read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host);
+    virtual PEAT_Bool read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
     virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol = "\n", const char *hwc_eol = "\n");
 };
 
@@ -347,7 +415,7 @@ struct PET_GPU_Event : public PET_Local_Event {
   public:
     PET_GPU_Event(PET_Core *p);
     ~PET_GPU_Event();
-    virtual PEAT_Bool read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host);
+    virtual PEAT_Bool read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
     virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol = "\n", const char *hwc_eol = "\n");
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_GPU; }
 };
@@ -358,7 +426,7 @@ struct PET_Local_Buf_Event : public PET_Local_Event {
   public:
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_LOCAL_BUF; }
     PET_Local_Buf_Event(PET_Core *p) : PET_Local_Event(p), inbuf_size(0), outbuf_size(0) {}
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
     virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol = "\n", const char *hwc_eol = "\n");
 };
 struct PET_ToR_Event : public PET_Local_Event {
@@ -368,10 +436,9 @@ struct PET_ToR_Event : public PET_Local_Event {
     PEAT_Rank peer_rank;
     PEAT_MPI_Request request;
     PEAT_MPI_Message message;
-    PEAT_UID peer_primary_id, peer_secondary_id;
+    PEAT_Event_IDs peer_ids; // id path of the peer record (bind output)
     PEAT_MPI_Func_ID peer_func_id, peer_completion_func_id;
-    PEAT_UID completion_primary_id, completion_secondary_id;
-    PEAT_UID peer_completion_primary_id, peer_completion_secondary_id;
+    PEAT_Event_IDs peer_completion_ids; // id path of the record completing the peer (bind output)
     PET_Event *aux_event, *aux_event_2;
     PEAT_Bool block_override;
     PEAT_Bool rs_created;
@@ -384,15 +451,13 @@ struct PET_ToR_Event : public PET_Local_Event {
   public:
     void set_treat_as_local() { treat_as_local = true; }
     PET_ToR_Event(PET_Core *p) : PET_Local_Event(p), comm(0), t_bytes(0), tag(-1), peer_rank(-1), request(0), message(0),
-                                 peer_primary_id(-1), peer_secondary_id(-1), peer_func_id(TMPI_FUNC_ID_NONE), peer_completion_func_id(TMPI_FUNC_ID_NONE),
-                                 completion_primary_id(-1), completion_secondary_id(-1),
-                                 peer_completion_primary_id(-1), peer_completion_secondary_id(-1),
+                                 peer_func_id(TMPI_FUNC_ID_NONE), peer_completion_func_id(TMPI_FUNC_ID_NONE),
                                  aux_event(NULL), aux_event_2(NULL), block_override(false), rs_created(false), treat_as_local(false)
     {
     }
     PET_ToR_Event(const PET_ToR_Event &s) : PET_Local_Event(s.pet_core), comm(s.comm), t_bytes(s.t_bytes), tag(s.tag), peer_rank(s.peer_rank), request(s.request), message(s.message),
-                                            peer_primary_id(s.peer_primary_id), peer_secondary_id(s.peer_secondary_id), peer_func_id(s.peer_func_id), peer_completion_func_id(s.peer_completion_func_id),
-                                            completion_primary_id(s.completion_primary_id), completion_secondary_id(s.completion_secondary_id),
+                                            peer_ids(s.peer_ids), peer_func_id(s.peer_func_id), peer_completion_func_id(s.peer_completion_func_id),
+                                            peer_completion_ids(s.peer_completion_ids),
                                             aux_event(s.aux_event), aux_event_2(s.aux_event_2),
                                             block_override(s.block_override), rs_created(s.rs_created),
                                             rts(s.rts), cts(s.cts), tx_message(s.tx_message), ack(s.ack),
@@ -401,8 +466,7 @@ struct PET_ToR_Event : public PET_Local_Event {
     {
         func_id = s.func_id;
         parent_func_id = s.parent_func_id;
-        primary_id = s.primary_id;
-        secondary_id = s.secondary_id;
+        ids = s.ids;
         rank = s.rank;
         node = s.node;
         thread_id = s.thread_id;
@@ -456,7 +520,7 @@ struct PET_ToR_Event : public PET_Local_Event {
     virtual ~PET_ToR_Event();
     virtual void notify_before_destroy(PET_Event *event);
 
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
     PEAT_Bool write_bind(File_Storage_GZ *gz_bind);
     virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol = "\n", const char *hwc_eol = "\n");
     virtual PEAT_Bool safe_to_delete();
@@ -565,7 +629,7 @@ struct PET_ToR_Event : public PET_Local_Event {
         if (check_rx()) {
             if (tag != t && tag >= 0) {
                 char buf[256];
-                sprintf(buf, "Tag Mismatch %d received %d rank %d,primary_id=%lld secondary_id=%lld, parent=%lld\n", tag, t, rank, primary_id, secondary_id, aux_event_2->primary_id);
+                sprintf(buf, "Tag Mismatch %d received %d rank %d,ids=%s, parent=%lld\n", tag, t, rank, ids_str().c_str(), aux_event_2->ids[0]);
                 pet_throw_error(pet_core, this, NULL, buf);
             }
             tag = t;
@@ -576,7 +640,7 @@ struct PET_ToR_Event : public PET_Local_Event {
         if (check_rx()) {
             if (peer_rank != r && peer_rank >= 0) {
                 char buf[256];
-                sprintf(buf, "Rank Mismatch %d received %d rank %d,primary_id=%lld secondary_id=%lld, parent=%lld\n", peer_rank, r, rank, primary_id, secondary_id, aux_event_2->primary_id);
+                sprintf(buf, "Rank Mismatch %d received %d rank %d,ids=%s, parent=%lld\n", peer_rank, r, rank, ids_str().c_str(), aux_event_2->ids[0]);
                 pet_throw_error(pet_core, this, NULL, buf);
             }
             peer_rank = r;
@@ -607,11 +671,9 @@ struct PET_ToR_Event : public PET_Local_Event {
     {
         if (check_tx()) {
             aux_event = event;
-            peer_primary_id = event->primary_id;
-            peer_secondary_id = event->secondary_id;
+            peer_ids = event->ids;
             peer_completion_func_id = event->get_completion() ? event->get_completion()->func_id : event->func_id;
-            peer_completion_primary_id = event->get_completion() ? event->get_completion()->primary_id : event->primary_id;
-            peer_completion_secondary_id = event->get_completion() ? event->get_completion()->secondary_id : event->secondary_id;
+            peer_completion_ids = event->get_completion() ? event->get_completion()->ids : event->ids;
             peer_func_id = event->func_id;
         }
     }
@@ -619,12 +681,10 @@ struct PET_ToR_Event : public PET_Local_Event {
     {
         if (check_rx()) {
             aux_event = event;
-            peer_primary_id = event->primary_id;
-            peer_secondary_id = event->secondary_id;
+            peer_ids = event->ids;
             peer_completion_func_id = event->get_completion() ? event->get_completion()->func_id : event->func_id;
             // not used actually but set anyway
-            peer_completion_primary_id = event->get_completion() ? event->get_completion()->primary_id : event->primary_id;
-            peer_completion_secondary_id = event->get_completion() ? event->get_completion()->secondary_id : event->secondary_id;
+            peer_completion_ids = event->get_completion() ? event->get_completion()->ids : event->ids;
             peer_func_id = event->func_id;
         }
     }
@@ -720,43 +780,38 @@ struct PET_TaR_Event : public PET_ToR_Event {
     PEAT_LNum t_bytes_2;
     PEAT_MPI_Tag tag_2;
     PEAT_Rank peer_rank_2;
-    PEAT_UID peer_primary_id_2, peer_secondary_id_2;
-    PEAT_UID peer_completion_primary_id_2, peer_completion_secondary_id_2;
+    PEAT_Event_IDs peer_ids_2;
+    PEAT_Event_IDs peer_completion_ids_2;
     PEAT_MPI_Func_ID peer_func_id_2, peer_completion_func_id_2;
 
   public:
     PET_TaR_Event(PET_Core *p) : PET_ToR_Event(p), process_second_line(false), t_bytes_2(-1), tag_2(-1), peer_rank_2(-1),
-                                 peer_primary_id_2(-1), peer_secondary_id_2(-1),
-                                 peer_completion_primary_id_2(-1), peer_completion_secondary_id_2(-1),
                                  peer_func_id_2(TMPI_FUNC_ID_NONE), peer_completion_func_id_2(TMPI_FUNC_ID_NONE)
     {
     }
     PET_TaR_Event(const PET_TaR_Event &s) : PET_ToR_Event(s.pet_core), process_second_line(s.process_second_line),
                                             t_bytes_2(s.t_bytes_2), tag_2(s.tag_2), peer_rank_2(s.peer_rank_2),
-                                            peer_primary_id_2(s.peer_primary_id_2), peer_secondary_id_2(s.peer_secondary_id_2),
-                                            peer_completion_primary_id_2(s.peer_completion_primary_id_2), peer_completion_secondary_id_2(s.peer_completion_secondary_id_2),
+                                            peer_ids_2(s.peer_ids_2),
+                                            peer_completion_ids_2(s.peer_completion_ids_2),
                                             peer_func_id_2(s.peer_func_id_2), peer_completion_func_id_2(s.peer_completion_func_id_2)
     {
     }
     PET_TaR_Event(const PET_ToR_Event &s) : PET_ToR_Event(s.pet_core), process_second_line(false),
                                             t_bytes_2(-1), tag_2(-1), peer_rank_2(-1),
-                                            peer_primary_id_2(-1), peer_secondary_id_2(-1), peer_func_id_2(TMPI_FUNC_ID_NONE), peer_completion_func_id_2(TMPI_FUNC_ID_NONE)
+                                            peer_func_id_2(TMPI_FUNC_ID_NONE), peer_completion_func_id_2(TMPI_FUNC_ID_NONE)
     {
         if (s.check_tx()) {
             peer_func_id_2 = s.peer_func_id;
             peer_completion_func_id_2 = s.peer_completion_func_id;
-            peer_primary_id_2 = s.peer_primary_id;
-            peer_secondary_id_2 = s.peer_secondary_id;
-            peer_completion_primary_id_2 = s.peer_completion_primary_id;
-            peer_completion_secondary_id_2 = s.peer_completion_secondary_id;
+            peer_ids_2 = s.peer_ids;
+            peer_completion_ids_2 = s.peer_completion_ids;
             peer_func_id = TMPI_FUNC_ID_NONE;
             peer_completion_func_id = TMPI_FUNC_ID_NONE;
-            peer_primary_id = -1;
-            peer_secondary_id = -1;
+            peer_ids.clear();
         }
     }
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_TAR; }
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
     virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol = "\n", const char *hwc_eol = "\n");
     virtual PEAT_Bool estimate(Estimation_Event *event);
     // virtual PEAT_Bool is_estimated();
@@ -801,21 +856,17 @@ struct PET_TaR_Event : public PET_ToR_Event {
     {
         aux_event = event;
         peer_completion_func_id = event->get_completion() ? event->get_completion()->func_id : event->func_id;
-        peer_completion_primary_id = event->get_completion() ? event->get_completion()->primary_id : event->primary_id;
-        peer_completion_secondary_id = event->get_completion() ? event->get_completion()->secondary_id : event->secondary_id;
+        peer_completion_ids = event->get_completion() ? event->get_completion()->ids : event->ids;
         peer_func_id = event->func_id;
-        peer_primary_id = event->primary_id;
-        peer_secondary_id = event->secondary_id;
+        peer_ids = event->ids;
     }
     virtual void set_peer_for_recv(PET_ToR_Event *event)
     {
         aux_event_2 = event;
         peer_completion_func_id_2 = event->get_completion() ? event->get_completion()->func_id : event->func_id;
-        peer_completion_primary_id_2 = event->get_completion() ? event->get_completion()->primary_id : event->primary_id;
-        peer_completion_secondary_id_2 = event->get_completion() ? event->get_completion()->secondary_id : event->secondary_id;
+        peer_completion_ids_2 = event->get_completion() ? event->get_completion()->ids : event->ids;
         peer_func_id_2 = event->func_id;
-        peer_primary_id_2 = event->primary_id;
-        peer_secondary_id_2 = event->secondary_id;
+        peer_ids_2 = event->ids;
     }
     virtual PEAT_Bool is_bound() const
     {
@@ -839,46 +890,11 @@ struct PET_Coll_Event : public PET_Local_Event {
 
   public:
     PEAT_MPI_Comm comm;
-    std::vector<PET_Event *> t_events;
-    PEAT_Bool force_write;
-    PEAT_Signed_Num moved_index, index_event_being_estimated;
-    PET_Coll_Event(PET_Core *p) : PET_Local_Event(p), int_event_index(0), comm(0), force_write(false), moved_index(-1), index_event_being_estimated(-1) {}
+    std::vector<PET_Event *> &t_events; // alias of nested_events: the colt records this call contains (time order after build_nesting())
+    PET_Coll_Event(PET_Core *p) : PET_Local_Event(p), int_event_index(0), comm(0), t_events(nested_events) {}
     virtual ~PET_Coll_Event();
-    virtual PEAT_Bool put_t_event(PET_Event *event)
-    {
-        t_events[event->secondary_id] = event;
-        event->host_event = this;
-        return true;
-    }
+    void build_nesting(); // legacy format: re-parent the colt records that ran inside another colt record (by interval inclusion)
     virtual PEAT_Bool split_event();
-    PEAT_Signed_Num find_t_event(PET_Event *event)
-    {
-        PEAT_Num size = t_events.size();
-        if (size > 0) {
-            for (PEAT_Num i = 0; i < size; i++) {
-                if (t_events[i] == event)
-                    return (PEAT_Signed_Num)i;
-            }
-        }
-        return -1;
-    }
-
-    PEAT_Signed_Num move_events(PEAT_Signed_Num index, PEAT_Clock sub_t, PEAT_Bool pre_move)
-    {
-        PEAT_Num size = t_events.size();
-        if (size > 0) {
-            if (moved_index < index || pre_move) {
-                for (PEAT_Num i = PEAT_Num(index); i < size; i++) {
-                    t_events[i]->move_event(sub_t);
-                }
-                if (!pre_move)
-                    moved_index = index;
-            } else {
-                pet_throw_error(pet_core, this, NULL, "Duplicate moving request (END_FUNC came twice).\n");
-            }
-        }
-        return -1;
-    }
 
     virtual PEAT_Clock scale_cpu_part(PEAT_Ratio ratio);
     virtual PEAT_Bool safe_to_delete();
@@ -891,41 +907,23 @@ struct PET_Coll_Event : public PET_Local_Event {
         return PET_EVENT_TYPE_COLL;
     }
     virtual PEAT_Bool bind();
-    virtual PEAT_Clock move_event(PEAT_Clock sub_t);
     virtual void concatenate_event();
     virtual void scale_event();
 
-    virtual PEAT_Clock remove_tractor_overhead(PEAT_Clock *prolog_overhead = NULL);
     virtual PEAT_Bool destroy()
     {
-        int size = (int)t_events.size();
-        for (int i = 0; i < size; i++) {
-            delete t_events[i];
+        while (!nested_events.empty()) {
+            PET_Event *evt = nested_events.back();
+            nested_events.pop_back();
+            delete evt;
         }
         return true;
     }
-    virtual void set_sub_t(PEAT_Clock t_sub_t_t, PEAT_Clock t_sub_t_ae)
-    {
-        sub_t_t_t = t_sub_t_t;
-        sub_t_ae_t = t_sub_t_ae;
-        int size = (int)t_events.size();
-        for (int i = 0; i < size; i++) {
-            t_events[i]->set_sub_t(t_sub_t_t, t_sub_t_ae);
-        }
-    }
     virtual PET_Event *get_estimated_event()
     {
-#if 0
-		int size = ( int ) t_events.size();
-		for ( int i = 0; i < size; i++ ) {
-			if (t_events[ i ]->estimation_started && !t_events[ i ]->finish_calculations) return t_events[ i ];
-			if ( (!t_events[ i ]->estimation_started) && i > 0) return t_events[ i-1 ];
-		}
-#else
-        if (index_event_being_estimated >= 0) {
-            return t_events[index_event_being_estimated];
+        if (nested_index_being_estimated >= 0 && nested_index_being_estimated < (PEAT_Signed_Num)nested_events.size()) {
+            return nested_events[nested_index_being_estimated];
         }
-#endif
         return this;
     }
     PEAT_Clock get_event_start()
@@ -956,7 +954,6 @@ struct PET_Coll_Event : public PET_Local_Event {
     virtual PET_Event *get_prev_child_event();
     virtual PET_Event *get_last_child_event();
 
-    PET_Event *get_prev_child_event(PET_Event *event);
     virtual PEAT_Bool is_assembled() const;
     virtual PEAT_Bool is_bound() const;
     virtual PEAT_Bool ready_to_estimate();
@@ -966,35 +963,35 @@ struct PET_Coll_Event : public PET_Local_Event {
     virtual PEAT_Rank get_rank_read_suggestion();
     virtual PEAT_Clock get_overlap() const
     {
-        PEAT_Num size = t_events.size();
+        const std::vector<PET_Event *> &kids = child_iteration_list();
+        PEAT_Num size = kids.size();
         PEAT_Clock total_overlap = 0;
-        if (size > 0) {
-            for (PEAT_Num i = 0; i < size; i++) {
-                total_overlap += t_events[i]->get_overlap();
-            }
+        for (PEAT_Num i = 0; i < size; i++) {
+            if (kids[i])
+                total_overlap += kids[i]->get_overlap();
         }
         return total_overlap;
-        ;
     }
     virtual PEAT_Clock get_fabric() const
     {
-        PEAT_Num size = t_events.size();
+        const std::vector<PET_Event *> &kids = child_iteration_list();
+        PEAT_Num size = kids.size();
         PEAT_Clock total_fabric = 0;
-        if (size > 0) {
-            for (PEAT_Num i = 0; i < size; i++) {
-                total_fabric += t_events[i]->get_fabric();
-            }
+        for (PEAT_Num i = 0; i < size; i++) {
+            if (kids[i])
+                total_fabric += kids[i]->get_fabric();
         }
         return total_fabric;
     }
     virtual PEAT_Clock get_centre_code(Event_Set_Stat::t_stat_type t);
     virtual PET_Event *query_request(PEAT_MPI_Request req)
     {
-        int size = (int)t_events.size();
+        const std::vector<PET_Event *> &kids = child_iteration_list(); // includes nested records
+        int size = (int)kids.size();
         for (int i = 0; i < size; i++) {
-            if (t_events[i]) {
-                if (t_events[i]->query_request(req)) {
-                    return t_events[i];
+            if (kids[i]) {
+                if (kids[i]->query_request(req)) {
+                    return kids[i];
                 }
             } else {
                 break; // this part is not yet filled
@@ -1013,6 +1010,7 @@ struct PET_Collective_Event : public PET_Coll_Event {
     PET_Event *completion_event;
     std::map<PEAT_Rank, PEAT_Rank> ranks;
     PEAT_Bool block_override;
+    std::vector<PET_Event *> progress_events; // records issued for this (nonblocking) collective from inside other calls
 
   public:
     PET_Collective_Event(PET_Core *p) : PET_Coll_Event(p), root(-1), request(0), message(0), completion_event(NULL), block_override(false) { p_control_id = 0; /* for MPI_INIT/FINALIZE */ }
@@ -1020,8 +1018,7 @@ struct PET_Collective_Event : public PET_Coll_Event {
                                                           completion_event(s.completion_event), block_override(s.block_override)
     {
         func_id = s.func_id;
-        primary_id = s.primary_id;
-        secondary_id = s.secondary_id;
+        ids = s.ids;
         p_control_id = s.p_control_id;
     }
     virtual PET_Event *get_completion() const { return completion_event; }
@@ -1053,7 +1050,14 @@ struct PET_Collective_Event : public PET_Coll_Event {
         return PET_Coll_Event::query_request(req);
     }
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_COLLECTIVE; }
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host);
+    virtual PEAT_MPI_Request get_mpi_request() const { return request; }
+    PEAT_Bool is_nonblocking_collective() const { return request != 0 && host_event == NULL && !is_persistent_init(); }
+    PEAT_Bool uses_tag(PEAT_MPI_Comm c, PEAT_MPI_Tag t) const; // does the schedule of this collective use this comm/tag
+    void add_progress_event(PET_Event *event);
+    virtual void notify_before_destroy(PET_Event *event);
+    PEAT_Bool progress_events_estimated() const;
+    PEAT_Clock get_records_finish() const; // latest transfer/record finish over own and progress records, -1 if unknown yet
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
     virtual void post_read_event();
     virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol = "\n", const char *hwc_eol = "\n");
     PEAT_Bool write_bind(File_Storage_GZ *gz_bind);
@@ -1084,7 +1088,8 @@ struct PET_Comm_Event : public PET_Coll_Event {
   public:
     PET_Comm_Event(PET_Core *p) : PET_Coll_Event(p), newcomm(0), intercomm(0), remotecomm(0), request(0) {}
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_COMM; }
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host);
+    virtual PEAT_MPI_Request get_mpi_request() const { return request; }
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
     virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *eol = "\n", const char *hwc_eol = "\n");
     virtual void post_read_event();
     virtual PEAT_Bool is_bound() const;
@@ -1114,7 +1119,7 @@ struct PET_Start_Event : public PET_Coll_Event {
     PET_Start_Event(PET_Core *p) : PET_Coll_Event(p), input_request_num(0), triggered_request_num(0), flag(-1), is_all_bound(false), shutdown_initiated(false), addr(NULL) {}
     virtual ~PET_Start_Event();
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_START; }
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
     virtual void scale_event();
     void set_times();
     virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *eol = "\n", const char *hwc_eol = "\n");
@@ -1230,7 +1235,7 @@ struct PET_Completion_Event : public PET_Start_Event {
   public:
     PET_Completion_Event(PET_Core *p) : PET_Start_Event(p), is_children_overridden(false), is_chained(false), end_submitted(false), discarded(false) {}
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_COMPLETION; }
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
     virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *eol = "\n", const char *hwc_eol = "\n");
     virtual PEAT_Bool bind();
     virtual PEAT_Bool ready_to_estimate();
@@ -1308,7 +1313,7 @@ struct PET_OMPT_Event : public PET_Local_Event {
     ~PET_OMPT_Event();
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_OMPT; }
     virtual PEAT_Bool estimate(Estimation_Event *event);
-    virtual PEAT_Bool read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host);
+    virtual PEAT_Bool read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
     virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *eol = "\n", const char *hwc_eol = "\n");
     virtual void insert();
     void insert(PEAT_Bool skip_nested); // special version for children

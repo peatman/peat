@@ -40,6 +40,8 @@ bool urpu::parse_single_event(const int rank)
         return false;
     }
     Tractor_Event tLine(rank, line_hwc, model_id.num_tscs, model_id.num_hwcs, model_id.num_addrs, user_region_file);
+    if (tLine.level > 0) // nested record (issued inside another traced call): no user code in front of it
+        return false;
     if (last_idx[rank] == tLine.uniq_id) {
         last_idx[rank] = tLine.uniq_id;
         return false;

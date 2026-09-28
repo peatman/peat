@@ -89,7 +89,7 @@ class PET_Thread
         // try to search in active events first
         while (r) {
             PET_Event *event = *event_it;
-            if (event->primary_id == uidx) {
+            if (event->ids[0] == uidx) {
                 return event;
             }
             r = get_next_event(event_it);
@@ -180,7 +180,7 @@ class PET_Thread
         std::list<PET_Event *>::iterator event_it;
         if (from_current) {
             if (start_event_it != active_events.end()) {
-                if ((*start_event_it)->primary_id <= event->primary_id) {
+                if ((*start_event_it)->ids[0] <= event->ids[0]) {
                     event_it = start_event_it;
                 } else {
                     event_it = active_events.begin();
@@ -203,7 +203,7 @@ class PET_Thread
     {
         std::list<PET_Event *>::iterator event_it;
         if (cached_event_it != active_events.end()) {
-            if ((*cached_event_it)->primary_id <= event->primary_id) {
+            if ((*cached_event_it)->ids[0] <= event->ids[0]) {
                 event_it = cached_event_it;
             } else {
                 event_it = active_events.begin();

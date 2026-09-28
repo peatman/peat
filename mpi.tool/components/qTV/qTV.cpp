@@ -671,7 +671,7 @@ bool TV::event(QEvent *e)
         TV_Event *evt = elements->get_event(he->pos().x(), he->pos().y(), main_image->width());
         QString tool_tip;
         if (evt) {
-            tool_tip = QString("Function:%1\nRank:%2\nPrimary ID:%3\nSecondary ID:%4\nThread:%5\n").arg(global_func_id.name_by_idx(evt->func_id)).arg(evt->rank).arg(evt->primary_id).arg(evt->secondary_id).arg(evt->thread);
+            tool_tip = QString("Function:%1\nRank:%2\nPrimary ID:%3\nIDs:%4\nThread:%5\n").arg(global_func_id.name_by_idx(evt->func_id)).arg(evt->rank).arg(evt->ids[0]).arg(QString::fromStdString(peat_ids_string(evt->ids))).arg(evt->thread);
             if (evt->is_fab()) {
                 const TV_Fab_Event *fab_evt = static_cast<const TV_Fab_Event *>(evt);
                 tool_tip += QString("Calls:%1\nClocks between calls:%2\n").arg(fab_evt->num_calls).arg(fab_evt->total_clocks_bitween_calls);
@@ -1005,7 +1005,7 @@ void TV::look_for_info()
         info_view = new QTreeWidget;
         info_view->setWordWrap(false);
         info_view->setColumnCount(12);
-        info_view->setHeaderLabels(QStringList() << "Name" << "Group" << "Type" << "Rank" << "Thread" << "Primary ID" << "Secondary ID" << "Start Time" << "End Time" << "Duration" << "Duration (us)" << "Source Location");
+        info_view->setHeaderLabels(QStringList() << "Name" << "Group" << "Type" << "Rank" << "Thread" << "Primary ID" << "IDs" << "Start Time" << "End Time" << "Duration" << "Duration (us)" << "Source Location");
 
         std::function<QTreeWidgetItem *(const TV_Event *)> add_event_item = [&](const TV_Event *e) -> QTreeWidgetItem * {
             QTreeWidgetItem *func_item = new QTreeWidgetItem((QTreeWidget *)0);
@@ -1018,9 +1018,9 @@ void TV::look_for_info()
             func_item->setTextAlignment(3, Qt::AlignHCenter);
             func_item->setData(4, Qt::DisplayRole, e->thread);
             func_item->setTextAlignment(4, Qt::AlignHCenter);
-            func_item->setData(5, Qt::DisplayRole, e->primary_id);
+            func_item->setData(5, Qt::DisplayRole, e->ids[0]);
             func_item->setTextAlignment(5, Qt::AlignHCenter);
-            func_item->setData(6, Qt::DisplayRole, e->secondary_id);
+            func_item->setData(6, Qt::DisplayRole, QString::fromStdString(peat_ids_string(e->ids)));
             func_item->setTextAlignment(6, Qt::AlignHCenter);
             func_item->setText(7, outputDouble(e->e_time.func.in));
             func_item->setTextAlignment(7, Qt::AlignRight);

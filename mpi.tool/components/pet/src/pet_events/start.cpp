@@ -41,8 +41,23 @@ PET_Start_Event::~PET_Start_Event()
 {
     //	if (!is_colt()) { // for collective transfers those functions are deleted by "head" collective destructor
     shutdown_initiated = true;
-    // if (host_event==NULL) { // for collective transfers those functions are deleted by "head" collective destructor
+    // p_events holds every triggered event; the request-keyed maps may hold fewer of them since MPICH reuses
+    // the handle of immediately completed requests (all MPIC_Isend of an alltoall share one handle)
+    std::set<PET_Event *> done;
+    for (std::vector<PET_Event *>::iterator event_it = p_events.begin(); event_it != p_events.end(); ++event_it) {
+        PET_Event *evt = *event_it;
+        if (evt == NULL || done.count(evt))
+            continue;
+        done.insert(evt);
+        if (evt->host_event == NULL) {
+            delete evt; // standalone MPI_Ixxx: owned by this completion
+        } else {
+            evt->notify_before_destroy(this); // collective transfer: owned by its container
+        }
+    }
     for (std::map<PEAT_MPI_Request, PET_ToR_Event *>::iterator event_it = tor_events.begin(); event_it != tor_events.end(); ++event_it) {
+        if (done.count(event_it->second))
+            continue;
         if (event_it->second->host_event == NULL) {
             delete event_it->second;
         } else {
@@ -50,13 +65,14 @@ PET_Start_Event::~PET_Start_Event()
         }
     }
     for (std::map<PEAT_MPI_Request, PET_Collective_Event *>::iterator event_it = collective_events.begin(); event_it != collective_events.end(); ++event_it) {
+        if (done.count(event_it->second))
+            continue;
         if (event_it->second->host_event == NULL) {
             delete event_it->second;
         } else {
             event_it->second->notify_before_destroy(this);
         }
     }
-    // }
 }
 
 void PET_Start_Event::set_times()
@@ -68,7 +84,7 @@ void PET_Start_Event::set_times()
         evt->t_time = t_time;
         evt->o_time = o_time;
         evt->ut_time = ut_time;
-        evt->secondary_id = index++;
+        evt->set_sub_index(index++);
     }
     for (std::map<PEAT_MPI_Request, PET_Collective_Event *>::iterator event_it = collective_events.begin(); event_it != collective_events.end(); ++event_it) {
         PET_Collective_Event *evt = event_it->second;
@@ -76,7 +92,7 @@ void PET_Start_Event::set_times()
         evt->t_time = t_time;
         evt->o_time = o_time;
         evt->ut_time = ut_time;
-        evt->secondary_id = index++;
+        evt->set_sub_index(index++);
     }
 }
 void PET_Start_Event::scale_event()
@@ -87,7 +103,10 @@ void PET_Start_Event::scale_event()
 PET_Event *PET_Start_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
 {
     PET_Local_Event::write_event(gz_MPI, gz_HWC, gz_bind, "", hwc_eol);
-    gz_MPI->printf(rank, ":%d:%d:%d:%d:%llx", input_request_num, triggered_request_num, flag, t_events.size(), addr);
+    gz_MPI->printf(rank, ":%d:%d:%d", input_request_num, triggered_request_num, flag);
+    if (!nested_format())
+        gz_MPI->printf(rank, ":%d", static_cast<int>(t_events.size())); // legacy num_colts
+    gz_MPI->printf(rank, ":%llx", addr);
     for (int i = 0; i < input_request_num; i++) {
         gz_MPI->printf(rank, ":%llx", input_requests[i]);
     }
@@ -100,6 +119,7 @@ PET_Event *PET_Start_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ
         evt->write_bind(gz_bind);
     }
     gz_MPI->printf(rank, "%s", mpi_eol);
+    write_nested_records(gz_MPI, gz_HWC, gz_bind, mpi_eol, hwc_eol); // progress engine records issued inside this call
     return this;
 }
 
@@ -351,19 +371,18 @@ PET_Event *PET_Start_Event::get_prev_child_event()
     return p_events.at(int_event_index);
 };
 
-PEAT_Bool PET_Start_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host)
+PEAT_Bool PET_Start_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
-    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host);
-    extract(input_request_num, mpi_string.at(4));
-    extract(triggered_request_num, mpi_string.at(5));
-    extract(flag, mpi_string.at(6));
-    int num_colts;
-    extract(num_colts, mpi_string.at(7));
-    extract(addr, mpi_string.at(8), 16);
+    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
+    extract(input_request_num, mpi_string.at(hdr.payload + 1));
+    extract(triggered_request_num, mpi_string.at(hdr.payload + 2));
+    extract(flag, mpi_string.at(hdr.payload + 3));
+    const int k = hdr.nested ? 0 : 1; // legacy records keep num_colts here
+    extract(addr, mpi_string.at(hdr.payload + 4 + k), 16);
     input_requests.resize(input_request_num);
     for (int i = 0; i < input_request_num; i++) {
         PEAT_MPI_Request req;
-        extract(req, mpi_string.at(9 + i), 16);
+        extract(req, mpi_string.at(hdr.payload + 5 + k + i), 16);
         input_requests[i] = req;
     }
     for (int i = 0; i < input_request_num; i++) {
@@ -406,8 +425,8 @@ PEAT_Bool PET_Start_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_
                 evt->set_parent_event(this);
                 // evt->event_parts=event_parts;
                 // evt->o_event_parts = o_event_parts;
-                evt->primary_id = primary_id;
-                evt->secondary_id = i;
+                evt->ids = ids;
+                evt->set_sub_index(i);
                 evt->is_written = true;
                 p_events.push_back(evt);
             } break;
@@ -425,8 +444,8 @@ PEAT_Bool PET_Start_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_
                     break;
                 }
                 evt->set_parent_event(this);
-                evt->primary_id = primary_id;
-                evt->secondary_id = i;
+                evt->ids = ids;
+                evt->set_sub_index(i);
                 p_events.push_back(evt);
             } break;
             default:
@@ -728,8 +747,15 @@ PEAT_Bool PET_Start_Event::split_event()
 }
 void PET_Start_Event::notify_before_destroy(PET_Event *event)
 {
+    PET_Coll_Event::notify_before_destroy(event);
     if (shutdown_initiated)
         return; // skip all below since this is the curent object who is being destroyed
+    for (std::vector<PET_Event *>::iterator p_it = p_events.begin(); p_it != p_events.end();) {
+        if (*p_it == event)
+            p_it = p_events.erase(p_it); // the destructor walks p_events, so no dangling entries
+        else
+            ++p_it;
+    }
     switch (event->get_event_type()) {
     case PET_EVENT_TYPE_TOR: {
         PET_ToR_Event *tor_evt = static_cast<PET_ToR_Event *>(event);

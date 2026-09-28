@@ -246,7 +246,8 @@ struct msl_extras_counters {
 #include "addr_entry.h"
 struct msl_event {
     PEAT_Clock tscs[4];
-    short func_id[2];
+    short func_id;      /* through id; the base id comes from mpi_func_ids_trans[] when writing */
+    short num_children; /* records of the next nesting level created while this call was open */
 #ifdef _TRACTOR_STORE_UNIQ_INDEX_
     long long uniq_index;
 #endif
@@ -277,7 +278,6 @@ struct msl_event {
             int input_request_num;
             int triggered_request_num;
             int flag;
-            int num_colts;
 #ifdef _TRACTOR_EXTRA_FIELDS_
             addr_entry requests;
             addr_entry statuses;
@@ -288,7 +288,6 @@ struct msl_event {
         struct {             // 8 + 8 + 4 + 4 + 4
             int sr_bytes[2]; // send/recv counts for collectives
             int root;
-            int num_colts;
             MPI_Comm comm;
             MPI_Request request; /* actual request or "0" if no request */
 #ifdef _TRACTOR_EXTRA_FIELDS_
@@ -302,7 +301,6 @@ struct msl_event {
             MPI_Comm remotecomm;
             MPI_Comm intercomm;
             MPI_Request request;
-            int num_colts;
         } __attribute__((packed)) __attribute__((aligned(4))) comms;
 
         /*          Buffered Local functions     */
@@ -397,25 +395,28 @@ struct t_timeline {
 extern  ompt_finalize_tool_t ompt_finalize_tool;
 #endif*/
 
-#define __msl_allocate_event(tid_in, skip_write, event, counters) gt_info(allocate_event(tid_in, skip_write, event, counters))
-#define __msl_reuse_event(tid_in, event, counters, funcid) gt_info(reuse_event(tid_in, event, counters, funcid))
+#define __msl_allocate_event(tid_in, level, skip_write, event, counters) gt_info(allocate_event(tid_in, level, skip_write, event, counters))
+#define __msl_reuse_event(tid_in, level, event, counters, funcid) gt_info(reuse_event(tid_in, level, event, counters, funcid))
+#define __msl_discard_event(tid_in, level, event, children_base) gt_info(discard_event(tid_in, level, event, children_base))
 #define __msl_fab_allocate_event(tid_in, event, funcid) gt_info(t_fab_prof).allocate_event(tid_in, event, funcid)
 #define __msl_fab_reuse_event(tid_in, event, funcid) gt_info(t_fab_prof).reuse_event(tid_in, event, funcid)
 
 #define __msl_get_tid(tid_in) gt_info(get_tid(tid_in))
-#define __msl_check_chain(tid) gt_info(t_check_chain(tid))
+#define __msl_check_chain(tid, level) gt_info(t_check_chain(tid, level))
 
-#define __msl_record_int(tid, value) gt_info(record_int(tid, value))
-#define __msl_record_long(tid, value) gt_info(record_long(tid, value))
-#define __msl_record_ints(tid, value, nums) gt_info(record_ints(tid, value, nums))
-#define __msl_record_longs(tid, value, nums) gt_info(record_longs(tid, value, nums))
-#define __msl_record_low_longs(tid, value, nums) gt_info(record_low_longs(tid, value, nums))
+/* nesting: a traced call issued while another traced call of the thread is open is one level deeper */
+#define __msl_enter_call(tid) gt_info(enter_call(tid))
+#define __msl_leave_call(tid) gt_info(leave_call(tid))
+#define __msl_child_base(tid, level) gt_info(child_base(tid, level))
+#define __msl_current_level(tid) gt_info(current_level(tid))
+#define __msl_uncount_event(tid, level) gt_info(uncount_event(tid, level))
 
-#define __msl_record_int_colt(tid, value) gt_info(record_int_colt(tid, value))
-#define __msl_record_long_colt(tid, value) gt_info(record_long_colt(tid, value))
-#define __msl_record_ints_colt(tid, value, nums) gt_info(record_ints_colt(tid, value, nums))
-#define __msl_record_longs_colt(tid, value, nums) gt_info(record_longs_colt(tid, value, nums))
-#define __msl_record_low_longs_colt(tid, value, nums) gt_info(record_low_longs_colt(tid, value, nums))
+#define __msl_record_int(tid, level, value) gt_info(record_int(tid, level, value))
+#define __msl_record_long(tid, level, value) gt_info(record_long(tid, level, value))
+#define __msl_record_ints(tid, level, value, nums) gt_info(record_ints(tid, level, value, nums))
+#define __msl_record_longs(tid, level, value, nums) gt_info(record_longs(tid, level, value, nums))
+#define __msl_record_low_longs(tid, level, value, nums) gt_info(record_low_longs(tid, level, value, nums))
+
 #ifdef _TRACTOR_VIRT2PHYS_
 bool __msl_virt2phys(int pmfile, int pffile, addr_entry *entry);
 int __msl_open_pfile(char *ppath);

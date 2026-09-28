@@ -93,7 +93,7 @@ t_fab_profiler::~t_fab_profiler()
 void t_fab_profiler::init(int max_threads, char *_stat_dir, char *_tmp_dir, char *_stat_template, int _use_realtime_dump)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
-    t_base_event::init(max_threads);
+    t_base_event::init(max_threads, 1); // fabric calls never nest
     use_realtime_dump = _use_realtime_dump;
     debug_printf("Fabric Profiler:max_threads=%d. %s %s \n", t_max_threads, _stat_dir, _stat_template);
     stat_template = _stat_template;
@@ -106,12 +106,12 @@ void t_fab_profiler::init(int max_threads, char *_stat_dir, char *_tmp_dir, char
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
 
-void t_fab_profiler::dump_extras(pid_t tid, msl_base_chain **chain, int is_colt)
+void t_fab_profiler::dump_extras(pid_t tid, int level, msl_base_chain **chain)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
-void t_fab_profiler::dump_events(pid_t tid, msl_adv_chain **chain)
+void t_fab_profiler::dump_events(pid_t tid, int level, msl_adv_chain **chain)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
     if (fps_events[tid] == NULL) {
@@ -174,8 +174,8 @@ long long t_fab_profiler::write_fab_file(bool print_names)
         std::map<t_timeline, int> timeline;
         if (use_realtime_dump) {
             for (int i = 0; i < t_tid_counter; i++) {
-                events_chain[i]->num_events = event_index[i];
-                dump_events(i, &events_start_chain[i]);
+                events_chain[i][0]->num_events = event_index[i][0];
+                dump_events(i, 0, &events_start_chain[i][0]);
                 current_array[i] = (msl_event *)t_malloc((onetimealloc + 1) * sizeof(msl_event), 128);
                 rewind(fps_events[i]);
                 record_counter[i] = 0;
@@ -187,10 +187,10 @@ long long t_fab_profiler::write_fab_file(bool print_names)
             }
         } else {
             for (int i = 0; i < t_tid_counter; i++) {
-                current_chain[i] = events_start_chain[i];
+                current_chain[i] = events_start_chain[i][0];
 
                 record_counter[i] = 0;
-                max_events[i] = (current_chain[i]->next == NULL) ? event_index[i] : onetimealloc;
+                max_events[i] = (current_chain[i]->next == NULL) ? event_index[i][0] : onetimealloc;
 
                 current_array[i] = (msl_event *)current_chain[i]->events_array;
                 debug_printf("FAB Events:thread %d. %d %llx, %llx - %llx %llx \n", i, max_events[i], this, current_chain[i], events_start_chain[i], current_array[i]);
@@ -213,12 +213,12 @@ long long t_fab_profiler::write_fab_file(bool print_names)
             if (print_names) {
                 gzprintf(fps, "%lld:%d:%s",
                          uniq_index, tid,                                                       // 0,1
-                         mpi_function_names[current_array[tid][record_counter[tid]].func_id[1]] // 2
+                         mpi_function_names[current_array[tid][record_counter[tid]].func_id] // 2
                 );
             } else {
                 gzprintf(fps, "%lld:%d:%d",
                          uniq_index, tid,                                   // 0,1
-                         current_array[tid][record_counter[tid]].func_id[0] // 2
+                         mpi_func_ids_trans[current_array[tid][record_counter[tid]].func_id] // 2
                 );
             }
 
@@ -241,7 +241,7 @@ long long t_fab_profiler::write_fab_file(bool print_names)
                 } else {
                     if (current_chain[tid]->next != NULL) {
                         current_chain[tid] = (msl_adv_chain *)current_chain[tid]->next;
-                        max_events[tid] = (current_chain[tid]->next == NULL) ? event_index[tid] : onetimealloc;
+                        max_events[tid] = (current_chain[tid]->next == NULL) ? event_index[tid][0] : onetimealloc;
                         current_array[tid] = (msl_event *)current_chain[tid]->events_array;
                         record_counter[tid] = 0;
                     } else {

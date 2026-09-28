@@ -24,6 +24,8 @@ $prototype {
 #ifndef _TRACTOR_PASSTHROUGH_
     int rv, i, comm_rank, s_count, r_count;
     MPI_Aint s_data_size = 0, r_data_size = 0;
+    int level=-1;              /* nesting level of this call, -1 if not traced */
+    long long children_base=0; /* records of the next level existing at entry */
     long long tsc_entry,tsc_exit,tsc_mpi_entry,tsc_mpi_exit,local_tool_overhead;
     const PEAT_MPI_Func_ID_Through fidc=$funcid_through;
     pid_t tid_in;
@@ -47,15 +49,14 @@ $prototype {
         if (status==MPI_STATUS_IGNORE) status=&local_status;
         counting_permit+=4*counting_permission_pcontrol[$funcid_through];
         tid=__msl_get_tid(tid_in);
-        first_progress_entry$colt [tid] = last_progress_exit$colt [tid] = 0;
-        $num_colts
+        level=__msl_enter_call(tid);
+        children_base=__msl_child_base(tid,level);
 #ifdef _HWCOUNTERS_ENABLED_
         gt_info(hwc).get_all_counters(l_hwcs);
 #endif
 #ifdef _MEMPROFILE_STORE_
         gt_info(mprof).get_mem_status(&l_mem);
 #endif
-        in_mpi_call[tid]=1;
         tsc_mpi_entry=peat_get_time();
     } //if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1))
 #else
@@ -65,22 +66,24 @@ $prototype {
     $Preturn=P$c_call;
 #endif
 #ifndef _TRACTOR_PASSTHROUGH_
+    if (level>=0) __msl_leave_call(tid); /* also when the record was discarded */
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
         tsc_mpi_exit = peat_get_time();
-        in_mpi_call[tid]=0;
-        __msl_allocate_event(tid,1,&event[0],&counters[0]);
+        /* two records (send part, receive part) allocated at exit: nothing can nest between them */
+        __msl_allocate_event(tid,level,1,&event[0],&counters[0]);
         stack_unwind$colt(gt_info(max_ret_level),counters[0].addrs,gt_info(ret_levels));
 
-        event[0]->func_id[0] = $funcid;
-        event[0]->func_id[1] = $funcid_through;
+        event[0]->func_id = $funcid_through;
+        event[0]->num_children += (short)(__msl_child_base(tid,level) - children_base);
         event[0]->p2p_pr_pb.comm=$comm;
         event[0]->p2p_pr_pb.tag=$stag;
         event[0]->p2p_pr_pb.peer=$dest;
         event[0]->p2p_pr_pb.transfer_bytes=(s_count*s_data_size);
-        __msl_allocate_event(tid,1,&event[1],&counters[1]);
+        __msl_allocate_event(tid,level,1,&event[1],&counters[1]);
+        __msl_uncount_event(tid,level); /* the pair is one call: one child of the enclosing record */
         memcpy(counters[1].addrs,counters[0].addrs,gt_info(num_addrs)*sizeof(void *));
         memcpy((void *)event[1],(const void *) event[0],sizeof(msl_event));
-        // *event[1]=*event[0];
+        event[1]->num_children=0; /* the children belong to the first record */
         event[1]->p2p_pr_pb.tag=status->MPI_TAG;
         event[1]->p2p_pr_pb.peer=$status_peer;
         event[1]->p2p_pr_pb.transfer_bytes=MPI_STATUS_GET_COUNT_P(status);
@@ -92,13 +95,13 @@ $prototype {
         event[0]->tscs[2]=tsc_mpi_exit-tsc_entry;
 
 #ifdef _HWCOUNTERS_ENABLED_
-        memcpy(counters.hwcs,l_hwcs,num_hwcs*sizeof(l_hwcs[0]));
-        gt_info(hwc).get_all_counters(&counters.hwcs[num_hwcs]);
+        memcpy(counters[0].hwcs,l_hwcs,num_hwcs*sizeof(l_hwcs[0]));
+        gt_info(hwc).get_all_counters(&counters[0].hwcs[num_hwcs]);
         memcpy(counters[1].hwcs,counters[0].hwcs,gt_info(num_hwcs)*sizeof(long long)*2);
 #endif
 #ifdef _MEMPROFILE_STORE_
-        counters.mems[0]=l_mem;
-        gt_info(mprof).get_mem_status(&counters.mems[1]);
+        counters[0].mems[0]=l_mem;
+        gt_info(mprof).get_mem_status(&counters[0].mems[1]);
         memcpy(counters[1].mems,counters[0].mems,sizeof(t_memory_event)*2);
 #endif
         // counting_permit-=4*counting_permission_pcontrol[$funcid_through];
@@ -108,9 +111,7 @@ $prototype {
         event[1]->tscs[1]=
         event[1]->tscs[2]=
         event[1]->tscs[3]=0;
-#if $is_not_colt
-        __msl_check_chain(tid);
-#endif
+        __msl_check_chain(tid,level);
         local_tool_overhead=tsc_mpi_entry-tsc_entry+tsc_exit-tsc_mpi_exit;
         $global_mpi_time
         global_tool_overhead += local_tool_overhead;

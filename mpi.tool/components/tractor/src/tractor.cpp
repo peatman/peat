@@ -209,7 +209,7 @@ tractor::tractor(void)
     gz_ext = ".gz";
     compression = 1;
     compression_level = Z_DEFAULT_COMPRESSION;
-    fps_events = fps_extras = fps_c_extras = NULL;
+    fps_events = fps_extras = NULL;
 
 #ifdef _TRACTOR_VIRT2PHYS_
     pmfile = 0;
@@ -512,34 +512,35 @@ int tractor::parse_levels(char *levels)
 #ifdef _TRACTOR_VIRT2PHYS_
 void tractor::translate_virt2phys(msl_event *event)
 {
+    const short func_base = mpi_func_ids_trans[event->func_id];
     __DEBUG_PROLOG_TRACTOR_LAYER__
     // walk through all possible pointers and translate their addresses
-    if (event->func_id[0] >= MPI_START_FILE_GROUP && event->func_id[0] < MPI_END_FILE_GROUP) {
+    if (func_base >= MPI_START_FILE_GROUP && func_base < MPI_END_FILE_GROUP) {
         if (event->mpi_fio.buf.virt_addr)
             __msl_virt2phys(pmfile, pffile, &event->mpi_fio.buf);
     }
 
-    if (event->func_id[0] >= MPI_START_BUFFERED_LOCAL_GROUP && event->func_id[0] < MPI_END_BUFFERED_LOCAL_GROUP) {
+    if (func_base >= MPI_START_BUFFERED_LOCAL_GROUP && func_base < MPI_END_BUFFERED_LOCAL_GROUP) {
         if (event->buf_local.buf[0].virt_addr)
             __msl_virt2phys(pmfile, pffile, &event->collective.buf[0]);
         if (event->buf_local.buf[1].virt_addr)
             __msl_virt2phys(pmfile, pffile, &event->collective.buf[1]);
     }
 
-    if (event->func_id[0] >= MPI_START_GENERAL_COLLECTIVE_GROUP && event->func_id[0] < MPI_END_GENERAL_COLLECTIVE_GROUP) {
+    if (func_base >= MPI_START_GENERAL_COLLECTIVE_GROUP && func_base < MPI_END_GENERAL_COLLECTIVE_GROUP) {
         if (event->collective.buf[0].virt_addr)
             __msl_virt2phys(pmfile, pffile, &event->collective.buf[0]);
         if (event->collective.buf[1].virt_addr)
             __msl_virt2phys(pmfile, pffile, &event->collective.buf[1]);
     }
 
-    if (event->func_id[0] >= MPI_P2P_TRANSFER_START && event->func_id[0] < MPI_P2P_TRANSFER_END ||
-        event->func_id[0] >= MPI_P2P_PERSISTENT_INIT_START && event->func_id[0] < MPI_P2P_PERSISTENT_INIT_END ||
-        event->func_id[0] >= MPI_PROBE_START && event->func_id[0] < MPI_PROBE_END) {
+    if (func_base >= MPI_P2P_TRANSFER_START && func_base < MPI_P2P_TRANSFER_END ||
+        func_base >= MPI_P2P_PERSISTENT_INIT_START && func_base < MPI_P2P_PERSISTENT_INIT_END ||
+        func_base >= MPI_PROBE_START && func_base < MPI_PROBE_END) {
         if (event->p2p_pr_pb.buf.virt_addr)
             __msl_virt2phys(pmfile, pffile, &event->p2p_pr_pb.buf);
     }
-    if (event->func_id[0] >= MPI_START_OSC_GROUP && event->func_id[0] < MPI_END_OSC_GROUP) {
+    if (func_base >= MPI_START_OSC_GROUP && func_base < MPI_END_OSC_GROUP) {
         if (event->one_sided_comm.buf.virt_addr)
             __msl_virt2phys(pmfile, pffile, &event->one_sided_comm.buf);
         if (event->one_sided_comm.rbuf.virt_addr)
@@ -548,7 +549,7 @@ void tractor::translate_virt2phys(msl_event *event)
             __msl_virt2phys(pmfile, pffile, &event->one_sided_comm.cbuf);
     }
 
-    if (event->func_id[0] >= MPI_REQUEST_START && event->func_id[0] < MPI_REQUEST_END) {
+    if (func_base >= MPI_REQUEST_START && func_base < MPI_REQUEST_END) {
         if (event->requests.requests.virt_addr)
             __msl_virt2phys(pmfile, pffile, &event->requests.requests);
         if (event->requests.statuses.virt_addr)
@@ -708,6 +709,11 @@ void tractor::parse_env_vars(void)
     temp = __msl_getenv("PEAT_TRACTOR_MAX_THREADS");
     if (temp)
         t_max_threads = atoi(temp);
+
+    temp = __msl_getenv("PEAT_TRACTOR_MAX_NESTING_LEVELS");
+    if (temp)
+        t_max_nesting_levels = atoi(temp);
+
     temp = __msl_getenv("PEAT_TRACTOR_FULL_OMPT_UNWIND");
     if (temp)
         full_ompt_unwind = atoi(temp);
@@ -986,15 +992,14 @@ void tractor::init(void)
     }
 
     extras = 1;
-    t_base_event::init(t_max_threads);
+    t_base_event::init(t_max_threads,t_max_nesting_levels);
 
     if (use_realtime_dump) {
-        fps_events = (FILE **)t_malloc(t_max_threads * sizeof(FILE *), 128);
-        memset(fps_events, 0, t_max_threads * sizeof(FILE *));
-        fps_extras = (FILE **)t_malloc(t_max_threads * sizeof(FILE *), 128);
-        memset(fps_extras, 0, t_max_threads * sizeof(FILE *));
-        fps_c_extras = (FILE **)t_malloc(t_max_threads * sizeof(FILE *), 128);
-        memset(fps_c_extras, 0, t_max_threads * sizeof(FILE *));
+        const int slots = t_max_threads * t_max_nesting_levels;
+        fps_events = (FILE **)t_malloc(slots * sizeof(FILE *), 128);
+        memset(fps_events, 0, slots * sizeof(FILE *));
+        fps_extras = (FILE **)t_malloc(slots * sizeof(FILE *), 128);
+        memset(fps_extras, 0, slots * sizeof(FILE *));
     }
 
 #if defined(_FAB_PROFILE_)
@@ -1205,6 +1210,10 @@ void tractor::pre_finalize(int abort)
     if (t_mpi_rank >= 0 && abort == 0) {
         nodes_info(gt_ninfo);
         global_comms.bind_local_comms();
+        /* one id column count for the whole trace: bind records refer to records of other ranks by their id path */
+        int local_levels = t_achieved_nesting_levels, global_levels = local_levels;
+        PMPI_Allreduce(&local_levels, &global_levels, 1, MPI_INT, MPI_MAX, TRACTOR_COMM_WORLD);
+        t_achieved_nesting_levels = global_levels;
     }
     if (t_mpi_rank >= 0) {
         PMPI_Comm_free(&TRACTOR_COMM_WORLD);
@@ -1552,39 +1561,27 @@ void tractor::end(void)
     if (fps_com)
         gzclose(fps_com);
 
-    if (fps_events) {
-        int tid = 0;
-        while (fps_events[tid]) {
-            fclose(fps_events[tid]);
+    if (fps_events || fps_extras) {
+        const int slots = t_max_threads * t_max_nesting_levels;
+        for (int idx = 0; idx < slots; idx++) {
             char temp_filename[MAX_PATH];
-            sprintf(temp_filename, "%s/%s.%d.%d.mevts.tmp", tmp_dir, stat_template, t_mpi_rank, tid);
-            unlink(temp_filename);
-            tid++;
+            const int tid = idx / t_max_nesting_levels, level = idx % t_max_nesting_levels;
+            if (fps_events && fps_events[idx]) {
+                fclose(fps_events[idx]);
+                sprintf(temp_filename, "%s/%s.%d.%d.%d.mevts.tmp", tmp_dir, stat_template, t_mpi_rank, tid, level);
+                unlink(temp_filename);
+            }
+            if (fps_extras && fps_extras[idx]) {
+                fclose(fps_extras[idx]);
+                sprintf(temp_filename, "%s/%s.%d.%d.%d.mexts.tmp", tmp_dir, stat_template, t_mpi_rank, tid, level);
+                unlink(temp_filename);
+            }
         }
-        t_free(fps_events, t_max_threads * sizeof(FILE *));
-    }
-    if (fps_extras) {
-        int tid = 0;
-        while (fps_extras[tid]) {
-            fclose(fps_extras[tid]);
-            char temp_filename[MAX_PATH];
-            sprintf(temp_filename, "%s/%s.%d.%d.mexts.tmp", tmp_dir, stat_template, t_mpi_rank, tid);
-            unlink(temp_filename);
-            tid++;
-        }
-        t_free(fps_extras, t_max_threads * sizeof(FILE *));
-    }
-
-    if (fps_c_extras) {
-        int tid = 0;
-        while (fps_c_extras[tid]) {
-            fclose(fps_c_extras[tid]);
-            char temp_filename[MAX_PATH];
-            sprintf(temp_filename, "%s/%s.%d.%d.mcexts.tmp", tmp_dir, stat_template, t_mpi_rank, tid);
-            unlink(temp_filename);
-            tid++;
-        }
-        t_free(fps_c_extras, t_max_threads * sizeof(FILE *));
+        if (fps_events)
+            t_free(fps_events, slots * sizeof(FILE *));
+        if (fps_extras)
+            t_free(fps_extras, slots * sizeof(FILE *));
+        fps_events = fps_extras = NULL;
     }
     debug_printf("Rank %d: Tractor Destructor finished...\n", t_mpi_rank);
     __DEBUG_EPILOG_TRACTOR_LAYER__
@@ -1798,12 +1795,16 @@ int tractor::write_trace(void)
     //    if (t_write_main_files) {
     if (use_realtime_dump) {
         for (int i = 0; i < t_tid_counter; i++) {
-            events_chain[i]->num_events = event_index[i];
-            extras_chain[i]->num_events = extras_index[i];
-            c_extras_chain[i]->num_events = c_extras_index[i];
-            dump_events(i, &events_start_chain[i]);
-            dump_extras(i, &extras_start_chain[i], 0);
-            dump_extras(i, &c_extras_start_chain[i], 1);
+            for (int level = 0; level < t_max_nesting_levels; level++) {
+                if (events_chain[i][level]) {
+                    events_chain[i][level]->num_events = event_index[i][level];
+                    dump_events(i, level, &events_start_chain[i][level]);
+                }
+                if (extras_chain[i][level]) {
+                    extras_chain[i][level]->num_events = extras_index[i][level];
+                    dump_extras(i, level, &extras_start_chain[i][level]);
+                }
+            }
         }
     }
     //    }
@@ -1926,21 +1927,16 @@ bool is_coll_transfer(short x)
         return true;
     return false;
 }
-void tractor::update_extras_pointers(int tid, long long *max_ext_count, msl_extra_info **cur_exts_array, bool is_colt)
+void tractor::update_extras_pointers(int tid, int level, long long *max_ext_count, msl_extra_info **cur_exts_array)
 {
-    FILE *fps_ext = fps_extras[tid];
-    char *is_colt_txt = "";
-    if (is_colt) {
-        fps_ext = fps_c_extras[tid];
-        is_colt_txt = "collective";
-    }
+    FILE *fps_ext = fps_extras[fp_index(tid, level)];
     if (fps_ext) {
-        *max_ext_count = 0;
         *max_ext_count = fread(*cur_exts_array, sizeof(msl_extra_info), onetimealloc, fps_ext);
-        debug_printf("TID %d, %ld %s extras read back.\n", tid, *max_ext_count, is_colt_txt);
+        debug_printf("TID %d level %d, %ld extras read back.\n", tid, level, *max_ext_count);
+    } else {
+        *max_ext_count = 0;
     }
 }
-
 
 #ifdef GPUPARSE
 
@@ -1997,6 +1993,7 @@ struct T_MPI_Comm {
     T_MPI_Comm(const T_MPI_Comm &s) : comm(s.comm), time(s.time) {};
 };
 
+
 num_processed_events tractor::write_main_files(/*user_region_store &user_region_store*/)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
@@ -2008,32 +2005,31 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
     int tsc_mpi_entry_ind = 1;
     int tsc_mpi_exit_ind = 2;
     long processed_events = 0;
-    static PEAT_Clock tsc_counter = 0;
+    static PEAT_Clock tsc_counter = 0; /* start of the previously written record: starts are written relative to it */
     static long global_id = 0;
-    msl_adv_chain *current_chain[t_max_threads];
-    msl_base_chain *current_extras_chain[t_max_threads];
-    msl_base_chain *c_current_extras_chain[t_max_threads];
+    const int levels = t_max_nesting_levels;
+    /* id columns: the running index of the top-level record, then the index of the record among the children
+       of its parent, one column per nesting level; at least two columns so flat traces keep their old layout */
+    const int id_columns = t_max(2, t_achieved_nesting_levels);
+    const int slots = t_max_threads * levels; /* cursor per (thread, level): index tid * levels + level */
 
-    msl_event *current_array[t_max_threads];
-    void **current_addrs_array[t_max_threads];
-
-    msl_extra_info *current_extras_array[t_max_threads];
-    msl_extra_info *c_current_extras_array[t_max_threads];
-
-    long long uniq_index = 0;
-    long long colt_index = -1;
-    long long record_counter[t_max_threads];
-    long long max_events[t_max_threads], max_extras[t_max_threads], extras_counter[t_max_threads];
-    long long c_max_extras[t_max_threads], c_extras_counter[t_max_threads];
-    long max_thread_id = 0;
-
+    std::vector<msl_adv_chain *> current_chain(slots, (msl_adv_chain *)NULL);
+    std::vector<msl_base_chain *> current_extras_chain(slots, (msl_base_chain *)NULL);
+    std::vector<msl_event *> current_array(slots, (msl_event *)NULL);
+    std::vector<void **> current_addrs_array(slots, (void **)NULL);
+    std::vector<msl_extra_info *> current_extras_array(slots, (msl_extra_info *)NULL);
+    std::vector<long long> record_counter(slots, 0), max_events(slots, 0), max_extras(slots, 0), extras_counter(slots, 0);
 #ifdef _HWCOUNTERS_ENABLED_
-    long long *current_hwc_array[t_max_threads];
+    std::vector<long long *> current_hwc_array(slots, (long long *)NULL);
     long long hwc_counter[t_max_threads][num_hwcs];
 #endif
 #ifdef _MEMPROFILE_STORE_
-    t_memory_event *current_mems_array[t_max_threads];
+    std::vector<t_memory_event *> current_mems_array(slots, (t_memory_event *)NULL);
 #endif
+
+    long long uniq_index = 0;
+    long max_thread_id = 0;
+    std::vector<long long> ids(id_columns, -1);
     std::map<t_timeline, int> timeline;
     t_address t_addr;
     t_addr.id = global_id++;
@@ -2047,608 +2043,296 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
         fps_mpi = gzopen(mpi_filename, gz_mode);
     if (t_write_main_files)
         fps_hwc = gzopen(hwc_filename, gz_mode);
-    if (use_realtime_dump) {
-        for (int i = 0; i < t_tid_counter; i++) {
+
+    /* (re)load the current block of a (thread, level) stream; realtime mode reads it back from the temporary file */
+    auto load_block = [&](int tid, int level, bool first) -> void {
+        const int idx = tid * levels + level;
+        record_counter[idx] = 0;
+        if (use_realtime_dump) {
+            FILE *fp = fps_events[fp_index(tid, level)];
+            max_events[idx] = 0;
+            if (fp == NULL)
+                return;
+            if (first) {
+                rewind(fp);
+                current_array[idx] = (msl_event *)t_malloc((onetimealloc + 1) * sizeof(msl_event), 128);
+                current_addrs_array[idx] = (void **)t_malloc((onetimealloc + 1) * sizeof(void *) * num_addrs, 128);
 #ifdef _HWCOUNTERS_ENABLED_
-            for (int hwcs_ind = 0; hwcs_ind < num_hwcs; hwcs_ind++) {
-                hwc_counter[i][hwcs_ind] = 0;
-            }
-#endif
-            rewind(fps_events[i]);
-            rewind(fps_extras[i]);
-            rewind(fps_c_extras[i]);
-            current_array[i] = (msl_event *)t_malloc((onetimealloc + 1) * sizeof(msl_event), 128);
-            current_addrs_array[i] = (void **)t_malloc((onetimealloc + 1) * sizeof(void *) * num_addrs, 128);
-            max_events[i] = 0; // reset it in case if eof reached
-            fread(&max_events[i], 4, 1, fps_events[i]);
-            long tmp_mi = fread(current_array[i], sizeof(msl_event), max_events[i], fps_events[i]);
-            if (tmp_mi != max_events[i]) {
-                debug_printf("TID %d, %ld!=%ld events read count mismatch.\n", i, max_events[i], tmp_mi);
-            }
-            tmp_mi = fread(current_addrs_array[i], sizeof(void *) * num_addrs, max_events[i], fps_events[i]);
-            if (tmp_mi != max_events[i]) {
-                debug_printf("TID %d, %ld!=%ld events read count mismatch.\n", i, max_events[i], tmp_mi);
-            }
-#ifdef _HWCOUNTERS_ENABLED_
-            current_hwc_array[i] = (long long *)t_malloc((onetimealloc + 1) * sizeof(long long) * num_hwcs * 2, 128);
-            tmp_mi = fread(current_hwc_array[i], sizeof(long long) * num_hwcs * 2, max_events[i], fps_events[i]);
-            if (tmp_mi != max_events[i]) {
-                debug_printf("TID %d, %ld!=%ld events read count mismatch.\n", i, max_events[i], tmp_mi);
-            }
+                current_hwc_array[idx] = (long long *)t_malloc((onetimealloc + 1) * sizeof(long long) * num_hwcs * 2, 128);
 #endif
 #ifdef _MEMPROFILE_STORE_
-            current_mems_array[i] = (t_memory_event *)t_malloc((onetimealloc + 1) * t_memory_event_size * 2, 128);
-            tmp_mi = fread(current_mems_array[i], sizeof(void *) * t_memory_event_size * 2, max_events[i], fps_events[i]);
-            if (tmp_mi != max_events[i]) {
-                debug_printf("TID %d, %ld!=%ld events read count mismatch.\n", i, max_events[i], tmp_mi);
-            }
+                current_mems_array[idx] = (t_memory_event *)t_malloc((onetimealloc + 1) * t_memory_event_size * 2, 128);
 #endif
-            debug_printf("TID %d, %ld events read back.\n", i, max_events[i]);
-            current_extras_array[i] = (msl_extra_info *)t_malloc((onetimealloc + 1) * sizeof(msl_extra_info), 128);
-            c_current_extras_array[i] = (msl_extra_info *)t_malloc((onetimealloc + 1) * sizeof(msl_extra_info), 128);
-            max_extras[i] = fread(current_extras_array[i], sizeof(msl_extra_info), onetimealloc, fps_extras[i]);
-            debug_printf("TID %d, %ld extras read back.\n", i, max_extras[i]);
-
-            c_max_extras[i] = fread(c_current_extras_array[i], sizeof(msl_extra_info), onetimealloc, fps_c_extras[i]);
-            debug_printf("TID %d, %ld collective extras read back.\n", i, c_max_extras[i]);
-
-            record_counter[i] = 0;
-            extras_counter[i] = 0;
-            c_extras_counter[i] = 0;
-
-            t_timeline t_tl(current_array[i][0].tscs[0], i);
-            if (max_events[i] > 0)
-                timeline[t_tl] = i;
+            }
+            if (fread(&max_events[idx], 4, 1, fp) != 1) {
+                max_events[idx] = 0;
+                return;
+            }
+            long tmp_mi = fread(current_array[idx], sizeof(msl_event), max_events[idx], fp);
+            if (tmp_mi != max_events[idx])
+                debug_printf("TID %d level %d, %ld!=%ld events read count mismatch.\n", tid, level, max_events[idx], tmp_mi);
+            tmp_mi = fread(current_addrs_array[idx], sizeof(void *) * num_addrs, max_events[idx], fp);
+            if (tmp_mi != max_events[idx])
+                debug_printf("TID %d level %d, %ld!=%ld events read count mismatch.\n", tid, level, max_events[idx], tmp_mi);
+#ifdef _HWCOUNTERS_ENABLED_
+            tmp_mi = fread(current_hwc_array[idx], sizeof(long long) * num_hwcs * 2, max_events[idx], fp);
+            if (tmp_mi != max_events[idx])
+                debug_printf("TID %d level %d, %ld!=%ld events read count mismatch.\n", tid, level, max_events[idx], tmp_mi);
+#endif
+#ifdef _MEMPROFILE_STORE_
+            tmp_mi = fread(current_mems_array[idx], t_memory_event_size * 2, max_events[idx], fp);
+            if (tmp_mi != max_events[idx])
+                debug_printf("TID %d level %d, %ld!=%ld events read count mismatch.\n", tid, level, max_events[idx], tmp_mi);
+#endif
+            debug_printf("TID %d level %d, %ld events read back.\n", tid, level, max_events[idx]);
+        } else {
+            if (first) {
+                current_chain[idx] = events_start_chain[tid][level];
+            } else if (current_chain[idx]) {
+                current_chain[idx] = (msl_adv_chain *)current_chain[idx]->next;
+            }
+            if (current_chain[idx] == NULL) {
+                max_events[idx] = 0;
+                return;
+            }
+            max_events[idx] = (current_chain[idx]->next == NULL) ? event_index[tid][level] : onetimealloc;
+            current_array[idx] = (msl_event *)current_chain[idx]->events_array;
+            current_addrs_array[idx] = (void **)current_chain[idx]->addr_array;
+#ifdef _HWCOUNTERS_ENABLED_
+            current_hwc_array[idx] = (long long *)current_chain[idx]->hwc_array;
+#endif
+#ifdef _MEMPROFILE_STORE_
+            current_mems_array[idx] = (t_memory_event *)current_chain[idx]->mem_array;
+#endif
         }
-    } else {
-        for (int i = 0; i < t_tid_counter; i++) {
+    };
+
+    for (int i = 0; i < t_tid_counter; i++) {
 #ifdef _HWCOUNTERS_ENABLED_
-            for (int hwcs_ind = 0; hwcs_ind < num_hwcs; hwcs_ind++) {
-                hwc_counter[i][hwcs_ind] = 0;
+        for (int hwcs_ind = 0; hwcs_ind < num_hwcs; hwcs_ind++) {
+            hwc_counter[i][hwcs_ind] = 0;
+        }
+#endif
+        for (int level = 0; level < levels; level++) {
+            const int idx = i * levels + level;
+            load_block(i, level, true);
+            extras_counter[idx] = 0;
+            if (use_realtime_dump) {
+                FILE *fpx = fps_extras[fp_index(i, level)];
+                current_extras_array[idx] = (msl_extra_info *)t_malloc((onetimealloc + 1) * sizeof(msl_extra_info), 128);
+                max_extras[idx] = 0;
+                if (fpx) {
+                    rewind(fpx);
+                    max_extras[idx] = fread(current_extras_array[idx], sizeof(msl_extra_info), onetimealloc, fpx);
+                }
+            } else {
+                current_extras_chain[idx] = extras_start_chain[i][level];
+                if (current_extras_chain[idx]) {
+                    current_extras_array[idx] = (msl_extra_info *)current_extras_chain[idx]->events_array;
+                    max_extras[idx] = (current_extras_chain[idx]->next == NULL) ? extras_index[i][level] : onetimealloc;
+                } else {
+                    max_extras[idx] = 0;
+                }
             }
-#endif
-            current_chain[i] = events_start_chain[i];
-            current_extras_chain[i] = extras_start_chain[i];
-
-            current_extras_array[i] = (msl_extra_info *)current_extras_chain[i]->events_array;
-            extras_counter[i] = 0;
-
-            c_current_extras_chain[i] = c_extras_start_chain[i];
-            c_current_extras_array[i] = (msl_extra_info *)c_current_extras_chain[i]->events_array;
-            c_extras_counter[i] = 0;
-
-            record_counter[i] = 0;
-            max_events[i] = (current_chain[i]->next == NULL) ? event_index[i] : onetimealloc;
-
-            max_extras[i] = (current_extras_chain[i]->next == NULL) ? extras_index[i] : onetimealloc;
-            c_max_extras[i] = (c_current_extras_chain[i]->next == NULL) ? c_extras_index[i] : onetimealloc;
-
-            current_array[i] = (msl_event *)current_chain[i]->events_array;
-            current_addrs_array[i] = (void **)current_chain[i]->addr_array;
-#ifdef _HWCOUNTERS_ENABLED_
-            current_hwc_array[i] = (long long *)current_chain[i]->hwc_array;
-#endif
-#ifdef _MEMPROFILE_STORE_
-            current_mems_array[i] = (t_memory_event *)current_chain[i]->mem_array;
-#endif
-            t_timeline t_tl(current_array[i][0].tscs[0], i);
-            if (current_array[i][0].tscs[0] == 0 || current_array[i][0].func_id[0] == 0 || current_array[i][0].func_id[1] == 0) {
+        }
+        const int idx0 = i * levels;
+        if (max_events[idx0] > 0) {
+            if (!use_realtime_dump && (current_array[idx0][0].tscs[0] == 0 || current_array[idx0][0].func_id == 0)) {
                 std::ostringstream err_txt;
                 err_txt << "Internal event storage error (extra empty thread) " << i << "." << std::endl;
                 throw std::runtime_error(err_txt.str());
             }
-            if (max_events[i] > 0)
-                timeline[t_tl] = i;
+            timeline[t_timeline(current_array[idx0][0].tscs[0], i)] = i;
         }
     }
 
-    long num_colts = 0;
-    int prev_tid = -1, tid = -1;
-    while (!timeline.empty()) {
-        std::map<t_timeline, int>::iterator timeline_it;
-        timeline_it = timeline.begin();
-        while (timeline_it->second != prev_tid && num_colts > 0) { // there're several MPIC_XXX calls ahead, handle them first
-                                                                   //     debug_printf("Skipping:%lld:%d:%d\n",timeline_it->first.tsc,timeline_it->first.tid,timeline_it->second);
-            ++timeline_it;
-        };
-        if (timeline_it == timeline.end()) {
-            std::ostringstream err_txt;
-            err_txt << "Internal timeline error\n";
-            throw std::runtime_error(err_txt.str());
-        }
-        tid = timeline_it->second;
-        // debug_printf("working with:%lld:%d:%d\n",timeline_it->first.tsc,timeline_it->first.tid,timeline_it->second);
-
-        timeline.erase(timeline_it);
+    /* write one record of (tid, level) with the given ids; returns its number of children */
+    auto emit_record = [&](int tid, int level, bool second_line) -> long long {
+        const int idx = tid * levels + level;
+        const long long rc = record_counter[idx];
+        msl_event &rec = current_array[idx][rc];
+        void **cur_addrs = current_addrs_array[idx];
+#ifdef _HWCOUNTERS_ENABLED_
+        long long *cur_hwc = current_hwc_array[idx];
+#endif
+#ifdef _MEMPROFILE_STORE_
+        t_memory_event *cur_mems = current_mems_array[idx];
+#endif
+        const short func_base = mpi_func_ids_trans[rec.func_id];
+        const long long children = second_line ? 0 : rec.num_children;
         processed_events++;
-        uniq_index++;
-        // bool is_2nd_sendrecv = (current_array[tid][record_counter[tid]].tscs[0] == current_array[tid][record_counter[tid]].tscs[1]);
-        bool is_2nd_sendrecv = (current_array[tid][record_counter[tid]].tscs[1] == 0);
-        // mpi_sendrecv/replace - num_colts=0, is_2nd_sendrecv = true;
-        // MPIC_XXX (except MPIC_SENDRECV/REPLACE - num_colts>0, is_2nd_sendrecv = false;
-        // MPIC_SENDRECV/REPLACE - num_colts>0, is_2nd_sendrecv = true;
-
-        // bool do_not_increment_idx = is_2nd_sendrecv || (num_colts>0); //for sendrecv timing should be identical
-        if (num_colts >= 0) { // decrease number of collectives
-            num_colts--;
+        for (int k = 0; k < id_columns; k++) {
+            t_gzprintf(fps_mpi, k == 0 ? "%lld" : ":%lld", ids[k]);
+            t_gzprintf(fps_hwc, k == 0 ? "%lld" : ":%lld", ids[k]);
         }
-        if (num_colts >= 0 || is_2nd_sendrecv) { // either for 2nd sendrecv/sendrecv_replace since they occupy 2 consecutive events or for collective transfers (share the same ID)
-            uniq_index--;
-        }
-        if (num_colts >= 0 && is_2nd_sendrecv) { // specially for 2nd line of mpic_sendrecv/sendrecv_replace
-            num_colts++;
-        }
-        if (num_colts >= 0 && !is_2nd_sendrecv) { // for all collective thransfers but mpic_sendrecv/sendrecv_replace
-            colt_index++;
-        }
-        if (num_colts < 0 && !is_2nd_sendrecv) { // for all but collective thransfers and  mpi_sendrecv/replace
-            colt_index = -1;
-        }
-        // general part
         if (print_names) {
-            t_gzprintf(fps_mpi, "%lld:%lld:%d:%s",
-                       uniq_index, colt_index, tid,                                           // 0,1,2
-                       mpi_function_names[current_array[tid][record_counter[tid]].func_id[1]] // 3
-            );
-            t_gzprintf(fps_hwc, "%lld:%lld:%d",
-                       uniq_index, colt_index, tid // 0,1,2
-            );
+            t_gzprintf(fps_mpi, ":%d:%lld:%s", tid, children, mpi_function_names[rec.func_id]);
         } else {
-            t_gzprintf(fps_mpi, "%lld:%lld:%d:%d",
-                       uniq_index, colt_index, tid,                       // 0,1,2
-                       current_array[tid][record_counter[tid]].func_id[0] // 3
-            );
-            t_gzprintf(fps_hwc, "%lld:%lld:%d",
-                       uniq_index, colt_index, tid // 0,1,2
-            );
+            t_gzprintf(fps_mpi, ":%d:%lld:%d", tid, children, (int)func_base);
         }
 
         if (max_thread_id < tid)
             max_thread_id = tid;
         PEAT_Clock l_tscs[4];
-        bool is_colt = is_coll_transfer(current_array[tid][record_counter[tid]].func_id[0]);
-
-        l_tscs[0] = current_array[tid][record_counter[tid]].tscs[0];
-        l_tscs[1] = current_array[tid][record_counter[tid]].tscs[1];
-        l_tscs[2] = current_array[tid][record_counter[tid]].tscs[2];
-        l_tscs[3] = current_array[tid][record_counter[tid]].tscs[3];
-        l_tscs[0] -= tsc_counter;
-        if (!is_colt)
-            tsc_counter = current_array[tid][record_counter[tid]].tscs[0];
-        long long l_tsc_counter = current_array[tid][record_counter[tid]].tscs[0]; // for comm queries
+        /* like the fabric records: start relative to the previously written record, tool prolog (mpi entry - entry),
+           tool epilog (exit - mpi exit), duration (exit - entry) */
+        l_tscs[0] = rec.tscs[0] - tsc_counter;
+        l_tscs[1] = rec.tscs[1];
+        l_tscs[2] = rec.tscs[3] - rec.tscs[2];
+        l_tscs[3] = rec.tscs[3];
+        tsc_counter = rec.tscs[0];
+        long long l_tsc_counter = rec.tscs[0]; // for comm queries
         gzprintf(fps_hwc, ":%lld:%lld:%lld:%lld", l_tscs[0], l_tscs[1], l_tscs[2], l_tscs[3]);
 
-        for (int addr_ind = 0; addr_ind < num_addrs; addr_ind++) {
-            PEAT_Addr addr = current_addrs_array[tid][record_counter[tid] * num_addrs + addr_ind];
-            // debug_printf("Rank:%d  Addr(ind) = %lx(%d)\n",t_mpi_rank,addr,addr_ind);
-            if (addr_map.count(addr) > 0) {
-                t_gzprintf(fps_hwc, ":%d", addr_map.at(addr).id);
-            } else {
-                t_address t_addr;
-                t_addr.id = global_id++;
-                // todo add line number
-                PEAT_Addr low, high, base;
-                t_addr.binary = get_binary_by_addr(addr, base, low, high);
-                //                   debug_printf("Rank: %d, addr %lld hits to %s(maps)\n",t_mpi_rank,addr,t_addr.binary.c_str());
-                t_gzprintf(fps_hwc, ":%d", t_addr.id);
-                binaries_map[t_addr.binary].addrs.push_back(addr);
-                binaries_map[t_addr.binary].base_addr = base;
-                binaries_map[t_addr.binary].load_addr = low;
-                binaries_map[t_addr.binary].end_addr = high;
-                addr_map[addr] = t_addr;
-            }
-        }
-
-#ifdef _HWCOUNTERS_ENABLED_
-        for (int hwcs_ind = 0; hwcs_ind < num_hwcs * 2; hwcs_ind++) {
-            long long chwc = current_hwc_array[tid][record_counter[tid] * num_hwcs * 2 + hwcs_ind];
-            t_gzprintf(fps_hwc, ":%lld", chwc
-#if 1
-                                             - hwc_counter[tid][hwcs_ind % num_hwcs]
-#endif
-            );
-            if (hwcs_ind < num_hwcs)
-                hwc_counter[tid][hwcs_ind] = current_hwc_array[tid][record_counter[tid] * num_hwcs * 2 + hwcs_ind];
-        }
-#endif
-#ifdef _MEMPROFILE_STORE_
-        t_gzprintf(fps_hwc, ":%ld:%ld:%ld:%ld:%ld:%ld:%ld:%ld",
-                   current_mems_array[tid][record_counter[tid] * 2].vm_size,
-                   current_mems_array[tid][record_counter[tid] * 2].vm_RSS,
-                   current_mems_array[tid][record_counter[tid] * 2].ru_maxrss,
-                   current_mems_array[tid][record_counter[tid] * 2].mem_used_by_tractor,
-                   current_mems_array[tid][record_counter[tid] * 2 + 1].vm_size,
-                   current_mems_array[tid][record_counter[tid] * 2 + 1].vm_RSS,
-                   current_mems_array[tid][record_counter[tid] * 2 + 1].ru_maxrss,
-                   current_mems_array[tid][record_counter[tid] * 2 + 1].mem_used_by_tractor);
-#endif
-        PEAT_Clock tsc_mpi_entry = current_array[tid][record_counter[tid]].tscs[1];
-        PEAT_Clock tsc_mpi_exit = current_array[tid][record_counter[tid]].tscs[2];
-        long long *ext_count = &extras_counter[tid];
-        long long *max_ext_count = &max_extras[tid];
-        int *ext_index = &extras_index[tid];
-        msl_base_chain **cur_exts = &current_extras_chain[tid];
-        msl_extra_info **cur_exts_array = &current_extras_array[tid];
-
-        if (is_colt) {
-            ext_count = &c_extras_counter[tid];
-            max_ext_count = &c_max_extras[tid];
-            ext_index = &c_extras_index[tid];
-            cur_exts = &c_current_extras_chain[tid];
-            cur_exts_array = &c_current_extras_array[tid];
-        }
-        /***********************************************************************************************************************************************************************************************/
-
-        if (current_array[tid][record_counter[tid]].func_id[0] == MPI_PCONTROL_ID) {
-            t_gzprintf(fps_mpi, ":%d", current_array[tid][record_counter[tid]].pcontrol.ctl); // 4
-        } // special case for pcontrol
-
-        /***********************************************************************************************************************************************************************************************/
-
-        if (current_array[tid][record_counter[tid]].func_id[0] >= MPI_START_FILE_GROUP && current_array[tid][record_counter[tid]].func_id[0] < MPI_END_FILE_GROUP) {
-#if 0
-                if(current_array[tid][record_counter[tid]].func_id[0]==MPI_FILE_OPEN_ID) {
-                    t_gzprintf(fps_mpi, ":%x:%llx",
-                             get_global_comm_id(current_array[tid][record_counter[tid]].mpi_fio.comm,
-                             tsc_mpi_entry + l_tsc_counter),            // 4
-                             current_array[tid][record_counter[tid]].mpi_fio.fh                // 5
-                             );
+            for (int addr_ind = 0; addr_ind < num_addrs; addr_ind++) {
+                PEAT_Addr addr = cur_addrs[rc * num_addrs + addr_ind];
+                // debug_printf("Rank:%d  Addr(ind) = %lx(%d)\n",t_mpi_rank,addr,addr_ind);
+                if (addr_map.count(addr) > 0) {
+                    t_gzprintf(fps_hwc, ":%d", addr_map.at(addr).id);
                 } else {
-                    t_gzprintf(fps_mpi, ":%llx:%lld:%llx:%lld",
-                             current_array[tid][record_counter[tid]].mpi_fio.fh,                // 4
-                             current_array[tid][record_counter[tid]].mpi_fio.offset,            // 5
-                             MPI_Check_dummy(current_array[tid][record_counter[tid]].mpi_fio.request),           // 6
-                             current_array[tid][record_counter[tid]].mpi_fio.transfer_bytes     // 7
-                             );
+                    t_address t_addr;
+                    t_addr.id = global_id++;
+                    // todo add line number
+                    PEAT_Addr low, high, base;
+                    t_addr.binary = get_binary_by_addr(addr, base, low, high);
+                    //                   debug_printf("Rank: %d, addr %lld hits to %s(maps)\n",t_mpi_rank,addr,t_addr.binary.c_str());
+                    t_gzprintf(fps_hwc, ":%d", t_addr.id);
+                    binaries_map[t_addr.binary].addrs.push_back(addr);
+                    binaries_map[t_addr.binary].base_addr = base;
+                    binaries_map[t_addr.binary].load_addr = low;
+                    binaries_map[t_addr.binary].end_addr = high;
+                    addr_map[addr] = t_addr;
                 }
-#else
-            t_gzprintf(fps_mpi, ":%llx:%llx:%llx:%lld:%lld",
-                       current_array[tid][record_counter[tid]].mpi_fio.fh, // 4
-                       get_global_comm_id(current_array[tid][record_counter[tid]].mpi_fio.comm,
-                                          tsc_mpi_entry + l_tsc_counter),                        // 5
-                       MPI_Check_dummy(current_array[tid][record_counter[tid]].mpi_fio.request), // 6
-                       current_array[tid][record_counter[tid]].mpi_fio.offset,                   // 7
-                       current_array[tid][record_counter[tid]].mpi_fio.transfer_bytes            // 8
-            );
-#endif
-        }
-        int stat_processed = 0;
-        if (current_array[tid][record_counter[tid]].func_id[0] >= MPI_START_BUFFERED_LOCAL_GROUP && current_array[tid][record_counter[tid]].func_id[0] < MPI_END_BUFFERED_LOCAL_GROUP) {
-            t_gzprintf(fps_mpi, ":%lld:%lld",
-                       current_array[tid][record_counter[tid]].buf_local.count, // 4
-                       current_array[tid][record_counter[tid]].buf_local.size   // 5
-            );
-#ifdef _T_PER_INTERVAL_STAT_WRITE_
-            int group = gt_func_stat.get_group(current_array[tid][record_counter[tid]].buf_local.size);
-            int func_id_t = current_array[tid][record_counter[tid]].func_id[1];
-            gt_func_stat.stat_for_func[func_id_t].durations[group] += tsc_mpi_exit - tsc_mpi_entry;
-            gt_func_stat.stat_for_func[func_id_t].occurences[group]++;
-            gt_func_stat.stat_for_func[func_id_t].sizes[group] += current_array[tid][record_counter[tid]].buf_local.size;
-            stat_processed = 1;
-#endif // _T_PER_INTERVAL_STAT_WRITE_
-        }
-
-/***********************************************************************************************************************************************************************************************/
-#ifdef _T_OMPT_
-        if (current_array[tid][record_counter[tid]].func_id[0] >= OMPT_START_GROUP && current_array[tid][record_counter[tid]].func_id[0] < OMPT_END_GROUP) {
-            t_gzprintf(fps_mpi, ":%d:%d:%lld:%lld",
-                       current_array[tid][record_counter[tid]].ompt.kind,         // 4
-                       current_array[tid][record_counter[tid]].ompt.endpoint,     // 5
-                       current_array[tid][record_counter[tid]].ompt.task_data,    // 6
-                       current_array[tid][record_counter[tid]].ompt.parallel_data // 7
-            );
-            PEAT_Addr addr = current_array[tid][record_counter[tid]].ompt.pcode;
-            if (addr_map.count(addr) > 0) {
-                t_gzprintf(fps_mpi, ":%d", addr_map.at(addr).id);
-            } else {
-                t_address t_addr;
-                t_addr.id = global_id++;
-                // todo add line number
-                PEAT_Addr low, high, base;
-                t_addr.binary = get_binary_by_addr(addr, base, low, high);
-                //                       debug_printf("Rank: %d, addr %lld hits to %s(maps)\n",t_mpi_rank,addr,t_addr.binary.c_str());
-                t_gzprintf(fps_mpi, ":%d", t_addr.id);
-                binaries_map[t_addr.binary].addrs.push_back(addr);
-                binaries_map[t_addr.binary].base_addr = base;
-                binaries_map[t_addr.binary].load_addr = low;
-                binaries_map[t_addr.binary].end_addr = high;
-                addr_map[addr] = t_addr;
             }
-        }
-#endif
-/***********************************************************************************************************************************************************************************************/
-#ifdef GPUPARSE
-        if (current_array[tid][record_counter[tid]].func_id[0] >= CL_START_GROUP && current_array[tid][record_counter[tid]].func_id[0] < CL_END_GROUP ||
-            current_array[tid][record_counter[tid]].func_id[0] >= ZE_START_GROUP && current_array[tid][record_counter[tid]].func_id[0] < ZE_END_GROUP) {
-            t_gzprintf(fps_mpi, ":%d:%d:%d",
-                       current_array[tid][record_counter[tid]].gpu.num_arguments,      //
-                       current_array[tid][record_counter[tid]].gpu.num_out_arguments,  //
-                       current_array[tid][record_counter[tid]].gpu.num_extra_arguments //
-            );
 
-            int in_args_num = current_array[tid][record_counter[tid]].gpu.num_arguments > 0 ? current_array[tid][record_counter[tid]].gpu.num_arguments : 1;
-            int out_args_num = current_array[tid][record_counter[tid]].gpu.num_out_arguments > 0 ? current_array[tid][record_counter[tid]].gpu.num_out_arguments : 1;
-            int extra_args_num = current_array[tid][record_counter[tid]].gpu.num_extra_arguments > 0 ? current_array[tid][record_counter[tid]].gpu.num_extra_arguments : 1;
+    #ifdef _HWCOUNTERS_ENABLED_
+            for (int hwcs_ind = 0; hwcs_ind < num_hwcs * 2; hwcs_ind++) {
+                long long chwc = cur_hwc[rc * num_hwcs * 2 + hwcs_ind];
+                t_gzprintf(fps_hwc, ":%lld", chwc
+    #if 1
+                                                 - hwc_counter[tid][hwcs_ind % num_hwcs]
+    #endif
+                );
+                if (hwcs_ind < num_hwcs)
+                    hwc_counter[tid][hwcs_ind] = cur_hwc[rc * num_hwcs * 2 + hwcs_ind];
+            }
+    #endif
+    #ifdef _MEMPROFILE_STORE_
+            t_gzprintf(fps_hwc, ":%ld:%ld:%ld:%ld:%ld:%ld:%ld:%ld",
+                       cur_mems[rc * 2].vm_size,
+                       cur_mems[rc * 2].vm_RSS,
+                       cur_mems[rc * 2].ru_maxrss,
+                       cur_mems[rc * 2].mem_used_by_tractor,
+                       cur_mems[rc * 2 + 1].vm_size,
+                       cur_mems[rc * 2 + 1].vm_RSS,
+                       cur_mems[rc * 2 + 1].ru_maxrss,
+                       cur_mems[rc * 2 + 1].mem_used_by_tractor);
+    #endif
+            PEAT_Clock tsc_mpi_entry = rec.tscs[1];
+            PEAT_Clock tsc_mpi_exit = rec.tscs[2];
+            long long *ext_count = &extras_counter[idx];
+            long long *max_ext_count = &max_extras[idx];
+            int *ext_index = &extras_index[tid][level];
+            msl_base_chain **cur_exts = &current_extras_chain[idx];
+            msl_extra_info **cur_exts_array = &current_extras_array[idx];
+            /***********************************************************************************************************************************************************************************************/
 
-            long long in_args[in_args_num], out_args[out_args_num], extra_args[extra_args_num];
-            for (int j = 0; j < current_array[tid][record_counter[tid]].gpu.num_arguments; j++, (*ext_count)++) { /* write input here */
-                if (*ext_count >= *max_ext_count && *max_ext_count > 0) {
-                    if (use_realtime_dump) {
-                        update_extras_pointers(tid, max_ext_count, cur_exts_array, is_colt);
+            if (func_base == MPI_PCONTROL_ID) {
+                t_gzprintf(fps_mpi, ":%d", rec.pcontrol.ctl); // 4
+            } // special case for pcontrol
+
+            /***********************************************************************************************************************************************************************************************/
+
+            if (func_base >= MPI_START_FILE_GROUP && func_base < MPI_END_FILE_GROUP) {
+    #if 0
+                    if(func_base==MPI_FILE_OPEN_ID) {
+                        t_gzprintf(fps_mpi, ":%x:%llx",
+                                 get_global_comm_id(rec.mpi_fio.comm,
+                                 tsc_mpi_entry + l_tsc_counter),            // 4
+                                 rec.mpi_fio.fh                // 5
+                                 );
                     } else {
-                        *cur_exts = (*cur_exts)->next;
-                        *max_ext_count = ((*cur_exts)->next == NULL) ? *ext_index : onetimealloc;
-                        *cur_exts_array = (msl_extra_info *)(*cur_exts)->events_array;
+                        t_gzprintf(fps_mpi, ":%llx:%lld:%llx:%lld",
+                                 rec.mpi_fio.fh,                // 4
+                                 rec.mpi_fio.offset,            // 5
+                                 MPI_Check_dummy(rec.mpi_fio.request),           // 6
+                                 rec.mpi_fio.transfer_bytes     // 7
+                                 );
                     }
-                    *ext_count = 0;
-                }
-                in_args[j] = (*cur_exts_array)[*ext_count].value;
-                t_gzprintf(fps_mpi, ":%llx", in_args[j]);
+    #else
+                t_gzprintf(fps_mpi, ":%llx:%llx:%llx:%lld:%lld",
+                           rec.mpi_fio.fh, // 4
+                           get_global_comm_id(rec.mpi_fio.comm,
+                                              tsc_mpi_entry + l_tsc_counter),                        // 5
+                           MPI_Check_dummy(rec.mpi_fio.request), // 6
+                           rec.mpi_fio.offset,                   // 7
+                           rec.mpi_fio.transfer_bytes            // 8
+                );
+    #endif
             }
-
-            for (int j = 0; j < current_array[tid][record_counter[tid]].gpu.num_out_arguments; j++, (*ext_count)++) { /* write output here */
-                if (*ext_count >= *max_ext_count && *max_ext_count > 0) {
-                    if (use_realtime_dump) {
-                        update_extras_pointers(tid, max_ext_count, cur_exts_array, is_colt);
-                    } else {
-                        *cur_exts = (*cur_exts)->next;
-                        *max_ext_count = ((*cur_exts)->next == NULL) ? *ext_index : onetimealloc;
-                        *cur_exts_array = (msl_extra_info *)(*cur_exts)->events_array;
-                    }
-                    *ext_count = 0;
-                }
-                out_args[j] = (*cur_exts_array)[*ext_count].value;
-                t_gzprintf(fps_mpi, ":%llx", out_args[j]);
-            }
-            for (int j = 0; j < current_array[tid][record_counter[tid]].gpu.num_extra_arguments; j++, (*ext_count)++) { /* write output here */
-                if (*ext_count >= *max_ext_count && *max_ext_count > 0) {
-                    if (use_realtime_dump) {
-                        update_extras_pointers(tid, max_ext_count, cur_exts_array, is_colt);
-                    } else {
-                        *cur_exts = (*cur_exts)->next;
-                        *max_ext_count = ((*cur_exts)->next == NULL) ? *ext_index : onetimealloc;
-                        *cur_exts_array = (msl_extra_info *)(*cur_exts)->events_array;
-                    }
-                    *ext_count = 0;
-                }
-                extra_args[j] = (*cur_exts_array)[*ext_count].value;
-                t_gzprintf(fps_mpi, ":%llx", extra_args[j]);
-            }
-
-            short func_id = current_array[tid][record_counter[tid]].func_id[1];
-            PEAT_Message_Size size = 0;
-            T_LOC from, to;
-            void *ptr = NULL;
-            void *src_ptr = NULL;
-            void *dst_ptr = NULL;
-            switch (func_id) {
-            case ZECOMMANDQUEUESYNCHRONIZE_ID_THROUGH:
-                // TODO: parse handles to sort times out
-                gpu_syncs[func_id] += tsc_mpi_exit - tsc_mpi_entry;
-                break;
-            case ZEEVENTHOSTSYNCHRONIZE_ID_THROUGH:
-                gpu_syncs[func_id] += tsc_mpi_exit - tsc_mpi_entry;
-                break;
-            case ZEMEMALLOCDEVICE_ID_THROUGH:
-                ptr = (void *)out_args[0];
-                addr_location[ptr] = T_LOC_DEVICE;
-                break;
-            case ZEMEMALLOCSHARED_ID_THROUGH:
-                ptr = (void *)out_args[0];
-                addr_location[ptr] = T_LOC_SHARED;
-                break;
-            case ZEMEMALLOCHOST_ID_THROUGH:
-                ptr = (void *)out_args[0];
-                addr_location[ptr] = T_LOC_HOST;
-                break;
-            case ZECOMMANDLISTAPPENDMEMORYCOPY_ID_THROUGH:
-                dst_ptr = (void *)in_args[1];
-                src_ptr = (void *)in_args[2];
-                if (addr_location.count(dst_ptr) == 1 && addr_location.count(src_ptr) == 1) {
-                    size = in_args[3];
-                    to = addr_location.at(dst_ptr);
-                    from = addr_location.at(src_ptr);
-                    T_Stat_Record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
-                    gpu_transfers[func_id][from][to][size] += sr;
-                } else {
-                    debug_printf("Unknown Address %p or %p\n", dst_ptr, src_ptr);
-                }
-                break;
-            case ZECOMMANDLISTAPPENDMEMORYFILL_ID_THROUGH:
-                ptr = (void *)in_args[1];
-                if (addr_location.count(ptr) == 1) {
-                    size = in_args[4];
-                    to = addr_location.at(ptr);
-                    T_Stat_Record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
-                    gpu_fills[func_id][to][size] += sr;
-                } else {
-                    debug_printf("Unknown Address %p\n", ptr);
-                }
-                break;
-                // TODO: Add handlers later
-            case ZECOMMANDLISTAPPENDMEMORYCOPYREGION_ID_THROUGH:
-                break;
-            case ZECOMMANDLISTAPPENDMEMORYCOPYFROMCONTEXT_ID_THROUGH:
-                break;
-            case ZECOMMANDLISTAPPENDIMAGECOPY_ID_THROUGH:
-                break;
-            case ZECOMMANDLISTAPPENDIMAGECOPYREGION_ID_THROUGH:
-                break;
-            case ZECOMMANDLISTAPPENDIMAGECOPYTOMEMORY_ID_THROUGH:
-                break;
-            case ZECOMMANDLISTAPPENDIMAGECOPYFROMMEMORY_ID_THROUGH:
-                break;
-            case ZECOMMANDLISTAPPENDMEMORYPREFETCH_ID_THROUGH:
-                break;
-                // END OF TODO: Add handlers later
-            case ZEMODULECREATE_ID_THROUGH:
-                gpu_executions[func_id] += tsc_mpi_exit - tsc_mpi_entry;
-                break;
-            case ZECOMMANDQUEUEEXECUTECOMMANDLISTS_ID_THROUGH:
-                gpu_executions[func_id] += tsc_mpi_exit - tsc_mpi_entry;
-                break;
-            default:
-                break;
-            }
-
-#ifdef _T_PER_INTERVAL_STAT_WRITE_
-            if (size > 0) {
-                int group = gt_func_stat.get_group(size);
-                int func_id_t = current_array[tid][record_counter[tid]].func_id[1];
+            int stat_processed = 0;
+            if (func_base >= MPI_START_BUFFERED_LOCAL_GROUP && func_base < MPI_END_BUFFERED_LOCAL_GROUP) {
+                t_gzprintf(fps_mpi, ":%lld:%lld",
+                           rec.buf_local.count, // 4
+                           rec.buf_local.size   // 5
+                );
+    #ifdef _T_PER_INTERVAL_STAT_WRITE_
+                int group = gt_func_stat.get_group(rec.buf_local.size);
+                int func_id_t = rec.func_id;
                 gt_func_stat.stat_for_func[func_id_t].durations[group] += tsc_mpi_exit - tsc_mpi_entry;
                 gt_func_stat.stat_for_func[func_id_t].occurences[group]++;
-                gt_func_stat.stat_for_func[func_id_t].sizes[group] += size;
+                gt_func_stat.stat_for_func[func_id_t].sizes[group] += rec.buf_local.size;
                 stat_processed = 1;
+    #endif // _T_PER_INTERVAL_STAT_WRITE_
             }
-#endif // _T_PER_INTERVAL_STAT_WRITE_
-        }
-#endif
-        /***********************************************************************************************************************************************************************************************/
 
-        if (current_array[tid][record_counter[tid]].func_id[0] >= MPI_START_COMM_COLLECTIVE_GROUP &&
-                current_array[tid][record_counter[tid]].func_id[0] < MPI_END_COMM_COLLECTIVE_GROUP ||
-            current_array[tid][record_counter[tid]].func_id[0] == MPI_COMM_FREE_ID) {
-            t_gzprintf(fps_mpi, ":%x:%x:%x:%x:%llx:%d",
-                       get_global_comm_id(current_array[tid][record_counter[tid]].comms.comm, tsc_mpi_entry + l_tsc_counter),       // 4
-                       get_global_comm_id(current_array[tid][record_counter[tid]].comms.newcomm, tsc_mpi_entry + l_tsc_counter),    // 5
-                       get_global_comm_id(current_array[tid][record_counter[tid]].comms.remotecomm, tsc_mpi_entry + l_tsc_counter), // 6
-                       get_global_comm_id(current_array[tid][record_counter[tid]].comms.intercomm, tsc_mpi_entry + l_tsc_counter),  // 7
-                       MPI_Check_dummy(current_array[tid][record_counter[tid]].comms.request),                                      // 8
-                       current_array[tid][record_counter[tid]].comms.num_colts                                                      // 9
-            );
-            req_comm[MPI_Check_dummy(current_array[tid][record_counter[tid]].comms.request)] = T_MPI_Comm(current_array[tid][record_counter[tid]].comms.newcomm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
-            num_colts = current_array[tid][record_counter[tid]].comms.num_colts;
-            prev_tid = tid;
-        }
-
-        /***********************************************************************************************************************************************************************************************/
-
-        if (current_array[tid][record_counter[tid]].func_id[0] >= MPI_P2P_TRANSFER_START && current_array[tid][record_counter[tid]].func_id[0] < MPI_P2P_TRANSFER_END ||
-            current_array[tid][record_counter[tid]].func_id[0] >= MPI_P2P_PERSISTENT_INIT_START && current_array[tid][record_counter[tid]].func_id[0] < MPI_P2P_PERSISTENT_INIT_END ||
-            current_array[tid][record_counter[tid]].func_id[0] >= MPI_PROBE_START && current_array[tid][record_counter[tid]].func_id[0] < MPI_PROBE_END) {
-            // peer and other   5   6   7  8  9 10
-            t_gzprintf(fps_mpi, ":%x:%d:%llx:%llx:%d:%lld",
-                       get_global_comm_id(current_array[tid][record_counter[tid]].p2p_pr_pb.comm,
-                                          tsc_mpi_entry + l_tsc_counter), // 4
-                       get_real_rank(current_array[tid][record_counter[tid]].p2p_pr_pb.comm,
-                                     current_array[tid][record_counter[tid]].p2p_pr_pb.peer,
-                                     tsc_mpi_entry + l_tsc_counter),                               // 5
-                       MPI_Check_dummy(current_array[tid][record_counter[tid]].p2p_pr_pb.request), // 6
-                       current_array[tid][record_counter[tid]].p2p_pr_pb.message,                  // 7
-                       current_array[tid][record_counter[tid]].p2p_pr_pb.tag,                      // 8
-                       current_array[tid][record_counter[tid]].p2p_pr_pb.transfer_bytes            // 9
-            );
-
-#ifdef _T_PER_INTERVAL_STAT_WRITE_
-            int group = gt_func_stat.get_group(current_array[tid][record_counter[tid]].p2p_pr_pb.transfer_bytes);
-            int func_id_t = current_array[tid][record_counter[tid]].func_id[1];
-            gt_func_stat.stat_for_func[func_id_t].durations[group] += tsc_mpi_exit - tsc_mpi_entry;
-            gt_func_stat.stat_for_func[func_id_t].occurences[group]++;
-            gt_func_stat.stat_for_func[func_id_t].sizes[group] += current_array[tid][record_counter[tid]].p2p_pr_pb.transfer_bytes;
-            stat_processed = 1;
-#endif                                                                                                                                                                                                // _T_PER_INTERVAL_STAT_WRITE_
-            req_comm[MPI_Check_dummy(current_array[tid][record_counter[tid]].p2p_pr_pb.request)] = T_MPI_Comm(current_array[tid][record_counter[tid]].p2p_pr_pb.comm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
-        }
-
-        /***********************************************************************************************************************************************************************************************/
-
-        if (current_array[tid][record_counter[tid]].func_id[0] >= MPI_P2P_COLL_TRANSFER_START && current_array[tid][record_counter[tid]].func_id[0] < MPI_P2P_COLL_TRANSFER_END ||
-            current_array[tid][record_counter[tid]].func_id[0] >= MPI_P2P_COLL_PROBE_START && current_array[tid][record_counter[tid]].func_id[0] < MPI_P2P_COLL_PROBE_END) {
-            // peer and other   5   6   7  8  9 10
-            // do not try to resolve ranks and comms for collective transfers
-            t_gzprintf(fps_mpi, ":%x:%d:%llx:%llx:%d:%lld",
-                       get_global_comm_id(current_array[tid][record_counter[tid]].p2p_pr_pb.comm,
-                                          tsc_mpi_entry + l_tsc_counter),                          // 4
-                       current_array[tid][record_counter[tid]].p2p_pr_pb.peer,                     // 5
-                       MPI_Check_dummy(current_array[tid][record_counter[tid]].p2p_pr_pb.request), // 6
-                       current_array[tid][record_counter[tid]].p2p_pr_pb.message,                  // 7
-                       current_array[tid][record_counter[tid]].p2p_pr_pb.tag,                      // 8
-                       current_array[tid][record_counter[tid]].p2p_pr_pb.transfer_bytes            // 9
-            );
-
-#ifdef _T_PER_INTERVAL_STAT_WRITE_
-            int group = gt_func_stat.get_group(current_array[tid][record_counter[tid]].p2p_pr_pb.transfer_bytes);
-            int func_id_t = current_array[tid][record_counter[tid]].func_id[1];
-            gt_func_stat.stat_for_func[func_id_t].durations[group] += tsc_mpi_exit - tsc_mpi_entry;
-            gt_func_stat.stat_for_func[func_id_t].occurences[group]++;
-            gt_func_stat.stat_for_func[func_id_t].sizes[group] += current_array[tid][record_counter[tid]].p2p_pr_pb.transfer_bytes;
-            stat_processed = 1;
-#endif                                                                                                                                                                                                // _T_PER_INTERVAL_STAT_WRITE_
-            req_comm[MPI_Check_dummy(current_array[tid][record_counter[tid]].p2p_pr_pb.request)] = T_MPI_Comm(current_array[tid][record_counter[tid]].p2p_pr_pb.comm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
-        }
-
-        if (current_array[tid][record_counter[tid]].func_id[0] >= MPI_START_OSC_GROUP && current_array[tid][record_counter[tid]].func_id[0] < MPI_END_OSC_GROUP) {
-            // peer and other   5   6   7  8  9 10
-            MPI_Comm comm = current_array[tid][record_counter[tid]].one_sided_comm.comm;
-            if (comm == 0) {
-                comm = win_comm[current_array[tid][record_counter[tid]].one_sided_comm.window];
-            } else {
-                win_comm[current_array[tid][record_counter[tid]].one_sided_comm.window] = comm;
-            }
-            t_gzprintf(fps_mpi, ":%x:%d:%llx:%llx:%d:%lld",
-                       get_global_comm_id(comm, tsc_mpi_entry + l_tsc_counter), // 4
-                       get_real_rank(comm,
-                                     current_array[tid][record_counter[tid]].one_sided_comm.peer,
-                                     tsc_mpi_entry + l_tsc_counter),                                    // 5
-                       MPI_Check_dummy(current_array[tid][record_counter[tid]].one_sided_comm.request), // 6
-                       current_array[tid][record_counter[tid]].one_sided_comm.window,                   // 7
-                       current_array[tid][record_counter[tid]].one_sided_comm.size,                     // 8
-                       current_array[tid][record_counter[tid]].one_sided_comm.transfer_bytes            // 9
-            );
-#ifdef _T_PER_INTERVAL_STAT_WRITE_
-            int group = gt_func_stat.get_group(current_array[tid][record_counter[tid]].one_sided_comm.transfer_bytes);
-            int func_id_t = current_array[tid][record_counter[tid]].func_id[1];
-            gt_func_stat.stat_for_func[func_id_t].durations[group] += tsc_mpi_exit - tsc_mpi_entry;
-            gt_func_stat.stat_for_func[func_id_t].occurences[group]++;
-            gt_func_stat.stat_for_func[func_id_t].sizes[group] += current_array[tid][record_counter[tid]].one_sided_comm.transfer_bytes;
-            stat_processed = 1;
-#endif                                                                                                                                                                                                          // _T_PER_INTERVAL_STAT_WRITE_
-            req_comm[MPI_Check_dummy(current_array[tid][record_counter[tid]].one_sided_comm.request)] = T_MPI_Comm(current_array[tid][record_counter[tid]].one_sided_comm.comm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
-        }
-
-        /***********************************************************************************************************************************************************************************************/
-
-        if (current_array[tid][record_counter[tid]].func_id[0] >= MPI_REQUEST_START && current_array[tid][record_counter[tid]].func_id[0] < MPI_REQUEST_END ||
-            current_array[tid][record_counter[tid]].func_id[0] >= MPI_MISC_REQUEST_START && current_array[tid][record_counter[tid]].func_id[0] < MPI_MISC_REQUEST_END ||
-            current_array[tid][record_counter[tid]].func_id[0] >= MPI_P2P_COLL_REQUEST_START && current_array[tid][record_counter[tid]].func_id[0] < MPI_P2P_COLL_REQUEST_END) {
-            // peer and other   5  6  7   8
-            t_gzprintf(fps_mpi, ":%d:%d:%d:%d:%llx",
-                       current_array[tid][record_counter[tid]].requests.input_request_num,     // 4
-                       current_array[tid][record_counter[tid]].requests.triggered_request_num, // 5
-                       current_array[tid][record_counter[tid]].requests.flag,                  // 6
-                       current_array[tid][record_counter[tid]].requests.num_colts,             // 7
-                       current_array[tid][record_counter[tid]].requests.request_addr           // 8
-            );
-            if (!is_colt) {
-                num_colts = current_array[tid][record_counter[tid]].requests.num_colts;
-            }
-            prev_tid = tid;
-            MPI_Request input_requests[current_array[tid][record_counter[tid]].requests.input_request_num];
-            for (int j = 0; j < current_array[tid][record_counter[tid]].requests.input_request_num; j++, (*ext_count)++) { /* write input requests here */
-                if (*ext_count >= *max_ext_count && *max_ext_count > 0) {
-                    if (use_realtime_dump) {
-                        update_extras_pointers(tid, max_ext_count, cur_exts_array, is_colt);
-                    } else {
-                        *cur_exts = (*cur_exts)->next;
-                        *max_ext_count = ((*cur_exts)->next == NULL) ? *ext_index : onetimealloc;
-                        *cur_exts_array = (msl_extra_info *)(*cur_exts)->events_array;
-                    }
-                    *ext_count = 0;
-                }
-                input_requests[j] = MPI_Check_dummy((MPI_Request)(*cur_exts_array)[*ext_count].values[0]);
-                if ((*cur_exts_array)[*ext_count].values[1] == -1) {
-                    t_gzprintf(fps_mpi, ":%x", (*cur_exts_array)[*ext_count].values[0]);
+    /***********************************************************************************************************************************************************************************************/
+    #ifdef _T_OMPT_
+            if (func_base >= OMPT_START_GROUP && func_base < OMPT_END_GROUP) {
+                t_gzprintf(fps_mpi, ":%d:%d:%lld:%lld",
+                           rec.ompt.kind,         // 4
+                           rec.ompt.endpoint,     // 5
+                           rec.ompt.task_data,    // 6
+                           rec.ompt.parallel_data // 7
+                );
+                PEAT_Addr addr = rec.ompt.pcode;
+                if (addr_map.count(addr) > 0) {
+                    t_gzprintf(fps_mpi, ":%d", addr_map.at(addr).id);
                 } else {
-                    t_gzprintf(fps_mpi, ":%llx", (*cur_exts_array)[*ext_count].value);
+                    t_address t_addr;
+                    t_addr.id = global_id++;
+                    // todo add line number
+                    PEAT_Addr low, high, base;
+                    t_addr.binary = get_binary_by_addr(addr, base, low, high);
+                    //                       debug_printf("Rank: %d, addr %lld hits to %s(maps)\n",t_mpi_rank,addr,t_addr.binary.c_str());
+                    t_gzprintf(fps_mpi, ":%d", t_addr.id);
+                    binaries_map[t_addr.binary].addrs.push_back(addr);
+                    binaries_map[t_addr.binary].base_addr = base;
+                    binaries_map[t_addr.binary].load_addr = low;
+                    binaries_map[t_addr.binary].end_addr = high;
+                    addr_map[addr] = t_addr;
                 }
             }
+    #endif
+    /***********************************************************************************************************************************************************************************************/
+    #ifdef GPUPARSE
+            if (func_base >= CL_START_GROUP && func_base < CL_END_GROUP ||
+                func_base >= ZE_START_GROUP && func_base < ZE_END_GROUP) {
+                t_gzprintf(fps_mpi, ":%d:%d:%d",
+                           rec.gpu.num_arguments,      //
+                           rec.gpu.num_out_arguments,  //
+                           rec.gpu.num_extra_arguments //
+                );
 
-            if (current_array[tid][record_counter[tid]].requests.flag) {
-                int index;
-                for (int j = 0; j < current_array[tid][record_counter[tid]].requests.triggered_request_num * 4; j++, (*ext_count)++) { /* write 4-tuples(index,tag,source,transferred_bytes) here */
+                int in_args_num = rec.gpu.num_arguments > 0 ? rec.gpu.num_arguments : 1;
+                int out_args_num = rec.gpu.num_out_arguments > 0 ? rec.gpu.num_out_arguments : 1;
+                int extra_args_num = rec.gpu.num_extra_arguments > 0 ? rec.gpu.num_extra_arguments : 1;
+
+                long long in_args[in_args_num], out_args[out_args_num], extra_args[extra_args_num];
+                for (int j = 0; j < rec.gpu.num_arguments; j++, (*ext_count)++) { /* write input here */
                     if (*ext_count >= *max_ext_count && *max_ext_count > 0) {
                         if (use_realtime_dump) {
-                            update_extras_pointers(tid, max_ext_count, cur_exts_array, is_colt);
+                            update_extras_pointers(tid, level, max_ext_count, cur_exts_array);
                         } else {
                             *cur_exts = (*cur_exts)->next;
                             *max_ext_count = ((*cur_exts)->next == NULL) ? *ext_index : onetimealloc;
@@ -2656,206 +2340,509 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                         }
                         *ext_count = 0;
                     }
-                    if (j % 4 == 0) { // index
-                        index = (*cur_exts_array)[*ext_count].values[0];
-                    }
-                    if (j % 4 == 2 && (index < 0 || index >= current_array[tid][record_counter[tid]].requests.input_request_num)) { // source
-                        debug_printf("Rank:%d  Index=%d is out of range (0...%d) \n", t_mpi_rank, index, current_array[tid][record_counter[tid]].requests.input_request_num);
-                    }
+                    in_args[j] = (*cur_exts_array)[*ext_count].value;
+                    t_gzprintf(fps_mpi, ":%llx", in_args[j]);
+                }
 
-                    if ((*cur_exts_array)[*ext_count].values[1] == -1) {
-                        if (j % 4 == 2 && index >= 0 && index < current_array[tid][record_counter[tid]].requests.input_request_num) { // source
-                            t_gzprintf(fps_mpi, ":%d", get_real_rank(req_comm[input_requests[index]].comm, (*cur_exts_array)[*ext_count].value, req_comm[input_requests[index]].time));
+                for (int j = 0; j < rec.gpu.num_out_arguments; j++, (*ext_count)++) { /* write output here */
+                    if (*ext_count >= *max_ext_count && *max_ext_count > 0) {
+                        if (use_realtime_dump) {
+                            update_extras_pointers(tid, level, max_ext_count, cur_exts_array);
                         } else {
-                            t_gzprintf(fps_mpi, ":%d", (*cur_exts_array)[*ext_count].values[0]);
+                            *cur_exts = (*cur_exts)->next;
+                            *max_ext_count = ((*cur_exts)->next == NULL) ? *ext_index : onetimealloc;
+                            *cur_exts_array = (msl_extra_info *)(*cur_exts)->events_array;
                         }
-                    } else {
-                        if (j % 4 == 2 && index >= 0 && index < current_array[tid][record_counter[tid]].requests.input_request_num) { // source
-                            t_gzprintf(fps_mpi, ":%d", get_real_rank(req_comm[input_requests[index]].comm, (*cur_exts_array)[*ext_count].value, req_comm[input_requests[index]].time));
+                        *ext_count = 0;
+                    }
+                    out_args[j] = (*cur_exts_array)[*ext_count].value;
+                    t_gzprintf(fps_mpi, ":%llx", out_args[j]);
+                }
+                for (int j = 0; j < rec.gpu.num_extra_arguments; j++, (*ext_count)++) { /* write output here */
+                    if (*ext_count >= *max_ext_count && *max_ext_count > 0) {
+                        if (use_realtime_dump) {
+                            update_extras_pointers(tid, level, max_ext_count, cur_exts_array);
                         } else {
-                            t_gzprintf(fps_mpi, ":%lld", (*cur_exts_array)[*ext_count].value);
+                            *cur_exts = (*cur_exts)->next;
+                            *max_ext_count = ((*cur_exts)->next == NULL) ? *ext_index : onetimealloc;
+                            *cur_exts_array = (msl_extra_info *)(*cur_exts)->events_array;
                         }
+                        *ext_count = 0;
                     }
+                    extra_args[j] = (*cur_exts_array)[*ext_count].value;
+                    t_gzprintf(fps_mpi, ":%llx", extra_args[j]);
                 }
-            }
-        }
 
-        /***********************************************************************************************************************************************************************************************/
-
-        if (current_array[tid][record_counter[tid]].func_id[0] >= MPI_START_GENERAL_COLLECTIVE_GROUP && current_array[tid][record_counter[tid]].func_id[0] < MPI_END_GENERAL_COLLECTIVE_GROUP) {
-            // collectives      5  6  7  8  9  10 11
-            t_gzprintf(fps_mpi, ":%x:%d:%llx:%d:%d:%d",
-                       get_global_comm_id(current_array[tid][record_counter[tid]].collective.comm,
-                                          tsc_mpi_entry + l_tsc_counter), // 4
-                       get_real_rank(current_array[tid][record_counter[tid]].collective.comm,
-                                     current_array[tid][record_counter[tid]].collective.root,
-                                     tsc_mpi_entry + l_tsc_counter),                                // 5
-                       MPI_Check_dummy(current_array[tid][record_counter[tid]].collective.request), // 6
-                       current_array[tid][record_counter[tid]].collective.sr_bytes[0],              // 7
-                       current_array[tid][record_counter[tid]].collective.sr_bytes[1],              // 8
-                       current_array[tid][record_counter[tid]].collective.num_colts                 // 9
-            );
-            num_colts = current_array[tid][record_counter[tid]].collective.num_colts;
-            prev_tid = tid;
-            long long cumulative_size = 0;
-            for (int j = 0; j < current_array[tid][record_counter[tid]].collective.sr_bytes[0]; j++, (*ext_count)++) {
-                if (*ext_count >= *max_ext_count) {
-                    if (use_realtime_dump && *max_ext_count > 0) {
-                        update_extras_pointers(tid, max_ext_count, cur_exts_array, is_colt);
+                short func_id = rec.func_id;
+                PEAT_Message_Size size = 0;
+                T_LOC from, to;
+                void *ptr = NULL;
+                void *src_ptr = NULL;
+                void *dst_ptr = NULL;
+                switch (func_id) {
+                case ZECOMMANDQUEUESYNCHRONIZE_ID_THROUGH:
+                    // TODO: parse handles to sort times out
+                    gpu_syncs[func_id] += tsc_mpi_exit - tsc_mpi_entry;
+                    break;
+                case ZEEVENTHOSTSYNCHRONIZE_ID_THROUGH:
+                    gpu_syncs[func_id] += tsc_mpi_exit - tsc_mpi_entry;
+                    break;
+                case ZEMEMALLOCDEVICE_ID_THROUGH:
+                    ptr = (void *)out_args[0];
+                    addr_location[ptr] = T_LOC_DEVICE;
+                    break;
+                case ZEMEMALLOCSHARED_ID_THROUGH:
+                    ptr = (void *)out_args[0];
+                    addr_location[ptr] = T_LOC_SHARED;
+                    break;
+                case ZEMEMALLOCHOST_ID_THROUGH:
+                    ptr = (void *)out_args[0];
+                    addr_location[ptr] = T_LOC_HOST;
+                    break;
+                case ZECOMMANDLISTAPPENDMEMORYCOPY_ID_THROUGH:
+                    dst_ptr = (void *)in_args[1];
+                    src_ptr = (void *)in_args[2];
+                    if (addr_location.count(dst_ptr) == 1 && addr_location.count(src_ptr) == 1) {
+                        size = in_args[3];
+                        to = addr_location.at(dst_ptr);
+                        from = addr_location.at(src_ptr);
+                        T_Stat_Record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
+                        gpu_transfers[func_id][from][to][size] += sr;
                     } else {
-                        *cur_exts = (*cur_exts)->next;
-                        *max_ext_count = ((*cur_exts)->next == NULL) ? *ext_index : onetimealloc;
-                        *cur_exts_array = (msl_extra_info *)(*cur_exts)->events_array;
+                        debug_printf("Unknown Address %p or %p\n", dst_ptr, src_ptr);
                     }
-                    *ext_count = 0;
-                }
-                if ((*cur_exts_array)[*ext_count].values[1] == -1) {
-                    t_gzprintf(fps_mpi, ":%d", (*cur_exts_array)[*ext_count].values[0]);
-                } else {
-                    t_gzprintf(fps_mpi, ":%lld", (*cur_exts_array)[*ext_count].value);
-                }
-                cumulative_size += (*cur_exts_array)[*ext_count].value;
-            }
-            for (int j = 0; j < current_array[tid][record_counter[tid]].collective.sr_bytes[1]; j++, (*ext_count)++) {
-                if (*ext_count >= *max_ext_count) {
-                    if (use_realtime_dump && *max_ext_count > 0) {
-                        update_extras_pointers(tid, max_ext_count, cur_exts_array, is_colt);
+                    break;
+                case ZECOMMANDLISTAPPENDMEMORYFILL_ID_THROUGH:
+                    ptr = (void *)in_args[1];
+                    if (addr_location.count(ptr) == 1) {
+                        size = in_args[4];
+                        to = addr_location.at(ptr);
+                        T_Stat_Record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
+                        gpu_fills[func_id][to][size] += sr;
                     } else {
-                        *cur_exts = (*cur_exts)->next;
-                        *max_ext_count = ((*cur_exts)->next == NULL) ? *ext_index : onetimealloc;
-                        *cur_exts_array = (msl_extra_info *)(*cur_exts)->events_array;
+                        debug_printf("Unknown Address %p\n", ptr);
                     }
-                    *ext_count = 0;
+                    break;
+                    // TODO: Add handlers later
+                case ZECOMMANDLISTAPPENDMEMORYCOPYREGION_ID_THROUGH:
+                    break;
+                case ZECOMMANDLISTAPPENDMEMORYCOPYFROMCONTEXT_ID_THROUGH:
+                    break;
+                case ZECOMMANDLISTAPPENDIMAGECOPY_ID_THROUGH:
+                    break;
+                case ZECOMMANDLISTAPPENDIMAGECOPYREGION_ID_THROUGH:
+                    break;
+                case ZECOMMANDLISTAPPENDIMAGECOPYTOMEMORY_ID_THROUGH:
+                    break;
+                case ZECOMMANDLISTAPPENDIMAGECOPYFROMMEMORY_ID_THROUGH:
+                    break;
+                case ZECOMMANDLISTAPPENDMEMORYPREFETCH_ID_THROUGH:
+                    break;
+                    // END OF TODO: Add handlers later
+                case ZEMODULECREATE_ID_THROUGH:
+                    gpu_executions[func_id] += tsc_mpi_exit - tsc_mpi_entry;
+                    break;
+                case ZECOMMANDQUEUEEXECUTECOMMANDLISTS_ID_THROUGH:
+                    gpu_executions[func_id] += tsc_mpi_exit - tsc_mpi_entry;
+                    break;
+                default:
+                    break;
                 }
-                if ((*cur_exts_array)[*ext_count].values[1] == -1) {
-                    t_gzprintf(fps_mpi, ":%d", (*cur_exts_array)[*ext_count].values[0]);
-                } else {
-                    t_gzprintf(fps_mpi, ":%lld", (*cur_exts_array)[*ext_count].value);
-                }
-                cumulative_size += (*cur_exts_array)[*ext_count].value;
-            }
-#ifdef _T_PER_INTERVAL_STAT_WRITE_
-            int group = gt_func_stat.get_group(cumulative_size);
-            int func_id_t = current_array[tid][record_counter[tid]].func_id[1];
-            gt_func_stat.stat_for_func[func_id_t].durations[group] += tsc_mpi_exit - tsc_mpi_entry;
-            gt_func_stat.stat_for_func[func_id_t].occurences[group]++;
-            gt_func_stat.stat_for_func[func_id_t].sizes[group] += cumulative_size;
-            stat_processed = 1;
-#endif                                                                                                                                                                                                  // _T_PER_INTERVAL_STAT_WRITE_
-            req_comm[MPI_Check_dummy(current_array[tid][record_counter[tid]].collective.request)] = T_MPI_Comm(current_array[tid][record_counter[tid]].collective.comm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
-        }
 
-/***********************************************************************************************************************************************************************************************/
-#if 0
-#ifdef _T_PER_INTERVAL_STAT_WRITE_
-            if(stat_processed != 1) {
-                int group=gt_func_stat.get_group(0);
-                int func_id_t=current_array[tid][record_counter[tid]].func_id[1];
-                gt_func_stat.stat_for_func[func_id_t].durations[group]+=tsc_mpi_exit - tsc_mpi_entry;
+    #ifdef _T_PER_INTERVAL_STAT_WRITE_
+                if (size > 0) {
+                    int group = gt_func_stat.get_group(size);
+                    int func_id_t = rec.func_id;
+                    gt_func_stat.stat_for_func[func_id_t].durations[group] += tsc_mpi_exit - tsc_mpi_entry;
+                    gt_func_stat.stat_for_func[func_id_t].occurences[group]++;
+                    gt_func_stat.stat_for_func[func_id_t].sizes[group] += size;
+                    stat_processed = 1;
+                }
+    #endif // _T_PER_INTERVAL_STAT_WRITE_
+            }
+    #endif
+            /***********************************************************************************************************************************************************************************************/
+
+            if (func_base >= MPI_START_COMM_COLLECTIVE_GROUP &&
+                    func_base < MPI_END_COMM_COLLECTIVE_GROUP ||
+                func_base == MPI_COMM_FREE_ID) {
+                t_gzprintf(fps_mpi, ":%x:%x:%x:%x:%llx",
+                           get_global_comm_id(rec.comms.comm, tsc_mpi_entry + l_tsc_counter),       // 4
+                           get_global_comm_id(rec.comms.newcomm, tsc_mpi_entry + l_tsc_counter),    // 5
+                           get_global_comm_id(rec.comms.remotecomm, tsc_mpi_entry + l_tsc_counter), // 6
+                           get_global_comm_id(rec.comms.intercomm, tsc_mpi_entry + l_tsc_counter),  // 7
+                           MPI_Check_dummy(rec.comms.request)                                       // 8
+                );
+                req_comm[MPI_Check_dummy(rec.comms.request)] = T_MPI_Comm(rec.comms.newcomm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
+            }
+
+            /***********************************************************************************************************************************************************************************************/
+
+            if (func_base >= MPI_P2P_TRANSFER_START && func_base < MPI_P2P_TRANSFER_END ||
+                func_base >= MPI_P2P_PERSISTENT_INIT_START && func_base < MPI_P2P_PERSISTENT_INIT_END ||
+                func_base >= MPI_PROBE_START && func_base < MPI_PROBE_END) {
+                // peer and other   5   6   7  8  9 10
+                t_gzprintf(fps_mpi, ":%x:%d:%llx:%llx:%d:%lld",
+                           get_global_comm_id(rec.p2p_pr_pb.comm,
+                                              tsc_mpi_entry + l_tsc_counter), // 4
+                           get_real_rank(rec.p2p_pr_pb.comm,
+                                         rec.p2p_pr_pb.peer,
+                                         tsc_mpi_entry + l_tsc_counter),                               // 5
+                           MPI_Check_dummy(rec.p2p_pr_pb.request), // 6
+                           rec.p2p_pr_pb.message,                  // 7
+                           rec.p2p_pr_pb.tag,                      // 8
+                           rec.p2p_pr_pb.transfer_bytes            // 9
+                );
+
+    #ifdef _T_PER_INTERVAL_STAT_WRITE_
+                int group = gt_func_stat.get_group(rec.p2p_pr_pb.transfer_bytes);
+                int func_id_t = rec.func_id;
+                gt_func_stat.stat_for_func[func_id_t].durations[group] += tsc_mpi_exit - tsc_mpi_entry;
                 gt_func_stat.stat_for_func[func_id_t].occurences[group]++;
-                gt_func_stat.stat_for_func[func_id_t].sizes[group]+=0;
+                gt_func_stat.stat_for_func[func_id_t].sizes[group] += rec.p2p_pr_pb.transfer_bytes;
                 stat_processed = 1;
+    #endif                                                                                                                                                                                                // _T_PER_INTERVAL_STAT_WRITE_
+                req_comm[MPI_Check_dummy(rec.p2p_pr_pb.request)] = T_MPI_Comm(rec.p2p_pr_pb.comm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
             }
-#endif // _T_PER_INTERVAL_STAT_WRITE_
-#endif
 
-#ifdef _TRACTOR_EXTRA_FIELDS_
-        if (current_array[tid][record_counter[tid]].func_id[0] >= MPI_START_FILE_GROUP && current_array[tid][record_counter[tid]].func_id[0] < MPI_END_FILE_GROUP) {
-            print_address(fps_hwc, &current_array[tid][record_counter[tid]].mpi_fio.buf);
-        }
+            /***********************************************************************************************************************************************************************************************/
 
-        if (current_array[tid][record_counter[tid]].func_id[0] >= MPI_START_BUFFERED_LOCAL_GROUP && current_array[tid][record_counter[tid]].func_id[0] < MPI_END_BUFFERED_LOCAL_GROUP) {
-            print_address(fps_hwc, &current_array[tid][record_counter[tid]].buf_local.buf[0]);
-            print_address(fps_hwc, &current_array[tid][record_counter[tid]].buf_local.buf[1]);
-        }
-        if (current_array[tid][record_counter[tid]].func_id[0] >= MPI_P2P_TRANSFER_START && current_array[tid][record_counter[tid]].func_id[0] < MPI_P2P_TRANSFER_END ||
-            current_array[tid][record_counter[tid]].func_id[0] >= MPI_P2P_PERSISTENT_INIT_START && current_array[tid][record_counter[tid]].func_id[0] < MPI_P2P_PERSISTENT_INIT_END ||
-            current_array[tid][record_counter[tid]].func_id[0] >= MPI_PROBE_START && current_array[tid][record_counter[tid]].func_id[0] < MPI_PROBE_END) {
-            print_address(fps_hwc, &current_array[tid][record_counter[tid]].p2p_pr_pb.buf);
-        }
-        if (current_array[tid][record_counter[tid]].func_id[0] >= MPI_START_OSC_GROUP && current_array[tid][record_counter[tid]].func_id[0] < MPI_END_OSC_GROUP) {
-            print_address(fps_hwc, &current_array[tid][record_counter[tid]].one_sided_comm.buf);
-            print_address(fps_hwc, &current_array[tid][record_counter[tid]].one_sided_comm.rbuf);
-            print_address(fps_hwc, &current_array[tid][record_counter[tid]].one_sided_comm.cbuf);
-        }
+            if (func_base >= MPI_P2P_COLL_TRANSFER_START && func_base < MPI_P2P_COLL_TRANSFER_END ||
+                func_base >= MPI_P2P_COLL_PROBE_START && func_base < MPI_P2P_COLL_PROBE_END) {
+                // peer and other   5   6   7  8  9 10
+                // do not try to resolve ranks and comms for collective transfers
+                t_gzprintf(fps_mpi, ":%x:%d:%llx:%llx:%d:%lld",
+                           get_global_comm_id(rec.p2p_pr_pb.comm,
+                                              tsc_mpi_entry + l_tsc_counter),                          // 4
+                           rec.p2p_pr_pb.peer,                     // 5
+                           MPI_Check_dummy(rec.p2p_pr_pb.request), // 6
+                           rec.p2p_pr_pb.message,                  // 7
+                           rec.p2p_pr_pb.tag,                      // 8
+                           rec.p2p_pr_pb.transfer_bytes            // 9
+                );
 
-        if (current_array[tid][record_counter[tid]].func_id[0] >= MPI_REQUEST_START && current_array[tid][record_counter[tid]].func_id[0] < MPI_REQUEST_END) {
-            print_address(fps_hwc, &current_array[tid][record_counter[tid]].requests.requests);
-            print_address(fps_hwc, &current_array[tid][record_counter[tid]].requests.statuses);
-        }
-        if (current_array[tid][record_counter[tid]].func_id[0] >= MPI_START_GENERAL_COLLECTIVE_GROUP && current_array[tid][record_counter[tid]].func_id[0] < MPI_END_GENERAL_COLLECTIVE_GROUP) {
-            print_address(fps_hwc, &current_array[tid][record_counter[tid]].collective.buf[0]);
-            print_address(fps_hwc, &current_array[tid][record_counter[tid]].collective.buf[1]);
-        }
-#endif
+    #ifdef _T_PER_INTERVAL_STAT_WRITE_
+                int group = gt_func_stat.get_group(rec.p2p_pr_pb.transfer_bytes);
+                int func_id_t = rec.func_id;
+                gt_func_stat.stat_for_func[func_id_t].durations[group] += tsc_mpi_exit - tsc_mpi_entry;
+                gt_func_stat.stat_for_func[func_id_t].occurences[group]++;
+                gt_func_stat.stat_for_func[func_id_t].sizes[group] += rec.p2p_pr_pb.transfer_bytes;
+                stat_processed = 1;
+    #endif                                                                                                                                                                                                // _T_PER_INTERVAL_STAT_WRITE_
+                req_comm[MPI_Check_dummy(rec.p2p_pr_pb.request)] = T_MPI_Comm(rec.p2p_pr_pb.comm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
+            }
+
+            if (func_base >= MPI_START_OSC_GROUP && func_base < MPI_END_OSC_GROUP) {
+                // peer and other   5   6   7  8  9 10
+                MPI_Comm comm = rec.one_sided_comm.comm;
+                if (comm == 0) {
+                    comm = win_comm[rec.one_sided_comm.window];
+                } else {
+                    win_comm[rec.one_sided_comm.window] = comm;
+                }
+                t_gzprintf(fps_mpi, ":%x:%d:%llx:%llx:%d:%lld",
+                           get_global_comm_id(comm, tsc_mpi_entry + l_tsc_counter), // 4
+                           get_real_rank(comm,
+                                         rec.one_sided_comm.peer,
+                                         tsc_mpi_entry + l_tsc_counter),                                    // 5
+                           MPI_Check_dummy(rec.one_sided_comm.request), // 6
+                           rec.one_sided_comm.window,                   // 7
+                           rec.one_sided_comm.size,                     // 8
+                           rec.one_sided_comm.transfer_bytes            // 9
+                );
+    #ifdef _T_PER_INTERVAL_STAT_WRITE_
+                int group = gt_func_stat.get_group(rec.one_sided_comm.transfer_bytes);
+                int func_id_t = rec.func_id;
+                gt_func_stat.stat_for_func[func_id_t].durations[group] += tsc_mpi_exit - tsc_mpi_entry;
+                gt_func_stat.stat_for_func[func_id_t].occurences[group]++;
+                gt_func_stat.stat_for_func[func_id_t].sizes[group] += rec.one_sided_comm.transfer_bytes;
+                stat_processed = 1;
+    #endif                                                                                                                                                                                                          // _T_PER_INTERVAL_STAT_WRITE_
+                req_comm[MPI_Check_dummy(rec.one_sided_comm.request)] = T_MPI_Comm(rec.one_sided_comm.comm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
+            }
+
+            /***********************************************************************************************************************************************************************************************/
+
+            if (func_base >= MPI_REQUEST_START && func_base < MPI_REQUEST_END ||
+                func_base >= MPI_MISC_REQUEST_START && func_base < MPI_MISC_REQUEST_END ||
+                func_base >= MPI_P2P_COLL_REQUEST_START && func_base < MPI_P2P_COLL_REQUEST_END) {
+                // peer and other   5  6  7   8
+                t_gzprintf(fps_mpi, ":%d:%d:%d:%llx",
+                           rec.requests.input_request_num,     // 4
+                           rec.requests.triggered_request_num, // 5
+                           rec.requests.flag,                  // 6
+                           rec.requests.request_addr           // 7
+                );
+                MPI_Request input_requests[rec.requests.input_request_num];
+                for (int j = 0; j < rec.requests.input_request_num; j++, (*ext_count)++) { /* write input requests here */
+                    if (*ext_count >= *max_ext_count && *max_ext_count > 0) {
+                        if (use_realtime_dump) {
+                            update_extras_pointers(tid, level, max_ext_count, cur_exts_array);
+                        } else {
+                            *cur_exts = (*cur_exts)->next;
+                            *max_ext_count = ((*cur_exts)->next == NULL) ? *ext_index : onetimealloc;
+                            *cur_exts_array = (msl_extra_info *)(*cur_exts)->events_array;
+                        }
+                        *ext_count = 0;
+                    }
+                    input_requests[j] = MPI_Check_dummy((MPI_Request)(*cur_exts_array)[*ext_count].values[0]);
+                    if ((*cur_exts_array)[*ext_count].values[1] == -1) {
+                        t_gzprintf(fps_mpi, ":%x", (*cur_exts_array)[*ext_count].values[0]);
+                    } else {
+                        t_gzprintf(fps_mpi, ":%llx", (*cur_exts_array)[*ext_count].value);
+                    }
+                }
+
+                if (rec.requests.flag) {
+                    int index;
+                    for (int j = 0; j < rec.requests.triggered_request_num * 4; j++, (*ext_count)++) { /* write 4-tuples(index,tag,source,transferred_bytes) here */
+                        if (*ext_count >= *max_ext_count && *max_ext_count > 0) {
+                            if (use_realtime_dump) {
+                                update_extras_pointers(tid, level, max_ext_count, cur_exts_array);
+                            } else {
+                                *cur_exts = (*cur_exts)->next;
+                                *max_ext_count = ((*cur_exts)->next == NULL) ? *ext_index : onetimealloc;
+                                *cur_exts_array = (msl_extra_info *)(*cur_exts)->events_array;
+                            }
+                            *ext_count = 0;
+                        }
+                        if (j % 4 == 0) { // index
+                            index = (*cur_exts_array)[*ext_count].values[0];
+                        }
+                        if (j % 4 == 2 && (index < 0 || index >= rec.requests.input_request_num)) { // source
+                            debug_printf("Rank:%d  Index=%d is out of range (0...%d) \n", t_mpi_rank, index, rec.requests.input_request_num);
+                        }
+
+                        if ((*cur_exts_array)[*ext_count].values[1] == -1) {
+                            if (j % 4 == 2 && index >= 0 && index < rec.requests.input_request_num) { // source
+                                t_gzprintf(fps_mpi, ":%d", get_real_rank(req_comm[input_requests[index]].comm, (*cur_exts_array)[*ext_count].value, req_comm[input_requests[index]].time));
+                            } else {
+                                t_gzprintf(fps_mpi, ":%d", (*cur_exts_array)[*ext_count].values[0]);
+                            }
+                        } else {
+                            if (j % 4 == 2 && index >= 0 && index < rec.requests.input_request_num) { // source
+                                t_gzprintf(fps_mpi, ":%d", get_real_rank(req_comm[input_requests[index]].comm, (*cur_exts_array)[*ext_count].value, req_comm[input_requests[index]].time));
+                            } else {
+                                t_gzprintf(fps_mpi, ":%lld", (*cur_exts_array)[*ext_count].value);
+                            }
+                        }
+                    }
+                }
+            }
+
+            /***********************************************************************************************************************************************************************************************/
+
+            if (func_base >= MPI_START_GENERAL_COLLECTIVE_GROUP && func_base < MPI_END_GENERAL_COLLECTIVE_GROUP) {
+                // collectives      5  6  7  8  9  10 11
+                t_gzprintf(fps_mpi, ":%x:%d:%llx:%d:%d",
+                           get_global_comm_id(rec.collective.comm,
+                                              tsc_mpi_entry + l_tsc_counter), // 4
+                           get_real_rank(rec.collective.comm,
+                                         rec.collective.root,
+                                         tsc_mpi_entry + l_tsc_counter),                                // 5
+                           MPI_Check_dummy(rec.collective.request), // 6
+                           rec.collective.sr_bytes[0],              // 7
+                           rec.collective.sr_bytes[1]               // 8
+                );
+                long long cumulative_size = 0;
+                for (int j = 0; j < rec.collective.sr_bytes[0]; j++, (*ext_count)++) {
+                    if (*ext_count >= *max_ext_count) {
+                        if (use_realtime_dump && *max_ext_count > 0) {
+                            update_extras_pointers(tid, level, max_ext_count, cur_exts_array);
+                        } else {
+                            *cur_exts = (*cur_exts)->next;
+                            *max_ext_count = ((*cur_exts)->next == NULL) ? *ext_index : onetimealloc;
+                            *cur_exts_array = (msl_extra_info *)(*cur_exts)->events_array;
+                        }
+                        *ext_count = 0;
+                    }
+                    if ((*cur_exts_array)[*ext_count].values[1] == -1) {
+                        t_gzprintf(fps_mpi, ":%d", (*cur_exts_array)[*ext_count].values[0]);
+                    } else {
+                        t_gzprintf(fps_mpi, ":%lld", (*cur_exts_array)[*ext_count].value);
+                    }
+                    cumulative_size += (*cur_exts_array)[*ext_count].value;
+                }
+                for (int j = 0; j < rec.collective.sr_bytes[1]; j++, (*ext_count)++) {
+                    if (*ext_count >= *max_ext_count) {
+                        if (use_realtime_dump && *max_ext_count > 0) {
+                            update_extras_pointers(tid, level, max_ext_count, cur_exts_array);
+                        } else {
+                            *cur_exts = (*cur_exts)->next;
+                            *max_ext_count = ((*cur_exts)->next == NULL) ? *ext_index : onetimealloc;
+                            *cur_exts_array = (msl_extra_info *)(*cur_exts)->events_array;
+                        }
+                        *ext_count = 0;
+                    }
+                    if ((*cur_exts_array)[*ext_count].values[1] == -1) {
+                        t_gzprintf(fps_mpi, ":%d", (*cur_exts_array)[*ext_count].values[0]);
+                    } else {
+                        t_gzprintf(fps_mpi, ":%lld", (*cur_exts_array)[*ext_count].value);
+                    }
+                    cumulative_size += (*cur_exts_array)[*ext_count].value;
+                }
+    #ifdef _T_PER_INTERVAL_STAT_WRITE_
+                int group = gt_func_stat.get_group(cumulative_size);
+                int func_id_t = rec.func_id;
+                gt_func_stat.stat_for_func[func_id_t].durations[group] += tsc_mpi_exit - tsc_mpi_entry;
+                gt_func_stat.stat_for_func[func_id_t].occurences[group]++;
+                gt_func_stat.stat_for_func[func_id_t].sizes[group] += cumulative_size;
+                stat_processed = 1;
+    #endif                                                                                                                                                                                                  // _T_PER_INTERVAL_STAT_WRITE_
+                req_comm[MPI_Check_dummy(rec.collective.request)] = T_MPI_Comm(rec.collective.comm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
+            }
+
+    /***********************************************************************************************************************************************************************************************/
+    #if 0
+    #ifdef _T_PER_INTERVAL_STAT_WRITE_
+                if(stat_processed != 1) {
+                    int group=gt_func_stat.get_group(0);
+                    int func_id_t=rec.func_id;
+                    gt_func_stat.stat_for_func[func_id_t].durations[group]+=tsc_mpi_exit - tsc_mpi_entry;
+                    gt_func_stat.stat_for_func[func_id_t].occurences[group]++;
+                    gt_func_stat.stat_for_func[func_id_t].sizes[group]+=0;
+                    stat_processed = 1;
+                }
+    #endif // _T_PER_INTERVAL_STAT_WRITE_
+    #endif
+
+    #ifdef _TRACTOR_EXTRA_FIELDS_
+            if (func_base >= MPI_START_FILE_GROUP && func_base < MPI_END_FILE_GROUP) {
+                print_address(fps_hwc, &rec.mpi_fio.buf);
+            }
+
+            if (func_base >= MPI_START_BUFFERED_LOCAL_GROUP && func_base < MPI_END_BUFFERED_LOCAL_GROUP) {
+                print_address(fps_hwc, &rec.buf_local.buf[0]);
+                print_address(fps_hwc, &rec.buf_local.buf[1]);
+            }
+            if (func_base >= MPI_P2P_TRANSFER_START && func_base < MPI_P2P_TRANSFER_END ||
+                func_base >= MPI_P2P_PERSISTENT_INIT_START && func_base < MPI_P2P_PERSISTENT_INIT_END ||
+                func_base >= MPI_PROBE_START && func_base < MPI_PROBE_END) {
+                print_address(fps_hwc, &rec.p2p_pr_pb.buf);
+            }
+            if (func_base >= MPI_START_OSC_GROUP && func_base < MPI_END_OSC_GROUP) {
+                print_address(fps_hwc, &rec.one_sided_comm.buf);
+                print_address(fps_hwc, &rec.one_sided_comm.rbuf);
+                print_address(fps_hwc, &rec.one_sided_comm.cbuf);
+            }
+
+            if (func_base >= MPI_REQUEST_START && func_base < MPI_REQUEST_END) {
+                print_address(fps_hwc, &rec.requests.requests);
+                print_address(fps_hwc, &rec.requests.statuses);
+            }
+            if (func_base >= MPI_START_GENERAL_COLLECTIVE_GROUP && func_base < MPI_END_GENERAL_COLLECTIVE_GROUP) {
+                print_address(fps_hwc, &rec.collective.buf[0]);
+                print_address(fps_hwc, &rec.collective.buf[1]);
+            }
+    #endif
         t_gzprintf(fps_hwc, "\n");
         t_gzprintf(fps_mpi, "\n");
-        record_counter[tid]++;
-        if (record_counter[tid] >= max_events[tid]) {
-            if (use_realtime_dump) {
-                max_events[tid] = 0; // reset it in case if eof reached
-                fread(&max_events[tid], 4, 1, fps_events[tid]);
-                long tmp_mi = fread(current_array[tid], sizeof(msl_event), max_events[tid], fps_events[tid]);
-                if (tmp_mi != max_events[tid]) {
-                    debug_printf("TID %d, %ld!=%ld events read count mismatch.\n", tid, max_events[tid], tmp_mi);
-                }
-                tmp_mi = fread(current_addrs_array[tid], sizeof(void *) * num_addrs, max_events[tid], fps_events[tid]);
-                if (tmp_mi != max_events[tid]) {
-                    debug_printf("TID %d, %ld!=%ld events read count mismatch.\n", tid, max_events[tid], tmp_mi);
-                }
-#ifdef _HWCOUNTERS_ENABLED_
-                tmp_mi = fread(current_hwc_array[tid], sizeof(long long) * num_hwcs * 2, max_events[tid], fps_events[tid]);
-                if (tmp_mi != max_events[tid]) {
-                    debug_printf("TID %d, %ld!=%ld events read count mismatch.\n", tid, max_events[tid], tmp_mi);
-                }
-#endif
-#ifdef _MEMPROFILE_STORE_
-                tmp_mi = fread(current_mems_array[tid], sizeof(void *) * t_memory_event_size * 2, max_events[tid], fps_events[tid]);
-                if (tmp_mi != max_events[tid]) {
-                    debug_printf("TID %d, %ld!=%ld events read count mismatch.\n", tid, max_events[tid], tmp_mi);
-                }
-#endif
-                debug_printf("TID %d, %ld events read back.\n", tid, max_events[tid]);
-            } else {
-                if (current_chain[tid]->next != NULL) {
-                    current_chain[tid] = (msl_adv_chain *)current_chain[tid]->next;
-                    max_events[tid] = (current_chain[tid]->next == NULL) ? event_index[tid] : onetimealloc;
-                    current_array[tid] = (msl_event *)current_chain[tid]->events_array;
-                    current_addrs_array[tid] = (void **)current_chain[tid]->addr_array;
-#ifdef _HWCOUNTERS_ENABLED_
-                    current_hwc_array[tid] = (long long *)current_chain[tid]->hwc_array;
-#endif
-#ifdef _MEMPROFILE_STORE_
-                    current_mems_array[tid] = (t_memory_event *)current_chain[tid]->mem_array;
-#endif
-                } else {
-                    max_events[tid] = 0;
-                }
-            }
-            record_counter[tid] = 0;
-        }
-        if (max_events[tid] > 0) {
-            t_timeline t_tl(current_array[tid][record_counter[tid]].tscs[0], tid);
-            timeline[t_tl] = tid;
-        }
+        return children;
     };
-    // while(max_events >= onetimealloc && current_chain != NULL);
+
+    /* step the cursor of (tid, level) to the next record, loading the next block when needed */
+    auto advance = [&](int tid, int level) -> void {
+        const int idx = tid * levels + level;
+        record_counter[idx]++;
+        if (record_counter[idx] >= max_events[idx])
+            load_block(tid, level, false);
+    };
+    auto has_record = [&](int tid, int level) -> bool {
+        const int idx = tid * levels + level;
+        return level < levels && max_events[idx] > 0 && record_counter[idx] < max_events[idx];
+    };
+    /* the second record of a sendrecv pair (zero mpi entry offset) follows the first one with the same ids */
+    auto is_second_line = [&](int tid, int level, short func_id) -> bool {
+        const int idx = tid * levels + level;
+        if (!has_record(tid, level))
+            return false;
+        const msl_event &next = current_array[idx][record_counter[idx]];
+        return next.tscs[1] == 0 && next.func_id == func_id && (next.tscs[2] == 0 && next.tscs[3] == 0);
+    };
+
+    struct t_walk_frame {
+        long long remaining; /* children of the record at this frame's level still to write */
+        long long index;     /* index of the child being written */
+    };
+    while (!timeline.empty()) {
+        std::map<t_timeline, int>::iterator timeline_it = timeline.begin();
+        const int tid = timeline_it->second;
+        timeline.erase(timeline_it);
+        /* pre-order walk of the tree rooted at the head record of level 0 */
+        std::vector<t_walk_frame> stack;
+        int level = 0;
+        for (int k = 0; k < id_columns; k++)
+            ids[k] = -1;
+        ids[0] = ++uniq_index; /* top-level records are numbered from 1, as before */
+        bool walking = true;
+        while (walking) {
+            if (!has_record(tid, level)) {
+                debug_printf("TID %d level %d: record missing while walking nested records.\n", tid, level);
+                break;
+            }
+            const short func_id = current_array[tid * levels + level][record_counter[tid * levels + level]].func_id;
+            long long children = emit_record(tid, level, false);
+            advance(tid, level);
+            if (is_second_line(tid, level, func_id)) {
+                emit_record(tid, level, true);
+                advance(tid, level);
+            }
+            if (children > 0 && level + 1 < levels) {
+                t_walk_frame frame;
+                frame.remaining = children;
+                frame.index = 0;
+                stack.push_back(frame);
+                level++;
+                ids[level] = 0;
+                continue;
+            }
+            /* this record is done: account it in its parent's frame, climb while parents are complete */
+            while (!stack.empty()) {
+                t_walk_frame &frame = stack.back();
+                frame.remaining--;
+                if (frame.remaining > 0) {
+                    frame.index++;
+                    ids[level] = frame.index;
+                    break;
+                }
+                stack.pop_back();
+                ids[level] = -1;
+                level--;
+            }
+            if (stack.empty())
+                walking = false;
+        }
+        if (has_record(tid, 0)) {
+            const int idx0 = tid * levels;
+            timeline[t_timeline(current_array[idx0][record_counter[idx0]].tscs[0], tid)] = tid;
+        }
+    }
     if (use_realtime_dump) {
         for (int i = 0; i < t_tid_counter; i++) {
-            t_free(current_array[i], (onetimealloc + 1) * sizeof(msl_event));
-            t_free(current_addrs_array[i], (onetimealloc + 1) * sizeof(void *) * num_addrs);
+            for (int level = 0; level < levels; level++) {
+                const int idx = i * levels + level;
+                if (current_array[idx])
+                    t_free(current_array[idx], (onetimealloc + 1) * sizeof(msl_event));
+                if (current_addrs_array[idx])
+                    t_free(current_addrs_array[idx], (onetimealloc + 1) * sizeof(void *) * num_addrs);
 #ifdef _HWCOUNTERS_ENABLED_
-            t_free(current_hwc_array[i], (onetimealloc + 1) * sizeof(long long) * num_hwcs * 2);
+                if (current_hwc_array[idx])
+                    t_free(current_hwc_array[idx], (onetimealloc + 1) * sizeof(long long) * num_hwcs * 2);
 #endif
 #ifdef _MEMPROFILE_STORE_
-            t_free(current_mems_array[i], (onetimealloc + 1) * t_memory_event_size * 2);
+                if (current_mems_array[idx])
+                    t_free(current_mems_array[idx], (onetimealloc + 1) * t_memory_event_size * 2);
 #endif
+                if (current_extras_array[idx])
+                    t_free(current_extras_array[idx], (onetimealloc + 1) * sizeof(msl_extra_info));
+            }
         }
     }
 
     ret.max_thread_id = max_thread_id;
     ret.processed_events = processed_events;
     ret.max_uniq_idx = uniq_index;
+    ret.nesting_levels = id_columns;
     if (fps_mpi)
         gzclose(fps_mpi);
     if (fps_hwc)
@@ -3081,7 +3068,7 @@ void tractor::write_com_file(const num_processed_events &num_of_events, /*user_r
     gzprintf(fps_com, "%d:%lld:%lld:%lld:%lld\n", PEAT_RT_App_Start_Stop_Info, app_start, app_end, app_end - app_start, t_tsc_init);
     gzprintf(fps_com, "%d:%lld:%lld:%lld:%lld\n", PEAT_RT_MPM_Rank_Time_Stamp, app_start, app_start_parallel, app_end_parallel, app_end);
     gzprintf(fps_com, "%d:%d:%lld:%lld\n", PEAT_RT_CPU_Freq, 0, proc_freq[0], proc_freq[1]);
-    gzprintf(fps_com, "%d:%lld:%lld:%lld:%lld\n", PEAT_RT_Number_Of_Events, num_of_events.processed_events, num_of_events.max_uniq_idx, num_of_events.max_thread_id, num_of_events.max_fab_uniq_idx);
+    gzprintf(fps_com, "%d:%lld:%lld:%lld:%d:%lld\n", PEAT_RT_Number_Of_Events, num_of_events.processed_events, num_of_events.max_uniq_idx, num_of_events.max_thread_id, num_of_events.nesting_levels, num_of_events.max_fab_uniq_idx); /* 4: id columns (nesting levels), 5: fabric events */
     gzprintf(fps_com, "%d:%d\n", PEAT_RT_HWLOC_Proc_Record, core_id);
     if (node_topology.length() > 0)
         gzprintf(fps_com, "%d%s\n", PEAT_RT_HWLOC_Node_Record, node_topology.c_str());
@@ -3256,18 +3243,13 @@ void tractor::pc_change_state(int ctl)
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
 
-void tractor::dump_extras(pid_t tid, msl_base_chain **chain, int is_colt)
+void tractor::dump_extras(pid_t tid, int level, msl_base_chain **chain)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
-    char *mtext = "mexts";
-    FILE **fps_ext = &fps_extras[tid];
-    if (is_colt) {
-        mtext = "mcexts";
-        fps_ext = &fps_c_extras[tid];
-    }
+    FILE **fps_ext = &fps_extras[fp_index(tid, level)];
     if (*fps_ext == NULL) {
         char temp_filename[MAX_PATH];
-        sprintf(temp_filename, "%s/%s.%d.%d.%s.tmp", tmp_dir, stat_template, t_mpi_rank, tid, mtext);
+        sprintf(temp_filename, "%s/%s.%d.%d.%d.mexts.tmp", tmp_dir, stat_template, t_mpi_rank, tid, level);
         *fps_ext = fopen(temp_filename, "w+b");
         if (*fps_ext)
             debug_printf("File %s opened..\n", temp_filename);
@@ -3280,25 +3262,26 @@ void tractor::dump_extras(pid_t tid, msl_base_chain **chain, int is_colt)
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
 
-void tractor::dump_events(pid_t tid, msl_adv_chain **chain)
+void tractor::dump_events(pid_t tid, int level, msl_adv_chain **chain)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
-    if (fps_events[tid] == NULL) {
+    FILE **fp = &fps_events[fp_index(tid, level)];
+    if (*fp == NULL) {
         char temp_filename[MAX_PATH];
-        sprintf(temp_filename, "%s/%s.%d.%d.mevts.tmp", tmp_dir, stat_template, t_mpi_rank, tid);
-        fps_events[tid] = fopen(temp_filename, "w+b");
-        if (fps_events[tid])
+        sprintf(temp_filename, "%s/%s.%d.%d.%d.mevts.tmp", tmp_dir, stat_template, t_mpi_rank, tid, level);
+        *fp = fopen(temp_filename, "w+b");
+        if (*fp)
             debug_printf("File %s opened..\n", temp_filename);
     }
-    if (fps_events[tid]) {
-        fwrite(&(*chain)->num_events, 4, 1, fps_events[tid]);
-        fwrite((*chain)->events_array, (*chain)->events_size, (*chain)->num_events, fps_events[tid]);
-        fwrite((*chain)->addr_array, (*chain)->addr_size, (*chain)->num_events, fps_events[tid]);
+    if (*fp) {
+        fwrite(&(*chain)->num_events, 4, 1, *fp);
+        fwrite((*chain)->events_array, (*chain)->events_size, (*chain)->num_events, *fp);
+        fwrite((*chain)->addr_array, (*chain)->addr_size, (*chain)->num_events, *fp);
 #ifdef _HWCOUNTERS_ENABLED_
-        fwrite((*chain)->hwc_array, (*chain)->hwc_size, (*chain)->num_events, fps_events[tid]);
+        fwrite((*chain)->hwc_array, (*chain)->hwc_size, (*chain)->num_events, *fp);
 #endif
 #ifdef _MEMPROFILE_STORE_
-        fwrite((*chain)->mem_array, (*chain)->mem_size, (*chain)->num_events, fps_events[tid]);
+        fwrite((*chain)->mem_array, (*chain)->mem_size, (*chain)->num_events, *fp);
 #endif
         debug_printf("Dumping %ld events.\n", (*chain)->num_events);
         destroy_shift_start((msl_base_chain **)chain);
@@ -3307,16 +3290,17 @@ void tractor::dump_events(pid_t tid, msl_adv_chain **chain)
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
 
-int tractor::t_check_chain(pid_t tid)
+int tractor::t_check_chain(pid_t tid, int level)
 {
     if (use_realtime_dump) {
-        check_chain(tid);
+        check_chain(tid, level);
 #if defined(_FAB_PROFILE_)
         if (t_collect_fab) {
-            t_fab_prof.check_chain(tid);
+            t_fab_prof.check_chain(tid, 0);
         }
 #endif
     }
+    return 0;
 }
 
 #ifdef _TRACTOR_DIAG_

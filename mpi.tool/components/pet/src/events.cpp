@@ -37,11 +37,92 @@
 #include <mpi.h>
 #endif
 
-PET_Event *PET_Core::find_peer(PET_Event *event, PET_Coll_Event *host_evt, PEAT_Bool recv_part)
+/* A colt record issued by the progress engine while another MPI call was spinning belongs (in the trace) to that
+   other call, so the peer of a colt transfer may sit in any call of the peer rank: scan them all (nested included). */
+PET_Event *PET_Core::find_colt_peer_anywhere(PET_Event *event, PEAT_Rank peer, PEAT_Bool want_receiver)
+{
+    if (peer < 0)
+        return NULL;
+    PEAT_Node node = ptp->get_tgt_node(peer);
+    if (node < 0 || node >= (PEAT_Node)nodes.size() || nodes[node].ranks.count(peer) == 0)
+        return NULL;
+    PET_Rank &pet_rank = nodes[node].ranks.at(peer);
+    for (std::vector<PET_Thread *>::iterator thread_it = pet_rank.threads.begin(); thread_it != pet_rank.threads.end(); ++thread_it) {
+        for (std::list<PET_Event *>::iterator event_it = (*thread_it)->active_events.begin(); event_it != (*thread_it)->active_events.end(); ++event_it) {
+            PET_Event *main_event = *event_it;
+            if (main_event->is_written)
+                continue;
+            for (PET_Event *cand = main_event->get_first_child_event(); cand != main_event; cand = main_event->get_next_child_event()) {
+                if (want_receiver) {
+                    if (is_wild_card(cand))
+                        continue;
+                    if (check_peer(event, cand) && cand->ready_to_bind())
+                        return cand;
+                } else {
+                    if (check_peer(cand, event) && cand->ready_to_bind())
+                        return cand;
+                }
+            }
+        }
+    }
+    return NULL;
+}
+
+/* The progress engine, spun by a blocking call, executes the schedules of outstanding nonblocking collectives:
+   their transfers show up as colt records of the spinning call. Match them by communicator and tag to the
+   collective that owns them (its own records carry the tag); internal completions follow the records they complete. */
+void PET_Core::attribute_progress_records(PET_Event *host)
+{
+    PET_Rank *pet_rank = host->get_rank();
+    if (pet_rank == NULL)
+        return;
+    const std::vector<PET_Event *> &kids = host->child_iteration_list();
+    for (PEAT_Num i = 0; i < kids.size(); i++) {
+        PET_Event *evt = kids[i];
+        if (evt == NULL || evt->is_foreign_progress())
+            continue;
+        PET_Collective_Event *owner = NULL;
+        PET_Event_Type type = evt->get_event_type();
+        if (type == PET_EVENT_TYPE_TOR || type == PET_EVENT_TYPE_TAR) {
+            PEAT_MPI_Tag tag = evt->check_tx() ? evt->get_send_tag() : evt->get_recv_tag();
+            owner = pet_rank->find_nb_collective(evt->get_comm(), tag, host);
+        } else if (type == PET_EVENT_TYPE_COMPLETION) {
+            // an internal wait/release belongs to whoever owns the records it completes
+            PET_Completion_Event *cevt = static_cast<PET_Completion_Event *>(evt);
+            for (std::list<PET_Request>::iterator req_it = cevt->triggered_requests.begin(); req_it != cevt->triggered_requests.end(); ++req_it) {
+                PET_Event *target = req_it->event;
+                if (target == NULL)
+                    continue;
+                PET_Collective_Event *o = target->progress_owner;
+                if (o == NULL && target->host_event && target->host_event != host && target->host_event->get_event_type() == PET_EVENT_TYPE_COLLECTIVE) {
+                    PET_Collective_Event *h = static_cast<PET_Collective_Event *>(target->host_event);
+                    if (h->is_nonblocking_collective())
+                        o = h; // completes an own record of that collective (e.g. release of its irecv)
+                }
+                if (o == NULL || (owner && owner != o)) {
+                    owner = NULL;
+                    break;
+                }
+                owner = o;
+            }
+        }
+        if (owner) {
+            owner->add_progress_event(evt);
+            if (globals.verbose) {
+                fprintf(stderr, "Rank %d %s(%lld): %s(%s) progressed %s(%lld) tag %d\n", host->rank, global_func_id.name_by_idx(host->func_id), (long long)host->ids[0],
+                        global_func_id.name_by_idx(evt->func_id), evt->ids_str().c_str(), global_func_id.name_by_idx(owner->func_id), (long long)owner->ids[0],
+                        (int)(evt->check_tx() ? evt->get_send_tag() : evt->get_recv_tag()));
+            }
+        }
+    }
+}
+
+PET_Event *PET_Core::find_peer(PET_Event *event, PET_Event *host_evt, PEAT_Bool recv_part)
 {
     PEAT_Bool r;
     std::list<Coll_Storage>::const_iterator collective;
-    if (get_coll_const(host_evt, collective)) {
+    const PET_Coll_Event *coll_host = dynamic_cast<const PET_Coll_Event *>(host_evt); // only collective calls have peers to match against
+    if (coll_host && get_coll_const(coll_host, collective)) {
         if (global_func_id.check_property(event->func_id, PEAT_PROP_DATA_TX)) {
         send_part:
             PEAT_Rank dest = event->get_dest();
@@ -59,7 +140,7 @@ PET_Event *PET_Core::find_peer(PET_Event *event, PET_Coll_Event *host_evt, PEAT_
                 }
                 recv_event = main_recv_event->get_next_child_event();
             }
-            return NULL;
+            return find_colt_peer_anywhere(event, dest, true); // the receive may have been issued from progress inside another call
         }
         if (global_func_id.check_property(event->func_id, PEAT_PROP_DATA_RX)) {
         recv_part:
@@ -78,7 +159,7 @@ PET_Event *PET_Core::find_peer(PET_Event *event, PET_Coll_Event *host_evt, PEAT_
                 }
                 send_event = main_send_event->get_next_child_event();
             }
-            return NULL;
+            return find_colt_peer_anywhere(event, src, false); // the send may have been issued from progress inside another call
         }
         if (global_func_id.check_property(event->func_id, PEAT_PROP_DATA_TXRX)) {
             if (recv_part)
@@ -89,6 +170,7 @@ PET_Event *PET_Core::find_peer(PET_Event *event, PET_Coll_Event *host_evt, PEAT_
     } else {
         pet_throw_error(this,event,NULL,"Host event is not found in the list of collectives.\n");
     }
+    return NULL;
 }
 
 PET_Event *PET_Core::find_peer(PET_Event *event, PEAT_Bool recv_part)
@@ -337,7 +419,7 @@ void PET_Core::fill_next_event(PET_Event *event)
     re_fill_queue = true;
 }
 
-PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MPI, String_Split &trace_line_HWC, PET_Coll_Event *host_evt)
+PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MPI, String_Split &trace_line_HWC, PET_Event *host_evt, PET_Event *container)
 {
     PEAT_Bool possible_colt_included = false;
     assert(com_store);
@@ -356,10 +438,12 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
         return NULL;
     }
 
+    PEAT_Record_Header hdr; // ids, thread and nesting of the record
+    user_region_file->parse_record_header(hdr, trace_line_MPI, rank);
     PEAT_MPI_Func_ID func_id = TMPI_FUNC_ID_NONE;
-    extract(func_id, trace_line_MPI.at(3), 10, false);
+    extract(func_id, trace_line_MPI.at(hdr.payload), 10, false);
     if (func_id == 0) {
-        func_id = global_func_id.idx_by_name(trace_line_MPI.at(3));
+        func_id = global_func_id.idx_by_name(trace_line_MPI.at(hdr.payload));
     }
 
     if (func_id >= MPI_START_FILE_GROUP && func_id < MPI_END_FILE_GROUP) {
@@ -402,7 +486,7 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
     } else {
         event = new PET_Local_Event(this);
     }
-    if (!event->read_event(rank, trace_line_MPI, trace_line_HWC, host_evt)) {
+    if (!event->read_event(rank, trace_line_MPI, trace_line_HWC, host_evt, hdr)) {
         delete event;
         return NULL;
     }
@@ -410,13 +494,15 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
     if (func_id == MPI_SENDRECV_ID || func_id == MPI_SENDRECV_REPLACE_ID || func_id == MPIC_SENDRECV_ID || func_id == MPIC_SENDRECV_REPLACE_ID) {
         input_MPI->read_lines(trace_line_MPI, rank, ':');
         input_HWC->read_lines(trace_line_HWC, rank, ':');
-        event->read_event(rank, trace_line_MPI, trace_line_HWC, host_evt);
+        event->read_event(rank, trace_line_MPI, trace_line_HWC, host_evt, hdr); // same header, tscs of the receive part
     }
-    /*if (event->rank == 23 && event->primary_id == 59) {
+    /*if (event->rank == 23 && event->ids[0] == 59) {
         event->rank = 23;
     }*/
     // event->assign_cache_pointers();
-    update_time_predictor(tsc_corrector[rank], event, host_evt);
+    // nested format: every record start is relative to the previous record at any level (the predictor follows every record);
+    // legacy format: colt records are relative to their host, which keeps the predictor
+    update_time_predictor(tsc_corrector[rank], event, hdr.nested ? NULL : host_evt);
     event->e_time.func.in = ptp->get_real_time(event->e_time.func.in, rank);
     event->e_time.mpi.in = ptp->get_real_time(event->e_time.mpi.in, rank);
     event->e_time.mpi.out = ptp->get_real_time(event->e_time.mpi.out, rank);
@@ -426,13 +512,38 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
     if (event->e_time.pe.out > 0)
         event->e_time.pe.out = ptp->get_real_time(event->e_time.pe.out, rank);
 
-    if (possible_colt_included) {
+    if (container) { // nested format: the record is a child of the record being read (container) inside the top-level call (host_evt)
+        event->container_event = container;
+        event->host_event = host_evt;
+        container->nested_events.push_back(event);
+        host_evt->flat_events.push_back(event);
+    }
+    if (hdr.nested) { // nested format: the num_children records following this one are its children (pre-order tree)
+        PET_Event *top = host_evt ? host_evt : event;
+        for (PEAT_Signed_Num i = 0; i < hdr.num_children; i++) {
+            String_Split t_trace_line_MPI, t_trace_line_HWC;
+            PET_Event *child_event = get_event(rank, t_trace_line_MPI, t_trace_line_HWC, top, event);
+            if (child_event == NULL)
+                break; // truncated trace
+        }
+        // some records were issued from progress for another, still outstanding nonblocking collective
+        if (host_evt == NULL && event->has_nested())
+            attribute_progress_records(event);
+    } else if (possible_colt_included) { // legacy format: num_colts flat records follow the call
         PET_Coll_Event *cevent = static_cast<PET_Coll_Event *>(event);
         int size = (int)cevent->t_events.size();
         for (int i = 0; i < size; i++) {
             String_Split t_trace_line_MPI, t_trace_line_HWC;
             PET_Event *child_event = get_event(rank, t_trace_line_MPI, t_trace_line_HWC, cevent);
+            if (child_event == NULL)
+                break;
             cevent->put_t_event(child_event);
+        }
+        if (size > 0) {
+            // colt records issued from the progress engine are nested in the record that was spinning it
+            cevent->build_nesting();
+            // ... and some of them were issued for another, still outstanding nonblocking collective
+            attribute_progress_records(cevent);
         }
     }
 
@@ -581,7 +692,7 @@ PEAT_Bool PET_Core::read_fabric_events(PET_Event *event)
         if (trace_line_f.size() < 2)
             continue;
         PET_Fabric_Event evt;
-        extract(evt.primary_id, trace_line_f.at(0), 10);
+        extract(evt.id, trace_line_f.at(0), 10);
         extract(evt.thread, trace_line_f.at(1), 10);
         extract(evt.func_id, trace_line_f.at(2), 10, false);
         if (evt.func_id == TMPI_FUNC_ID_NONE) {
@@ -627,7 +738,7 @@ PEAT_Bool PET_Core::read_fabric_events(PET_Event *event)
         if (trace_line_f.size() < 2)
             continue;
         PET_Fabric_Event evt, tmp_evt;
-        extract(evt.primary_id, trace_line_f.at(0), 10);
+        extract(evt.id, trace_line_f.at(0), 10);
         extract(evt.func_id, trace_line_f.at(2), 10, false);
         if (evt.func_id == TMPI_FUNC_ID_NONE) {
             evt.func_id = global_func_id.idx_by_name(trace_line_f.at(2));

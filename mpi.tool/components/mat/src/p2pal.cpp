@@ -57,11 +57,11 @@ P2PAL::~P2PAL()
 void P2PAL::print_P2PL(const Tractor_Event &event)
 {
 #ifdef MAT_PROCESS_HWC_MPI_OUTPUT
-    output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%x:%d:%llx:%llx:%d:%lld\n", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id),
+    output_MPI->printf(event.rank, "%s:%s:%x:%d:%llx:%llx:%d:%lld\n", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id),
                        event.P2P.comm, event.P2P.peer, event.P2P.request, event.P2P.message, event.P2P.tag, event.P2P.transfered_bytes);
 
 #if 0
-    output_HWC->printf(event.rank, "%lld:%lld:%d:%lld:%lld:%lld:%lld:%lld:%lld", event.primary_id, event.secondary_id, event.thread_id,
+    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
         event.tsc_time.func.in,
         event.tsc_time.mpi.in,
         event.tsc_time.mpi.out,
@@ -70,7 +70,7 @@ void P2PAL::print_P2PL(const Tractor_Event &event)
         event.tsc_time.pe.out);
 
 #else
-    output_HWC->printf(event.rank, "%lld:%lld:%d:%lld:%lld:%lld:%lld", event.primary_id, event.secondary_id, event.thread_id,
+    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
                        event.tsc_time.mpi.in,
                        event.tsc_time.mpi.out,
                        event.tsc_time.pe.in,
@@ -85,14 +85,14 @@ void P2PAL::print_P2PL(const Tractor_Event &event)
 void P2PAL::print_P2PE(const MAT_Record &event)
 {
     // gzFile Bind = output_bind->get_file_ptr(rec.rank);
-    fprintf(stderr, "%d:%s:%lld:%lld:%s:%lld:%lld:%s:%lld:%lld\n",
+    fprintf(stderr, "%d:%s:%s:%s:%s:%s:%s\n",
             event.rank,
             global_func_id.name_by_idx(event.ph[0].func_id),
-            event.ph[0].primary_id, event.ph[0].secondary_id,
+            peat_ids_string(event.ph[0].ids).c_str(),
             global_func_id.name_by_idx(event.ph[1].func_id),
-            event.ph[1].primary_id, event.ph[1].secondary_id,
+            peat_ids_string(event.ph[1].ids).c_str(),
             global_func_id.name_by_idx(event.ph[2].func_id),
-            event.ph[2].primary_id, event.ph[2].secondary_id);
+            peat_ids_string(event.ph[2].ids).c_str());
 }
 
 #if _DEBUG
@@ -131,11 +131,11 @@ void P2PAL::print_P2PF(const MAT_Record &left, const MAT_Record &right)
 #else
     char tbuf[1024];
 #endif
-    sprintf(&tbuf[4], "%d:%s:%d:%lld:%lld:%s:%d:%lld:%lld:%lld\n", PEAT_RT_Bind_Peer,
+    sprintf(&tbuf[4], "%d:%s:%d:%s:%s:%d:%s:%lld\n", PEAT_RT_Bind_Peer,
             global_func_id.name_by_idx(left.ph[1].func_id),
-            left.rank, left.ph[1].primary_id, left.ph[1].secondary_id,
+            left.rank, peat_ids_string(left.ph[1].ids).c_str(),
             global_func_id.name_by_idx(right.ph[2].func_id),
-            right.rank, right.ph[2].primary_id, right.ph[2].secondary_id,
+            right.rank, peat_ids_string(right.ph[2].ids).c_str(),
             left.size);
     assert(left.size == right.size);
     if (print_on_send) {
@@ -203,23 +203,23 @@ void P2PAL::print_P2PF(const MAT_Record &left, const MAT_Record &right)
     {
         if (left.comm != right.comm) {
             fprintf(stderr, "p2p. Ranks:%d,%d ids:%lld,%lld,%lld (%lld) => (%lld) %lld,%lld,%lld\n", left.rank, right.rank,
-                    left.ph[0].primary_id, left.ph[1].primary_id, left.ph[2].primary_id,
+                    left.ph[0].ids[0], left.ph[1].ids[0], left.ph[2].ids[0],
                     left.size, right.size,
-                    right.ph[0].primary_id, right.ph[1].primary_id, right.ph[2].primary_id);
+                    right.ph[0].ids[0], right.ph[1].ids[0], right.ph[2].ids[0]);
             peat_throw_error("Communicators mismatch\n");
         }
         if (left.tag != right.tag) {
             fprintf(stderr, "p2p. Ranks:%d,%d ids:%lld,%lld,%lld (%lld) => (%lld) %lld,%lld,%lld\n", left.rank, right.rank,
-                    left.ph[0].primary_id, left.ph[1].primary_id, left.ph[2].primary_id,
+                    left.ph[0].ids[0], left.ph[1].ids[0], left.ph[2].ids[0],
                     left.size, right.size,
-                    right.ph[0].primary_id, right.ph[1].primary_id, right.ph[2].primary_id);
+                    right.ph[0].ids[0], right.ph[1].ids[0], right.ph[2].ids[0]);
             peat_throw_error("Tags mismatch\n");
         }
         if (left.size != right.size) {
             fprintf(stderr, "p2p. Ranks:%d,%d ids:%lld,%lld,%lld (%lld) => (%lld) %lld,%lld,%lld\n", left.rank, right.rank,
-                    left.ph[0].primary_id, left.ph[1].primary_id, left.ph[2].primary_id,
+                    left.ph[0].ids[0], left.ph[1].ids[0], left.ph[2].ids[0],
                     left.size, right.size,
-                    right.ph[0].primary_id, right.ph[1].primary_id, right.ph[2].primary_id);
+                    right.ph[0].ids[0], right.ph[1].ids[0], right.ph[2].ids[0]);
             peat_throw_error("Sizes mismatch\n");
         }
         if (left.ph[0].func_id == right.ph[0].func_id && right.ph[0].func_id != MPI_SENDRECV_ID && left.ph[0].func_id != MPI_SENDRECV_REPLACE_ID) {
@@ -229,9 +229,9 @@ void P2PAL::print_P2PF(const MAT_Record &left, const MAT_Record &right)
 #endif
     /*
         fprintf(stderr, "p2p. Ranks:%d,%d ids:%lld,%lld,%lld (%lld) => (%lld) %lld,%lld,%lld\n", left.rank, right.rank,
-            left.ph[0].primary_id, left.ph[1].primary_id, left.ph[2].primary_id,z
+            left.ph[0].ids[0], left.ph[1].ids[0], left.ph[2].ids[0],z
             left.size, right.size,
-            right.ph[0].primary_id, right.ph[1].primary_id, right.ph[2].primary_id);
+            right.ph[0].ids[0], right.ph[1].ids[0], right.ph[2].ids[0]);
     */
 }
 
@@ -242,12 +242,12 @@ void P2PAL::print_Local(const Tractor_Event &event)
         return;
 #ifdef MAT_PROCESS_HWC_MPI_OUTPUT
     if (event.landbuf.buf_size >= 0 || event.landbuf.buf_count >= 0) {
-        output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%lld:%lld\n", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id), event.landbuf.buf_count, event.landbuf.buf_size);
+        output_MPI->printf(event.rank, "%s:%s:%lld:%lld\n", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id), event.landbuf.buf_count, event.landbuf.buf_size);
     } else {
-        output_MPI->printf(event.rank, "%lld:%lld:%d:%s\n", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id));
+        output_MPI->printf(event.rank, "%s:%s\n", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id));
     }
 #if 0
-    output_HWC->printf(event.rank, "%lld:%lld:%d:%lld:%lld:%lld:%lld:%lld:%lld", event.primary_id, event.secondary_id, event.thread_id,
+    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
         event.tsc_time.func.in,
         event.tsc_time.mpi.in,
         event.tsc_time.mpi.out,
@@ -256,7 +256,7 @@ void P2PAL::print_Local(const Tractor_Event &event)
         event.tsc_time.pe.out);
 
 #else
-    output_HWC->printf(event.rank, "%lld:%lld:%d:%lld:%lld:%lld:%lld", event.primary_id, event.secondary_id, event.thread_id,
+    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
                        event.tsc_time.mpi.in,
                        event.tsc_time.mpi.out,
                        event.tsc_time.pe.in,
@@ -697,8 +697,7 @@ void P2PAL::parse_P2PTx(PEAT_Rank rank, const Tractor_Event &event, bool print_o
         ph_tx.tsc_time = event.tsc_time;
         ph_tx.tsc_u_time = event.tsc_u_time;
         ph_tx.addrs = event.addrs;
-        ph_tx.primary_id = event.primary_id;
-        ph_tx.secondary_id = event.secondary_id;
+        ph_tx.ids = event.ids;
         record->ph[0] = record->ph[1] = record->ph[2] = ph_tx;
         if (print_out)
             print_P2PL(event);
@@ -750,16 +749,16 @@ void P2PAL::parse_P2PTx(PEAT_Rank rank, const Tractor_Event &event, bool print_o
         if (event.P2P.request > 0) {
             if (global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) {
                 if (thrown_away_pers_requests[rank].find(event.P2P.request) != thrown_away_pers_requests[rank].end()) {
-                    std::cerr << "Persistent request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << std::endl;
+                    std::cerr << "Persistent request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << std::endl;
                 };
                 thrown_away_pers_requests[rank].insert(event.P2P.request);
-                std::cerr << "Invalid persistent request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << std::endl;
+                std::cerr << "Invalid persistent request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << std::endl;
             } else {
                 if (thrown_away_requests[rank].find(event.P2P.request) != thrown_away_requests[rank].end()) {
-                    std::cerr << "Request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << std::endl;
+                    std::cerr << "Request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << std::endl;
                 }
                 thrown_away_requests[rank].insert(event.P2P.request);
-                std::cerr << "Invalid request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << std::endl;
+                std::cerr << "Invalid request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << std::endl;
             }
         }
     }
@@ -789,8 +788,7 @@ void P2PAL::parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, bool increas
         ph_rx.tsc_time = event.tsc_time;
         ph_rx.tsc_u_time = event.tsc_u_time;
         ph_rx.addrs = event.addrs;
-        ph_rx.primary_id = event.primary_id;
-        ph_rx.secondary_id = event.secondary_id;
+        ph_rx.ids = event.ids;
         record->ph[0] = record->ph[1] = record->ph[2] = ph_rx;
         print_P2PL(event);
         if (global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) { // add persistent request to queue and finish
@@ -852,16 +850,16 @@ void P2PAL::parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, bool increas
         if (event.P2P.request > 0) {
             if (global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) {
                 if (thrown_away_pers_requests[rank].find(event.P2P.request) != thrown_away_pers_requests[rank].end()) {
-                    std::cerr << "Persistent request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << std::endl;
+                    std::cerr << "Persistent request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << std::endl;
                 };
                 thrown_away_pers_requests[rank].insert(event.P2P.request);
-                std::cerr << "Invalid persistent request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << std::endl;
+                std::cerr << "Invalid persistent request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << std::endl;
             } else {
                 if (thrown_away_requests[rank].find(event.P2P.request) != thrown_away_requests[rank].end()) {
-                    std::cerr << "Request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << std::endl;
+                    std::cerr << "Request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << std::endl;
                 }
                 thrown_away_requests[rank].insert(event.P2P.request);
-                std::cerr << "Invalid request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << std::endl;
+                std::cerr << "Invalid request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << std::endl;
             }
         }
     }
@@ -934,16 +932,16 @@ void P2PAL::send_P2PTx(PEAT_Rank rank, const Tractor_Event &event)
         if (event.P2P.request > 0) {
             if (global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) {
                 if (thrown_away_pers_requests[rank].find(event.P2P.request) != thrown_away_pers_requests[rank].end()) {
-                    std::cerr << "Persistent request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << std::endl;
+                    std::cerr << "Persistent request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << std::endl;
                 };
                 thrown_away_pers_requests[rank].insert(event.P2P.request);
-                std::cerr << "Invalid persistent request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << std::endl;
+                std::cerr << "Invalid persistent request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << std::endl;
             } else {
                 if (thrown_away_requests[rank].find(event.P2P.request) != thrown_away_requests[rank].end()) {
-                    std::cerr << "Request conflict " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << std::endl;
+                    std::cerr << "Request conflict " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << std::endl;
                 }
                 thrown_away_requests[rank].insert(event.P2P.request);
-                std::cerr << "Invalid request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << std::endl;
+                std::cerr << "Invalid request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << std::endl;
             }
         }
         return;
@@ -961,8 +959,7 @@ void P2PAL::send_P2PTx(PEAT_Rank rank, const Tractor_Event &event)
 #endif
     MAT_Request_Record record;
     record.peer = peer;
-    record.primary_id = event.primary_id;
-    record.secondary_id = event.secondary_id;
+    record.ids = event.ids;
 
     /*
     record.ph2.func_id = event.func_id;
@@ -970,8 +967,7 @@ void P2PAL::send_P2PTx(PEAT_Rank rank, const Tractor_Event &event)
     record.ph2.tsc_time = event.tsc_time;
     record.ph2.tsc_u_time = event.tsc_u_time;
     record.ph2.addrs = event.addrs;
-    record.ph2.primary_id = event.primary_id;
-    record.ph2.secondary_id = event.secondary_id;
+    record.ph2.ids = event.ids;
     */
     if (event.P2P.request > 0) {
         record.request = event.P2P.request;
@@ -1022,7 +1018,7 @@ void P2PAL::process_remote_event(PEAT_Signed_Num size, PEAT_Rank src)
     Tractor_Event temp_event;
     temp_event.unpack(buffer);
     parse_P2PTx(temp_event.rank, temp_event, false);
-    // fprintf(stdout, "Rank %d: Received p2p (%lld,%d,%llx) from rank %d\n", my_rank, temp_event.primary_id, temp_event.P2P.peer, temp_event.P2P.request, temp_event.rank);
+    // fprintf(stdout, "Rank %d: Received p2p (%lld,%d,%llx) from rank %d\n", my_rank, temp_event.ids[0], temp_event.P2P.peer, temp_event.P2P.request, temp_event.rank);
 }
 #endif
 
@@ -1243,7 +1239,7 @@ std::ostream &operator<<(std::ostream &dbg, const MAT_Record &rec)
 
 std::ostream &operator<<(std::ostream &dbg, const Phase &ph)
 {
-    dbg << std::dec << "{" << global_func_id.name_by_idx(ph.func_id) << "," << ph.primary_id << "," << ph.secondary_id << "," << ph.tsc_time.func.in << "," << ph.tsc_time.func.out << "}";
+    dbg << std::dec << "{" << global_func_id.name_by_idx(ph.func_id) << "," << peat_ids_string(ph.ids) << "," << ph.tsc_time.func.in << "," << ph.tsc_time.func.out << "}";
     return dbg;
 }
 

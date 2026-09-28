@@ -38,12 +38,7 @@
 #endif
 PET_Coll_Event::~PET_Coll_Event()
 {
-    PEAT_Num size = t_events.size();
-    if (size > 0) {
-        for (PEAT_Num i = 0; i < size; i++) {
-            delete t_events[i];
-        }
-    }
+    // t_events is nested_events: the records are deleted by PET_Event::~PET_Event
 }
 
 PEAT_Bool PET_Coll_Event::is_assembled() const
@@ -56,9 +51,10 @@ PEAT_Bool PET_Coll_Event::is_assembled() const
 }
 PEAT_Bool PET_Coll_Event::is_bound() const
 {
-    int size = (int)t_events.size();
+    const std::vector<PET_Event *> &kids = child_iteration_list(); // includes nested records
+    int size = (int)kids.size();
     for (int i = 0; i < size; i++) {
-        if (!t_events[i]->is_bound()) {
+        if (kids[i] == NULL || !kids[i]->is_bound()) {
             return false;
         }
     }
@@ -79,12 +75,11 @@ PEAT_Bool PET_Coll_Event::safe_to_delete()
 }
 PEAT_Bool PET_Coll_Event::can_be_destroyed()
 {
-    PEAT_Num size = t_events.size();
-    if (size > 0) {
-        for (PEAT_Num i = 0; i < size; i++) {
-            if (t_events[i]->can_be_destroyed() == false) {
-                return false;
-            }
+    const std::vector<PET_Event *> &kids = child_iteration_list();
+    PEAT_Num size = kids.size();
+    for (PEAT_Num i = 0; i < size; i++) {
+        if (kids[i] && kids[i]->can_be_destroyed() == false) {
+            return false;
         }
     }
     return true;
@@ -93,12 +88,11 @@ PEAT_Bool PET_Coll_Event::can_be_destroyed()
 PEAT_Bool PET_Coll_Event::bind()
 {
     // if (is_bound() && is_assembled()) return true;
-    PEAT_Num size = t_events.size();
-    if (size > 0) {
-        for (PEAT_Num i = 0; i < size; i++) {
-            if (!t_events[i]->bind()) {
-                return false;
-            }
+    const std::vector<PET_Event *> &kids = child_iteration_list();
+    PEAT_Num size = kids.size();
+    for (PEAT_Num i = 0; i < size; i++) {
+        if (kids[i] == NULL || !kids[i]->bind()) {
+            return false;
         }
     }
     return is_bound() && is_assembled();
@@ -124,12 +118,11 @@ PEAT_Bool PET_Coll_Event::ready_to_estimate()
             //			if (!coll_it->second->PET_Event::ready_to_estimate()) return false; //1st in line why?
         }
     }
-    PEAT_Num size = t_events.size();
-    if (size > 0) {
-        for (PEAT_Num i = 0; i < size; i++) {
-            if (!t_events[i]->ready_to_estimate())
-                return false;
-        }
+    const std::vector<PET_Event *> &kids = child_iteration_list();
+    PEAT_Num size = kids.size();
+    for (PEAT_Num i = 0; i < size; i++) {
+        if (kids[i] == NULL || !kids[i]->ready_to_estimate())
+            return false;
     }
     return true;
 }
@@ -147,64 +140,60 @@ void PET_Coll_Event::scale_event()
 
 PET_Event *PET_Coll_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
 {
-    int size = (int)t_events.size();
-    if (size > 0) {
-        force_write = true;
-        for (int i = 0; i < size; i++) {
-            t_events[i]->write_event(gz_MPI, gz_HWC, gz_bind, mpi_eol, hwc_eol);
-            // get_core()->remove_entry(t_events[i]);
-        }
-        // remove all events and insert pure "collective" back
-        // concatenate_event();
-        // PET_Local_Event::insert(); // insert as standalone event
-        clear_reason(pr_event_not_estimated);
-    }
+    write_nested_records(gz_MPI, gz_HWC, gz_bind, mpi_eol, hwc_eol); // trace order, nested records included
     return this;
 }
 
+/* child iteration walks every colt record (nested ones included) in trace order */
 PET_Event *PET_Coll_Event::get_first_child_event()
 {
-    if (t_events.empty())
+    const std::vector<PET_Event *> &kids = child_iteration_list();
+    if (kids.empty())
         return this;
     int_event_index = 0;
-    if (int_event_index >= t_events.size() || t_events.at(int_event_index) == NULL)
+    if (int_event_index >= kids.size() || kids.at(int_event_index) == NULL)
         return this;
-    return t_events.at(int_event_index);
+    return kids.at(int_event_index);
 }
 
 PET_Event *PET_Coll_Event::get_last_child_event()
 {
-    if (t_events.empty())
+    const std::vector<PET_Event *> &kids = child_iteration_list();
+    if (kids.empty())
         return this;
-    int_event_index = t_events.size() - 1;
-    if (int_event_index >= t_events.size() || t_events.at(int_event_index) == NULL)
+    int_event_index = kids.size() - 1;
+    if (int_event_index >= kids.size() || kids.at(int_event_index) == NULL)
         return this;
-    return t_events.at(int_event_index);
+    return kids.at(int_event_index);
 }
 
 PET_Event *PET_Coll_Event::get_next_child_event()
 {
-    if (t_events.empty())
+    const std::vector<PET_Event *> &kids = child_iteration_list();
+    if (kids.empty())
         return this;
     int_event_index++;
-    if (int_event_index >= t_events.size() || t_events.at(int_event_index) == NULL)
+    if (int_event_index >= kids.size() || kids.at(int_event_index) == NULL)
         return this;
-    return t_events.at(int_event_index);
+    return kids.at(int_event_index);
 }
 
 PET_Event *PET_Coll_Event::get_prev_child_event()
 {
+    const std::vector<PET_Event *> &kids = child_iteration_list();
     int_event_index--;
-    if (int_event_index >= t_events.size() || t_events.at(int_event_index) == NULL)
+    if (int_event_index >= kids.size() || kids.at(int_event_index) == NULL)
         return this;
-    return t_events.at(int_event_index);
+    return kids.at(int_event_index);
 }
-PET_Event *PET_Coll_Event::get_prev_child_event(PET_Event *event)
+PET_Event *PET_Event::get_prev_child_event(PET_Event *event)
 {
-    PEAT_Signed_Num size = (PEAT_Signed_Num)t_events.size() - 1;
+    /* kept as it always behaved: the loop never matches (it compares the host, not the child),
+       so the predecessor of a nested record is the event before its top-level call */
+    PEAT_Signed_Num size = (PEAT_Signed_Num)nested_events.size() - 1;
     for (PEAT_Signed_Num event_index = size; event_index > 0; event_index--) {
-        if (t_events.at(event_index) == this && size > 0)
-            return t_events.at(event_index - 1);
+        if (nested_events.at(event_index) == this && size > 0)
+            return nested_events.at(event_index - 1);
     }
     return get_core()->get_prev_event(this, false);
 }
@@ -218,62 +207,26 @@ PEAT_Rank PET_Coll_Event::get_rank_read_suggestion()
                 if (!event_it->second->ready_to_bind())
                     return event_it->first;
             }
-            PEAT_Num size = (PEAT_Num)t_events.size();
-            if (size > 0) {
-                for (PEAT_Num i = 0; i < size; i++) {
-                    if (!t_events[i]->is_bound())
-                        return t_events[i]->get_rank_read_suggestion();
-                }
+            const std::vector<PET_Event *> &kids = child_iteration_list();
+            PEAT_Num size = (PEAT_Num)kids.size();
+            for (PEAT_Num i = 0; i < size; i++) {
+                if (kids[i] && !kids[i]->is_bound())
+                    return kids[i]->get_rank_read_suggestion();
             }
             pet_warning(get_core(), this, "Unable to select rank to read.\n");
             return -1;
         };
         return (collective->expected_ranks.begin()->first);
     } else {
-        PEAT_Num size = (PEAT_Num)t_events.size();
-        if (size > 0) {
-            for (PEAT_Num i = 0; i < size; i++) {
-                if (!t_events[i]->is_bound())
-                    return t_events[i]->get_rank_read_suggestion();
-            }
+        const std::vector<PET_Event *> &kids = child_iteration_list();
+        PEAT_Num size = (PEAT_Num)kids.size();
+        for (PEAT_Num i = 0; i < size; i++) {
+            if (kids[i] && !kids[i]->is_bound())
+                return kids[i]->get_rank_read_suggestion();
         }
         pet_warning(get_core(), this, "Unable to select rank to read.\n");
         return -1;
     }
-}
-
-PEAT_Clock PET_Coll_Event::remove_tractor_overhead(PEAT_Clock *prolog_overhead)
-{
-    PEAT_Clock p_overhead = 0, ct_overhead = 0, host_overhead;
-    host_overhead = PET_Local_Event::remove_tractor_overhead(&p_overhead);
-    int size = (int)t_events.size();
-    for (int i = 0; i < size; i++) {
-        PEAT_Clock cp_overhead = 0;
-        t_events[i]->move_event(p_overhead);
-        PEAT_Clock overhead = t_events[i]->remove_tractor_overhead(&cp_overhead);
-        t_events[i]->sub_t_t = overhead;
-        for (int j = i + 1; j < size; j++) {
-            if (t_events[j]->o_time.func.in > t_events[i]->o_time.func.out) {
-                t_events[j]->move_event(overhead); // dont't move overlapped events
-            } else {
-                PEAT_Clock c_overhead = t_events[j]->remove_tractor_overhead();
-                t_events[i]->e_time.mpi.adjust(c_overhead);
-                t_events[i]->e_time.func.adjust(c_overhead);
-                // e_time.mpi.adjust(c_overhead);
-                // e_time.func.adjust(c_overhead);
-                t_events[j]->move_event(cp_overhead);
-                overhead += c_overhead;
-            }
-        }
-        ct_overhead += overhead;
-        t_events[i]->sub_t_t_t = get_core()->get_tractor_overhead(rank) + ct_overhead + p_overhead;
-        e_time.mpi.adjust(overhead);
-        e_time.func.adjust(overhead);
-        if (e_time.pe > 0)
-            e_time.pe.adjust(overhead);
-    }
-    t_time = e_time;
-    return host_overhead + ct_overhead;
 }
 
 PEAT_Bool PET_Coll_Event::split_event()
@@ -282,8 +235,10 @@ PEAT_Bool PET_Coll_Event::split_event()
         return true;
     int size = (int)t_events.size();
     if (size > 0) {
-        for (int i = 0; i < size; i++) {
-            t_events[i]->split_event();
+        const std::vector<PET_Event *> &kids = child_iteration_list();
+        int all_size = (int)kids.size();
+        for (int i = 0; i < all_size; i++) {
+            kids[i]->split_event(); // nested records included
         }
         event_parts.prolog = t_events[0]->e_time.func.in - e_time.func.in;
         event_parts.epilog = e_time.func.out - t_events[size - 1]->e_time.func.out;
@@ -298,16 +253,6 @@ PEAT_Bool PET_Coll_Event::split_event()
 
     return true;
 }
-PEAT_Clock PET_Coll_Event::move_event(PEAT_Clock sub_t)
-{
-    int size = (int)t_events.size();
-    PET_Local_Event::move_event(sub_t);
-    for (int i = 0; i < size; i++) {
-        t_events[i]->move_event(sub_t);
-    }
-    return sub_t;
-}
-
 void PET_Coll_Event::concatenate_event()
 {
     if (!t_events.empty()) {
@@ -364,9 +309,7 @@ PEAT_Bool PET_Coll_Event::estimate(Estimation_Event *event)
             estimation_started = true;
             split_event();
             if (size > 0) {
-                t_events[0]->is_initiated = true;
-                index_event_being_estimated = 0;
-                submit(t_events[0]->e_time.func.in, EET_FUNC_START, t_events[0], this, NULL);
+                initiate_nested(); // the records run one after another, see handle_nested_completed()
             } else {
                 if (get_core()->get_mo()) {
                     // concatenate_event();
@@ -391,29 +334,12 @@ PEAT_Bool PET_Coll_Event::estimate(Estimation_Event *event)
             if (!estimation_started) {
                 pet_throw_error(pet_core, this, event, "Estimation not started.\n");
             }
-            {
-                PEAT_Signed_Num index = find_t_event(event->submiter);
-                if (index >= 0) {
-                    if (event->submiter->is_estimated()) {
-                        if (index < (PEAT_Signed_Num)size - 1) {
-                            // move other events
-                            move_events(index + 1, event->submiter->sub_t_ae, false);
-                            t_events[index + 1]->initiate();
-                            index_event_being_estimated = index + 1;
-                            // t_events[index + 1]->is_initiated = true;
-                            // submit(t_events[index + 1]->e_time.func.in, EET_FUNC_START, t_events[index + 1], this, NULL);
-                        } else {
-                            if (get_event_type() != PET_EVENT_TYPE_COMPLETION) { // completion events will hadnle by themselves
-                                // last event
-                                index_event_being_estimated = -1;
-                                concatenate_event();
-                                submit(e_time.func.out, EET_FUNC_END, this, this, NULL);
-                            }
-                        }
-                    }
-                } /* else {
-                    pet_throw_error(pet_core, this, event, "Unknown submitter.\n");
-                } */
+            // moves the following records and starts the next one; when the last one is done the call ends
+            if (handle_nested_completed(event) && nested_index_being_estimated >= (PEAT_Signed_Num)size) {
+                if (get_event_type() != PET_EVENT_TYPE_COMPLETION) { // completion events will handle by themselves
+                    concatenate_event();
+                    submit(e_time.func.out, EET_FUNC_END, this, this, NULL);
+                }
             }
             break;
         case EET_NOTIFY:
@@ -464,11 +390,13 @@ PEAT_Clock PET_Coll_Event::get_centre_code(Event_Set_Stat::t_stat_type t)
 }
 void PET_Coll_Event::post_read_event()
 {
+    // after build_nesting() t_events holds depth 0 records only, so an overlap here is a partial one
+    // (neither record contains the other), which a single thread cannot produce: clip and warn
     int size = (int)t_events.size();
     if (size > 1) {
         for (int i = size - 1; i > 0; i--) {
             if (t_events[i - 1]->t_time.func.out > t_events[i]->t_time.func.in) { // correct overlapped events
-                pet_warning(get_core(), this, "Overlapped events detected\n");
+                pet_warning(get_core(), this, "Partially overlapped collective transfer records detected\n");
                 t_events[i - 1]->t_time.func.out = t_events[i]->t_time.func.in;
                 t_events[i - 1]->e_time.func.out = t_events[i]->e_time.func.in;
                 t_events[i - 1]->t_time.mpi.out = t_events[i]->t_time.mpi.in;
@@ -481,11 +409,74 @@ void PET_Coll_Event::post_read_event()
 }
 void PET_Coll_Event::notify_before_destroy(PET_Event *event)
 {
+    PET_Event::notify_before_destroy(event); // drops it from nested_events and flat_events
+}
 
-    int size = (int)t_events.size();
-    for (int i = 0; i < size; i++) {
-        if (t_events[i] == event) {
-            t_events[i] = NULL;
+static bool colt_before(const PET_Event *a, const PET_Event *b)
+{
+    // earlier start first; on equal start the longer (containing) record first
+    if (a->e_time.func.in != b->e_time.func.in)
+        return a->e_time.func.in < b->e_time.func.in;
+    return a->e_time.func.out > b->e_time.func.out;
+}
+
+void PET_Coll_Event::build_nesting()
+{
+    /* Colt records come in one flat list per MPI call (trace order), but a blocking colt call spins the
+       progress engine, which issues further traced colt calls on the same thread: those lie inside the
+       time interval of the spinning call. Re-parent by interval inclusion: a record contained in an earlier
+       one becomes a nested record of the tightest such container instead of this call. t_events (this call's
+       nested_events) ends up in time order; flat_events keeps the original list for iteration and output. */
+    PEAT_Num size = t_events.size();
+    if (size == 0)
+        return;
+    for (PEAT_Num i = 0; i < size; i++) {
+        if (t_events[i] == NULL) {
+            pet_throw_error(get_core(), this, NULL, "Collective transfer record is missing.\n");
+            return;
         }
+    }
+    flat_events = t_events;
+    if (size < 2)
+        return;
+    std::vector<PET_Event *> order(t_events);
+    std::stable_sort(order.begin(), order.end(), colt_before);
+    std::vector<PET_Event *> stack, depth0;
+    PEAT_Num nested_num = 0;
+    for (PEAT_Num i = 0; i < size; i++) {
+        PET_Event *evt = order[i];
+        while (!stack.empty()) {
+            PET_Event *top = stack.back();
+            if (evt->e_time.func.in >= top->e_time.func.in && evt->e_time.func.out <= top->e_time.func.out)
+                break; // contained in top
+            if (evt->e_time.func.in < top->e_time.func.out) {
+                pet_warning(get_core(), this, "Partially overlapped collective transfer records, nesting is ambiguous\n");
+            }
+            stack.pop_back();
+        }
+        if (stack.empty()) {
+            depth0.push_back(evt); // stays with this call (container_event == this)
+        } else {
+            PET_Event *container = stack.back();
+            evt->container_event = container;
+            container->nested_events.push_back(evt); // time order thanks to the sort
+            nested_num++;
+        }
+        stack.push_back(evt);
+    }
+    if (nested_num > 0) {
+        t_events = depth0;
+    } else {
+        t_events = order; // no nesting: still make the chain time ordered (containers-at-exit convention of the tracer)
+    }
+    if (get_core()->is_verbose() && nested_num > 0) {
+        fprintf(stderr, "Rank %d %s(%lld): %lld collective transfer records, %lld of them nested:",
+                rank, global_func_id.name_by_idx(func_id), ids[0], (long long)size, (long long)nested_num);
+        for (PEAT_Num i = 0; i < t_events.size(); i++) {
+            if (t_events[i]->has_nested()) {
+                fprintf(stderr, " %s(%s)<-%lld", global_func_id.name_by_idx(t_events[i]->func_id), t_events[i]->ids_str().c_str(), (long long)t_events[i]->nested_count_total());
+            }
+        }
+        fprintf(stderr, "\n");
     }
 }

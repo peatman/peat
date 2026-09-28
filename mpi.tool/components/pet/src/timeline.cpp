@@ -32,8 +32,11 @@ PEAT_Bool Estimation_Timeline::insert_event(Estimation_Event *event, PEAT_Bool i
     // assert(event->start >= last_deleted_event.start);
     if (event->start < last_deleted_event.start) {
         pet_throw_error(event->owner->pet_core, event->owner, event, "Current (ee)event starts before already estimated one.\n");
+        event->print(stderr, "  offending:");
+        last_deleted_event.print(stderr, "  last done:");
+        fprintf(stderr, "\n");
     }
-    event_mutex->lock();
+    event_mutex.lock();
     {
         event->order_id = order_id;
         event->owner->increase_ee_events();
@@ -47,7 +50,7 @@ PEAT_Bool Estimation_Timeline::insert_event(Estimation_Event *event, PEAT_Bool i
         timeline[event->start].push_back(*event);
         set_changed();
     }
-    event_mutex->unlock();
+    event_mutex.unlock();
 
     return true;
 }
@@ -61,7 +64,7 @@ PEAT_Bool Estimation_Timeline::repeat_last_ee_entry(PET_Event *evt, PEAT_Bool lo
     if (event.start < last_deleted_event.start) {
         pet_throw_error(event.owner->pet_core, event.owner, &event, "Current (ee)event starts before already estimated one.\n");
     }
-    event_mutex->lock();
+    event_mutex.lock();
     {
         event.order_id = order_id;
         event.owner->increase_ee_events();
@@ -73,7 +76,7 @@ PEAT_Bool Estimation_Timeline::repeat_last_ee_entry(PET_Event *evt, PEAT_Bool lo
         timeline[event.start].push_back(event);
         set_changed();
     }
-    event_mutex->unlock();
+    event_mutex.unlock();
     return true;
 }
 
@@ -91,7 +94,7 @@ PEAT_Bool Estimation_Timeline::delete_event(Estimation_Event *event, PEAT_Bool i
     if (event->start < last_deleted_event.start && (!is_posted)) {
         pet_throw_error(event->owner->pet_core, event->owner, event, "event->start < last_deleted_event.start.\n");
     }
-    event_mutex->lock();
+    event_mutex.lock();
     {
         event->owner->decrease_ee_events();
         event->submiter->decrease_ee_events();
@@ -107,6 +110,6 @@ PEAT_Bool Estimation_Timeline::delete_event(Estimation_Event *event, PEAT_Bool i
             timeline.erase(ee_it);
         set_changed();
     }
-    event_mutex->unlock();
+    event_mutex.unlock();
     return true;
 }

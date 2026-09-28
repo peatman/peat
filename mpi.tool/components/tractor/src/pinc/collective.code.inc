@@ -29,6 +29,8 @@ $prototype {
 #ifndef _TRACTOR_PASSTHROUGH_
     int rv, i,comm_size,amiroot=1;
     MPI_Aint s_type_size = 0, r_type_size = 0;
+    int level=-1;              /* nesting level of this call, -1 if not traced */
+    long long children_base=0; /* records of the next level existing at entry */
     long long tsc_entry,tsc_exit,tsc_mpi_entry,tsc_mpi_exit,local_tool_overhead;
     const PEAT_MPI_Func_ID_Through fidc=$funcid_through;
     pid_t tid_in;
@@ -49,8 +51,9 @@ $prototype {
         tsc_entry = peat_get_time_tid(&tid_in);
         counting_permit+=2*counting_permission_pcontrol[$funcid_through];
         tid=__msl_get_tid(tid_in);
-        __msl_allocate_event(tid,1,&event,&counters);
-        first_progress_entry[tid]=last_progress_exit[tid]=num_colts[tid]=0;
+        level=__msl_enter_call(tid);
+        children_base=__msl_child_base(tid,level);
+        __msl_allocate_event(tid,level,1,&event,&counters);
 #ifdef _HWCOUNTERS_ENABLED_
         gt_info(hwc).get_all_counters(l_hwcs);
 #endif
@@ -58,7 +61,6 @@ $prototype {
         gt_info(mprof).get_mem_status(&l_mem);
 #endif
         $amiroot
-        in_mpi_call[tid]=1;
         tsc_mpi_entry=peat_get_time();
     }//if(__builtin_expect((counting_permission[$funcid_through && !l_skip_parse]>0),1))
 #else
@@ -68,14 +70,13 @@ $prototype {
     $Preturn=P$c_call;
 #endif
 #ifndef _TRACTOR_PASSTHROUGH_
+    if (level>=0) __msl_leave_call(tid); /* also when the record was discarded */
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
         tsc_mpi_exit = peat_get_time();
-        in_mpi_call[tid]=0;
         stack_unwind(gt_info(max_ret_level),counters.addrs,gt_info(ret_levels));
-        event->func_id[0] = $funcid;
-        event->func_id[1] = $funcid_through;
+        event->func_id = $funcid_through;
+        event->num_children += (short)(__msl_child_base(tid,level) - children_base);
         event->collective.comm = last_coll_comm = $comm;
-        event->collective.num_colts=num_colts[tid];
         $root
         $comm_size
         $s_type_size
@@ -101,7 +102,7 @@ $prototype {
         // counting_permit-=2*counting_permission_pcontrol[$funcid_through];
         tsc_exit = peat_get_time();
         event->tscs[3]=tsc_exit-tsc_entry;
-        __msl_check_chain(tid);
+        __msl_check_chain(tid,level);
         local_tool_overhead=tsc_mpi_entry-tsc_entry+tsc_exit-tsc_mpi_exit;
         global_mpi_time+=tsc_mpi_exit-tsc_mpi_entry;
         global_tool_overhead += local_tool_overhead;

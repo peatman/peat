@@ -29,7 +29,7 @@ struct Coll_Storage {
     Coll_Storage() : size(0), comm(0), func_id(TMPI_FUNC_ID_NONE), assembled(false) {}
     std::map<PEAT_Rank, PEAT_Rank> expected_ranks;
     std::map<PEAT_Rank, PET_Coll_Event *> events;
-    std::map<PEAT_Rank, PEAT_UID> coll_uids;
+    std::map<PEAT_Rank, PEAT_Event_IDs> coll_uids; // id path of every member record
     std::map<PEAT_Rank, PEAT_Bool> shutdown_ranks;
     PEAT_Num size; // known at the begining
     PEAT_MPI_Comm comm;

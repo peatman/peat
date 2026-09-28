@@ -767,6 +767,42 @@ struct Object_File_Definition {
 struct Model_ID;
 extern std::set<PEAT_Rank> empty_rank_set;
 
+/* Id path of a trace record: ids[0] is the top-level id, ids[l] the index inside the parent at depth l,
+   unused entries are -1. The path identifies a record in the trace and in the bind files. */
+typedef std::vector<PEAT_UID> PEAT_Event_IDs;
+std::string peat_ids_string(const PEAT_Event_IDs &ids);                                        // "id_0:...:id_{n-1}"
+int peat_ids_parse(const String_Split &line, int pos, int columns, PEAT_Event_IDs &ids); // reads columns fields from pos, returns the next position
+int peat_ids_level(const PEAT_Event_IDs &ids);                                                 // nesting depth, 0 for a top-level record
+inline PEAT_Bool peat_ids_nested(const PEAT_Event_IDs &ids) { return peat_ids_level(ids) > 0; }
+
+/* Header shared by .mpi and .hwc trace records.
+   nested format (tractor with nesting levels): id_0:...:id_{n-1}:tid:num_children:<payload>
+       n is the number of id columns stored in the com file (PEAT_RT_Number_Of_Events), unused ids are -1,
+       records form a pre-order tree per thread: the num_children records following a record are its children.
+   legacy format: primary_id:secondary_id:tid:<payload>
+       a path of depth one: secondary_id is the index of a colt record inside its host (-1 for a top-level record),
+       the number of colt records is kept in the class-specific fields (num_colts). */
+struct PEAT_Record_Header {
+    PEAT_Event_IDs ids;           // id path, ids[0] is the top-level (primary) id
+    PEAT_Thread thread_id;
+    PEAT_Signed_Num num_children; // direct children; -1 in the legacy format (unknown at header level)
+    int level;                    // nesting depth, 0 for a top-level record
+    int payload;                  // index of the first payload field on the .mpi line (function name)
+    int hwc_payload;              // index of the first payload field on the .hwc line (first tsc): nested lines carry the ids only
+    PEAT_Bool nested;             // record is in the nested format
+    PEAT_Record_Header() : thread_id(0), num_children(-1), level(0), payload(3), hwc_payload(3), nested(false) {}
+    void parse(const String_Split &line, int id_columns, PEAT_Bool nested_format);     // from the .mpi line
+    void parse_hwc(const String_Split &line, int id_columns, PEAT_Bool nested_format); // from the .hwc line alone (no thread/num_children in the nested format)
+    PEAT_Bool same_ids(const PEAT_Record_Header &other) const { return ids == other.ids && thread_id == other.thread_id; }
+    PEAT_Bool same_ids(const String_Split &line) const; // compares the id columns of another line (the .hwc twin)
+    std::string to_string() const;                     // the .mpi header as written: "id_0:...:tid[:num_children]"
+    std::string to_hwc_string() const;                 // the .hwc header as written: nested "id_0:...", legacy "primary:secondary:tid"
+};
+/* the .mpi header as written to a trace: "id_0:...:tid[:num_children]" (num_children < 0: legacy format) */
+std::string peat_record_header_string(const std::vector<PEAT_UID> &ids, PEAT_Thread thread_id, PEAT_Signed_Num num_children);
+/* the .hwc header as written to a trace: nested format "id_0:...:id_{n-1}", legacy "primary:secondary:tid" */
+std::string peat_record_hwc_header_string(const std::vector<PEAT_UID> &ids, PEAT_Thread thread_id, PEAT_Bool nested);
+
 struct Address_File_Storage {
     PEAT_Num num_addrs;
     User_Address_Info empty_info;
@@ -777,6 +813,8 @@ struct Address_File_Storage {
     std::map<PEAT_Rank, PEAT_UID> last_event_idx;
     std::map<PEAT_Rank, PEAT_UID> last_fab_event_idx;
     std::map<PEAT_Rank, PEAT_Thread> last_thread_idx;
+    std::map<PEAT_Rank, int> id_columns;          // id columns in the .mpi/.hwc records (nested format; 2 for legacy traces)
+    std::map<PEAT_Rank, PEAT_Bool> nested_format; // records carry num_children in the header (6-field PEAT_RT_Number_Of_Events)
     File_Storage_GZ *UR_File;
     const Model_ID *m_id;
 
@@ -794,6 +832,32 @@ struct Address_File_Storage {
         return mAddresses.empty();
     }
     void parse(const String_Split &lines, const PEAT_Rank rank);
+    int get_id_columns(const PEAT_Rank rank) const
+    {
+        std::map<PEAT_Rank, int>::const_iterator it = id_columns.find(rank);
+        return it == id_columns.end() ? 2 : it->second;
+    }
+    int max_id_columns() const
+    {
+        int cols = 2;
+        for (std::map<PEAT_Rank, int>::const_iterator it = id_columns.begin(); it != id_columns.end(); ++it)
+            if (it->second > cols)
+                cols = it->second;
+        return cols;
+    }
+    PEAT_Bool is_nested_format(const PEAT_Rank rank) const
+    {
+        std::map<PEAT_Rank, PEAT_Bool>::const_iterator it = nested_format.find(rank);
+        return it == nested_format.end() ? false : it->second;
+    }
+    void parse_record_header(PEAT_Record_Header &header, const String_Split &line, const PEAT_Rank rank) const
+    {
+        header.parse(line, get_id_columns(rank), is_nested_format(rank));
+    }
+    void parse_record_hwc_header(PEAT_Record_Header &header, const String_Split &line, const PEAT_Rank rank) const
+    {
+        header.parse_hwc(line, get_id_columns(rank), is_nested_format(rank));
+    }
     // Address_File_Storage &operator = (const Address_File_Storage &rhs);
     void put_records(const User_Region_Store &user_regions);
     void get_records();

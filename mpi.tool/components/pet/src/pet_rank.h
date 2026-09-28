@@ -123,8 +123,20 @@ class PET_Rank
     static PEAT_LNum total_fabric_events_removed;
     PET_Event *last_read_event;
     PEAT_Bool orphans_processed;
+    std::list<PET_Collective_Event *> nb_collectives; // outstanding nonblocking collectives (owners of foreign progress records)
 
   public:
+    void register_nb_collective(PET_Collective_Event *event) { nb_collectives.push_back(event); }
+    void unregister_nb_collective(PET_Collective_Event *event) { nb_collectives.remove(event); }
+    PET_Collective_Event *find_nb_collective(PEAT_MPI_Comm comm, PEAT_MPI_Tag tag, const PET_Event *exclude)
+    {
+        // most recent first: tags are reused once a collective is done
+        for (std::list<PET_Collective_Event *>::reverse_iterator it = nb_collectives.rbegin(); it != nb_collectives.rend(); ++it) {
+            if (*it != exclude && (*it)->uses_tag(comm, tag))
+                return *it;
+        }
+        return NULL;
+    }
     PET_Rank() : tractor_overhead_time(0), sub_time(0), rank_finished(false), last_progress_notify(0), last_read_event(NULL), orphans_processed(false)
     {
         verbose = 1;
@@ -253,7 +265,7 @@ class PET_Rank
 
     void remove_pre_entry(PET_Event *event)
     {
-        if (event->get_event_type() == PET_EVENT_TYPE_TOR || event->get_event_type() == PET_EVENT_TYPE_TAR) {
+        if (is_pairing_event(event)) {
             for (std::list<PET_Event *>::iterator event_it = pairing_rank_events.begin(); event_it != pairing_rank_events.end(); ++event_it) {
                 if (event == *event_it) {
                     pairing_rank_events.erase(event_it);
@@ -263,9 +275,19 @@ class PET_Rank
         }
     };
 
+    static PEAT_Bool is_pairing_event(PET_Event *event)
+    {
+        PET_Event_Type t = event->get_event_type();
+        if (t == PET_EVENT_TYPE_TOR || t == PET_EVENT_TYPE_TAR)
+            return true;
+        // nonblocking collectives / communicator creation are completed by MPI_Wait & co, so requests must find them
+        if ((t == PET_EVENT_TYPE_COLLECTIVE || t == PET_EVENT_TYPE_COMM) && event->get_mpi_request() != 0)
+            return true;
+        return false;
+    }
     void insert_pre_entry(PET_Event *event)
     {
-        if (event->get_event_type() == PET_EVENT_TYPE_TOR || event->get_event_type() == PET_EVENT_TYPE_TAR) {
+        if (is_pairing_event(event)) {
             pairing_rank_events.push_back(event);
         }
     }
@@ -303,7 +325,7 @@ class PET_Rank
         assert(pers_store.count(event.request) == 0);
         pers_store.emplace(event.request, event);
         PET_ToR_Event &event_pers = pers_store.at(event.request);
-        event_pers.primary_id = event_pers.secondary_id = -1;
+        event_pers.ids.assign(2, -1); // template of a persistent request: no record of its own
         return true;
     };
     PEAT_Bool remove_persistent_request(PEAT_MPI_Request request)
@@ -328,7 +350,7 @@ class PET_Rank
         // try to search in active events first
         while (r) {
             PET_Event *event = *event_it;
-            if (event->primary_id == uidx) {
+            if (event->ids[0] == uidx) {
                 return event;
             }
             r = get_next_event(event_it);
@@ -366,6 +388,16 @@ class PET_Rank
             r = get_prev_event(event_it);
         };
 #endif
+        // colt records issued from progress inside a blocking call (e.g. MPI_Barrier) are not reachable through the
+        // pairing list: scan every active call of the rank, query_request() descends into nested records
+        for (std::vector<PET_Thread *>::reverse_iterator thread_it = threads.rbegin(); thread_it != threads.rend(); ++thread_it) {
+            for (std::list<PET_Event *>::reverse_iterator evt_it = (*thread_it)->active_events.rbegin(); evt_it != (*thread_it)->active_events.rend(); ++evt_it) {
+                PET_Event *evt = (*evt_it)->query_request(request);
+                if (evt && !evt->is_persistent_init()) {
+                    return static_cast<PET_ToR_Event *>(evt);
+                }
+            }
+        }
         return NULL;
     }
     void register_parallel_region(PET_Event *event);

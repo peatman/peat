@@ -45,13 +45,13 @@ PET_OMPT_Event::~PET_OMPT_Event()
 {
 }
 
-PEAT_Bool PET_OMPT_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host)
+PEAT_Bool PET_OMPT_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
-    PEAT_Bool r = PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host);
-    extract(kind, mpi_string.at(4));
-    extract(endpoint, mpi_string.at(4));
-    extract(task_data, mpi_string.at(4));
-    extract(parallel_data, mpi_string.at(4));
+    PEAT_Bool r = PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
+    extract(kind, mpi_string.at(hdr.payload + 1));
+    extract(endpoint, mpi_string.at(hdr.payload + 1));
+    extract(task_data, mpi_string.at(hdr.payload + 1));
+    extract(parallel_data, mpi_string.at(hdr.payload + 1));
     return r;
 }
 

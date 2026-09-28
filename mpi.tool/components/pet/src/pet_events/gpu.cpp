@@ -45,21 +45,21 @@ PET_GPU_Event::~PET_GPU_Event()
 {
 }
 
-PEAT_Bool PET_GPU_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host)
+PEAT_Bool PET_GPU_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
     size_t num_params = 0, num_out_params = 0;
     rank = r_rank;
     node = get_core()->get_ptp()->get_tgt_node(rank);
-    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host);
-    extract(num_params, mpi_string.at(4));
+    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
+    extract(num_params, mpi_string.at(hdr.payload + 1));
     params.resize(num_params);
-    extract(num_out_params, mpi_string.at(5));
+    extract(num_out_params, mpi_string.at(hdr.payload + 2));
     out_params.resize(num_out_params);
     for (size_t p = 0; p < num_params; p++) {
-        extract(params[p], mpi_string.at(6 + p), 16);
+        extract(params[p], mpi_string.at(hdr.payload + 3 + p), 16);
     }
     for (size_t p = 0; p < num_out_params; p++) {
-        extract(out_params[p], mpi_string.at(6 + num_params + p), 16);
+        extract(out_params[p], mpi_string.at(hdr.payload + 3 + num_params + p), 16);
     }
     return true;
 }

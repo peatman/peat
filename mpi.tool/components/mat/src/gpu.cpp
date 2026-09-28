@@ -50,9 +50,9 @@ void GPU::print_GPU_out(const Tractor_Event &event)
 {
     // cerr << "Local. Rank:" << local_record.rank << ". uniq_id:" << local_record.ph[0].uniq_id << endl;
 #ifdef MAT_PROCESS_HWC_MPI_OUTPUT
-    output_MPI->printf(event.rank, "%lld:%lld:%d:%s", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id));
+    output_MPI->printf(event.rank, "%s:%s", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id));
 #if 0
-    output_HWC->printf(event.rank, "%lld:%lld:%d:%lld:%lld:%lld:%lld:%lld:%lld", event.primary_id, event.secondary_id, event.thread_id,
+    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
         event.tsc_time.func.in,
         event.tsc_time.mpi.in,
         event.tsc_time.mpi.out,
@@ -61,7 +61,7 @@ void GPU::print_GPU_out(const Tractor_Event &event)
         event.tsc_time.pe.out);
 
 #else
-    output_HWC->printf(event.rank, "%lld:%lld:%d:%lld:%lld:%lld:%lld", event.primary_id, event.secondary_id, event.thread_id,
+    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
                        event.tsc_time.mpi.in,
                        event.tsc_time.mpi.out,
                        event.tsc_time.pe.in,
@@ -89,25 +89,21 @@ void GPU::print_GPU_out(const Tractor_Event &event)
 void GPU::print_GPU_bind(const Tractor_Event &event)
 {
     if (cur_transfer) {
-        output_bind->printf(event.rank, "%d:%s:%lld:%lld:%s:%lld:%lld\n", PEAT_RT_Bind_Completion,
+        output_bind->printf(event.rank, "%d:%s:%s:%s:%s\n", PEAT_RT_Bind_Completion,
                             global_func_id.name_by_idx(cur_transfer->init.func_id),
-                            cur_transfer->init.primary_id,
-                            cur_transfer->init.secondary_id,
+                            peat_ids_string(cur_transfer->init.ids).c_str(),
                             global_func_id.name_by_idx(cur_transfer->completion.func_id),
-                            cur_transfer->completion.primary_id,
-                            cur_transfer->completion.secondary_id);
+                            peat_ids_string(cur_transfer->completion.ids).c_str());
         PEAT_Handle handle = cur_transfer->handle;
         transfers[event.rank].erase(handle);
         cur_transfer = NULL;
     }
     if (cur_exec) {
-        output_bind->printf(event.rank, "%d:%s:%lld:%lld:%s:%lld:%lld\n", PEAT_RT_Bind_Completion,
+        output_bind->printf(event.rank, "%d:%s:%s:%s:%s\n", PEAT_RT_Bind_Completion,
                             global_func_id.name_by_idx(cur_exec->init.func_id),
-                            cur_exec->init.primary_id,
-                            cur_exec->init.secondary_id,
+                            peat_ids_string(cur_exec->init.ids).c_str(),
                             global_func_id.name_by_idx(cur_exec->completion.func_id),
-                            cur_exec->completion.primary_id,
-                            cur_exec->completion.secondary_id);
+                            peat_ids_string(cur_exec->completion.ids).c_str());
         PEAT_Handle handle = cur_exec->handle;
         executions[event.rank].erase(handle);
         cur_exec = NULL;
@@ -169,8 +165,7 @@ void GPU::parse_GPU(const PEAT_Rank rank, const Tractor_Event &event)
         transfer.size = size;
         transfer.init.time = event.tsc_time;
         transfer.init.func_id = event.func_id;
-        transfer.init.primary_id = event.primary_id;
-        transfer.init.secondary_id = event.secondary_id;
+        transfer.init.ids = event.ids;
         transfer.init.thread_id = event.thread_id;
         transfer.handle = handle;
         transfers[rank][handle] = transfer;
@@ -182,8 +177,7 @@ void GPU::parse_GPU(const PEAT_Rank rank, const Tractor_Event &event)
             transfer->completion.func_id = event.func_id;
             transfer->completion.time = event.tsc_time;
             transfer->completion.func_id = event.func_id;
-            transfer->completion.primary_id = event.primary_id;
-            transfer->completion.secondary_id = event.secondary_id;
+            transfer->completion.ids = event.ids;
             transfer->completion.thread_id = event.thread_id;
             PEAT_GPUT_Record record;
             record.rank = event.rank;
@@ -203,8 +197,7 @@ void GPU::parse_GPU(const PEAT_Rank rank, const Tractor_Event &event)
             exec->completion.func_id = event.func_id;
             exec->completion.time = event.tsc_time;
             exec->completion.func_id = event.func_id;
-            exec->completion.primary_id = event.primary_id;
-            exec->completion.secondary_id = event.secondary_id;
+            exec->completion.ids = event.ids;
             exec->completion.thread_id = event.thread_id;
             PEAT_GPUE_Record record;
             record.rank = event.rank;
@@ -248,8 +241,7 @@ void GPU::parse_GPU(const PEAT_Rank rank, const Tractor_Event &event)
         exec.init.func_id = event.func_id;
         exec.init.time = event.tsc_time;
         exec.init.func_id = event.func_id;
-        exec.init.primary_id = event.primary_id;
-        exec.init.secondary_id = event.secondary_id;
+        exec.init.ids = event.ids;
         exec.init.thread_id = event.thread_id;
         exec.handle = handle;
         executions[rank][handle] = exec;

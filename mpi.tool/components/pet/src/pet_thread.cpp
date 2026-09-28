@@ -62,7 +62,7 @@ PEAT_Clock PET_Thread::delete_processed_events()
                 start_event_it = cached_event_it = evt_it;
                 if (evt_it != active_events.end())
                     (*evt_it)->prev_event = NULL; // remove previous event reference
-                std::cerr << global_func_id.name_by_idx(event->func_id) << " Rank:" << event->rank << "(" << event->thread_id << ").ID:" << event->primary_id << "," << event->secondary_id << ". Destroyed." << std::endl;
+                std::cerr << global_func_id.name_by_idx(event->func_id) << " Rank:" << event->rank << "(" << event->thread_id << ").ID:" << event->ids_str() << ". Destroyed." << std::endl;
                 delete event; // destroy object
                 continue;
             }

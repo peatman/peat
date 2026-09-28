@@ -39,39 +39,42 @@ void Tractor_Event::get_extra_txrx(const String_Split &line, const Communicators
     extract(P2P.bytes, line.at(block_auxiliary_start+3), 16);
     */
 }
-Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, const String_Split &line_hwc, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file, const Communicators *com_store) : rank(r), num_colts(0)
+Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, const String_Split &line_hwc, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file, const Communicators *com_store) : rank(r), num_children(0), level(0), nested(false)
 {
     // no need to check line.size() due line.at() throw an exception
-    //  First read fixed part
-    extract(func_id, line_mpi.at(3), 10, false);
+    //  First read the record header (ids, thread, nesting)
+    PEAT_Record_Header hdr;
+    user_region_file->parse_record_header(hdr, line_mpi, rank);
+    ids = hdr.ids;
+    thread_id = hdr.thread_id;
+    level = hdr.level;
+    nested = hdr.nested;
+    if (nested)
+        num_children = hdr.num_children;
+    const int b = hdr.payload;     // first payload field on the .mpi line
+    const int h = hdr.hwc_payload; // first tsc on the .hwc line
+    const int k = nested ? 0 : 1;  // legacy records keep num_colts among the class fields
+    extract(func_id, line_mpi.at(b), 10, false);
     if (func_id == TMPI_FUNC_ID_NONE) {
-        func_id = global_func_id.idx_by_name(line_mpi.at(3));
+        func_id = global_func_id.idx_by_name(line_mpi.at(b));
     }
-    extract(primary_id, line_mpi.at(0));
-    extract(secondary_id, line_mpi.at(1));
-    extract(thread_id, line_mpi.at(2));
-    PEAT_UID l_primary_id, l_secondary_id;
-    PEAT_Thread l_thread_id;
-    extract(l_primary_id, line_hwc.at(0));
-    extract(l_secondary_id, line_hwc.at(1));
-    extract(l_thread_id, line_hwc.at(2));
-    assert(l_primary_id == primary_id);
-    assert(l_secondary_id == secondary_id);
-    assert(l_thread_id == thread_id);
-    extract(tsc_time.func.in, line_hwc.at(3), 10);
-    extract(tsc_time.mpi.in, line_hwc.at(4), 10);
-    extract(tsc_time.mpi.out, line_hwc.at(5), 10);
-    extract(tsc_time.func.out, line_hwc.at(6), 10);
+    assert(hdr.same_ids(line_hwc));
+    extract(tsc_time.func.in, line_hwc.at(h), 10);
+    extract(tsc_time.mpi.in, line_hwc.at(h + 1), 10);
+    extract(tsc_time.mpi.out, line_hwc.at(h + 2), 10);
+    extract(tsc_time.func.out, line_hwc.at(h + 3), 10);
+    if (nested) // nested format: field 2 is the tool epilog (exit - mpi exit), field 3 the duration
+        tsc_time.mpi.out = tsc_time.func.out - tsc_time.mpi.out;
     for (int i = 0; i < (int)num_addrs; i++) {
         PEAT_UID addr;
-        extract(addr, line_hwc.at(7 + i));
+        extract(addr, line_hwc.at(h + 4 + i));
         addrs.push_back(addr);
         // addrs.push_back(user_region_file->get_addr_by_id(rank, addr)->addr);
     }
     //  Hardware counters are following to addrs (num_hwcs)
     // memory info is 8 cells, since not widely used  skip for now
     PEAT_Num hwc_size = (PEAT_Num)line_hwc.size();
-    for (PEAT_Num i = 7 + num_hwcs + num_addrs; i < hwc_size; i += 2) {
+    for (PEAT_Num i = h + 4 + num_hwcs + num_addrs; i < hwc_size; i += 2) {
         PEAT_MPI_Memory_Buffer buf;
         if (strlen(line_hwc.at(i)) > 0) { // bug in soe versions of tractor
             extract(buf.addr, line_hwc.at(i), 16);
@@ -94,7 +97,7 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
         tsc_time.func.out = tsc_time.mpi.out;
 #endif
     if (func_id == MPI_PCONTROL_ID) {
-        extract(PControl.ctl, line_mpi.at(4));
+        extract(PControl.ctl, line_mpi.at(b + 1));
     }
 
     func_class = PEAT_PROP_CLASS_LOCAL; /* (default decision) */
@@ -105,29 +108,28 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
 
     if (func_id >= MPI_START_BUFFERED_LOCAL_GROUP && func_id < MPI_END_BUFFERED_LOCAL_GROUP) {
         func_class = PEAT_PROP_CLASS_BUF_LOCAL;
-        extract(buf.inbuf_size, line_mpi.at(4), 16);
-        extract(buf.outbuf_size, line_mpi.at(5), 16);
+        extract(buf.inbuf_size, line_mpi.at(b + 1), 16);
+        extract(buf.outbuf_size, line_mpi.at(b + 2), 16);
     }
     if (((func_id >= MPI_START_COMM_COLLECTIVE_GROUP) && (func_id < MPI_END_COMM_COLLECTIVE_GROUP)) || (func_id == MPI_COMM_FREE_ID)) {
         func_class = PEAT_PROP_CLASS_COMM;
-        extract(Comms.comm, line_mpi.at(4), 16);
-        extract(Comms.newcomm, line_mpi.at(5), 16);
-        extract(Comms.remote_comm, line_mpi.at(6), 16);
-        extract(Comms.inter_comm, line_mpi.at(7), 16);
-        extract(Comms.request, line_mpi.at(8), 16);
-        int num_colts;
-        extract(num_colts, line_mpi.at(9)); // number of collective transfers followed by
-        // t_events.resize(num_colts, NULL);
+        extract(Comms.comm, line_mpi.at(b + 1), 16);
+        extract(Comms.newcomm, line_mpi.at(b + 2), 16);
+        extract(Comms.remote_comm, line_mpi.at(b + 3), 16);
+        extract(Comms.inter_comm, line_mpi.at(b + 4), 16);
+        extract(Comms.request, line_mpi.at(b + 5), 16);
+        if (!nested)
+            extract(num_children, line_mpi.at(b + 6)); // legacy: number of collective transfers followed by
     }
     if (((func_id >= MPI_P2P_TRANSFER_START) && (func_id < MPI_P2P_TRANSFER_END)) ||
         ((func_id >= MPI_P2P_PERSISTENT_INIT_START) && (func_id < MPI_P2P_PERSISTENT_INIT_END)) ||
         ((func_id >= MPI_PROBE_START) && (func_id < MPI_PROBE_END))) {
-        extract(P2P.comm, line_mpi.at(4), 16);
-        extract(P2P.peer, line_mpi.at(5)); // COMMWORLD based No need to translate
-        extract(P2P.request, line_mpi.at(6), 16);
-        extract(P2P.message, line_mpi.at(7), 16);
-        extract(P2P.tag, line_mpi.at(8));
-        extract(P2P.transfered_bytes, line_mpi.at(9));
+        extract(P2P.comm, line_mpi.at(b + 1), 16);
+        extract(P2P.peer, line_mpi.at(b + 2)); // COMMWORLD based No need to translate
+        extract(P2P.request, line_mpi.at(b + 3), 16);
+        extract(P2P.message, line_mpi.at(b + 4), 16);
+        extract(P2P.tag, line_mpi.at(b + 5));
+        extract(P2P.transfered_bytes, line_mpi.at(b + 6));
         /*
         if(global_func_id.check_property(func_id, PEAT_PROP_PERSISTENT_REQUEST)) {
             pet_core->add_persistent_request(this);
@@ -145,33 +147,33 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
 
         Requests.flag = false;
 
-        extract(Requests.input_request_num, line_mpi.at(4));
-        extract(Requests.triggered_request_num, line_mpi.at(5));
-        extract(Requests.flag, line_mpi.at(6));
-        extract(num_colts, line_mpi.at(7));
-        extract(Requests.buf, line_mpi.at(8), 16);
-        // p2p_events.resize(num_colts);
+        extract(Requests.input_request_num, line_mpi.at(b + 1));
+        extract(Requests.triggered_request_num, line_mpi.at(b + 2));
+        extract(Requests.flag, line_mpi.at(b + 3));
+        if (!nested)
+            extract(num_children, line_mpi.at(b + 4)); // legacy: number of collective transfers followed by
+        extract(Requests.buf, line_mpi.at(b + 4 + k), 16);
         if (func_id == MPI_STARTALL_ID || func_id == MPI_START_ID || func_id == MPI_REQUEST_FREE_ID || func_id == MPI_CANCEL_ID) {
             for (int i = 0; i < (int)Requests.input_request_num; i++) {
                 PEAT_MPI_Request req;
-                extract(req, line_mpi.at(9 + i), 16);
+                extract(req, line_mpi.at(b + 5 + k + i), 16);
                 requests.push_back(req);
             }
 
         } else {
             for (int i = 0; i < (int)Requests.input_request_num; i++) {
                 PEAT_MPI_Request req;
-                extract(req, line_mpi.at(9 + i), 16);
+                extract(req, line_mpi.at(b + 5 + k + i), 16);
                 requests.push_back(req);
             }
 
             // 4 - tuples(index, tag, source, bytes)
             for (int i = 0; i < (int)Requests.triggered_request_num; i++) {
                 PEAT_MPI_R4Status status;
-                extract(status.index, line_mpi.at(9 + Requests.input_request_num + i * 4 + 0));
-                extract(status.tag, line_mpi.at(9 + Requests.input_request_num + i * 4 + 1));
-                extract(status.src, line_mpi.at(9 + Requests.input_request_num + i * 4 + 2));
-                extract(status.bytes, line_mpi.at(9 + Requests.input_request_num + i * 4 + 3));
+                extract(status.index, line_mpi.at(b + 5 + k + Requests.input_request_num + i * 4 + 0));
+                extract(status.tag, line_mpi.at(b + 5 + k + Requests.input_request_num + i * 4 + 1));
+                extract(status.src, line_mpi.at(b + 5 + k + Requests.input_request_num + i * 4 + 2));
+                extract(status.bytes, line_mpi.at(b + 5 + k + Requests.input_request_num + i * 4 + 3));
                 statuses.push_back(status);
             }
         }
@@ -179,13 +181,13 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
     }
     if (func_id >= MPI_START_GENERAL_COLLECTIVE_GROUP && func_id < MPI_END_GENERAL_COLLECTIVE_GROUP) {
         // collectives      5  6  7  8  9  10 11
-        extract(Collective.comm, line_mpi.at(4), 16);
-        extract(Collective.root, line_mpi.at(5));
-        extract(Collective.request, line_mpi.at(6), 16);
-        extract(Collective.rw_fields0, line_mpi.at(7));
-        extract(Collective.rw_fields1, line_mpi.at(8));
-        extract(num_colts, line_mpi.at(9)); // number of collective transfers followed by
-        // t_events.resize(num_colts);
+        extract(Collective.comm, line_mpi.at(b + 1), 16);
+        extract(Collective.root, line_mpi.at(b + 2));
+        extract(Collective.request, line_mpi.at(b + 3), 16);
+        extract(Collective.rw_fields0, line_mpi.at(b + 4));
+        extract(Collective.rw_fields1, line_mpi.at(b + 5));
+        if (!nested)
+            extract(num_children, line_mpi.at(b + 6)); // legacy: number of collective transfers followed by
 
         // PEAT_Message_Size size_msg_collective = -1;
 
@@ -194,12 +196,12 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
 
         for (PEAT_Signed_Num j = 0; j < Collective.rw_fields0; j++) {
             PEAT_Message_Size bytes;
-            extract(bytes, line_mpi.at(10 + j));
+            extract(bytes, line_mpi.at(b + 6 + k + j));
             send_bytes.push_back(bytes);
         }
         for (PEAT_Signed_Num j = 0; j < Collective.rw_fields1; j++) {
             PEAT_Message_Size bytes;
-            extract(bytes, line_mpi.at(10 + Collective.rw_fields0 + j));
+            extract(bytes, line_mpi.at(b + 6 + k + Collective.rw_fields0 + j));
             recv_bytes.push_back(bytes);
         }
 
@@ -208,20 +210,20 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
     if (((func_id >= CL_START_GROUP) && (func_id < CL_END_GROUP)) || ((func_id >= ZE_START_GROUP) && (func_id < ZE_END_GROUP))) {
         func_class = PEAT_PROP_CLASS_GPU;
         size_t num_params = 0, num_out_params = 0, num_extra_params = 0;
-        extract(num_params, line_mpi.at(4));
+        extract(num_params, line_mpi.at(b + 1));
         params.resize(num_params);
-        extract(num_out_params, line_mpi.at(5));
+        extract(num_out_params, line_mpi.at(b + 2));
         out_params.resize(num_out_params);
-        extract(num_extra_params, line_mpi.at(6));
+        extract(num_extra_params, line_mpi.at(b + 3));
         extra_params.resize(num_extra_params);
         for (size_t p = 0; p < num_params; p++) {
-            extract(params[p], line_mpi.at(7 + p), 16);
+            extract(params[p], line_mpi.at(b + 4 + p), 16);
         }
         for (size_t p = 0; p < num_out_params; p++) {
-            extract(out_params[p], line_mpi.at(7 + num_params + p), 16);
+            extract(out_params[p], line_mpi.at(b + 4 + num_params + p), 16);
         }
         for (size_t p = 0; p < num_extra_params; p++) {
-            extract(extra_params[p], line_mpi.at(7 + num_params + num_out_params + p), 16);
+            extract(extra_params[p], line_mpi.at(b + 4 + num_params + num_out_params + p), 16);
         }
     }
     if (func_id >= OMPT_START_GROUP && func_id < OMPT_END_GROUP) {

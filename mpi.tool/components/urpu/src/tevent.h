@@ -43,15 +43,17 @@ struct PEAT_MPI_R4Status {
 struct Tractor_Event {
     Tractor_Event(const PEAT_Rank r, const String_Split &line_hwc, const PEAT_Num num_tscs, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file);
     PEAT_Rank rank;
-    PEAT_Signed_Num num_colts;
-    PEAT_UID uniq_id;
+    PEAT_Signed_Num num_children; // directly nested records (former num_colts)
+    PEAT_UID uniq_id;             // top-level id of the record (nested records share it with their host)
+    int level;                    // nesting depth (0: top-level record)
     // class specific values
     User_Address_Key addr_key;
     std::vector<PEAT_HWC_Value> hwc_values;
 
     PEAT_Num pack_size() const
     { // Not object size. Just size for data serialization.
-        return sizeof(num_colts) +
+        return sizeof(num_children) +
+               sizeof(level) +
                sizeof(rank) +
                sizeof(uniq_id) +
                pack_pod_size(hwc_values) +
@@ -70,8 +72,11 @@ struct Tractor_Event {
         ssize = sizeof(rank);
         memcpy(ptr + ptr_it, &rank, ssize);
         ptr_it += ssize;
-        ssize = sizeof(num_colts);
-        memcpy(ptr + ptr_it, &num_colts, ssize);
+        ssize = sizeof(num_children);
+        memcpy(ptr + ptr_it, &num_children, ssize);
+        ptr_it += ssize;
+        ssize = sizeof(level);
+        memcpy(ptr + ptr_it, &level, ssize);
         ptr_it += ssize;
         ssize = sizeof(uniq_id);
         memcpy(ptr + ptr_it, &uniq_id, ssize);
@@ -86,8 +91,11 @@ struct Tractor_Event {
         ssize = sizeof(rank);
         memcpy(&rank, ptr + ptr_it, ssize);
         ptr_it += ssize;
-        ssize = sizeof(num_colts);
-        memcpy(&num_colts, ptr + ptr_it, ssize);
+        ssize = sizeof(num_children);
+        memcpy(&num_children, ptr + ptr_it, ssize);
+        ptr_it += ssize;
+        ssize = sizeof(level);
+        memcpy(&level, ptr + ptr_it, ssize);
         ptr_it += ssize;
         ssize = sizeof(uniq_id);
         memcpy(&uniq_id, ptr + ptr_it, ssize);

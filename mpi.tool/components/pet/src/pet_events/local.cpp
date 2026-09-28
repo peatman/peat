@@ -37,24 +37,23 @@
 #include <mpi.h>
 #endif
 
-PEAT_Bool PET_Local_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host)
+PEAT_Bool PET_Local_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
     rank = r_rank;
     node = get_core()->get_ptp()->get_tgt_node(rank);
-    extract(primary_id, mpi_string.at(0));
-    extract(secondary_id, mpi_string.at(1));
-    extract(thread_id, mpi_string.at(2));
+    ids = hdr.ids;
+    thread_id = hdr.thread_id;
     int funcid;
-    extract(funcid, mpi_string.at(3), 10, false);
+    extract(funcid, mpi_string.at(hdr.payload), 10, false);
     if (funcid == 0) {
-        func_id = global_func_id.idx_by_name(mpi_string.at(3));
+        func_id = global_func_id.idx_by_name(mpi_string.at(hdr.payload));
     } else {
         func_id = get_core()->model_id.model_function_tags.at((PEAT_MPI_Func_ID)funcid);
     }
     parent_func_id = func_id;
-    PET_Event::read_event(r_rank, mpi_string, hwc_string, host);
+    PET_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
     if (func_id == MPI_PCONTROL_ID) {
-        extract(p_control_id, mpi_string.at(4), 10, false);
+        extract(p_control_id, mpi_string.at(hdr.payload + 1), 10, false);
     }
     // update_pending();
     return true;
@@ -63,7 +62,7 @@ PEAT_Bool PET_Local_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_
 PET_Event *PET_Local_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
 {
     PET_Event::write_event(gz_MPI, gz_HWC, gz_bind, mpi_eol, hwc_eol);
-    gz_MPI->printf(rank, "%lld:%lld:%d:%s%s", primary_id, secondary_id, thread_id, global_func_id.name_by_idx(func_id), mpi_eol);
+    gz_MPI->printf(rank, "%s:%s%s", header_str().c_str(), global_func_id.name_by_idx(func_id), mpi_eol);
     is_written = true;
     return this;
 }

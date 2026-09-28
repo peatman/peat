@@ -81,7 +81,7 @@ struct Estimation_Timeline {
     static Estimation_Event last_deleted_event;
     static FILE *fp_debug;
     std::map<PEAT_Clock, std::list<Estimation_Event>> timeline;
-    PEAT_Mutex *event_mutex;
+    PEAT_Mutex event_mutex; // by value: PET_Node/PET_Rank get copied into containers, a shared heap mutex was deleted with the copy
     void set_changed()
     {
         state_changed = true;
@@ -111,11 +111,6 @@ struct Estimation_Timeline {
     }
     Estimation_Timeline() : state_changed(false)
     {
-        event_mutex = new PEAT_Mutex;
-    }
-    ~Estimation_Timeline()
-    {
-        delete event_mutex;
     }
 };
 

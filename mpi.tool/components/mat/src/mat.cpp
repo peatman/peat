@@ -52,11 +52,15 @@ bool Mat::parse_single_event(const int rank)
     }
     Tractor_Event t_event(rank, line_mpi, line_hwc, model_id.num_hwcs, model_id.num_addrs, user_region_store, com_store);
     PEAT_MPI_Func_ID mpifunc = t_event.func_id;
+    // nested records (progress engine calls issued inside another traced call) do not count as user-level events
+    const bool nested_record = t_event.nested ? t_event.level > 0 : global_func_id.check_property(mpifunc, PEAT_PROP_COLT);
     PEAT_Clock mpi_time = 0, uc_time = 0, t_time = 0, occ_inc = 0;
     if (!globals.matching_only) { // tsc_time is all sentinel (-1) without hwc data, so these are meaningless
         if (!second_line) {
             t_event.tsc_time.func.in += tsc_predictor.at(rank);
-            if (!global_func_id.check_property(mpifunc, PEAT_PROP_COLT)) {
+            if (t_event.nested) // nested format: every record start is relative to the previous record at any level
+                tsc_predictor[rank] = t_event.tsc_time.func.in;
+            if (!nested_record) {
                 tsc_predictor[rank] = t_event.tsc_time.func.in;
                 mpi_time = t_event.tsc_time.mpi.out - t_event.tsc_time.mpi.in;
                 if (t_event.func_id != MPI_INIT_ID && t_event.func_id != MPI_INIT_THREAD_ID && !is_omp(t_event.func_class)) {

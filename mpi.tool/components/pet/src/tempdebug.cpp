@@ -86,8 +86,8 @@ void Estimation_Event::print(FILE *fp, const char *str)
     fprintf(fp, str);
     fprintf(fp, " %s:%p:%lld:%lld", ee_event_info[(int)type], this, start, order_id);
     if (owner) {
-        fprintf(fp, " -o- %s:%d(%d):%lld:%lld:%lld -s- %s:%d(%d):%lld:%lld:%lld", global_func_id.name_by_idx(owner->func_id), owner->rank, owner->thread_id, owner->primary_id, owner->secondary_id, owner->remaining_ee_events,
-                global_func_id.name_by_idx(submiter->func_id), submiter->rank, submiter->thread_id, submiter->primary_id, submiter->secondary_id, submiter->remaining_ee_events);
+        fprintf(fp, " -o- %s:%d(%d):%s:%lld -s- %s:%d(%d):%s:%lld", global_func_id.name_by_idx(owner->func_id), owner->rank, owner->thread_id, owner->ids_str().c_str(), owner->remaining_ee_events,
+                global_func_id.name_by_idx(submiter->func_id), submiter->rank, submiter->thread_id, submiter->ids_str().c_str(), submiter->remaining_ee_events);
     }
     if (info.owner) {
         info.print(fp, " <-> ");
@@ -101,7 +101,7 @@ void TE_Event::print(FILE *fp, const char *str)
     fprintf(fp, str);
     fprintf(fp, " %s:%lld:%lld:%lld:%p:%lld:%lld:%lld:%lld:%lld:%lld", te_event_info[(int)type], size, num_units, remainder, this, order_id, global_order_id, completed_id, uniq_id, start, finish);
     if (owner) {
-        fprintf(fp, " -o- %s:%d(%d):%lld:%lld:", global_func_id.name_by_idx(owner->func_id), owner->rank, owner->thread_id, owner->primary_id, owner->secondary_id);
+        fprintf(fp, " -o- %s:%d(%d):%s:", global_func_id.name_by_idx(owner->func_id), owner->rank, owner->thread_id, owner->ids_str().c_str());
     }
     fprintf(fp, " \n");
     fflush(fp);
@@ -1126,7 +1126,6 @@ void PET_Core::no_more_events(PEAT_Bool enough_events)
 {
     // gather events being estimated into one map
     std::map<PEAT_Rank, PET_Event *> events_being_estimated;
-    PEAT_UID min_secondary_id = LLONG_MAX;
     PEAT_Clock min_start = LLONG_MAX;
     PET_Event *min_s_event = NULL;
     PET_Event *min_t_event = NULL;
@@ -1147,7 +1146,7 @@ void PET_Core::no_more_events(PEAT_Bool enough_events)
                     Estimation_Event *e_evt = rank_it->second.progress_engine.get_min_event();
                     if (e_evt)
                         progresses[e_evt->start] = e_evt;
-                    if (min_secondary_id > event->secondary_id) {
+                    if (min_s_event == NULL || event->ids < min_s_event->ids) {
                         min_s_event = event;
                     }
                     if (min_start > event->e_time.func.in) {

@@ -111,7 +111,9 @@ class Elements
     void compact_fab_events(int nthreads);
     
     bool find_idx(PEAT_Rank rank, PEAT_UID idx);
-    TV_Event *find_event(PEAT_Rank rank, PEAT_UID primary_id, PEAT_UID secondary_id) const;
+    TV_Event *find_event(PEAT_Rank rank, PEAT_UID top_id) const;             // top-level record by its id
+    TV_Event *find_event(PEAT_Rank rank, const PEAT_Event_IDs &ids) const;    // any record by its id path
+    int bind_ids(const String_Split &line, int pos, PEAT_Rank rank, PEAT_Event_IDs &ids) const; // id columns of a bind record, returns the next field
     TV_Event *find_event(PEAT_Rank rank, PEAT_Clock clk, int thread, int selector) const;
     TV_Fab_Event *find_fab_event(PEAT_Rank rank, PEAT_Clock clk, int thread) const;
 

@@ -46,8 +46,7 @@ $prototype {
 #ifndef _TRACTOR_PASSTHROUGH_
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
         tsc_mpi_exit = peat_get_time();
-        f_event->func_id[0] = $funcid;
-        f_event->func_id[1] = $funcid_through;
+        f_event->func_id = $funcid_through;
         f_event->tscs[0]=tsc_entry;
         f_event->tscs[1]=tsc_mpi_entry-tsc_entry;
         f_event->fab.num_calls=1;

@@ -144,7 +144,10 @@ PET_Event *PET_Completion_Event::write_event(File_Storage_GZ *gz_MPI, File_Stora
         }
     }
     PET_Local_Event::write_event(gz_MPI, gz_HWC, gz_bind, "", hwc_eol);
-    gz_MPI->printf(rank, ":%d:%d:%d:%d:%llx", input_request_num, triggered_requests.size(), flag, t_events.size(), addr);
+    gz_MPI->printf(rank, ":%d:%d:%d", input_request_num, triggered_requests.size(), flag);
+    if (!nested_format())
+        gz_MPI->printf(rank, ":%d", host_event ? 0 : nested_count_total()); // legacy num_colts
+    gz_MPI->printf(rank, ":%llx", addr);
     for (int i = 0; i < input_request_num; i++) {
         gz_MPI->printf(rank, ":%llx", input_requests[i]);
     }
@@ -231,6 +234,7 @@ void PET_Completion_Event::handle_event(Estimation_Event *event)
         split_event();
         end_submitted = false;
         handle_progress_messages(__max__(e_time.mpi.in + event_parts.prolog, event->start), false);
+        initiate_nested(); // records issued from progress while this call was spinning run alongside it
         PET_Coll_Event::estimate(event);
         break;
     case EET_FUNC_END:
@@ -241,8 +245,8 @@ void PET_Completion_Event::handle_event(Estimation_Event *event)
         }
         set_estimated();
         put_transport_event_stat();
-        if (host_event) {
-            submit(event->start, EET_CHILD_COMPLETED, host_event, this, NULL);
+        if (get_completion_target()) {
+            submit(event->start, EET_CHILD_COMPLETED, get_completion_target(), this, NULL);
         }
         get_core()->delete_ee_entry(event);
         break;
@@ -312,7 +316,7 @@ void PET_Completion_Event::handle_event(Estimation_Event *event)
         if (!finish_calculations && estimation_started) {
             handle_progress_messages(__max__(e_time.mpi.in + event_parts.prolog, event->start), false);
         }
-        PET_Coll_Event::estimate(event);
+        PET_Coll_Event::estimate(event); // advances the chain of contained records
         break;
     default:
         pet_throw_error(pet_core, this, event, "Inappropriate  Code.\n");
@@ -408,6 +412,14 @@ PEAT_Bool PET_Completion_Event::estimate(Estimation_Event *event)
         } else {
             is_estimation_finished = false;
         }
+        if (has_nested()) { // the thread was busy with records issued from progress inside this call
+            PEAT_Clock nested_finish = get_nested_finish();
+            if (nested_finish > 0) {
+                max_finish = __max__(max_finish, nested_finish);
+            } else {
+                is_estimation_finished = false;
+            }
+        }
 
         // not sure how calculate overlapped time correctly
         if ((is_estimation_finished) && !end_submitted) { //|| event_parts.meat == 0 ???
@@ -421,8 +433,8 @@ PEAT_Bool PET_Completion_Event::estimate(Estimation_Event *event)
                 std::map <PEAT_UID, PET_Completion_Event *> working_set;
                 for (std::vector <Extended_Request>::iterator entry_it = chain->entry.begin(); entry_it != chain->entry.end(); ++entry_it) {
                     for (std::list <PET_Completion_Event*>::iterator event_it = entry_it->events.begin(); event_it != entry_it->events.end(); ++event_it) {
-                        assert(working_set.count((*event_it)->primary_id) == 0);
-                        working_set[(*event_it)->primary_id] = (PET_Completion_Event *)(*event_it);
+                        assert(working_set.count((*event_it)->ids[0]) == 0);
+                        working_set[(*event_it)->ids[0]] = (PET_Completion_Event *)(*event_it);
                     }
                 }
                 std::map <PEAT_UID, PET_Completion_Event *>::iterator event_it = working_set.begin();
@@ -456,6 +468,10 @@ PEAT_Bool PET_Completion_Event::estimate(Estimation_Event *event)
             event_parts.stat.overlap = get_overlap();
             event_parts.stat.fabric = get_fabric();
             concatenate_event();
+            if (get_core()->is_verbose() && e_time.func.out < event_start) {
+                fprintf(stderr, "Rank %d %s(%lld): ends at %lld but concluded only at %lld (event type %d, max_finish %lld, estimated=%d)\n", rank, global_func_id.name_by_idx(func_id), (long long)ids[0],
+                        (long long)e_time.func.out, (long long)event_start, (int)event->type, (long long)max_finish, (int)is_estimated());
+            }
             submit(e_time.func.out, EET_FUNC_END, this, this, NULL);
             end_submitted = true;
         } /* else {
@@ -490,28 +506,35 @@ PEAT_Bool PET_Completion_Event::can_be_destroyed()
     PEAT_Bool is_safe = PET_Start_Event::can_be_destroyed() || discarded; // straight call to coll since we have to skip tor and collective queues check
     return is_safe;
 }
-PET_ToR_Event *find_event_by_request(PEAT_MPI_Request request, PET_Coll_Event *event)
+PET_ToR_Event *find_event_by_request(PEAT_MPI_Request request, PET_Event *event)
 {
-    if (event)
-        return static_cast<PET_ToR_Event *>(event->PET_Coll_Event::query_request(request));
-    else
+    if (event == NULL)
         return NULL;
+    const std::vector<PET_Event *> &kids = event->child_iteration_list(); // nested records included
+    for (size_t i = 0; i < kids.size(); i++) {
+        if (kids[i] && kids[i]->query_request(request))
+            return static_cast<PET_ToR_Event *>(kids[i]);
+    }
+    return NULL;
 }
 
-PEAT_Bool PET_Completion_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host)
+PEAT_Bool PET_Completion_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
-    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host);
-    extract(input_request_num, mpi_string.at(4));
-    extract(triggered_request_num, mpi_string.at(5));
-    extract(flag, mpi_string.at(6));
-    int num_colts;
-    extract(num_colts, mpi_string.at(7));
-    t_events.resize(num_colts, NULL);
-    extract(addr, mpi_string.at(8), 16);
+    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
+    extract(input_request_num, mpi_string.at(hdr.payload + 1));
+    extract(triggered_request_num, mpi_string.at(hdr.payload + 2));
+    extract(flag, mpi_string.at(hdr.payload + 3));
+    if (!hdr.nested) { // legacy: number of collective transfers followed by
+        int num_colts;
+        extract(num_colts, mpi_string.at(hdr.payload + 4));
+        t_events.resize(num_colts, NULL);
+    }
+    const int k = hdr.nested ? 0 : 1; // legacy records keep num_colts here
+    extract(addr, mpi_string.at(hdr.payload + 4 + k), 16);
     input_requests.resize(input_request_num);
     for (int i = 0; i < input_request_num; i++) {
         PEAT_MPI_Request req;
-        extract(req, mpi_string.at(9 + i), 16);
+        extract(req, mpi_string.at(hdr.payload + 5 + k + i), 16);
         input_requests[i] = req;
 #if 0
 		if (req == get_core()->com_store->get_MPI_REQUEST_NULL()) continue;
@@ -542,12 +565,12 @@ PEAT_Bool PET_Completion_Event::read_event(PEAT_Rank r_rank, const String_Split 
     for (int i = 0; i < triggered_request_num; i++) {
         PET_Request req;
         int index;
-        extract(index, mpi_string.at(9 + input_request_num + i * 4 + 0));
-        extract(req.tag, mpi_string.at(9 + input_request_num + i * 4 + 1));
+        extract(index, mpi_string.at(hdr.payload + 5 + k + input_request_num + i * 4 + 0));
+        extract(req.tag, mpi_string.at(hdr.payload + 5 + k + input_request_num + i * 4 + 1));
         PEAT_Rank src;
-        extract(src, mpi_string.at(9 + input_request_num + i * 4 + 2));
+        extract(src, mpi_string.at(hdr.payload + 5 + k + input_request_num + i * 4 + 2));
         req.src = src;
-        extract(req.t_bytes, mpi_string.at(9 + input_request_num + i * 4 + 3));
+        extract(req.t_bytes, mpi_string.at(hdr.payload + 5 + k + input_request_num + i * 4 + 3));
         req.index = index;
         if (input_requests.at(index) == get_core()->get_comm()->get_MPI_REQUEST_NULL())
             continue;
@@ -563,9 +586,12 @@ PEAT_Bool PET_Completion_Event::read_event(PEAT_Rank r_rank, const String_Split 
             event = find_event_by_request(input_requests.at(index), host);
 #endif
         if (event == NULL) {
-            pet_throw_error(pet_core, this, NULL, "Event not found.\n");
+            char buf[256];
+            snprintf(buf, sizeof(buf), "Rank %d %s(%s): event for triggered request %llx (index %d) not found, request skipped.\n",
+                     rank, global_func_id.name_by_idx(func_id), ids_str().c_str(), (unsigned long long)input_requests.at(index), index);
+            pet_warning(pet_core, this, buf);
+            continue;
         }
-        assert(event);
         if (event->get_event_type() == PET_EVENT_TYPE_START) {
             event = event->get_event_from_req(input_requests.at(index));
             if (event == NULL) {
@@ -703,14 +729,22 @@ PEAT_Bool PET_Completion_Event::initiate()
                 break;
             }
         }
-        if (max_finish > 0 && max_finish < e_time.mpi.in) {
-            assert(host_event);
-            PET_Event *prev_event = host_event->get_prev_event(false);
-            if (prev_event) {
-                PEAT_Clock sub_t = e_time.func.in - __max__(max_finish, prev_event->e_time.func.out);
-                if (sub_t > 0) {
-                    host_event->move_events((PEAT_Signed_Num)secondary_id, sub_t, true);
-                }
+        if (max_finish > 0 && max_finish < e_time.mpi.in && container_event) {
+            // pull the release (and the records following it) towards the completion of the released request,
+            // but not before the end of the previous record of the same container, or the container's start
+            PEAT_Clock floor = container_event->e_time.mpi.in;
+            PET_Event *prev_sibling = NULL;
+            PEAT_Num size = container_event->nested_events.size();
+            for (PEAT_Num i = 0; i < size; i++) {
+                if (container_event->nested_events[i] == this)
+                    break;
+                prev_sibling = container_event->nested_events[i];
+            }
+            if (prev_sibling)
+                floor = __max__(floor, prev_sibling->e_time.func.out);
+            PEAT_Clock sub_t = e_time.func.in - __max__(max_finish, floor);
+            if (sub_t > 0) {
+                container_event->move_nested_from(this, sub_t); // this record and the ones following it
             }
         }
     }

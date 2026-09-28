@@ -101,6 +101,7 @@ The remainder of this file is legacy documentation, kept for historical referenc
        export PEAT_TRACTOR_ONE_TIME_ALLOC=<value>      - size of preallocated event buffers
        export PEAT_TRACTOR_MAX_TID_NUM=<value>         - max number of (OpenMP) thread IDs tracked per rank
        export PEAT_TRACTOR_MAX_THREADS=<value>         - max number of threads (default: 6)
+       export PEAT_TRACTOR_MAX_NESTING_LEVELS=<value>  - max nesting depth of traced calls (MPI calls the library issues from inside another traced call, e.g. MPIC_* transfers or progress engine calls; default: 4). Exceeding it aborts like a thread overflow. Events are stored per (thread, level); the storage of a level is allocated when its first event appears, which shows up as tool prolog of that event.
        export PEAT_TRACTOR_CALLS_LIMIT=<value>         - stop recording new events once this many have been recorded (default: unlimited)
        export PEAT_TRACTOR_WRITE_TRACE=1|0             - write MAIN/ext trace files (default: on); when off, only overall statistics are kept
        export PEAT_TRACTOR_WRITE_ON_FINALIZE=1|0       - only flush/write trace at MPI_Finalize instead of incrementally (default: off)

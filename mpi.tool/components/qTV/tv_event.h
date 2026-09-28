@@ -60,7 +60,7 @@ struct TV_Coll_Event;
 struct TV_Event {
     PEAT_Time e_time;
     PEAT_MPI_Func_ID func_id;
-    PEAT_UID primary_id, secondary_id;
+    PEAT_Event_IDs ids; // id path of the record: ids[0] is the top-level id, the others -1 for a top-level record
     PEAT_Rank rank;
     PEAT_Thread thread;
     Event_Address_Info *addrs;
@@ -70,7 +70,7 @@ struct TV_Event {
     virtual int get_event_group() const = 0;          // { assert(0); return 0; }
     TV_Event();
     virtual ~TV_Event();
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr);
     virtual PEAT_Bool check_tx() const
     {
         return (global_func_id.check_property(func_id, PEAT_PROP_DATA_TX) || global_func_id.check_property(func_id, PEAT_PROP_DATA_TXRX));
@@ -87,7 +87,61 @@ struct TV_Event {
     virtual PEAT_Clock get_message_draw_end() const { return e_time.func.out; }
     virtual PEAT_Rank get_root() const { return -1; };
 
-    virtual const TV_Event *get_child(int f) const { return NULL; }
+    PEAT_Bool is_nested() const { return peat_ids_nested(ids); }
+    /* records the progress engine issued inside this call, in trace order.
+       Default: the flat list of the top-level call (every nested record, any depth, shown one level under the call).
+       With QTV_NESTED_TREE defined the records form a tree: every record holds its direct children only. */
+    std::vector<TV_Event *> t_events;
+    TV_Event *find_event(const PEAT_Event_IDs &path) const // any record of the subtree by its id path
+    {
+        for (size_t i = 0; i < t_events.size(); i++) {
+            TV_Event *child = t_events[i];
+            if (child == NULL)
+                continue;
+            if (child->ids == path)
+                return child;
+            TV_Event *found = child->find_event(path);
+            if (found)
+                return found;
+        }
+        return NULL;
+    }
+    TV_Event *find_container(const PEAT_Event_IDs &path) // the record a path is directly nested in (this for depth one)
+    {
+        int level = peat_ids_level(path);
+        if (level <= 1)
+            return this;
+        PEAT_Event_IDs parent(path);
+        for (size_t i = level; i < parent.size(); i++)
+            parent[i] = -1;
+        TV_Event *container = find_event(parent);
+        return container ? container : this;
+    }
+    PEAT_Bool put_event(TV_Event *event) // called on the top-level record
+    {
+        if (event->ids[0] != ids[0] || !event->is_nested())
+            return false;
+#ifdef QTV_NESTED_TREE
+        find_container(event->ids)->t_events.push_back(event); // attach to the direct parent
+#else
+        t_events.push_back(event); // flat list under the top-level call
+#endif
+        return true;
+    }
+    void collect_subtree(std::vector<const TV_Event *> &out) const // this record and every nested one, pre-order
+    {
+        out.push_back(this);
+        for (size_t i = 0; i < t_events.size(); i++) {
+            if (t_events[i])
+                t_events[i]->collect_subtree(out);
+        }
+    }
+    const TV_Event *get_child(int f) const
+    {
+        if (f >= 0 && static_cast<size_t>(f) < t_events.size())
+            return t_events[f];
+        return NULL;
+    }
     ALT_ALLOCATOR;
     virtual bool is_mpi() const { return true; }
     virtual bool is_omp() const { return false; }
@@ -102,7 +156,7 @@ struct TV_Local_Event : public TV_Event {
     virtual int get_event_group() const { return 0; }
     virtual TV_Event_Type get_event_type() const { return TV_EVENT_TYPE_LOCAL; }
     TV_Local_Event() : p_control_id(0), TV_Event() {}
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr);
 };
 
 struct TV_Local_Buf_Event : public TV_Local_Event {
@@ -111,7 +165,7 @@ struct TV_Local_Buf_Event : public TV_Local_Event {
   public:
     virtual TV_Event_Type get_event_type() const { return TV_EVENT_TYPE_LOCAL_BUF; }
     TV_Local_Buf_Event() : TV_Local_Event(), buf_size(-1), buf_count(-1) {}
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr);
 };
 struct TV_ToR_Event : public TV_Local_Event {
     PEAT_LNum t_bytes;
@@ -133,12 +187,11 @@ struct TV_ToR_Event : public TV_Local_Event {
                                           request(s.request), message(s.message), aux_event(s.aux_event), aux_event_2(s.aux_event_2)
     {
         func_id = s.func_id;
-        primary_id = s.primary_id;
-        secondary_id = s.secondary_id;
+        ids = s.ids;
         rank = s.rank;
         thread = s.thread;
     }
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr);
     virtual PEAT_Message_Size get_tx_bytes() const
     {
         if (check_tx())
@@ -159,21 +212,21 @@ struct TV_TaR_Event : public TV_ToR_Event {
     PEAT_Bool process_second_line;
     // for RX part
     PEAT_Rank peer_rank_2;
-    PEAT_UID peer_primary_id_2, peer_secondary_id_2;
+    PEAT_UID peer_primary_id_2;
     PEAT_MPI_Func_ID peer_func_id_2, peer_parent_func_id_2;
 
   public:
     TV_TaR_Event() : TV_ToR_Event(), process_second_line(false),
-                     peer_primary_id_2(-1), peer_secondary_id_2(-1), peer_func_id_2(TMPI_FUNC_ID_NONE), peer_parent_func_id_2(TMPI_FUNC_ID_NONE),
+                     peer_primary_id_2(-1), peer_func_id_2(TMPI_FUNC_ID_NONE), peer_parent_func_id_2(TMPI_FUNC_ID_NONE),
                      t_bytes_2(0), peer_rank_2(-1), tag_2(-1)
     {
     }
-    TV_TaR_Event(const TV_TaR_Event &s) : TV_ToR_Event(), peer_primary_id_2(s.peer_primary_id_2), peer_secondary_id_2(s.peer_secondary_id_2),
+    TV_TaR_Event(const TV_TaR_Event &s) : TV_ToR_Event(), peer_primary_id_2(s.peer_primary_id_2),
                                           peer_func_id_2(s.peer_func_id_2), peer_parent_func_id_2(s.peer_parent_func_id_2), tag_2(s.tag_2), peer_rank_2(s.peer_rank_2), process_second_line(s.process_second_line), t_bytes_2(s.t_bytes_2)
     {
     }
     virtual TV_Event_Type get_event_type() const { return TV_EVENT_TYPE_TAR; }
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr);
     virtual PEAT_Message_Size get_tx_bytes() const { return t_bytes; };
     virtual PEAT_Message_Size get_rx_bytes() const { return t_bytes_2; };
 };
@@ -189,35 +242,8 @@ struct TV_Coll_Event : public TV_Local_Event {
         return TV_EVENT_TYPE_COLL;
     }
     PEAT_MPI_Comm comm;
-    std::vector<TV_Event *> t_events;
     TV_Coll_Event() : TV_Local_Event(), comm(0), int_event_index(0) {}
     virtual ~TV_Coll_Event();
-    TV_Event *find_event(TV_Event *event)
-    {
-        if (event->primary_id == primary_id) {
-            return t_events[event->secondary_id];
-        }
-        return NULL;
-    }
-    TV_Event *find_event(PEAT_UID secondary_id)
-    {
-        return t_events[secondary_id];
-    }
-    PEAT_Bool put_event(TV_Event *event)
-    {
-        if (event->primary_id == primary_id) {
-            t_events[event->secondary_id] = event;
-            return true;
-        }
-        return false;
-    }
-    virtual const TV_Event *get_child(int f) const
-    {
-        if (t_events.size() > f)
-            return t_events[f];
-        else
-            return NULL;
-    }
 };
 struct TV_Collective_Bytes {
     PEAT_Collective_Bytes tx_bytes, rx_bytes;
@@ -247,14 +273,13 @@ struct TV_Collective_Event : public TV_Coll_Event {
                                                         request(s.request), message(s.message), completion_event(s.completion_event)
     {
         func_id = s.func_id;
-        primary_id = s.primary_id;
-        secondary_id = s.secondary_id;
+        ids = s.ids;
         p_control_id = s.p_control_id;
         msg_bytes = s.msg_bytes;
         bytes = s.bytes;
     }
     virtual TV_Event_Type get_event_type() const { return TV_EVENT_TYPE_COLLECTIVE; }
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr);
     virtual PEAT_Rank get_root() const { return root; };
     virtual PEAT_Message_Size get_tx_bytes(PEAT_Rank rank) const
     {
@@ -316,7 +341,7 @@ struct TV_Comm_Event : public TV_Coll_Event {
   public:
     TV_Comm_Event() : TV_Coll_Event(), request(0), newcomm(0), intercomm(0), remotecomm(0) {}
     virtual TV_Event_Type get_event_type() const { return TV_EVENT_TYPE_COMM; }
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr);
 };
 struct TV_Request {
     PEAT_Rank src;
@@ -341,7 +366,7 @@ struct TV_Start_Event : public TV_Coll_Event {
     virtual ~TV_Start_Event();
 
     virtual TV_Event_Type get_event_type() const { return TV_EVENT_TYPE_START; }
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr);
 };
 struct TV_Completion_Event : public TV_Start_Event {
     std::list<TV_Request> triggered_requests;
@@ -355,7 +380,7 @@ struct TV_Completion_Event : public TV_Start_Event {
         else
             return TV_EVENT_TYPE_COMPLETION;
     }
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr);
 };
 
 struct TV_OMPT_Event : public TV_Local_Event {
@@ -370,7 +395,7 @@ struct TV_OMPT_Event : public TV_Local_Event {
         return TV_EVENT_TYPE_OMPT_LOCAL;
     }
     TV_OMPT_Event() : TV_Local_Event() {}
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr);
     virtual bool is_mpi() const { return false; }
     virtual bool is_omp() const { return true; }
     virtual bool is_gpu() const { return false; }
@@ -381,7 +406,7 @@ struct TV_GPU_Event : public TV_Local_Event {
     virtual int get_event_group() const { return 2; }
     virtual TV_Event_Type get_event_type() const { return TV_EVENT_TYPE_GPU_LOCAL; }
     TV_GPU_Event() : TV_Local_Event() {}
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time& evt_time, const PEAT_Num num_addrs);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr);
     virtual bool is_mpi() const { return false; }
     virtual bool is_omp() const { return false; }
     virtual bool is_gpu() const { return true; }

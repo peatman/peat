@@ -84,7 +84,7 @@ struct MPI_PControl_Stat {
 
 struct Stat {
     Stat() : rank_start(LLONG_MAX), rank_end(0), rank_mpi_init_start(-1), rank_mpi_init_end(-1), rank_mpi_finalize_start(-1), rank_mpi_finalize_end(-1),
-             num_events(0), cpu_len(0), fabric_len(0), changed_UR_num(0), covered_UR_length(0), uncovered_UR_length(0), pcontrol_removed_user_code_length(0) {}
+             num_events(0), cpu_len(0), fabric_len(0), changed_UR_num(0), covered_UR_length(0), uncovered_UR_length(0), pcontrol_removed_user_code_length(0), progress_len_total(0) {}
     PEAT_Clock rank_start;
     PEAT_Clock rank_end;
     PEAT_Clock rank_mpi_init_start;
@@ -109,6 +109,13 @@ struct Stat {
     PEAT_Clock get_min_msg_length() const;
     void add_mpi_msg_len_stat(const PEAT_MPI_Func_ID func_id, const PEAT_Message_Size msg_send_size, const PEAT_Clock msg_length);
     void add_mpi_stat(const PEAT_MPI_Func_ID func, const PEAT_Clock in, const PEAT_Clock out, const PEAT_Clock len_in, const PEAT_Clock cpu_len_in);
+    std::map<PEAT_MPI_Func_ID, PEAT_Clock> progress_len; // time spent inside other calls progressing this (nonblocking) function
+    PEAT_Clock progress_len_total;
+    void add_progress_stat(const PEAT_MPI_Func_ID owner_func, const PEAT_Clock len)
+    {
+        progress_len[owner_func] += len;
+        progress_len_total += len;
+    }
     void add_uc_stat(const PEAT_Clock len_in, PEAT_Bool changed);
 
     // MPI_Pcontrol mode start
@@ -503,6 +510,10 @@ struct Event_Set_Stat {
     void add_mpi_event_stat(const t_stat_type t, const PEAT_Rank rank, const PEAT_MPI_Func_ID func, const PEAT_Clock in, const PEAT_Clock out, const PEAT_Clock len_in, const PEAT_Clock cpu_len_in);
     void add_uc_event_stat(const t_stat_type t, const PEAT_Rank rank, const PEAT_Clock len_in, const PEAT_Bool changed);
     void add_mpi_length_stat(const t_stat_type t, const PEAT_Rank rank, const PEAT_MPI_Func_ID func, const PEAT_Message_Size msg_size, const PEAT_Clock msg_len);
+    void add_progress_stat(const t_stat_type t, const PEAT_Rank rank, const PEAT_MPI_Func_ID owner_func, const PEAT_Clock len)
+    {
+        stat[t][rank].add_progress_stat(owner_func, len);
+    }
 
   private:
     std::map<PEAT_Rank, Stat> stat[tst_size];

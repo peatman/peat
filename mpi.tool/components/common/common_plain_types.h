@@ -660,6 +660,16 @@ static const char *print_record_properties(PEAT_Property id)
 #endif
 
 #ifdef __cplusplus
+/* PEAT_OMP must be decided here, where PEAT_Mutex is defined: a translation unit that includes this header before
+   common_types.h would otherwise see an empty mutex and a different layout of every object holding one.
+   std::shared_mutex needs C++17; older dialects (the tractor is built with -std=c++11 by some compilers) keep
+   the empty mutex, as they never had a real one. */
+#if defined(_OPENMP) && !defined(PEAT_OMP) && defined(__cplusplus) && __cplusplus >= 201703L
+#define PEAT_OMP
+#endif
+#ifdef PEAT_OMP
+#include <shared_mutex>
+#endif
 struct PEAT_Mutex
 #ifdef PEAT_OMP
     : public std::shared_mutex

@@ -21,6 +21,8 @@ int i;
 MPI_Comm lcomm = *comm;
 PEAT_Clock tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
 int tid;
+int level = -1;
+long long children_base = 0;
 pid_t tid_in;
 msl_extras_counters counters;
 msl_event *event;
@@ -39,15 +41,14 @@ tsc_entry = peat_get_time_tid(&tid_in);
 last_coll_comm = MPI_COMM_WORLD;
 counting_permit += 2 * counting_permission_pcontrol[fidc];
 tid = __msl_get_tid(tid_in);
-__msl_allocate_event(tid, 0, &event, &counters);
-first_progress_entry[tid] = last_progress_exit[tid] = 0;
-num_colts[tid] = 0;
+level = __msl_enter_call(tid);
+children_base = __msl_child_base(tid, level);
+__msl_allocate_event(tid, level, 0, &event, &counters);
 #ifdef _HWCOUNTERS_ENABLED_
 gt_info(hwc).get_all_counters(l_hwcs);
 #endif
 #ifdef _MEMPROFILE_STORE_
 gt_info(mprof).get_mem_status(&l_mem);
 #endif
-in_mpi_call[tid] = 1;
 tsc_mpi_entry = peat_get_time();
 //    } // if (__builtin_expect((counting_permission[fidc]>0 && !l_skip_parse),1))

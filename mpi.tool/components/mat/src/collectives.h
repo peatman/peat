@@ -34,9 +34,8 @@
 #define UPDATE_FIRST_ENTRY
 
 struct Collective_Event { // tsc_u_time is for debugging purposes only!
-    Collective_Event() : primary_id(-1), secondary_id(-1), request(0), permanent_request(0) {}
-    PEAT_UID primary_id;
-    PEAT_UID secondary_id;
+    Collective_Event() : ids(2, -1), request(0), permanent_request(0) {}
+    PEAT_Event_IDs ids;
     // PEAT_Collective_Bytes send_bytes,recv_bytes;
     //  std::vector<PEAT_Addr> addrs;
     std::vector<PEAT_UID> addrs;

@@ -77,10 +77,11 @@ PEAT_Bool check_peer(PET_Event *send, PET_Event *recv)
 
 PET_Event::PET_Event(PET_Core *p) : PET_Time_Event(), pet_core(p), pet_node(NULL), pet_rank(NULL), pet_thread(NULL),
                                     func_id(TMPI_FUNC_ID_NONE), parent_func_id(TMPI_FUNC_ID_NONE),
-                                    primary_id(-1), secondary_id(-1), rank(-1), node(-1), thread_id(-1),
+                                    ids(2, -1), rank(-1), node(-1), thread_id(-1),
                                     is_user_code_applied(false), estimation_started(false), is_written(false), is_initiated(false),
                                     pending_reason(pr_event_not_estimated), addrs(p->model_id.num_addrs),
-                                    parent_event(NULL), host_event(NULL), parallel_section_begin(NULL), prev_event(NULL), next_event(NULL),
+                                    parent_event(NULL), host_event(NULL), force_write(false), header_second_line(false), container_event(NULL), nested_index_being_estimated(-1), progress_owner(NULL),
+                                    parallel_section_begin(NULL), prev_event(NULL), next_event(NULL),
                                     sub_t_applied(false), sub_t_ae(0), sub_t_t(0), sub_t_ae_t(0), sub_t_t_t(0),
                                     uc_length(0), uco_length(0), finish_calculations(false), remaining_ee_events(0)
 {
@@ -93,19 +94,213 @@ PET_Event *PET_Event::get_current_event()
 
 PET_Event::~PET_Event()
 {
+    if (progress_owner) {
+        progress_owner->notify_before_destroy(this);
+        progress_owner = NULL;
+    }
+    while (!nested_events.empty()) { // nested records are owned by their container
+        PET_Event *evt = nested_events.back();
+        nested_events.pop_back();
+        delete evt;
+    }
 #ifdef _DEBUG_DESTROYED_EVENT
-    PET_Event_Definition qple(rank, primary_id, secondary_id, thread_id);
-    if (get_core()->deleted_events.count(qple) > 0 && primary_id >= 0) {
+    PET_Event_Definition qple(rank, ids, thread_id);
+    if (get_core()->deleted_events.count(qple) > 0 && ids[0] >= 0) {
         char str[1024];
         sprintf(str, "Duplicated delete attempt. This func %s,previous func %s\n",
                 global_func_id.name_by_idx(func_id), global_func_id.name_by_idx(get_core()->deleted_events.at(qple)));
         pet_throw_error(get_core(), this, NULL, str);
     } else {
-        if (primary_id >= 0)
+        if (ids[0] >= 0)
             get_core()->deleted_events[qple] = func_id;
     }
 #endif // _DEBUG
 }
+void PET_Event::notify_before_destroy(PET_Event *event)
+{
+    for (std::vector<PET_Event *>::iterator it = nested_events.begin(); it != nested_events.end(); ++it) {
+        if (*it == event) {
+            nested_events.erase(it);
+            break;
+        }
+    }
+    for (std::vector<PET_Event *>::iterator it = flat_events.begin(); it != flat_events.end(); ++it) {
+        if (*it == event) {
+            flat_events.erase(it);
+            break;
+        }
+    }
+}
+
+/* ---- record headers of the output trace ---- */
+PEAT_Bool PET_Event::nested_format() const
+{
+    return get_core()->is_nested_format(rank);
+}
+
+std::string PET_Event::header_str() const
+{
+    if (!nested_format()) // legacy: primary:secondary:tid (num_colts stays among the class fields)
+        return peat_record_header_string(ids, thread_id, -1);
+    return peat_record_header_string(ids, thread_id, header_second_line ? 0 : static_cast<PEAT_Signed_Num>(nested_events.size()));
+}
+
+std::string PET_Event::hwc_header_str() const
+{
+    return peat_record_hwc_header_string(ids, thread_id, nested_format());
+}
+
+/* a top-level call writes its nested records right after its own record in trace order
+   (nested format: pre-order of the tree, legacy format: the order the tracer wrote them) */
+void PET_Event::write_nested_records(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
+{
+    if (host_event)
+        return; // a nested container: its records are written by the top-level call's list
+    const std::vector<PET_Event *> &kids = child_iteration_list();
+    int size = (int)kids.size();
+    if (size == 0)
+        return;
+    force_write = true;
+    for (int i = 0; i < size; i++) {
+        if (kids[i])
+            kids[i]->write_event(gz_MPI, gz_HWC, gz_bind, mpi_eol, hwc_eol);
+    }
+    clear_reason(pr_event_not_estimated);
+}
+
+/* ---- progress-driven nesting ---- */
+PET_Event *PET_Event::get_completion_target()
+{
+    if (container_event)
+        return container_event;
+    return static_cast<PET_Event *>(host_event);
+}
+
+PEAT_Bool PET_Event::is_nested_child(const PET_Event *event) const
+{
+    PEAT_Num size = nested_events.size();
+    for (PEAT_Num i = 0; i < size; i++) {
+        if (nested_events[i] == event)
+            return true;
+    }
+    return false;
+}
+
+/* a nested record is done when its calculations are finished; the estimated flag alone is not reliable here
+   because a completion that consumes the record clears it again (see clear_estimated) */
+static inline PEAT_Bool pet_nested_done(const PET_Event *event)
+{
+    return event->finish_calculations || event->is_estimated();
+}
+
+PEAT_Bool PET_Event::nested_all_estimated() const
+{
+    PEAT_Num size = nested_events.size();
+    for (PEAT_Num i = 0; i < size; i++) {
+        if (!pet_nested_done(nested_events[i]))
+            return false;
+    }
+    return true;
+}
+
+PEAT_Clock PET_Event::get_nested_finish() const
+{
+    PEAT_Num size = nested_events.size();
+    if (size == 0)
+        return -1;
+    PEAT_Clock finish = -1;
+    for (PEAT_Num i = 0; i < size; i++) {
+        if (!pet_nested_done(nested_events[i]))
+            return -1;
+        finish = __max__(finish, nested_events[i]->e_time.func.out);
+    }
+    return finish;
+}
+
+PEAT_Bool PET_Event::initiate_nested()
+{
+    if (nested_events.empty() || nested_index_being_estimated >= 0)
+        return false;
+    nested_index_being_estimated = 0;
+    return nested_events[0]->initiate();
+}
+
+PEAT_Bool PET_Event::handle_nested_completed(Estimation_Event *event)
+{
+    PET_Event *child = event->submiter;
+    PEAT_Signed_Num size = (PEAT_Signed_Num)nested_events.size();
+    PEAT_Signed_Num index = -1;
+    for (PEAT_Signed_Num i = 0; i < size; i++) {
+        if (nested_events[i] == child) {
+            index = i;
+            break;
+        }
+    }
+    if (index < 0)
+        return false;
+    if (!child->is_estimated() || index != nested_index_being_estimated)
+        return true; // not done yet, or already accounted for
+    if (index < size - 1) {
+        // the records issued later from progress follow the just estimated one
+        for (PEAT_Signed_Num i = index + 1; i < size; i++) {
+            nested_events[i]->move_event(child->sub_t_ae);
+        }
+        nested_index_being_estimated = index + 1;
+        nested_events[index + 1]->initiate();
+    } else {
+        nested_index_being_estimated = size; // all nested records are done, the container may finish now
+    }
+    return true;
+}
+
+PEAT_Clock PET_Event::clamp_sub_t_to_nested(PEAT_Clock sub_t, PEAT_Clock f_out) const
+{
+    PEAT_Clock finish = get_nested_finish();
+    if (finish > 0 && f_out - sub_t < finish) {
+        sub_t = f_out - finish; // the thread was busy with nested records till then
+    }
+    return sub_t;
+}
+
+PEAT_Clock PET_Event::move_nested_from(PET_Event *from, PEAT_Clock sub_t)
+{
+    PEAT_Num size = nested_events.size();
+    PEAT_Bool found = false;
+    for (PEAT_Num i = 0; i < size; i++) {
+        if (nested_events[i] == from)
+            found = true;
+        if (found)
+            nested_events[i]->move_event(sub_t);
+    }
+    return found ? sub_t : 0;
+}
+
+PEAT_Clock PET_Event::foreign_progress_time(int which) const
+{
+    PEAT_Clock total = 0;
+    PEAT_Num size = nested_events.size();
+    for (PEAT_Num i = 0; i < size; i++) {
+        const PET_Event *child = nested_events[i];
+        if (child->is_foreign_progress()) {
+            const PEAT_Time &t = which == 0 ? child->o_time : (which == 1 ? child->t_time : child->e_time);
+            total += t.func.duration(); // whole record incl. whatever it nests
+        } else {
+            total += child->foreign_progress_time(which);
+        }
+    }
+    return total;
+}
+
+PEAT_Num PET_Event::nested_count_total() const
+{
+    PEAT_Num size = nested_events.size();
+    PEAT_Num total = size;
+    for (PEAT_Num i = 0; i < size; i++) {
+        total += nested_events[i]->nested_count_total();
+    }
+    return total;
+}
+
 void PET_Event::assign_cache_pointers()
 {
     pet_node = get_core()->get_pet_node(this); // also impicitly sets node
@@ -132,20 +327,23 @@ void PET_Event::concatenate_event()
         get_core()->update_active_event_chain(sub_t_ae, this);
     }
 }
-PEAT_Bool PET_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host)
+PEAT_Bool PET_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
     // basic info
     rank = r_rank;
-    if (hwc_string.size() < 2)
+    const int b = hdr.hwc_payload; // first tsc on the .hwc line
+    if (hwc_string.size() < static_cast<size_t>(b + 4))
         return false;
-    extract(primary_id, hwc_string.at(0), 10);
-    extract(secondary_id, hwc_string.at(1), 10);
-    extract(thread_id, hwc_string.at(2), 10);
+    assert(hdr.same_ids(hwc_string)); // the .hwc twin carries the same ids
+    ids = hdr.ids;
+    thread_id = hdr.thread_id;
     // TSCs block
-    extract(e_time.func.in, hwc_string.at(3), 10);
-    extract(e_time.mpi.in, hwc_string.at(4), 10);
-    extract(e_time.mpi.out, hwc_string.at(5), 10);
-    extract(e_time.func.out, hwc_string.at(6), 10);
+    extract(e_time.func.in, hwc_string.at(b), 10);
+    extract(e_time.mpi.in, hwc_string.at(b + 1), 10);
+    extract(e_time.mpi.out, hwc_string.at(b + 2), 10);
+    extract(e_time.func.out, hwc_string.at(b + 3), 10);
+    if (hdr.nested) // nested format: field 2 is the tool epilog (exit - mpi exit), field 3 the duration
+        e_time.mpi.out = e_time.func.out - e_time.mpi.out;
     /* clutch for ompt */
     if (e_time.mpi.in < 0) {
         e_time.mpi.in = 0;
@@ -158,12 +356,12 @@ PEAT_Bool PET_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string
     }
 
     if (get_core()->model_id.num_tscs == 6) {
-        extract(e_time.pe.in, hwc_string.at(7), 10);
-        extract(e_time.pe.out, hwc_string.at(8), 10);
+        extract(e_time.pe.in, hwc_string.at(b + 4), 10);
+        extract(e_time.pe.out, hwc_string.at(b + 5), 10);
     }
     for (int i = 0; i < (int)get_core()->model_id.num_addrs; i++) {
         PEAT_UID addr;
-        extract(addr, hwc_string.at(3 + get_core()->model_id.num_tscs + get_core()->model_id.num_hwcs) + i);
+        extract(addr, hwc_string.at(b + get_core()->model_id.num_tscs + get_core()->model_id.num_hwcs + i));
 #ifdef TRANSLATE_UIDS
         addrs.addr[i] = get_core()->get_addr_by_id(rank, addr);
 #else
@@ -177,13 +375,13 @@ PEAT_Bool PET_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string
 PET_Event *PET_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
 {
 #ifdef REMOVE_T_OVERHEAD
-    gz_HWC->printf(rank, "%lld:%lld:%d:%lld:%lld:%lld:%lld", primary_id, secondary_id, thread_id,
+    gz_HWC->printf(rank, "%s:%lld:%lld:%lld:%lld", hwc_header_str().c_str(),
                    e_time.mpi.in,
                    e_time.mpi.out,
                    e_time.pe.in,
                    e_time.pe.out);
 #else
-    gz_HWC->printf(rank, "%lld:%lld:%d:%lld:%lld:%lld:%lld:%lld:%lld", primary_id, secondary_id, thread_id,
+    gz_HWC->printf(rank, "%s:%lld:%lld:%lld:%lld:%lld:%lld", hwc_header_str().c_str(),
                    e_time.func.in,
                    e_time.mpi.in,
                    e_time.mpi.out,
@@ -314,7 +512,11 @@ PEAT_Bool PET_Event::estimate(Estimation_Event *event)
             split_event();
             concatenate_event();
         }
-        submit(e_time.func.out, EET_FUNC_END, this, this, NULL);
+        if (has_nested()) {
+            initiate_nested(); // FUNC_END follows the last nested record
+        } else {
+            submit(e_time.func.out, EET_FUNC_END, this, this, NULL);
+        }
         break;
     case EET_FUNC_END:
         if (!estimation_started) {
@@ -323,6 +525,19 @@ PEAT_Bool PET_Event::estimate(Estimation_Event *event)
         // assert(estimation_started);
         set_estimated();
         put_transport_event_stat();
+        if (get_completion_target()) {
+            submit(event->start, EET_CHILD_COMPLETED, get_completion_target(), this, NULL);
+        }
+        break;
+    case EET_CHILD_COMPLETED:
+        if (handle_nested_completed(event) && nested_all_estimated() && !finish_calculations) {
+            PEAT_Clock finish = __max__(e_time.func.out, get_nested_finish());
+            if (finish > e_time.func.out) {
+                e_time.mpi.out = e_time.func.out = finish;
+            }
+            finish_calculations = true;
+            submit(e_time.func.out, EET_FUNC_END, this, this, NULL);
+        }
         break;
     case EET_PROGRESS_NOTIFY:
         break;
@@ -372,7 +587,7 @@ PET_Event *PET_Event::get_prev_event(PEAT_Bool reverse)
             if (func_id != OMPT_PARALLEL_END_ID && // not closiing parallel section
                 get_parallel_section_begin() == NULL &&
                 //(get_parallel_section_begin() == NULL || evt->func_id == OMPT_PARALLEL_END_ID) &&
-                evt_t0->primary_id > evt->primary_id) {
+                evt_t0->ids[0] > evt->ids[0]) {
                 prev_event = NULL;
                 return evt_t0;
             }
@@ -413,8 +628,28 @@ PEAT_Clock PET_Event::remove_tractor_overhead(PEAT_Clock *prolog_overhead)
     e_time.func.adjust(prolog + epilog);
     sub_t_t = prolog + epilog;
     sub_t_t_t = get_core()->get_tractor_overhead(rank);
+    // the colt records that ran inside this call: their tool overhead was spent inside it as well
+    PEAT_Clock total = prolog + epilog, ct_overhead = 0;
+    PEAT_Num size = nested_events.size();
+    for (PEAT_Num i = 0; i < size; i++) {
+        PET_Event *child = nested_events[i];
+        child->move_event(prolog); // the mpi window of this call moved by its prolog
+        PEAT_Clock cp_overhead = 0;
+        PEAT_Clock overhead = child->remove_tractor_overhead(&cp_overhead);
+        child->sub_t_t = overhead;
+        for (PEAT_Num j = i + 1; j < size; j++) {
+            nested_events[j]->move_event(overhead);
+        }
+        ct_overhead += overhead;
+        child->sub_t_t_t = get_core()->get_tractor_overhead(rank) + ct_overhead + prolog;
+        e_time.mpi.adjust(overhead);
+        e_time.func.adjust(overhead);
+        if (e_time.pe > 0)
+            e_time.pe.adjust(overhead);
+        total += overhead;
+    }
     t_time = e_time;
-    return prolog + epilog;
+    return total;
 }
 PEAT_Bool PET_Event::safe_to_delete()
 {

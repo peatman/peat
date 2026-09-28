@@ -98,15 +98,15 @@ PEAT_Bool PET_ToR_Event::is_short(PEAT_Transports t) const
     return r;
 }
 
-PEAT_Bool PET_ToR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Coll_Event *host)
+PEAT_Bool PET_ToR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
-    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host);
-    extract(comm, mpi_string.at(4), 16);
-    extract(peer_rank, mpi_string.at(5));
-    extract(request, mpi_string.at(6), 16);
-    extract(message, mpi_string.at(7), 16);
-    extract(tag, mpi_string.at(8));
-    extract(t_bytes, mpi_string.at(9));
+    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
+    extract(comm, mpi_string.at(hdr.payload + 1), 16);
+    extract(peer_rank, mpi_string.at(hdr.payload + 2));
+    extract(request, mpi_string.at(hdr.payload + 3), 16);
+    extract(message, mpi_string.at(hdr.payload + 4), 16);
+    extract(tag, mpi_string.at(hdr.payload + 5));
+    extract(t_bytes, mpi_string.at(hdr.payload + 6));
     if (global_func_id.check_property(func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) {
         get_core()->add_persistent_request(*this);
     }
@@ -115,32 +115,30 @@ PEAT_Bool PET_ToR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_st
 PEAT_Bool PET_ToR_Event::write_bind(File_Storage_GZ *gz_bind)
 {
     if (check_tx()) {
-        gz_bind->printf(rank, "%d:%s:%d:%lld:%lld:%s:%d:%lld:%lld:%lld\n", PEAT_RT_Bind_Peer,
+        gz_bind->printf(rank, "%d:%s:%d:%s:%s:%d:%s:%lld\n", PEAT_RT_Bind_Peer,
                         global_func_id.name_by_idx(func_id),
-                        rank, primary_id, secondary_id,
+                        rank, ids_str().c_str(),
                         global_func_id.name_by_idx(peer_completion_func_id),
-                        peer_rank, peer_completion_primary_id, peer_completion_secondary_id, t_bytes);
+                        peer_rank, peat_ids_string(peer_completion_ids).c_str(), t_bytes);
         get_core()->messages_bound[rank]++;
 
     } /*else {
         gz_bind->printf(rank, "%d:%s:%s:%d:%lld:%lld:%s:%s:%d:%lld:%lld\n", PEAT_RT_Bind_Peer,
             global_func_id.name_by_idx(peer_completion_func_id),
             global_func_id.name_by_idx(peer_func_id),
-            peer_rank, peer_primary_id, peer_secondary_id,
+            peer_rank, peat_ids_string(peer_ids).c_str(),
             global_func_id.name_by_idx(request > 0 ? get_completion()->func_id : func_id),
             global_func_id.name_by_idx(func_id),
-            rank, primary_id, secondary_id);
+            rank, ids_str().c_str());
     }*/
     // if (global_func_id.check_property(func_id, PEAT_PROP_DATA_TX)) get_peer()->src_written();
     // if (global_func_id.check_property(func_id, PEAT_PROP_DATA_RX)) get_peer()->dst_written();
     if (request > 0 && get_completion() != NULL) { // check for orphanity
-        gz_bind->printf(rank, "%d:%s:%lld:%lld:%s:%lld:%lld\n", PEAT_RT_Bind_Completion,
+        gz_bind->printf(rank, "%d:%s:%s:%s:%s\n", PEAT_RT_Bind_Completion,
                         global_func_id.name_by_idx(func_id),
-                        primary_id,
-                        secondary_id,
+                        ids_str().c_str(),
                         global_func_id.name_by_idx(get_completion()->func_id),
-                        get_completion()->primary_id,
-                        get_completion()->secondary_id);
+                        get_completion()->ids_str().c_str());
         get_core()->messages_bound[rank]++;
     }
     return true;
@@ -158,6 +156,7 @@ PET_Event *PET_ToR_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *
         write_bind(gz_bind);
         //		get_peer()->remote_written(check_tx());
     }
+    write_nested_records(gz_MPI, gz_HWC, gz_bind, mpi_eol, hwc_eol); // progress engine records issued inside this call
     return this;
 }
 
@@ -293,6 +292,8 @@ PEAT_Bool PET_ToR_Event::estimate(Estimation_Event *event)
 
 PEAT_Bool PET_ToR_Event::estimate_blocked()
 {
+    if (has_nested() && !nested_all_estimated())
+        return true; // wait for the records issued from progress inside this call
     if (check_tx()) {
         if (estimation_started) {
             PEAT_Clock sub_t = 0;
@@ -304,6 +305,7 @@ PEAT_Bool PET_ToR_Event::estimate_blocked()
             if (!(is_blocking || is_rdv(PEAT_DIRECTION_TX))) {
                 PEAT_Clock cpu_times = get_pre_transport()->get_cpu_times();
                 sub_t = f_out - f_in - cpu_times;
+                sub_t = clamp_sub_t_to_nested(sub_t, f_out);
                 if (sub_t > event_parts.meat)
                     sub_t = event_parts.meat;
                 event_parts.adjust(0, sub_t, 0);
@@ -323,6 +325,7 @@ PEAT_Bool PET_ToR_Event::estimate_blocked()
                     } */
                     // then adjust fabric time
                     sub_t = f_out - m_out;
+                    sub_t = clamp_sub_t_to_nested(sub_t, f_out);
                     if (sub_t > event_parts.meat)
                         sub_t = event_parts.meat;
                     event_parts.adjust(0, sub_t, 0);
@@ -354,6 +357,7 @@ PEAT_Bool PET_ToR_Event::estimate_blocked()
                         event_parts.stat.wait = m_in - f_in;
                     }
                 }
+                sub_t = clamp_sub_t_to_nested(sub_t, f_out);
                 if (sub_t > event_parts.meat) {
                     sub_t = event_parts.meat;
                 }
@@ -372,6 +376,8 @@ PEAT_Bool PET_ToR_Event::estimate_blocked()
 
 PEAT_Bool PET_ToR_Event::estimate_nonblocked()
 {
+    if (has_nested() && !nested_all_estimated())
+        return true; // wait for the records issued from progress inside this call
     if (is_persistent_init() && estimation_started && !finish_calculations) {
         concatenate_event();
         submit(e_time.func.out, EET_FUNC_END, this, this, NULL);
@@ -393,6 +399,7 @@ PEAT_Bool PET_ToR_Event::estimate_nonblocked()
             } */
             if (is_blocking) {
                 PEAT_Clock sub_t = f_out - m_out;
+                sub_t = clamp_sub_t_to_nested(sub_t, f_out);
                 if (sub_t > event_parts.meat)
                     sub_t = event_parts.meat;
                 event_parts.adjust(0, sub_t, 0);
@@ -434,6 +441,7 @@ PEAT_Bool PET_ToR_Event::estimate_nonblocked()
                 sub_t = f_out - f_in;
                 // pet_warning( pet_core, this, "Abnormal path used...\n" );
             }
+            sub_t = clamp_sub_t_to_nested(sub_t, f_out);
             if (sub_t > event_parts.meat)
                 sub_t = event_parts.meat;
             event_parts.adjust(0, sub_t, 0);
@@ -782,6 +790,7 @@ void PET_ToR_Event::handle_event(Estimation_Event *event)
     switch (event->type) {
     case EET_FUNC_START:
         estimation_started = true;
+        initiate_nested(); // records issued from progress while this call was spinning run alongside it
         if (get_core()->get_mo()) {
             // concatenate_event();
             finish_calculations = true;
@@ -823,8 +832,14 @@ void PET_ToR_Event::handle_event(Estimation_Event *event)
         set_estimated();
         if (!is_persistent_init())
             put_transport_event_stat();
-        if (host_event) {
-            submit(event->start, EET_CHILD_COMPLETED, host_event, this, NULL);
+        if (get_completion_target()) {
+            submit(event->start, EET_CHILD_COMPLETED, get_completion_target(), this, NULL);
+        }
+        break;
+    case EET_CHILD_COMPLETED:
+        // a nested record (issued from progress inside this call) has been estimated
+        if (!handle_nested_completed(event)) {
+            pet_throw_error(pet_core, this, event, "Unknown child completed.\n");
         }
         break;
 
@@ -838,7 +853,7 @@ void PET_ToR_Event::handle_event(Estimation_Event *event)
             pet_throw_error(pet_core, this, event, "Persistent requests inits handled other way.\n");
         }
         {
-            PET_Fabric_Event *send = get_send_event(parent_event == NULL ? 0L : secondary_id);
+            PET_Fabric_Event *send = get_send_event(parent_event == NULL ? 0L : sub_index());
             PEAT_Clock start = event->start;
             if (send && send->is_non_block()) {
                 PEAT_Clock d = send->ut_time.mpi.out - ut_time.mpi.in;
@@ -882,7 +897,7 @@ void PET_ToR_Event::handle_event(Estimation_Event *event)
         {
             PEAT_Clock start = event->start;
 #if 0
-				PET_Fabric_Event* send = get_send_event( parent_event == NULL ? 0 : secondary_id );
+				PET_Fabric_Event* send = get_send_event(parent_event == NULL ? 0 : sub_index());
 				if ( send && send->is_non_block() ) {
 					PEAT_Clock d = send->ut_time.mpi.out - ut_time.mpi.in;
 					start = e_time.mpi.in + d;
@@ -924,7 +939,7 @@ void PET_ToR_Event::handle_event(Estimation_Event *event)
             pet_throw_error(pet_core, this, event, "Persistent requests inits handled other way.\n");
         }
         {
-            PET_Fabric_Event *send = get_send_event(parent_event == NULL ? 0L : secondary_id);
+            PET_Fabric_Event *send = get_send_event(parent_event == NULL ? 0L : sub_index());
             PEAT_Clock start = event->start;
 #if 1
             if (send && send->is_non_block()) {
@@ -1009,7 +1024,7 @@ void PET_ToR_Event::handle_event(Estimation_Event *event)
     }
     PET_Event *current_event = get_current_event();
     /*
-        if (current_event != NULL && current_event != this && current_event->primary_id <= primary_id && (PET_Event*)current_event->host_event != this) {
+        if (current_event != NULL && current_event != this && current_event->ids[0] <= ids[0] && (PET_Event*)current_event->host_event != this) {
             submit(event->start, EET_NOTIFY, current_event,  this, NULL);
         }
     */

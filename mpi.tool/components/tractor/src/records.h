@@ -23,155 +23,61 @@
             msl_extra_info *cur_exts_array=current_extras_array[tid];
 */
 
-int __record_ints__(const int tid, const int *values, const int num)
-{
-    //        __DEBUG_PROLOG_TRACTOR_LAYER__
-    int i;
-    long long tsc;
-    assert(tid >= 0);
-    /*      fprintf (stderr,"req:%d %p %d\n",event_type,requests,num);*/
-    if (counting_permit && num_allocated <= calls_limit) {
-        for (i = 0; i < num; i++) {
-#ifdef _TRACTOR_STORE_UNIQ_INDEX_
-            __current_extras__[__extras_index__].uniq_index = uniq_index[tid];
-#endif
-            __current_extras__[__extras_index__].values[0] = values[i];
-            __current_extras__[__extras_index__].values[1] = -1;
-            __extras_index__++;
-            if (__extras_index__ >= onetimealloc) {
-                msl_base_chain *temp = __extras_current__;
-                __extras_current__ = new msl_base_chain(__extras_current__, sizeof(msl_extra_info));
-                temp->num_events = __extras_index__;
-                __current_extras__ = (msl_extra_info *)__extras_current__->events_array;
-                __extras_index__ = 0;
-                if (use_realtime_dump)
-                    dump_extras(tid, &__extras_start__, __is_colt__);
-            }
-        }
-        //            __DEBUG_EPILOG_TRACTOR_LAYER__
-        return 0;
+/* extras recording: one stream per (thread, level); a block that fills up is handed to dump_extras() in
+   realtime-dump mode. All five functions share this body. */
+#define __T_RECORD_BODY__(STORE)                                                                      \
+    assert(tid >= 0);                                                                                 \
+    if (counting_permit && num_allocated <= calls_limit) {                                            \
+        if (!extras_chain[tid][level])                                                                \
+            init_level_storage(tid, level);                                                           \
+        msl_extra_info *cur = extras_array[tid][level];                                               \
+        int &idx = extras_index[tid][level];                                                          \
+        STORE                                                                                         \
+        idx++;                                                                                        \
+        if (idx >= onetimealloc) {                                                                    \
+            msl_base_chain *temp = extras_chain[tid][level];                                          \
+            extras_chain[tid][level] = new msl_base_chain(extras_chain[tid][level], sizeof(msl_extra_info)); \
+            temp->num_events = idx;                                                                   \
+            extras_array[tid][level] = (msl_extra_info *)extras_chain[tid][level]->events_array;      \
+            idx = 0;                                                                                  \
+            if (use_realtime_dump)                                                                    \
+                dump_extras(tid, level, &extras_start_chain[tid][level]);                             \
+        }                                                                                             \
     }
-    //        __DEBUG_EPILOG_TRACTOR_LAYER__
+
+int t_base_event::record_ints(const int tid, const int level, const int *values, const int num)
+{
+    for (int i = 0; i < num; i++) {
+        __T_RECORD_BODY__(cur[idx].values[0] = values[i]; cur[idx].values[1] = -1;)
+    }
     return 0;
 }
 
-int __record_int__(const int tid, const int value)
+int t_base_event::record_int(const int tid, const int level, const int value)
 {
-    //        __DEBUG_PROLOG_TRACTOR_LAYER__
-    int i;
-    long long tsc;
-    assert(tid >= 0);
-    if (counting_permit && num_allocated <= calls_limit) {
-        __current_extras__[__extras_index__].values[0] = value;
-        __current_extras__[__extras_index__].values[1] = -1;
-#ifdef _TRACTOR_STORE_UNIQ_INDEX_
-        __current_extras__[__extras_index__].uniq_index = uniq_index[tid];
-#endif
-
-        __extras_index__++;
-        if (__extras_index__ >= onetimealloc) {
-            msl_base_chain *temp = __extras_current__;
-            __extras_current__ = new msl_base_chain(__extras_current__, sizeof(msl_extra_info));
-            temp->num_events = __extras_index__;
-            __current_extras__ = (msl_extra_info *)__extras_current__->events_array;
-            __extras_index__ = 0;
-            if (use_realtime_dump)
-                dump_extras(tid, &__extras_start__, __is_colt__);
-        }
-        //            __DEBUG_EPILOG_TRACTOR_LAYER__
-        return 0;
-    }
-    //        __DEBUG_EPILOG_TRACTOR_LAYER__
+    __T_RECORD_BODY__(cur[idx].values[0] = value; cur[idx].values[1] = -1;)
     return 0;
 }
 
-int __record_longs__(const int tid, const long long *values, const int num)
+int t_base_event::record_longs(const int tid, const int level, const long long *values, const int num)
 {
-    //        __DEBUG_PROLOG_TRACTOR_LAYER__
-    int i;
-    long long tsc;
-    assert(tid >= 0);
-    /*      fprintf (stderr,"req:%d %p %d\n",event_type,requests,num);*/
-    if (counting_permit && num_allocated <= calls_limit) {
-        for (i = 0; i < num; i++) {
-#ifdef _TRACTOR_STORE_UNIQ_INDEX_
-            __current_extras__[__extras_index__].uniq_index = uniq_index[tid];
-#endif
-            __current_extras__[__extras_index__].value = values[i];
-            __extras_index__++;
-            if (__extras_index__ >= onetimealloc) {
-                msl_base_chain *temp = __extras_current__;
-                __extras_current__ = new msl_base_chain(__extras_current__, sizeof(msl_extra_info));
-                temp->num_events = __extras_index__;
-                __current_extras__ = (msl_extra_info *)__extras_current__->events_array;
-                __extras_index__ = 0;
-                if (use_realtime_dump)
-                    dump_extras(tid, &__extras_start__, __is_colt__);
-            }
-        }
-        //            __DEBUG_EPILOG_TRACTOR_LAYER__
-        return 0;
+    for (int i = 0; i < num; i++) {
+        __T_RECORD_BODY__(cur[idx].value = values[i];)
     }
-    //        __DEBUG_EPILOG_TRACTOR_LAYER__
-    return 0;
-}
-int __record_low_longs__(const int tid, const long long *values, const int num)
-{
-    //        __DEBUG_PROLOG_TRACTOR_LAYER__
-    int i;
-    long long tsc;
-    assert(tid >= 0);
-    /*      fprintf (stderr,"req:%d %p %d\n",event_type,requests,num);*/
-    if (counting_permit && num_allocated <= calls_limit) {
-        for (i = 0; i < num; i++) {
-#ifdef _TRACTOR_STORE_UNIQ_INDEX_
-            __current_extras__[__extras_index__].uniq_index = uniq_index[tid];
-#endif
-            __current_extras__[__extras_index__].values[0] = (int)values[i];
-            __current_extras__[__extras_index__].values[1] = -1;
-            __extras_index__++;
-            if (__extras_index__ >= onetimealloc) {
-                msl_base_chain *temp = __extras_current__;
-                __extras_current__ = new msl_base_chain(__extras_current__, sizeof(msl_extra_info));
-                temp->num_events = __extras_index__;
-                __current_extras__ = (msl_extra_info *)__extras_current__->events_array;
-                __extras_index__ = 0;
-                if (use_realtime_dump)
-                    dump_extras(tid, &__extras_start__, __is_colt__);
-            }
-        }
-        //            __DEBUG_EPILOG_TRACTOR_LAYER__
-        return 0;
-    }
-    //        __DEBUG_EPILOG_TRACTOR_LAYER__
     return 0;
 }
 
-int __record_long__(const int tid, const long long value)
+int t_base_event::record_low_longs(const int tid, const int level, const long long *values, const int num)
 {
-    //        __DEBUG_PROLOG_TRACTOR_LAYER__
-    int i;
-    long long tsc;
-    assert(tid >= 0);
-    if (counting_permit && num_allocated <= calls_limit) {
-        __current_extras__[__extras_index__].value = value;
-#ifdef _TRACTOR_STORE_UNIQ_INDEX_
-        __current_extras__[__extras_index__].uniq_index = uniq_index[tid];
-#endif
-
-        __extras_index__++;
-        if (__extras_index__ >= onetimealloc) {
-            msl_base_chain *temp = __extras_current__;
-            __extras_current__ = new msl_base_chain(__extras_current__, sizeof(msl_extra_info));
-            temp->num_events = __extras_index__;
-            __current_extras__ = (msl_extra_info *)__extras_current__->events_array;
-            __extras_index__ = 0;
-            if (use_realtime_dump)
-                dump_extras(tid, &__extras_start__, __is_colt__);
-        }
-        //            __DEBUG_EPILOG_TRACTOR_LAYER__
-        return 0;
+    for (int i = 0; i < num; i++) {
+        __T_RECORD_BODY__(cur[idx].values[0] = (int)values[i]; cur[idx].values[1] = -1;)
     }
-    //        __DEBUG_EPILOG_TRACTOR_LAYER__
     return 0;
 }
+
+int t_base_event::record_long(const int tid, const int level, const long long value)
+{
+    __T_RECORD_BODY__(cur[idx].value = value;)
+    return 0;
+}
+#undef __T_RECORD_BODY__
