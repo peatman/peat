@@ -96,6 +96,8 @@ void elf_symbols::initialize(object_info &object)
     Elf64_Shdr *symtab_header = 0;
     Elf64_Shdr *symtabstrings_header = 0;
     Elf64_Shdr *dwarf_debug_line_header = 0;
+    Elf64_Shdr *dwarf_debug_line_str_header = 0; // DWARF 5: strings of the line table (DW_FORM_line_strp)
+    Elf64_Shdr *dwarf_debug_str_header = 0;      // DWARF 5: strings referenced with DW_FORM_strp
 
     debug_printf("Section headers count %d\n", elf_header.e_shnum);
     for (int i = 0; i < elf_header.e_shnum; ++i) {
@@ -133,11 +135,17 @@ void elf_symbols::initialize(object_info &object)
                 symtabstrings_header = &section_headers[string_header_id];
                 // printf("section SYMBOL found\n");
             }
-            if (0 == strncmp(section_name, debug_line_section_name, debug_line_section_name_len)) {
+            if (0 == strcmp(section_name, debug_line_section_name)) { /* exact: DWARF 5 also has .debug_line_str */
                 if (dwarf_debug_line_header) {
                     throw std::runtime_error("Duplicated .debug_line section found");
                 }
                 dwarf_debug_line_header = &section_headers[i];
+            }
+            if (0 == strcmp(section_name, ".debug_line_str")) {
+                dwarf_debug_line_str_header = &section_headers[i];
+            }
+            if (0 == strcmp(section_name, ".debug_str")) {
+                dwarf_debug_str_header = &section_headers[i];
             }
         }
     }
@@ -149,7 +157,7 @@ void elf_symbols::initialize(object_info &object)
     }
     // look into DWARF .debug_line for source file name and line
     if (dwarf_debug_line_header) {
-        process_DWARF_line_info(file, dwarf_debug_line_header, object);
+        process_DWARF_line_info(file, dwarf_debug_line_header, dwarf_debug_line_str_header, dwarf_debug_str_header, object);
     }
     fclose(file);
     __DEBUG_EPILOG_TRACTOR_LAYER__
@@ -213,7 +221,7 @@ void elf_symbols::process_sym_tab(const FILE *file, const void *symtab_header, c
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
 
-void elf_symbols::process_DWARF_line_info(const FILE *fileptr, const void *section_header, elf_symbols::object_info &object)
+void elf_symbols::process_DWARF_line_info(const FILE *fileptr, const void *section_header, const void *line_str_section_header, const void *str_section_header, elf_symbols::object_info &object)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
     assert(4 == sizeof(int));
@@ -225,6 +233,19 @@ void elf_symbols::process_DWARF_line_info(const FILE *fileptr, const void *secti
     // load .debug_line
     std::vector<unsigned char> info_table(header->sh_size);
     read_data(fileptr, info_table.data(), header->sh_offset, header->sh_size);
+    // DWARF 5 string sections (may be absent)
+    std::vector<unsigned char> line_str_table;
+    std::vector<unsigned char> str_table;
+    if (line_str_section_header) {
+        const Elf64_Shdr *h = reinterpret_cast<const Elf64_Shdr *>(line_str_section_header);
+        line_str_table.resize(h->sh_size);
+        read_data(fileptr, line_str_table.data(), h->sh_offset, h->sh_size);
+    }
+    if (str_section_header) {
+        const Elf64_Shdr *h = reinterpret_cast<const Elf64_Shdr *>(str_section_header);
+        str_table.resize(h->sh_size);
+        read_data(fileptr, str_table.data(), h->sh_offset, h->sh_size);
+    }
 
     unsigned char *data_ptr = info_table.data();
     unsigned char *section_end = info_table.data() + header->sh_size;
@@ -234,33 +255,52 @@ void elf_symbols::process_DWARF_line_info(const FILE *fileptr, const void *secti
         std::map<int, DWARF_line_info> debug_line_file_table;
 
         const unsigned char *start_of_block = data_ptr;
-        const unsigned int *unit_length = reinterpret_cast<const unsigned int *>(data_ptr);
-        if (*unit_length >= 0xfffffff0) {
-            // 64-bit DWARF
-            debug_printf("elf_symbols::process_dwarf_line_info. Error: 64-bit DWARF is not supported.\n");
+        unsigned long unit_length = *reinterpret_cast<const unsigned int *>(data_ptr);
+        unsigned int offset_size = 4;         // size of section offsets and of header_length: 4 in 32-bit DWARF, 8 in 64-bit DWARF (7.4)
+        unsigned int initial_length_size = 4; // bytes taken by the unit_length field itself
+        if (0xffffffff == unit_length) {
+            // 64-bit DWARF: escape value followed by the 8-byte unit length
+            unit_length = *reinterpret_cast<const unsigned long *>(data_ptr + 4);
+            offset_size = 8;
+            initial_length_size = 12;
+        } else if (unit_length >= 0xfffffff0) {
+            debug_printf("elf_symbols::process_dwarf_line_info. Error: reserved unit length value 0x%lx.\n", unit_length);
             return;
         }
-        // assume 4 bytes for the first field length
-        if (*unit_length + 4 > header->sh_size) {
-            debug_printf("elf_symbols::process_dwarf_line_info. Error: .debug_line is corrupted, initial length is %u should be %lu\n", *unit_length + 4, header->sh_size);
+        const unsigned char *unit_end = start_of_block + initial_length_size + unit_length;
+        if (unit_end > section_end) {
+            debug_printf("elf_symbols::process_dwarf_line_info. Error: .debug_line is corrupted, unit length %lu exceeds the section (%lu bytes)\n", unit_length, header->sh_size);
+            return;
         }
-        debug_printf(".debug_info unit length %d\n", *unit_length);
-        data_ptr += 4; // skip 4 bytes
+        debug_printf(".debug_info unit length %lu (%s DWARF)\n", unit_length, 8 == offset_size ? "64-bit" : "32-bit");
+        data_ptr += initial_length_size;
 
-        unsigned int *version = reinterpret_cast<unsigned int *>(data_ptr);
-        *version = *version & 0xffff;
+        const unsigned int version_value = *reinterpret_cast<const unsigned short *>(data_ptr); // 2-byte field; do not read/write beyond it (DWARF 5 keeps address_size right after)
+        const unsigned int *version = &version_value;
         debug_printf(".debug_info DWARF Version %d\n", *version);
-        if (2 != *version && 3 != *version && 4 != *version) { // A version number (see Appendix F). This number is specific to the line number information and is independent of the DWARF version number.
-            debug_printf("elf_symbols::process_dwarf_line_info. Error: .debug_line DWARF version is %u. Versions 2,3,4 are supported only.\n", *version);
+        if (2 != *version && 3 != *version && 4 != *version && 5 != *version) { // A version number (see Appendix F). This number is specific to the line number information and is independent of the DWARF version number.
+            debug_printf("elf_symbols::process_dwarf_line_info. Error: .debug_line DWARF version is %u. Versions 2,3,4,5 are supported only.\n", *version);
             return;
         }
         data_ptr += 2; // skip 2 bytes
 
+        if (5 <= *version) {
+            // DWARF 5: address_size (ubyte) and segment_selector_size (ubyte) precede header_length
+            const unsigned int address_size = *data_ptr;
+            const unsigned int segment_selector_size = *(data_ptr + 1);
+            data_ptr += 2;
+            debug_printf(".debug_info address size %u, segment selector size %u\n", address_size, segment_selector_size);
+            if (8 != address_size || 0 != segment_selector_size) {
+                debug_printf("elf_symbols::process_dwarf_line_info. Error: only 8-byte addresses without segment selectors are supported.\n");
+                return;
+            }
+        }
+
 #if DWARFDebug
-        const unsigned int *header_length = reinterpret_cast<const unsigned int *>(data_ptr); // in DWARF-32 this is 4 bytes long
-        debug_printf(".debug_info header length %d\n", *header_length);
+        const unsigned long header_length = (8 == offset_size) ? *reinterpret_cast<const unsigned long *>(data_ptr) : *reinterpret_cast<const unsigned int *>(data_ptr);
+        debug_printf(".debug_info header length %lu\n", header_length);
 #endif
-        data_ptr += 4; // skip 4 bytes
+        data_ptr += offset_size; // header_length: 4 bytes in 32-bit DWARF, 8 bytes in 64-bit DWARF
 
         const unsigned int min_instr_len = *data_ptr;
         debug_printf(".debug_info min instr len %d\n", min_instr_len);
@@ -309,53 +349,65 @@ void elf_symbols::process_DWARF_line_info(const FILE *fileptr, const void *secti
         data_ptr += opcode_base - 1;
 #endif
 
-        debug_printf(".debug_info Directories\n"); // 10. include_directories (sequence of path names)
-        if (0 == *data_ptr) {
-            // debug_printf("\tNo directory table exists.\n");
-        } else {
-            debug_line_dir_table[0] = source_dir_compilation_default;
-            int idx = 1; // debug_line_dir_table[0] - The current directory of the compilation is understood to be the first entry and is not explicitly represented.
-            while (*data_ptr) {
-                const std::string item = reinterpret_cast<char *>(data_ptr); // TODO what if last zero is far away
-                debug_line_dir_table[idx] = source_dir_common_storage.insert(source_dir_common_storage.begin(), item);
-                debug_printf("\t[%d] %s\n", idx, item.c_str());
-                ++idx;
-                data_ptr += item.size() + 1; // skip termination NULL
+        if (5 <= *version) {
+            // DWARF 5 (6.2.4.1): directory and file name tables are described by entry formats; indices start at 0
+            debug_printf(".debug_info Directories (DWARF 5)\n");
+            if (!read_DWARF5_entry_table(data_ptr, offset_size, line_str_table, str_table, debug_line_dir_table, NULL)) {
+                return;
             }
-        }
-        assert(0 == *data_ptr); // last element must be NULL
-        data_ptr += 1;          // skip last NULL item
-
-        debug_printf(".debug_info File names\n"); // 11. file_names (sequence of file entries)
-        if (0 == *data_ptr) {
-            debug_printf("\tNo file name table exists.\n");
+            debug_printf(".debug_info File names (DWARF 5)\n");
+            if (!read_DWARF5_entry_table(data_ptr, offset_size, line_str_table, str_table, debug_line_dir_table, &debug_line_file_table)) {
+                return;
+            }
         } else {
-            int idx = 1;
-            while (*data_ptr) {
-                DWARF_line_info &item = debug_line_file_table[idx];
-                const std::string item_file_name = reinterpret_cast<char *>(data_ptr); // TODO better to limit string size
-                item.source_file = source_file_common_storage.insert(source_file_common_storage.begin(), item_file_name);
-                data_ptr += item_file_name.size() + 1; // skip termination NULL
-                unsigned long dir_id = 0;
-                data_ptr += get_LEB_128(data_ptr, dir_id, 0);
-                std::map<int, std::set<std::string>::const_iterator>::const_iterator local_dir_id = debug_line_dir_table.find(dir_id);
-                if (debug_line_dir_table.end() == local_dir_id) {
-                    item.source_dir = source_dir_compilation_default;
-                } else {
-                    item.source_dir = local_dir_id->second;
+            debug_printf(".debug_info Directories\n"); // 10. include_directories (sequence of path names)
+            if (0 == *data_ptr) {
+                // debug_printf("\tNo directory table exists.\n");
+            } else {
+                debug_line_dir_table[0] = source_dir_compilation_default;
+                int idx = 1; // debug_line_dir_table[0] - The current directory of the compilation is understood to be the first entry and is not explicitly represented.
+                while (*data_ptr) {
+                    const std::string item = reinterpret_cast<char *>(data_ptr); // TODO what if last zero is far away
+                    debug_line_dir_table[idx] = source_dir_common_storage.insert(source_dir_common_storage.begin(), item);
+                    debug_printf("\t[%d] %s\n", idx, item.c_str());
+                    ++idx;
+                    data_ptr += item.size() + 1; // skip termination NULL
                 }
-                data_ptr += get_LEB_128(data_ptr, item.mod_time, 0);
-                data_ptr += get_LEB_128(data_ptr, item.file_size, 0);
-                debug_printf("\t[%d] dir %lu time %lu size %lu %s\n", idx, dir_id, item.mod_time, item.file_size, item_file_name.c_str());
-                ++idx;
             }
-        }
-        assert(0 == *data_ptr); // last element must be NULL
-        data_ptr += 1;          // skip last NULL item
+            assert(0 == *data_ptr); // last element must be NULL
+            data_ptr += 1;          // skip last NULL item
 
-        debug_printf("Line Information start %ld to the end %u\n", data_ptr - start_of_block, *unit_length);
+            debug_printf(".debug_info File names\n"); // 11. file_names (sequence of file entries)
+            if (0 == *data_ptr) {
+                debug_printf("\tNo file name table exists.\n");
+            } else {
+                int idx = 1;
+                while (*data_ptr) {
+                    DWARF_line_info &item = debug_line_file_table[idx];
+                    const std::string item_file_name = reinterpret_cast<char *>(data_ptr); // TODO better to limit string size
+                    item.source_file = source_file_common_storage.insert(source_file_common_storage.begin(), item_file_name);
+                    data_ptr += item_file_name.size() + 1; // skip termination NULL
+                    unsigned long dir_id = 0;
+                    data_ptr += get_LEB_128(data_ptr, dir_id, 0);
+                    std::map<int, std::set<std::string>::const_iterator>::const_iterator local_dir_id = debug_line_dir_table.find(dir_id);
+                    if (debug_line_dir_table.end() == local_dir_id) {
+                        item.source_dir = source_dir_compilation_default;
+                    } else {
+                        item.source_dir = local_dir_id->second;
+                    }
+                    data_ptr += get_LEB_128(data_ptr, item.mod_time, 0);
+                    data_ptr += get_LEB_128(data_ptr, item.file_size, 0);
+                    debug_printf("\t[%d] dir %lu time %lu size %lu %s\n", idx, dir_id, item.mod_time, item.file_size, item_file_name.c_str());
+                    ++idx;
+                }
+            }
+            assert(0 == *data_ptr); // last element must be NULL
+            data_ptr += 1;          // skip last NULL item
+
+        }
+        debug_printf("Line Information start %ld to the end %lu\n", data_ptr - start_of_block, unit_length);
         // The line information state machine start
-        while (data_ptr < (start_of_block + *unit_length + 4)) { // while(unsigned(data_ptr - info_table) < header->sh_size) {
+        while (data_ptr < unit_end) {
             bool is_the_line_info_added = false;
             unsigned char opcode = *data_ptr;
             ++data_ptr;
@@ -478,8 +530,8 @@ void elf_symbols::process_DWARF_line_info(const FILE *fileptr, const void *secti
                 } break;
                 case 9: // DW_LNS_fixed_advance_pc
                 {
-                    unsigned int *operand = reinterpret_cast<unsigned int *>(data_ptr);
-                    *operand = *operand & 0xffff;
+                    const unsigned int operand_value = *reinterpret_cast<const unsigned short *>(data_ptr); // uhalf operand; the old in-place mask clobbered the next opcode
+                    const unsigned int *operand = &operand_value;
                     data_ptr += 2; // skip 2 bytes
                     stm_regs.stm_address = reinterpret_cast<PEAT_Addr>(reinterpret_cast<unsigned long>(stm_regs.stm_address) + *operand);
                     debug_printf("  Advance PC by fixed size amount %d to 0x%lx\n", *operand, stm_regs.stm_address);
@@ -532,6 +584,138 @@ void elf_symbols::process_DWARF_line_info(const FILE *fileptr, const void *secti
     }
 #endif
     __DEBUG_EPILOG_TRACTOR_LAYER__
+}
+
+/* DWARF 5 line table entry formats (section 6.2.4.1). Returns the bytes consumed by one attribute value of
+   the given form, or -1 for a form this reader does not know. Strings are returned in str_out
+   (is_string = true), integers in value. */
+long elf_symbols::read_DWARF5_form(unsigned char *data, const unsigned long form, const unsigned int offset_size,
+                                   const std::vector<unsigned char> &line_str_table, const std::vector<unsigned char> &str_table,
+                                   std::string &str_out, unsigned long &value, bool &is_string) const
+{
+    is_string = false;
+    value = 0;
+    switch (form) {
+    case 0x08: /* DW_FORM_string: inline, NUL-terminated */
+        str_out = reinterpret_cast<const char *>(data);
+        is_string = true;
+        return str_out.size() + 1;
+    case 0x1f: /* DW_FORM_line_strp: offset into .debug_line_str (4 bytes in 32-bit DWARF, 8 in 64-bit) */
+    case 0x0e: /* DW_FORM_strp: offset into .debug_str */
+    {
+        const std::vector<unsigned char> &table = (0x1f == form) ? line_str_table : str_table;
+        const unsigned long offset = (8 == offset_size) ? *reinterpret_cast<const unsigned long *>(data) : *reinterpret_cast<const unsigned int *>(data);
+        if (offset < table.size()) {
+            str_out = reinterpret_cast<const char *>(table.data() + offset);
+        } else {
+            debug_printf("elf_symbols::read_DWARF5_form. Error: string offset %lu outside of the string section (%lu bytes)\n", offset, table.size());
+            str_out.clear();
+        }
+        is_string = true;
+        return offset_size;
+    }
+    case 0x17: /* DW_FORM_sec_offset */
+        value = (8 == offset_size) ? *reinterpret_cast<const unsigned long *>(data) : *reinterpret_cast<const unsigned int *>(data);
+        return offset_size;
+    case 0x0f: /* DW_FORM_udata */
+        return get_LEB_128(data, value, 0);
+    case 0x0d: /* DW_FORM_sdata */
+        return get_LEB_128(data, value, 1);
+    case 0x0b: /* DW_FORM_data1 */
+        value = *data;
+        return 1;
+    case 0x05: /* DW_FORM_data2 */
+        value = *reinterpret_cast<const unsigned short *>(data);
+        return 2;
+    case 0x06: /* DW_FORM_data4 */
+        value = *reinterpret_cast<const unsigned int *>(data);
+        return 4;
+    case 0x07: /* DW_FORM_data8 */
+        value = *reinterpret_cast<const unsigned long *>(data);
+        return 8;
+    case 0x1e: /* DW_FORM_data16 (MD5) */
+        return 16;
+    case 0x09: /* DW_FORM_block: ULEB128 length + bytes */
+    {
+        unsigned long len = 0;
+        const int n = get_LEB_128(data, len, 0);
+        return n + len;
+    }
+    case 0x0a: /* DW_FORM_block1 */
+        return 1 + *data;
+    case 0x03: /* DW_FORM_block2 */
+        return 2 + *reinterpret_cast<const unsigned short *>(data);
+    case 0x04: /* DW_FORM_block4 */
+        return 4 + *reinterpret_cast<const unsigned int *>(data);
+    default: /* DW_FORM_strx* need .debug_str_offsets; not supported */
+        debug_printf("elf_symbols::read_DWARF5_form. Error: unsupported form 0x%lx in the line table header\n", form);
+        return -1;
+    }
+}
+
+/* Reads one DWARF 5 entry table (directories when file_table is NULL, file names otherwise):
+   format_count (ubyte), format_count pairs of ULEB128 (content type, form), entries_count (ULEB128), entries.
+   Returns false if a form is not supported; data_ptr is advanced past the table. */
+bool elf_symbols::read_DWARF5_entry_table(unsigned char *&data_ptr, const unsigned int offset_size,
+                                          const std::vector<unsigned char> &line_str_table, const std::vector<unsigned char> &str_table,
+                                          std::map<int, std::set<std::string>::const_iterator> &dir_table,
+                                          std::map<int, DWARF_line_info> *file_table)
+{
+    enum { DW_LNCT_path = 1, DW_LNCT_directory_index = 2, DW_LNCT_timestamp = 3, DW_LNCT_size = 4, DW_LNCT_MD5 = 5 };
+    const unsigned int format_count = *data_ptr;
+    data_ptr += 1;
+    std::vector<std::pair<unsigned long, unsigned long> > formats(format_count); /* (content type, form) */
+    for (unsigned int i = 0; i < format_count; ++i) {
+        data_ptr += get_LEB_128(data_ptr, formats[i].first, 0);
+        data_ptr += get_LEB_128(data_ptr, formats[i].second, 0);
+    }
+    unsigned long entries_count = 0;
+    data_ptr += get_LEB_128(data_ptr, entries_count, 0);
+    for (unsigned long idx = 0; idx < entries_count; ++idx) {
+        std::string path;
+        unsigned long dir_id = 0, mod_time = 0, file_size = 0;
+        for (unsigned int i = 0; i < format_count; ++i) {
+            std::string str;
+            unsigned long value = 0;
+            bool is_string = false;
+            const long consumed = read_DWARF5_form(data_ptr, formats[i].second, offset_size, line_str_table, str_table, str, value, is_string);
+            if (consumed < 0) {
+                return false;
+            }
+            data_ptr += consumed;
+            switch (formats[i].first) {
+            case DW_LNCT_path:
+                if (is_string) {
+                    path = str;
+                }
+                break;
+            case DW_LNCT_directory_index:
+                dir_id = value;
+                break;
+            case DW_LNCT_timestamp:
+                mod_time = value;
+                break;
+            case DW_LNCT_size:
+                file_size = value;
+                break;
+            default: /* DW_LNCT_MD5 and vendor content types: skipped */
+                break;
+            }
+        }
+        if (NULL == file_table) {
+            dir_table[idx] = source_dir_common_storage.insert(source_dir_common_storage.begin(), path);
+            debug_printf("\t[%lu] %s\n", idx, path.c_str());
+        } else {
+            DWARF_line_info &item = (*file_table)[idx];
+            item.source_file = source_file_common_storage.insert(source_file_common_storage.begin(), path);
+            std::map<int, std::set<std::string>::const_iterator>::const_iterator local_dir_id = dir_table.find(dir_id);
+            item.source_dir = (dir_table.end() == local_dir_id) ? source_dir_compilation_default : local_dir_id->second;
+            item.mod_time = mod_time;
+            item.file_size = file_size;
+            debug_printf("\t[%lu] dir %lu time %lu size %lu %s\n", idx, dir_id, mod_time, file_size, path.c_str());
+        }
+    }
+    return true;
 }
 
 void elf_symbols::dump_symbols(const std::string &path, const std::string &mask, const int rank) const

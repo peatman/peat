@@ -25,6 +25,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "common_plain_types.h"
 #include "t_stat.h"
@@ -138,7 +139,7 @@ struct elf_symbols {
     void initialize(object_info &object);
     void read_data(const FILE *file, void *data, const size_t offset, const size_t size) const;
     void process_sym_tab(const FILE *file, const void *symtab_header, const void *symtab_string_header, object_info &object);
-    void process_DWARF_line_info(const FILE *file, const void *section_header, object_info &object);
+    void process_DWARF_line_info(const FILE *file, const void *section_header, const void *line_str_section_header, const void *str_section_header, object_info &object);
 
     // local file information data structure in DWARF
     struct DWARF_line_info {
@@ -172,6 +173,13 @@ struct elf_symbols {
     };
 
     int get_LEB_128(unsigned char *data, unsigned long &result, const int sign) const;
+    // DWARF 5 line table header support (entry-format described directory/file tables)
+    long read_DWARF5_form(unsigned char *data, const unsigned long form, const unsigned int offset_size, const std::vector<unsigned char> &line_str_table,
+                          const std::vector<unsigned char> &str_table, std::string &str_out, unsigned long &value, bool &is_string) const;
+    bool read_DWARF5_entry_table(unsigned char *&data_ptr, const unsigned int offset_size,
+                                 const std::vector<unsigned char> &line_str_table, const std::vector<unsigned char> &str_table,
+                                 std::map<int, std::set<std::string>::const_iterator> &dir_table,
+                                 std::map<int, DWARF_line_info> *file_table);
     const char *debug_line_section_name;
     int debug_line_section_name_len;
 };

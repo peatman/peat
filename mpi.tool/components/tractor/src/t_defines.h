@@ -143,12 +143,26 @@ static void debug_printf(const char *format, ...) {};
 #include "t_time.h"
 
 #if 1
+/* Frames inside the MPI Fortran wrapper library(ies) are skipped so the recorded call site is the user's Fortran code */
+#ifdef _OPENMPI_
+#if defined(__CPLUSPLUS__) || defined(__cplusplus)
+extern "C" {
+#endif
+int t_addr_in_fortran_lib(const void *addr); /* tractor.cpp: any of libmpi_mpifh, libmpi_usempif08, libmpi_usempi* */
+#if defined(__CPLUSPLUS__) || defined(__cplusplus)
+}
+#endif
+#define T_IN_FORTRAN_LIB(a) t_addr_in_fortran_lib(a)
+#else
+#define T_IN_FORTRAN_LIB(a) ((a) > gt_info(lowfort) && (a) < gt_info(highfort)) /* libmpifort */
+#endif
+
 #define stack_unwind_x(lev_num, store_addr, levels)                                                            \
     {                                                                                                         \
         void **t_frame;                                                                                       \
         asm("movq %%rbp, %0;" : "=r"(t_frame) :);                                                             \
         void *ret_addr = t_frame[1];                                                                          \
-        while (ret_addr > gt_info(lowfort) && ret_addr < gt_info(highfort)) {                                 \
+        while (T_IN_FORTRAN_LIB(ret_addr)) {                                                                 \
             t_frame = (void **)t_frame[0];                                                                    \
             ret_addr = t_frame[1];                                                                            \
         }                                                                                                     \
@@ -166,7 +180,7 @@ static void debug_printf(const char *format, ...) {};
         void **t_frame;                                                                                       \
         asm("movq %%rbp, %0;" : "=r"(t_frame) :);                                                             \
         void *ret_addr = t_frame[1];                                                                          \
-        while (ret_addr > gt_info(lowfort) && ret_addr < gt_info(highfort)) {                                 \
+        while (T_IN_FORTRAN_LIB(ret_addr)) {                                                                 \
             t_frame = (void **)t_frame[0];                                                                    \
             ret_addr = t_frame[1];                                                                            \
         }                                                                                                     \
