@@ -169,6 +169,13 @@ struct tractor : t_base_event {
     void *lowval;
     void *highfort;
     void *lowfort;
+#ifdef _OPENMPI_
+    /* Open MPI has several Fortran wrapper libraries; all of their executable ranges are skipped by stack_unwind* */
+    enum { T_MAX_FORT_RANGES = 8 };
+    int num_fort_ranges;
+    void *lowfort_r[T_MAX_FORT_RANGES];
+    void *highfort_r[T_MAX_FORT_RANGES];
+#endif
     void *hightrac;
     void *lowtrac;
     void *highheap;

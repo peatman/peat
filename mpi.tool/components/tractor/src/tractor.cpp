@@ -189,6 +189,9 @@ tractor::tractor(void)
     lowval = (void *)0;
     highfort = (void *)0;
     lowfort = (void *)0x7FFFFFFFFFFFFFFF;
+#ifdef _OPENMPI_
+    num_fort_ranges = 0;
+#endif
     hightrac = (void *)0;
     lowtrac = (void *)0x7FFFFFFFFFFFFFFF;
     highheap = (void *)0;
@@ -746,11 +749,30 @@ void tractor::parse_env_vars(void)
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
 
+#ifdef _OPENMPI_
+/* Open MPI splits the Fortran wrappers: libmpi_mpifh (mpif.h / use mpi; also called by the f08 layer),
+   libmpi_usempif08 (use mpi_f08), libmpi_usempi_ignore_tkr / libmpi_usempi (use mpi module code). */
+static const char *const t_fortran_wrapper_libs[] = {"libmpi_mpifh", "libmpi_usempif08", "libmpi_usempi_ignore_tkr", "libmpi_usempi", NULL};
+static bool t_is_fortran_wrapper_lib(const char *path_or_maps_line)
+{
+    for (int i = 0; t_fortran_wrapper_libs[i]; ++i) {
+        if (strstr(path_or_maps_line, t_fortran_wrapper_libs[i]))
+            return true;
+    }
+    return false;
+}
+#endif
+
 #if !defined(_TRACTOR_LEGACY_PROC_MAPS_)
 namespace {
 struct t_maps_phdr_ctx {
     void *binval;
+#ifdef _OPENMPI_
+    int num_fort;
+    void *lowfort[tractor::T_MAX_FORT_RANGES], *highfort[tractor::T_MAX_FORT_RANGES];
+#else
     void *lowfort, *highfort;
+#endif
     void *lowtrac, *hightrac;
 };
 
@@ -758,7 +780,11 @@ int t_maps_phdr_callback(struct dl_phdr_info *info, size_t size, void *data)
 {
     t_maps_phdr_ctx *ctx = (t_maps_phdr_ctx *)data;
     bool is_main = (info->dlpi_name == NULL || info->dlpi_name[0] == 0);
+#ifdef _OPENMPI_
+    bool is_fort = !is_main && t_is_fortran_wrapper_lib(info->dlpi_name);
+#else
     bool is_fort = !is_main && strstr(info->dlpi_name, "libmpifort");
+#endif
     bool is_trac = !is_main && strstr(info->dlpi_name, "libtractor");
     if (!is_main && !is_fort && !is_trac)
         return 0;
@@ -781,8 +807,16 @@ int t_maps_phdr_callback(struct dl_phdr_info *info, size_t size, void *data)
     if (is_main)
         ctx->binval = (void *)high;
     else if (is_fort) {
+#ifdef _OPENMPI_
+        if (ctx->num_fort < tractor::T_MAX_FORT_RANGES) {
+            ctx->lowfort[ctx->num_fort] = (void *)low;
+            ctx->highfort[ctx->num_fort] = (void *)high;
+            ctx->num_fort++;
+        }
+#else
         ctx->lowfort = (void *)low;
         ctx->highfort = (void *)high;
+#endif
     } else if (is_trac) {
         ctx->lowtrac = (void *)low;
         ctx->hightrac = (void *)high;
@@ -797,10 +831,22 @@ void tractor::map_file_parse(void)
     dl_iterate_phdr(t_maps_phdr_callback, &ctx);
     if (ctx.binval)
         binval = ctx.binval;
+#ifdef _OPENMPI_
+    if (ctx.num_fort > 0) {
+        num_fort_ranges = ctx.num_fort;
+        for (int i = 0; i < num_fort_ranges; ++i) {
+            lowfort_r[i] = ctx.lowfort[i];
+            highfort_r[i] = ctx.highfort[i];
+        }
+        lowfort = lowfort_r[0];
+        highfort = highfort_r[0];
+    }
+#else
     if (ctx.highfort) {
         lowfort = ctx.lowfort;
         highfort = ctx.highfort;
     }
+#endif
     if (ctx.hightrac) {
         lowtrac = ctx.lowtrac;
         hightrac = ctx.hightrac;
@@ -838,12 +884,29 @@ void tractor::map_file_parse(void)
     if (tfp) {
         unsigned long long stub;
         tbuf[0] = 0;
+#ifdef _OPENMPI_
+        num_fort_ranges = 0; /* rebuilt on every parse; this function runs more than once */
+#endif
         /* handle main binary */
         fgets(tbuf, MAX_PATH, tfp);
         sscanf(tbuf, "%llx-%llx", &stub, &binval);
         while (!feof(tfp)) {
             tbuf[0] = 0;
             fgets(tbuf, 65536, tfp);
+#ifdef _OPENMPI_
+            if (t_is_fortran_wrapper_lib(tbuf)) {
+                void *low_t, *high_t;
+                char attr[65536];
+                sscanf(tbuf, "%llx-%llx %s", &low_t, &high_t, attr);
+                if (strstr(attr, "x") && num_fort_ranges < T_MAX_FORT_RANGES) {
+                    lowfort_r[num_fort_ranges] = low_t;
+                    highfort_r[num_fort_ranges] = high_t;
+                    num_fort_ranges++;
+                    lowfort = lowfort_r[0];
+                    highfort = highfort_r[0];
+                }
+            }
+#else
             if (strstr(tbuf, "libmpifort")) {
                 void *low_t, *high_t;
                 char attr[65536];
@@ -853,6 +916,7 @@ void tractor::map_file_parse(void)
                     highfort = high_t;
                 }
             }
+#endif
             if (strstr(tbuf, "libtractor")) {
                 void *low_t, *high_t;
                 char attr[65536];
@@ -3325,6 +3389,17 @@ tractor_debug::~tractor_debug(void)
 tractor_debug t_info_debug;
 #else
 tractor t_info;
+
+#ifdef _OPENMPI_
+extern "C" int t_addr_in_fortran_lib(const void *addr)
+{
+    for (int i = 0; i < gt_info(num_fort_ranges); ++i) {
+        if (addr > gt_info(lowfort_r)[i] && addr < gt_info(highfort_r)[i])
+            return 1;
+    }
+    return 0;
+}
+#endif
 #endif
 
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
