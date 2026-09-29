@@ -1,5 +1,5 @@
---- a/src/include/mpiallstates.h	2020-11-29 06:34:00.000000000 -0700
-+++ b/src/include/mpiallstates.h	2020-12-15 04:26:59.000000000 -0700
+--- a/src/include/mpiallstates.h
++++ b/src/include/mpiallstates.h
 @@ -156,6 +156,7 @@
  	MPID_STATE_MPIC_SSEND,
  	MPID_STATE_MPIC_WAIT,
@@ -8,8 +8,8 @@
  	MPID_STATE_MPIDI_CH3I_ACCEPTQ_DEQUEUE,
  	MPID_STATE_MPIDI_CH3I_ACCEPTQ_ENQUEUE,
  	MPID_STATE_MPIDI_CH3I_ACCUMULATE,
---- a/src/include/mpiimpl.h	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/include/mpiimpl.h	2024-11-12 04:34:22.000000000 -0700
+--- a/src/include/mpiimpl.h
++++ b/src/include/mpiimpl.h
 @@ -1283,6 +1283,7 @@
      struct MPID_Comm *node_comm; /* Comm of processes in this comm that are on
                                      the same node as this process. */
@@ -70,8 +70,8 @@
  
  void MPIR_MAXF  ( void *, void *, int *, MPI_Datatype * ) ;
  void MPIR_MINF  ( void *, void *, int *, MPI_Datatype * ) ;
---- a/src/mpi/coll/helper_fns.h	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpi/coll/helper_fns.h	2020-12-15 04:29:11.000000000 -0700
+--- a/src/mpi/coll/helper_fns.h
++++ b/src/mpi/coll/helper_fns.h
 @@ -26,35 +26,6 @@
  #define MPIC_REQUEST_PTR_ARRAY_SIZE 64
  #endif
@@ -708,8 +708,8 @@
  #undef FUNCNAME
  #undef FCNAME
  #endif /*_HELPER_FNS_H_*/
---- a/src/mpi/coll/Makefile.mk	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpi/coll/Makefile.mk	2020-11-29 06:32:48.000000000 -0700
+--- a/src/mpi/coll/Makefile.mk
++++ b/src/mpi/coll/Makefile.mk
 @@ -19,6 +19,7 @@
  # The code for the MPI operations (e.g., MPI_SUM) is not included in 
  # mpi_sources
@@ -718,8 +718,8 @@
      src/mpi/coll/allreduce.c       \
      src/mpi/coll/barrier.c         \
      src/mpi/coll/op_create.c       \
---- a/src/mpi/coll/reduce_osu.c	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpi/coll/reduce_osu.c	2020-12-15 04:30:51.000000000 -0700
+--- a/src/mpi/coll/reduce_osu.c
++++ b/src/mpi/coll/reduce_osu.c
 @@ -1336,7 +1336,6 @@
      MPID_Op *op_ptr;
      void **tmp_buf=NULL;
@@ -763,8 +763,8 @@
      }
  
      if(src_array != NULL) { 
---- a/src/mpi/comm/commutil.c	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpi/comm/commutil.c	2020-12-15 04:31:31.000000000 -0700
+--- a/src/mpi/comm/commutil.c
++++ b/src/mpi/comm/commutil.c
 @@ -110,8 +110,11 @@
      comm_p->hierarchy_kind = MPID_HIERARCHY_FLAT;
      comm_p->node_comm = NULL;
@@ -825,8 +825,8 @@
          /* Free the context value.  This should come after freeing the
           * intra/inter-node communicators since those free calls won't
           * release this context ID and releasing this before then could lead
---- a/src/mpi/group/group_translate_ranks.c	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpi/group/group_translate_ranks.c	2025-11-12 04:21:06.000000000 -0700
+--- a/src/mpi/group/group_translate_ranks.c
++++ b/src/mpi/group/group_translate_ranks.c
 @@ -6,6 +6,7 @@
   */
  
@@ -1156,8 +1156,8 @@
 +    if (comm->parent_comm) return mpi_internal_get_mpicomm_from_mpidcomm(comm->parent_comm);
 +    return comm->handle;
 +}
---- a/src/mpi/pt2pt/mpir_request.c	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpi/pt2pt/mpir_request.c	2020-12-15 04:32:21.000000000 -0700
+--- a/src/mpi/pt2pt/mpir_request.c
++++ b/src/mpi/pt2pt/mpir_request.c
 @@ -354,7 +354,7 @@
  			&ierr );
  		    rc = (int) ierr;
@@ -1176,8 +1176,8 @@
  	    MPIR_ERR_CHKANDSTMT1((rc != MPI_SUCCESS), mpi_errno, MPI_ERR_OTHER,
  		{;}, "**user", "**userquery %d", rc);
  	}
---- a/src/mpid/common/sched/mpid_sched.c	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/common/sched/mpid_sched.c	2021-03-22 10:17:07.000000000 -0600
+--- a/src/mpid/common/sched/mpid_sched.c
++++ b/src/mpid/common/sched/mpid_sched.c
 @@ -851,6 +851,38 @@
  }
  
@@ -1235,8 +1235,8 @@
                          e->u.recv.rreq = NULL;
                          MPIR_Comm_release(e->u.recv.comm);
                          dtype_release_if_not_builtin(e->u.recv.datatype);
---- a/src/mpid/common/sched/mpid_sched.h	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/common/sched/mpid_sched.h	2025-11-14 07:02:34.000000000 -0700
+--- a/src/mpid/common/sched/mpid_sched.h
++++ b/src/mpid/common/sched/mpid_sched.h
 @@ -122,5 +122,6 @@
  /* prototypes */
  int MPIDU_Sched_progress(int *made_progress);
@@ -1244,8 +1244,8 @@
 +void T_MPID_Request_release(MPID_Request *req);
  
  #endif /* !defined(MPID_SCHED_H_INCLUDED) */
---- a/src/util/logging/common/state_names.h	2020-11-29 06:34:00.000000000 -0700
-+++ b/src/util/logging/common/state_names.h	2020-12-15 04:56:40.000000000 -0700
+--- a/src/util/logging/common/state_names.h
++++ b/src/util/logging/common/state_names.h
 @@ -158,6 +158,7 @@
      { MPID_STATE_MPIC_SSEND, "MPIC_Ssend", (const char *)0 },
      { MPID_STATE_MPIC_WAIT, "MPIC_Wait", (const char *)0 },

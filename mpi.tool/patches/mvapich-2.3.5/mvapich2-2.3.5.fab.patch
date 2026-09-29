@@ -1,5 +1,5 @@
---- a/src/mpid/ch3/channels/common/include/hwloc_bind.h	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/ch3/channels/common/include/hwloc_bind.h	2020-12-15 04:32:58.000000000 -0700
+--- a/src/mpid/ch3/channels/common/include/hwloc_bind.h
++++ b/src/mpid/ch3/channels/common/include/hwloc_bind.h
 @@ -13,10 +13,6 @@
  #ifndef CH3_HWLOC_BIND_H_
  #define CH3_HWLOC_BIND_H_
@@ -11,8 +11,8 @@
  #include <hwloc.h>
  #include <dirent.h>
  
---- a/src/mpid/ch3/channels/common/include/ib_param.h	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/ch3/channels/common/include/ib_param.h	2020-12-15 04:33:10.000000000 -0700
+--- a/src/mpid/ch3/channels/common/include/ib_param.h
++++ b/src/mpid/ch3/channels/common/include/ib_param.h
 @@ -16,6 +16,7 @@
  
  #if defined(HAVE_LIBIBVERBS)
@@ -21,8 +21,8 @@
  #endif
  #include "mv2_arch_hca_detect.h"
  
---- a/src/mpid/ch3/channels/common/include/mv2_arch_hca_detect.h	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/ch3/channels/common/include/mv2_arch_hca_detect.h	2020-12-15 04:33:38.000000000 -0700
+--- a/src/mpid/ch3/channels/common/include/mv2_arch_hca_detect.h
++++ b/src/mpid/ch3/channels/common/include/mv2_arch_hca_detect.h
 @@ -18,6 +18,7 @@
  
  #if defined(HAVE_LIBIBVERBS)
@@ -31,8 +31,8 @@
  #endif
  
  /* HCA Types */
---- a/src/mpid/ch3/channels/common/include/mv2_ud.h	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/ch3/channels/common/include/mv2_ud.h	2020-12-15 04:33:48.000000000 -0700
+--- a/src/mpid/ch3/channels/common/include/mv2_ud.h
++++ b/src/mpid/ch3/channels/common/include/mv2_ud.h
 @@ -15,6 +15,7 @@
  
  #include <vbuf.h>
@@ -41,8 +41,8 @@
  
  #define LOG2(_v, _r)                            \
  do {                                            \
---- a/src/mpid/ch3/channels/common/include/rdma_3dtorus.h	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/ch3/channels/common/include/rdma_3dtorus.h	2020-12-15 04:33:55.000000000 -0700
+--- a/src/mpid/ch3/channels/common/include/rdma_3dtorus.h
++++ b/src/mpid/ch3/channels/common/include/rdma_3dtorus.h
 @@ -14,6 +14,7 @@
  #define RDMA_3DTORUS_H
  #include <netinet/in.h>
@@ -51,8 +51,8 @@
  #include <sys/time.h>
  #include <mpidi_ch3_impl.h>
  
---- a/src/mpid/ch3/channels/common/include/rdma_cm.h	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/ch3/channels/common/include/rdma_cm.h	2020-12-15 04:34:01.000000000 -0700
+--- a/src/mpid/ch3/channels/common/include/rdma_cm.h
++++ b/src/mpid/ch3/channels/common/include/rdma_cm.h
 @@ -26,6 +26,7 @@
  #include <pthread.h>
  #include <rdma/rdma_cma.h>
@@ -61,8 +61,8 @@
  #ifdef _MULTI_SUBNET_SUPPORT_
  #include <infiniband/ib.h>
  #endif /*_MULTI_SUBNET_SUPPORT_*/
---- a/src/mpid/ch3/channels/common/src/detect/arch/mv2_arch_detect.c	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/ch3/channels/common/src/detect/arch/mv2_arch_detect.c	2020-12-15 04:36:35.000000000 -0700
+--- a/src/mpid/ch3/channels/common/src/detect/arch/mv2_arch_detect.c
++++ b/src/mpid/ch3/channels/common/src/detect/arch/mv2_arch_detect.c
 @@ -14,6 +14,7 @@
  #include <string.h>
  #if defined(HAVE_LIBIBVERBS)
@@ -71,8 +71,8 @@
  #endif
  
  #include <mpichconf.h>
---- a/src/mpid/ch3/channels/common/src/mcast/ibv_mcast.c	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/ch3/channels/common/src/mcast/ibv_mcast.c	2020-12-15 04:37:26.000000000 -0700
+--- a/src/mpid/ch3/channels/common/src/mcast/ibv_mcast.c
++++ b/src/mpid/ch3/channels/common/src/mcast/ibv_mcast.c
 @@ -14,6 +14,7 @@
  
  #if defined(_MCST_SUPPORT_)
@@ -81,16 +81,16 @@
  #include <infiniband/umad.h>
  #include <infiniband/mad.h>
  #if defined(RDMA_CM)
---- a/src/mpid/ch3/channels/common/src/util/Makefile.mk	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/ch3/channels/common/src/util/Makefile.mk	2020-11-29 06:32:48.000000000 -0700
+--- a/src/mpid/ch3/channels/common/src/util/Makefile.mk
++++ b/src/mpid/ch3/channels/common/src/util/Makefile.mk
 @@ -17,4 +17,5 @@
  	src/mpid/ch3/channels/common/src/util/mv2_config.c  \
  	src/mpid/ch3/channels/common/src/util/error_handling.c  \
  	src/mpid/ch3/channels/common/src/util/debug_utils.c  \
 +	src/mpid/ch3/channels/common/src/util/verbs-proxy.c  \
  	src/mpid/ch3/channels/common/src/util/mv2_clock.c
---- a/src/mpid/ch3/channels/mrail/src/gen2/ibv_param.c	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/ch3/channels/mrail/src/gen2/ibv_param.c	2020-12-15 04:42:49.000000000 -0700
+--- a/src/mpid/ch3/channels/mrail/src/gen2/ibv_param.c
++++ b/src/mpid/ch3/channels/mrail/src/gen2/ibv_param.c
 @@ -15,7 +15,6 @@
  #include <stdlib.h>
  #include <stdio.h>
@@ -99,8 +99,8 @@
  #include "rdma_impl.h"
  #include "vbuf.h"
  #include "ibv_param.h"
---- a/src/mpid/ch3/channels/mrail/src/gen2/ibv_param.h	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/ch3/channels/mrail/src/gen2/ibv_param.h	2020-12-15 04:43:32.000000000 -0700
+--- a/src/mpid/ch3/channels/mrail/src/gen2/ibv_param.h
++++ b/src/mpid/ch3/channels/mrail/src/gen2/ibv_param.h
 @@ -14,6 +14,7 @@
  #define _IBV_PARAM_H
  
@@ -109,8 +109,8 @@
  #include "debug_utils.h"
  #include "mv2_arch_hca_detect.h"
  
---- a/src/mpid/ch3/channels/mrail/src/gen2/rdma_iba_1sc.c	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/ch3/channels/mrail/src/gen2/rdma_iba_1sc.c	2020-12-15 04:48:49.000000000 -0700
+--- a/src/mpid/ch3/channels/mrail/src/gen2/rdma_iba_1sc.c
++++ b/src/mpid/ch3/channels/mrail/src/gen2/rdma_iba_1sc.c
 @@ -16,6 +16,7 @@
  #include "dreg.h"
  #include "ibv_param.h"
@@ -119,8 +119,8 @@
  #include "mpidrma.h"
  #include "upmi.h"
  #include "mpiutil.h"
---- a/src/mpid/ch3/channels/mrail/src/gen2/rdma_impl.h	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/ch3/channels/mrail/src/gen2/rdma_impl.h	2020-12-15 04:51:29.000000000 -0700
+--- a/src/mpid/ch3/channels/mrail/src/gen2/rdma_impl.h
++++ b/src/mpid/ch3/channels/mrail/src/gen2/rdma_impl.h
 @@ -24,6 +24,8 @@
  #include "upmi.h"
  
@@ -130,8 +130,8 @@
  #include "ibv_param.h"
  #include "mv2_arch_hca_detect.h"
  #include "rdma_3dtorus.h"
---- a/src/mpid/ch3/channels/mrail/src/gen2/sysreport.c	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/ch3/channels/mrail/src/gen2/sysreport.c	2020-12-15 04:51:48.000000000 -0700
+--- a/src/mpid/ch3/channels/mrail/src/gen2/sysreport.c
++++ b/src/mpid/ch3/channels/mrail/src/gen2/sysreport.c
 @@ -12,6 +12,7 @@
  #include <unistd.h>
  #include <infiniband/verbs.h>
@@ -140,8 +140,8 @@
  
  #include "sysreport.h"
  
---- a/src/mpid/ch3/channels/mrail/src/gen2/vbuf.c	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/ch3/channels/mrail/src/gen2/vbuf.c	2020-12-15 04:52:12.000000000 -0700
+--- a/src/mpid/ch3/channels/mrail/src/gen2/vbuf.c
++++ b/src/mpid/ch3/channels/mrail/src/gen2/vbuf.c
 @@ -29,6 +29,7 @@
  
  #include "mem_hooks.h"
@@ -150,8 +150,8 @@
  #include "upmi.h"
  #include "rdma_impl.h"
  #include "vbuf.h"
---- a/src/mpid/ch3/channels/mrail/src/gen2/vbuf.h	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/ch3/channels/mrail/src/gen2/vbuf.h	2020-12-15 04:52:20.000000000 -0700
+--- a/src/mpid/ch3/channels/mrail/src/gen2/vbuf.h
++++ b/src/mpid/ch3/channels/mrail/src/gen2/vbuf.h
 @@ -29,6 +29,7 @@
  
  #include "mpichconf.h"
@@ -160,8 +160,8 @@
  #include "ibv_param.h"
  #include "mv2_clock.h"
  #if defined(_ENABLE_CUDA_)
---- a/src/mpid/ch3/channels/mrail/src/rdma/ch3_smp_progress.c	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/ch3/channels/mrail/src/rdma/ch3_smp_progress.c	2020-12-15 04:56:16.000000000 -0700
+--- a/src/mpid/ch3/channels/mrail/src/rdma/ch3_smp_progress.c
++++ b/src/mpid/ch3/channels/mrail/src/rdma/ch3_smp_progress.c
 @@ -17,6 +17,7 @@
   * copyright file COPYRIGHT in the top level MVAPICH2 directory.
   *
@@ -528,8 +528,8 @@
  
  #undef FUNCNAME
  #define FUNCNAME MPIDI_CH3I_SMP_write_progress
---- a/src/mpid/ch3/channels/psm/src/psm_queue.c	2020-11-29 06:32:48.000000000 -0700
-+++ b/src/mpid/ch3/channels/psm/src/psm_queue.c	2020-12-15 11:44:17.262632000 -0700
+--- a/src/mpid/ch3/channels/psm/src/psm_queue.c
++++ b/src/mpid/ch3/channels/psm/src/psm_queue.c
 @@ -425,9 +425,13 @@
  #define FCNAME MPL_QUOTE(FUNCNAME)
  void psm_pe_yield()
@@ -544,8 +544,8 @@
  }
  
  #undef FUNCNAME
---- a/src/mpid/ch3/channels/common/src/util/error_handling.c	2020-11-29 13:32:48.000000000 +0000
-+++ b/src/mpid/ch3/channels/common/src/util/error_handling.c	2026-09-04 18:41:39.437941420 +0100
+--- a/src/mpid/ch3/channels/common/src/util/error_handling.c
++++ b/src/mpid/ch3/channels/common/src/util/error_handling.c
 @@ -69,7 +69,7 @@
  // Signal handler for errors
  void error_sighandler(int sig, siginfo_t *info, void *secret) {

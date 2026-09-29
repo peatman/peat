@@ -1,0 +1,777 @@
+--- a/src/include/mpir_coll.h
++++ b/src/include/mpir_coll.h
+@@ -26,26 +26,47 @@
+    other internal operations. They are wrappers around MPID send/recv
+    functions. They do sends/receives by setting the context offset to
+    MPIR_CONTEXT_INTRA(INTER)_COLL. */
+-int MPIC_Wait(MPIR_Request * request_ptr);
+-int MPIC_Probe(int source, int tag, MPI_Comm comm, MPI_Status * status);
++int MPIC_Wait(MPIR_Request * request_ptr) MPICH_API_PUBLIC;
++int MPIC_Probe(int source, int tag, MPI_Comm comm, MPI_Status * status) MPICH_API_PUBLIC;
+ 
+ int MPIC_Send(const void *buf, MPI_Aint count, MPI_Datatype datatype, int dest, int tag,
+-              MPIR_Comm * comm_ptr, int coll_attr);
++              MPIR_Comm * comm_ptr, int coll_attr) MPICH_API_PUBLIC;
+ int MPIC_Recv(void *buf, MPI_Aint count, MPI_Datatype datatype, int source, int tag,
+-              MPIR_Comm * comm_ptr, MPI_Status * status);
++              MPIR_Comm * comm_ptr, MPI_Status * status) MPICH_API_PUBLIC;
+ int MPIC_Sendrecv(const void *sendbuf, MPI_Aint sendcount, MPI_Datatype sendtype,
+                   int dest, int sendtag, void *recvbuf, MPI_Aint recvcount,
+                   MPI_Datatype recvtype, int source, int recvtag,
+-                  MPIR_Comm * comm_ptr, MPI_Status * status, int coll_attr);
++                  MPIR_Comm * comm_ptr, MPI_Status * status, int coll_attr) MPICH_API_PUBLIC;
+ int MPIC_Sendrecv_replace(void *buf, MPI_Aint count, MPI_Datatype datatype,
+                           int dest, int sendtag,
+                           int source, int recvtag,
+-                          MPIR_Comm * comm_ptr, MPI_Status * status, int coll_attr);
++                          MPIR_Comm * comm_ptr, MPI_Status * status, int coll_attr) MPICH_API_PUBLIC;
+ int MPIC_Isend(const void *buf, MPI_Aint count, MPI_Datatype datatype, int dest, int tag,
+-               MPIR_Comm * comm_ptr, MPIR_Request ** request, int coll_attr);
++               MPIR_Comm * comm_ptr, MPIR_Request ** request, int coll_attr) MPICH_API_PUBLIC;
+ int MPIC_Irecv(void *buf, MPI_Aint count, MPI_Datatype datatype, int source,
+-               int tag, MPIR_Comm * comm_ptr, MPIR_Request ** request);
+-int MPIC_Waitall(int numreq, MPIR_Request ** requests, MPI_Status * statuses);
++               int tag, MPIR_Comm * comm_ptr, MPIR_Request ** request) MPICH_API_PUBLIC;
++int MPIC_Waitall(int numreq, MPIR_Request ** requests, MPI_Status * statuses) MPICH_API_PUBLIC;
++
++int PMPIC_Wait(MPIR_Request * request_ptr) MPICH_API_PUBLIC;
++int PMPIC_Probe(int source, int tag, MPI_Comm comm, MPI_Status * status) MPICH_API_PUBLIC;
++
++int PMPIC_Send(const void *buf, MPI_Aint count, MPI_Datatype datatype, int dest, int tag,
++              MPIR_Comm * comm_ptr, int coll_attr) MPICH_API_PUBLIC;
++int PMPIC_Recv(void *buf, MPI_Aint count, MPI_Datatype datatype, int source, int tag,
++              MPIR_Comm * comm_ptr, MPI_Status * status) MPICH_API_PUBLIC;
++int PMPIC_Sendrecv(const void *sendbuf, MPI_Aint sendcount, MPI_Datatype sendtype,
++                  int dest, int sendtag, void *recvbuf, MPI_Aint recvcount,
++                  MPI_Datatype recvtype, int source, int recvtag,
++                  MPIR_Comm * comm_ptr, MPI_Status * status, int coll_attr) MPICH_API_PUBLIC;
++int PMPIC_Sendrecv_replace(void *buf, MPI_Aint count, MPI_Datatype datatype,
++                          int dest, int sendtag,
++                          int source, int recvtag,
++                          MPIR_Comm * comm_ptr, MPI_Status * status, int coll_attr) MPICH_API_PUBLIC;
++int PMPIC_Isend(const void *buf, MPI_Aint count, MPI_Datatype datatype, int dest, int tag,
++               MPIR_Comm * comm_ptr, MPIR_Request ** request, int coll_attr) MPICH_API_PUBLIC;
++int PMPIC_Irecv(void *buf, MPI_Aint count, MPI_Datatype datatype, int source,
++               int tag, MPIR_Comm * comm_ptr, MPIR_Request ** request) MPICH_API_PUBLIC;
++int PMPIC_Waitall(int numreq, MPIR_Request ** requests, MPI_Status * statuses) MPICH_API_PUBLIC;
+ 
+ int MPIR_Reduce_local(const void *inbuf, void *inoutbuf, MPI_Aint count, MPI_Datatype datatype,
+                       MPI_Op op);
+--- a/src/include/mpir_comm.h
++++ b/src/include/mpir_comm.h
+@@ -134,6 +134,7 @@
+     struct MPIR_Comm *node_comm;        /* Comm of processes in this comm that are on
+                                          * the same node as this process. */
+     struct MPIR_Comm *node_roots_comm;  /* Comm of root processes for other nodes. */
++    struct MPIR_Comm *parent_comm;      /* Comm this subcomm (node_comm/node_roots_comm) was created from. */
+     int *intranode_table;       /* intranode_table[i] gives the rank in
+                                  * node_comm of rank i in this comm or -1 if i
+                                  * is not in this process' node_comm.
+@@ -141,6 +142,8 @@
+     int *internode_table;       /* internode_table[i] gives the rank in
+                                  * node_roots_comm of rank i in this comm.
+                                  * It is of size 'local_size'. */
++    int *intranode_table_rev;   /* reverse mapping of intranode_table, built on demand */
++    int *internode_table_rev;   /* reverse mapping of internode_table, built on demand */
+ 
+     int is_low_group;           /* For intercomms only, this boolean is
+                                  * M* set for all members of one of the
+@@ -496,4 +499,16 @@
+ int MPIR_finalize_builtin_comms(void);
+ 
+ void MPIR_Comm_set_session_ptr(MPIR_Comm * comm_ptr, MPIR_Session * session_ptr);
++
++int mpi_internal_comm_translate_rank(MPIR_Comm *comm, int rank) MPICH_API_PUBLIC;
++void mpi_internal_print_comm_tree(MPIR_Comm *comm, int depth) MPICH_API_PUBLIC;
++int mpi_internal_comm_translate_rank_verbose(MPIR_Comm *comm, int rank) MPICH_API_PUBLIC;
++int mpi_internal_request_translate_rank(MPIR_Request *request, int rank) MPICH_API_PUBLIC;
++MPI_Request mpi_internal_get_request(MPIR_Request *request) MPICH_API_PUBLIC;
++int mpi_internal_get_requests(int inum, MPIR_Request **requests_in, MPI_Request *requests_out) MPICH_API_PUBLIC;
++MPI_Request MPI_Check_dummy(MPI_Request request) MPICH_API_PUBLIC;
++MPIR_Comm* mpi_internal_get_comm(MPIR_Request *request) MPICH_API_PUBLIC;
++int mpi_internal_get_comms(int inum,MPIR_Request **requests_in, MPIR_Comm **comms_out) MPICH_API_PUBLIC;
++MPI_Comm mpi_internal_get_mpicomm_from_mpidcomm(MPIR_Comm *comm) MPICH_API_PUBLIC;
++
+ #endif /* MPIR_COMM_H_INCLUDED */
+--- a/src/mpi/coll/helper_fns.c
++++ b/src/mpi/coll/helper_fns.c
+@@ -56,6 +56,24 @@
+     } while (0)
+ #endif
+ 
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak MPIC_Probe = PMPIC_Probe
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF PMPIC_Probe  MPIC_Probe
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate MPIC_Probe as PMPIC_Probe
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++int MPIC_Probe(int source, int tag, MPI_Comm comm, MPI_Status *status)
++                  __attribute__((weak,alias("PMPIC_Probe")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef MPIC_Probe
++#define MPIC_Probe PMPIC_Probe
++
+ int MPIC_Probe(int source, int tag, MPI_Comm comm, MPI_Status * status)
+ {
+     int mpi_errno = MPI_SUCCESS;
+@@ -83,12 +101,31 @@
+         MPIR_ERR_SET(mpi_errno, MPI_ERR_OTHER, "**nomem");
+     goto fn_exit;
+ }
++#endif
+ 
+ 
+ /* FIXME: For the brief-global and finer-grain control, we must ensure that
+    the global lock is *not* held when this routine is called. (unless we change
+    progress_start/end to grab the lock, in which case we must *still* make
+    sure that the lock is not held when this routine is called). */
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak MPIC_Wait = PMPIC_Wait
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF PMPIC_Wait  MPIC_Wait
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate MPIC_Wait as PMPIC_Wait
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++int MPIC_Wait(MPIR_Request * request_ptr)
++                  __attribute__((weak,alias("PMPIC_Wait")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef MPIC_Wait
++#define MPIC_Wait PMPIC_Wait
++
+ int MPIC_Wait(MPIR_Request * request_ptr)
+ {
+     int mpi_errno = MPI_SUCCESS;
+@@ -113,6 +150,7 @@
+     goto fn_exit;
+     /* --END ERROR HANDLING-- */
+ }
++#endif
+ 
+ 
+ /* Fault-tolerance versions.  When a process fails, collectives will
+@@ -135,6 +173,25 @@
+    collective will not communicate failure information this way, but
+    this is OK since there is no data that can be received corrupted. */
+ 
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak MPIC_Send = PMPIC_Send
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF PMPIC_Send  MPIC_Send
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate MPIC_Send as PMPIC_Send
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++int MPIC_Send(const void *buf, MPI_Aint count, MPI_Datatype datatype, int dest, int tag,
++                 MPIR_Comm *comm_ptr, int coll_attr)
++                  __attribute__((weak,alias("PMPIC_Send")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef MPIC_Send
++#define MPIC_Send PMPIC_Send
++
+ int MPIC_Send(const void *buf, MPI_Aint count, MPI_Datatype datatype, int dest, int tag,
+               MPIR_Comm * comm_ptr, int coll_attr)
+ {
+@@ -176,6 +233,26 @@
+     goto fn_exit;
+     /* --END ERROR HANDLING-- */
+ }
++#endif
++
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak MPIC_Recv = PMPIC_Recv
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF PMPIC_Recv  MPIC_Recv
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate MPIC_Recv as PMPIC_Recv
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++int MPIC_Recv(void *buf, MPI_Aint count, MPI_Datatype datatype, int source, int tag,
++                 MPIR_Comm *comm_ptr, MPI_Status *status)
++                  __attribute__((weak,alias("PMPIC_Recv")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef MPIC_Recv
++#define MPIC_Recv PMPIC_Recv
+ 
+ int MPIC_Recv(void *buf, MPI_Aint count, MPI_Datatype datatype, int source, int tag,
+               MPIR_Comm * comm_ptr, MPI_Status * status)
+@@ -226,6 +303,28 @@
+     goto fn_exit;
+     /* --END ERROR HANDLING-- */
+ }
++#endif
++
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak MPIC_Sendrecv = PMPIC_Sendrecv
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF PMPIC_Sendrecv  MPIC_Sendrecv
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate MPIC_Sendrecv as PMPIC_Sendrecv
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++int MPIC_Sendrecv(const void *sendbuf, MPI_Aint sendcount, MPI_Datatype sendtype,
++                     int dest, int sendtag, void *recvbuf, MPI_Aint recvcount,
++                     MPI_Datatype recvtype, int source, int recvtag,
++                     MPIR_Comm *comm_ptr, MPI_Status *status, int coll_attr)
++                  __attribute__((weak,alias("PMPIC_Sendrecv")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef MPIC_Sendrecv
++#define MPIC_Sendrecv PMPIC_Sendrecv
+ 
+ int MPIC_Sendrecv(const void *sendbuf, MPI_Aint sendcount, MPI_Datatype sendtype,
+                   int dest, int sendtag, void *recvbuf, MPI_Aint recvcount,
+@@ -304,10 +403,32 @@
+         MPIR_Request_free(recv_req_ptr);
+     goto fn_exit;
+ }
++#endif
+ 
+ /* NOTE: for regular collectives (as opposed to irregular collectives) calling
+  * this function repeatedly will almost always be slower than performing the
+  * equivalent inline because of the overhead of the repeated malloc/free */
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak MPIC_Sendrecv_replace = PMPIC_Sendrecv_replace
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF PMPIC_Sendrecv_replace  MPIC_Sendrecv_replace
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate MPIC_Sendrecv_replace as PMPIC_Sendrecv_replace
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++int MPIC_Sendrecv_replace(void *buf, MPI_Aint count, MPI_Datatype datatype,
++                             int dest, int sendtag,
++                             int source, int recvtag,
++                             MPIR_Comm *comm_ptr, MPI_Status *status, int coll_attr)
++                  __attribute__((weak,alias("PMPIC_Sendrecv_replace")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef MPIC_Sendrecv_replace
++#define MPIC_Sendrecv_replace PMPIC_Sendrecv_replace
++
+ int MPIC_Sendrecv_replace(void *buf, MPI_Aint count, MPI_Datatype datatype,
+                           int dest, int sendtag,
+                           int source, int recvtag,
+@@ -402,6 +523,26 @@
+         MPIR_Request_free(rreq);
+     goto fn_exit;
+ }
++#endif
++
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak MPIC_Isend = PMPIC_Isend
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF PMPIC_Isend  MPIC_Isend
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate MPIC_Isend as PMPIC_Isend
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++int MPIC_Isend(const void *buf, MPI_Aint count, MPI_Datatype datatype, int dest, int tag,
++                  MPIR_Comm *comm_ptr, MPIR_Request **request_ptr, int coll_attr)
++                  __attribute__((weak,alias("PMPIC_Isend")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef MPIC_Isend
++#define MPIC_Isend PMPIC_Isend
+ 
+ int MPIC_Isend(const void *buf, MPI_Aint count, MPI_Datatype datatype, int dest, int tag,
+                MPIR_Comm * comm_ptr, MPIR_Request ** request_ptr, int coll_attr)
+@@ -435,6 +576,26 @@
+         MPIR_ERR_SET(mpi_errno, MPI_ERR_OTHER, "**nomem");
+     goto fn_exit;
+ }
++#endif
++
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak MPIC_Irecv = PMPIC_Irecv
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF PMPIC_Irecv  MPIC_Irecv
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate MPIC_Irecv as PMPIC_Irecv
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++int MPIC_Irecv(void *buf, MPI_Aint count, MPI_Datatype datatype, int source,
++                  int tag, MPIR_Comm *comm_ptr, MPIR_Request **request_ptr)
++                  __attribute__((weak,alias("PMPIC_Irecv")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef MPIC_Irecv
++#define MPIC_Irecv PMPIC_Irecv
+ 
+ int MPIC_Irecv(void *buf, MPI_Aint count, MPI_Datatype datatype, int source,
+                int tag, MPIR_Comm * comm_ptr, MPIR_Request ** request_ptr)
+@@ -469,7 +630,26 @@
+         MPIR_ERR_SET(mpi_errno, MPI_ERR_OTHER, "**nomem");
+     goto fn_exit;
+ }
++#endif
++
+ 
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak MPIC_Waitall = PMPIC_Waitall
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF PMPIC_Waitall  MPIC_Waitall
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate MPIC_Waitall as PMPIC_Waitall
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++int MPIC_Waitall(int numreq, MPIR_Request *requests[], MPI_Status * statuses)
++                  __attribute__((weak,alias("PMPIC_Waitall")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef MPIC_Waitall
++#define MPIC_Waitall PMPIC_Waitall
+ 
+ int MPIC_Waitall(int numreq, MPIR_Request * requests[], MPI_Status * statuses)
+ {
+@@ -513,3 +693,4 @@
+   fn_fail:
+     goto fn_exit;
+ }
++#endif
+--- a/src/mpi/comm/commutil.c
++++ b/src/mpi/comm/commutil.c
+@@ -302,8 +302,11 @@
+ 
+     comm_p->node_comm = NULL;
+     comm_p->node_roots_comm = NULL;
++    comm_p->parent_comm = NULL;
+     comm_p->intranode_table = NULL;
+     comm_p->internode_table = NULL;
++    comm_p->intranode_table_rev = NULL;
++    comm_p->internode_table_rev = NULL;
+ 
+     /* abstractions bleed a bit here... :(*/
+     comm_p->next_sched_tag = MPIR_FIRST_NBC_TAG;
+@@ -686,6 +689,7 @@
+                                         local_procs, MPIR_CONTEXT_INTRANODE_OFFSET,
+                                         &comm->node_comm);
+         MPIR_ERR_CHECK(mpi_errno);
++        comm->node_comm->parent_comm = comm;
+     }
+ 
+     /* -- node_roots_comm -- */
+@@ -712,6 +716,7 @@
+                                         external_procs, MPIR_CONTEXT_INTERNODE_OFFSET,
+                                         &comm->node_roots_comm);
+         MPIR_ERR_CHECK(mpi_errno);
++        comm->node_roots_comm->parent_comm = comm;
+     }
+ 
+     comm->hierarchy_flags |= MPIR_COMM_HIERARCHY__PARENT;
+@@ -1167,6 +1172,10 @@
+             MPIR_Subcomm_free(comm_ptr->node_roots_comm);
+         MPL_free(comm_ptr->intranode_table);
+         MPL_free(comm_ptr->internode_table);
++        if (comm_ptr->intranode_table_rev)
++            MPL_free(comm_ptr->intranode_table_rev);
++        if (comm_ptr->internode_table_rev)
++            MPL_free(comm_ptr->internode_table_rev);
+ 
+         MPIR_stream_comm_free(comm_ptr);
+ 
+--- a/src/mpi/group/group_impl.c
++++ b/src/mpi/group/group_impl.c
+@@ -453,3 +453,253 @@
+   fn_fail:
+     goto fn_exit;
+ }
++
++int mpi_internal_comm_translate_rank(MPIR_Comm *comm, int rank)
++{
++    int  rank_out=MPI_UNDEFINED;
++//    if (rank ==  comm->rank) return rank;
++    if (rank < 0 ||  comm == NULL ) return MPI_UNDEFINED;
++    if (comm->comm_kind == MPIR_COMM_KIND__INTRACOMM) {
++        if (rank > comm->local_size || rank < 0) {
++           // fprintf (stderr,"(intracom): rank_in %d is out of bounds 0-%d\n",rank,comm->local_size);
++           return MPI_UNDEFINED;
++           // return rank;
++        }
++        // return local_group[rank]->rank;
++    }
++    if (comm->comm_kind == MPIR_COMM_KIND__INTERCOMM) {
++        if (rank > comm->remote_size || rank < 0) {
++            // fprintf (stderr,"(intercom): rank_in %d is out of bounds 0-%d\n",rank,comm->remote_size);
++            return MPI_UNDEFINED;
++            // return rank;
++        }
++        // return remote_group[rank]->rank;
++    }
++    if (comm->local_group != NULL ) {
++        MPIR_Group_translate_ranks_impl(comm->local_group, 1, &rank, MPIR_Process.comm_world->local_group,&rank_out);
++        if (rank_out==MPI_UNDEFINED) {
++        //     fprintf (stderr,"MPIR_Group_translate_ranks (local) failed %d,%d\n",rank,rank_out);
++        }
++    } else {
++       MPIR_Comm *parent_comm=comm->parent_comm;
++       if (parent_comm !=NULL) {
++           if(parent_comm->node_comm==comm) {
++               if(parent_comm->intranode_table_rev==NULL) {
++                   int i;
++                   parent_comm->intranode_table_rev=(int *)MPL_malloc(sizeof(int) * parent_comm->local_size, MPL_MEM_COLL);
++                   memset(parent_comm->intranode_table_rev,-1,sizeof(int) * parent_comm->local_size);
++                   for (i=0;i<parent_comm->local_size;i++) {
++                       if (parent_comm->intranode_table[i]>=0) {
++                           if (parent_comm->intranode_table_rev[parent_comm->intranode_table[i]]<0) {
++                               parent_comm->intranode_table_rev[parent_comm->intranode_table[i]]=i;
++                           }
++                       }
++                   }
++               }
++               // fprintf (stderr,"Recursive node %d,%d\n",rank,parent_comm->intranode_table_rev[rank]);
++               if (parent_comm->intranode_table_rev[rank] < 0) {
++                  // fprintf (stderr,"Recursive node (intranode_table_rev) is not initialized for %d,%d\n",rank,parent_comm->intranode_table_rev[rank]);
++               }
++               return mpi_internal_comm_translate_rank(parent_comm,parent_comm->intranode_table_rev[rank]);
++           }
++           if(parent_comm->node_roots_comm==comm) {
++               if(parent_comm->internode_table_rev==NULL) {
++                   int i;
++                   parent_comm->internode_table_rev=(int *)MPL_malloc(sizeof(int) * parent_comm->local_size, MPL_MEM_COLL);
++                   memset(parent_comm->internode_table_rev,-1,sizeof(int) * parent_comm->local_size);
++                   for (i=0;i<parent_comm->local_size;i++) {
++                       if (parent_comm->internode_table[i]>=0) {
++                           if (parent_comm->internode_table_rev[parent_comm->internode_table[i]]<0) {
++                               parent_comm->internode_table_rev[parent_comm->internode_table[i]]=i;
++                           }
++                       }
++                   }
++               }
++               // fprintf (stderr,"Recursive node roots %d,%d\n",rank,parent_comm->internode_table_rev[rank]);
++               if (parent_comm->internode_table_rev[rank] < 0) {
++                  // fprintf (stderr,"Recursive node roots (internode_table_rev) is not initialized for %d,%d\n",rank,parent_comm->internode_table_rev[rank]);
++               }
++               return mpi_internal_comm_translate_rank(parent_comm,parent_comm->internode_table_rev[rank]);
++           }
++       }
++    }
++
++    if (rank_out==MPI_UNDEFINED) {
++        if (comm->remote_group != NULL ) {
++            MPIR_Group_translate_ranks_impl(comm->remote_group, 1, &rank, MPIR_Process.comm_world->local_group,&rank_out);
++            if (rank_out==MPI_UNDEFINED) {
++                // fprintf (stderr,"MPIR_Group_translate_ranks (remote) failed %d,%d\n",rank,rank_out);
++            }
++        }
++    }
++    return rank_out;
++}
++
++void mpi_internal_print_comm_tree(MPIR_Comm *comm, int depth) {
++    if (depth==0) fprintf(stderr,"=========================================\n");
++    fprintf(stderr,"%*s current comm %p-%x - parent comm %p\n",depth*8," ", comm, comm->handle, comm->parent_comm);
++    if (comm->node_comm)  {
++        fprintf(stderr,"%*s Node comm\n",depth*8," ");
++        mpi_internal_print_comm_tree(comm->node_comm, depth+1);
++    }
++    if (comm->node_roots_comm) {
++        fprintf(stderr,"%*s Node root comm\n",depth*8," ");
++        mpi_internal_print_comm_tree(comm->node_roots_comm,depth+1);
++    }
++}
++
++int mpi_internal_comm_translate_rank_verbose(MPIR_Comm *comm, int rank)
++{
++    int  rank_out=MPI_UNDEFINED;
++    fprintf (stderr,"Begin mpi_internal_comm_translate_rank_verbose for %x - %d\n",comm->handle, rank);
++//    if (rank ==  comm->rank) return rank;
++    if (comm->comm_kind == MPIR_COMM_KIND__INTRACOMM ) {
++        if (rank > comm->local_size || rank < 0) {
++           fprintf (stderr,"(%x intracom): rank_in %d is out of bounds 0-%d\n",comm->handle,rank,comm->local_size);
++           return MPI_UNDEFINED;
++           // return rank;
++        }
++        // return local_group[rank]->rank;
++    }
++    if (comm->comm_kind == MPIR_COMM_KIND__INTERCOMM ) {
++        if (rank > comm->remote_size || rank < 0) {
++            fprintf (stderr,"(%x intercom): rank_in %d is out of bounds 0-%d\n",comm->handle,rank,comm->remote_size);
++            return MPI_UNDEFINED;
++            // return rank;
++        }
++        // return remote_group[rank]->rank;
++    }
++    if (comm->local_group != NULL ) {
++        fprintf (stderr,"Doing MPIR_Group_translate_ranks (%x local) for %d\n",comm->handle,rank);
++        MPIR_Group_translate_ranks_impl(comm->local_group, 1, &rank, MPIR_Process.comm_world->local_group,&rank_out);
++        if (rank_out==MPI_UNDEFINED) {
++            fprintf (stderr,"MPIR_Group_translate_ranks (%x local) failed %d,%d\n",comm->handle,rank,rank_out);
++        }
++    } else {
++       MPIR_Comm *parent_comm=comm->parent_comm;
++       if (parent_comm !=NULL) {
++           if(parent_comm->node_comm==comm) {
++               if(parent_comm->intranode_table_rev==NULL) {
++                   int i;
++                   parent_comm->intranode_table_rev=(int *)MPL_malloc(sizeof(int) * parent_comm->local_size, MPL_MEM_COLL);
++                   memset(parent_comm->intranode_table_rev,-1,sizeof(int) * parent_comm->local_size);
++                   for (i=0;i<parent_comm->local_size;i++) {
++                       if (parent_comm->intranode_table[i]>=0) {
++                           if (parent_comm->intranode_table_rev[parent_comm->intranode_table[i]]<0) {
++                               parent_comm->intranode_table_rev[parent_comm->intranode_table[i]]=i;
++                           }
++                       }
++                   }
++               }
++               fprintf (stderr,"Recursive node %d,%d\n",rank,parent_comm->intranode_table_rev[rank]);
++               if (parent_comm->intranode_table_rev[rank] < 0) {
++                  fprintf (stderr,"Recursive node (intranode_table_rev) of %x is not initialized for %d,%d\n",comm->handle,rank,parent_comm->intranode_table_rev[rank]);
++               }
++               return mpi_internal_comm_translate_rank_verbose(parent_comm,parent_comm->intranode_table_rev[rank]);
++           }
++           if(parent_comm->node_roots_comm==comm) {
++               if(parent_comm->internode_table_rev==NULL) {
++                   int i;
++                   parent_comm->internode_table_rev=(int *)MPL_malloc(sizeof(int) * parent_comm->local_size, MPL_MEM_COLL);
++                   memset(parent_comm->internode_table_rev,-1,sizeof(int) * parent_comm->local_size);
++                   for (i=0;i<parent_comm->local_size;i++) {
++                       if (parent_comm->internode_table[i]>=0) {
++                           if (parent_comm->internode_table_rev[parent_comm->internode_table[i]]<0) {
++                               parent_comm->internode_table_rev[parent_comm->internode_table[i]]=i;
++                           }
++                       }
++                   }
++               }
++               fprintf (stderr,"Recursive node roots %x %d,%d\n",comm->handle,rank,parent_comm->internode_table_rev[rank]);
++               if (parent_comm->internode_table_rev[rank] < 0) {
++                  fprintf (stderr,"Recursive node roots (internode_table_rev) for %x is not initialized for %d,%d\n",comm->handle,rank,parent_comm->internode_table_rev[rank]);
++               }
++               return mpi_internal_comm_translate_rank_verbose(parent_comm,parent_comm->internode_table_rev[rank]);
++           }
++       }
++    }
++
++    if (rank_out==MPI_UNDEFINED) {
++        if (comm->remote_group != NULL ) {
++            fprintf (stderr,"Doing MPIR_Group_translate_ranks (%x remote) for %d\n",comm->handle,rank);
++            MPIR_Group_translate_ranks_impl(comm->remote_group, 1, &rank, MPIR_Process.comm_world->local_group,&rank_out);
++            if (rank_out==MPI_UNDEFINED) {
++                fprintf (stderr,"MPIR_Group_translate_ranks (%x remote) failed %d,%d\n",comm->handle,rank,rank_out);
++            }
++        }
++    }
++    fprintf (stderr,"End mpi_internal_comm_translate_rank_verbose for %d->%d\n",rank,rank_out);
++    if (rank_out==MPI_UNDEFINED) {
++        fprintf (stderr,"Rank not found comm=%p,%x. groups=%p,%p\n",comm,comm->handle,comm->local_group,comm->remote_group);
++        mpi_internal_print_comm_tree(comm,0);
++    } else {
++        fprintf (stderr,"Rank found comm=%p,%x. groups=%p,%p\n",comm,comm->handle,comm->local_group,comm->remote_group);
++        mpi_internal_print_comm_tree(comm,0);
++    }
++    return rank_out;
++}
++
++int mpi_internal_request_translate_rank(MPIR_Request *request, int rank)
++{
++    return mpi_internal_comm_translate_rank(request->comm,rank);
++}
++
++MPI_Request mpi_internal_get_request(MPIR_Request *request)
++{
++    /* lightweight/pre-completed requests (MPI_PROC_NULL sends/receives, and sends/receives that complete
++     * inline before the posting call returns, e.g. an eager send delivered directly into the receiver's
++     * shared-memory queue) share one of a handful of statically allocated MPIR_Request objects per kind
++     * instead of a real per-call request - see MPIR_Request_builtin / MPIR_REQUEST_COMPLETE in
++     * src/include/mpir_request.h. Every such call shares the same handle for its kind, so a tool matching
++     * by request value cannot tell two such completions apart; map them all to 0 instead - the tractor's
++     * own convention for "no request/invalid", distinct from MPI_REQUEST_NULL (0x2c000000 here). */
++    if (request->handle >= MPIR_REQUEST_COMPLETE && request->handle < MPIR_REQUEST_COMPLETE + MPIR_REQUEST_N_BUILTIN) {
++        return 0;
++    }
++    return request->handle;
++}
++
++int mpi_internal_get_requests(int inum, MPIR_Request **requests_in, MPI_Request *requests_out)
++{
++    int i;
++    for (i=0;i<inum;i++)  {
++        requests_out[i]=mpi_internal_get_request(requests_in[i]);
++    }
++    return 0;
++}
++
++MPI_Request MPI_Check_dummy(MPI_Request request)
++{
++    if (request >= MPIR_REQUEST_COMPLETE && request < MPIR_REQUEST_COMPLETE + MPIR_REQUEST_N_BUILTIN) {
++        return 0;
++    }
++    return request;
++}
++
++MPIR_Comm* mpi_internal_get_comm(MPIR_Request *request)
++{
++    if(request->handle==MPI_REQUEST_NULL || request->kind != MPIR_REQUEST_KIND__RECV) {
++        return NULL;
++    } else {
++        return request->comm;
++    }
++}
++
++int mpi_internal_get_comms(int inum,MPIR_Request **requests_in, MPIR_Comm **comms_out)
++{
++    int i;
++    for (i=0;i<inum;i++)  {
++        if(requests_in[i]->handle==MPI_REQUEST_NULL || requests_in[i]->kind != MPIR_REQUEST_KIND__RECV) {
++            comms_out[i]=NULL;
++        } else {
++            comms_out[i]=requests_in[i]->comm;
++        }
++    }
++    return 0;
++}
++
++MPI_Comm mpi_internal_get_mpicomm_from_mpidcomm(MPIR_Comm *comm)
++{
++    if (comm->parent_comm) return mpi_internal_get_mpicomm_from_mpidcomm(comm->parent_comm);
++    return comm->handle;
++}
+--- a/src/mpid/common/sched/mpidu_sched.c
++++ b/src/mpid/common/sched/mpidu_sched.c
+@@ -1053,7 +1053,8 @@
+                             e->status = MPIDU_SCHED_ENTRY_STATUS_FAILED;
+                         else
+                             e->status = MPIDU_SCHED_ENTRY_STATUS_COMPLETE;
+-                        MPIR_Request_free(e->u.send.sreq);
++                        //MPIR_Request_free(e->u.send.sreq);
++                        T_MPID_Request_release(e->u.send.sreq);
+                         e->u.send.sreq = NULL;
+                         if (s->kind == MPIR_SCHED_KIND_GENERALIZED) {
+                             MPIR_Comm_release(e->u.send.comm);
+@@ -1078,7 +1079,8 @@
+                             e->status = MPIDU_SCHED_ENTRY_STATUS_FAILED;
+                         else
+                             e->status = MPIDU_SCHED_ENTRY_STATUS_COMPLETE;
+-                        MPIR_Request_free(e->u.recv.rreq);
++                        //MPIR_Request_free(e->u.recv.rreq);
++                        T_MPID_Request_release(e->u.recv.rreq);
+                         e->u.recv.rreq = NULL;
+                         if (s->kind == MPIR_SCHED_KIND_GENERALIZED) {
+                             MPIR_Comm_release(e->u.recv.comm);
+@@ -1093,7 +1095,8 @@
+                         } else {
+                             e->status = MPIDU_SCHED_ENTRY_STATUS_COMPLETE;
+                         }
+-                        MPIR_Request_free(e->u.send.sreq);
++                        //MPIR_Request_free(e->u.send.sreq);
++                        T_MPID_Request_release(e->u.send.sreq);
+                         e->u.send.sreq = NULL;
+                         if (s->kind == MPIR_SCHED_KIND_GENERALIZED) {
+                             MPIR_Comm_release(e->u.send.comm);
+@@ -1108,7 +1111,8 @@
+                         } else {
+                             e->status = MPIDU_SCHED_ENTRY_STATUS_COMPLETE;
+                         }
+-                        MPIR_Request_free(e->u.recv.rreq);
++                        //MPIR_Request_free(e->u.recv.rreq);
++                        T_MPID_Request_release(e->u.recv.rreq);
+                         e->u.recv.rreq = NULL;
+                         if (s->kind == MPIR_SCHED_KIND_GENERALIZED) {
+                             MPIR_Comm_release(e->u.recv.comm);
+@@ -1203,3 +1207,28 @@
+         return mpi_errno;
+     }
+ }
++
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak T_MPID_Request_release = PT_MPID_Request_release
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF PT_MPID_Request_release  T_MPID_Request_release
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate T_MPID_Request_release as PT_MPID_Request_release
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++void T_MPID_Request_release(MPIR_Request *req)
++                  __attribute__((weak,alias("PT_MPID_Request_release")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef T_MPID_Request_release
++#define T_MPID_Request_release PT_MPID_Request_release
++
++void
++T_MPID_Request_release(MPIR_Request *req) {
++   MPIR_Request_free(req);
++}
++#undef T_MPID_Request_release
++#endif
+--- a/src/mpid/common/sched/mpidu_sched.h
++++ b/src/mpid/common/sched/mpidu_sched.h
+@@ -154,4 +154,7 @@
+                      MPI_Aint outcount, MPI_Datatype outtype, MPIR_Sched_t s);
+ int MPIDU_Sched_barrier(MPIR_Sched_t s);
+ 
++void T_MPID_Request_release(MPIR_Request *req) MPICH_API_PUBLIC;
++void PT_MPID_Request_release(MPIR_Request *req) MPICH_API_PUBLIC;
++
+ #endif /* MPIDU_SCHED_H_INCLUDED */
+--- a/src/include/mpir_datatype.h
++++ b/src/include/mpir_datatype.h
+@@ -976,4 +976,7 @@
+                                                  const MPI_Aint disp_array[],
+                                                  int dispinbytes, MPI_Aint old_extent);
+ 
++int mpi_internal_type_size(MPI_Datatype datatype, MPI_Aint * size) MPICH_API_PUBLIC;
++int mpi_internal_type_size_x(MPI_Datatype datatype, MPI_Count * size) MPICH_API_PUBLIC;
++
+ #endif /* MPIR_DATATYPE_H_INCLUDED */
+--- a/src/mpi/datatype/datatype_impl.c
++++ b/src/mpi/datatype/datatype_impl.c
+@@ -545,3 +545,23 @@
+ 
+     return MPI_SUCCESS;
+ }
++
++/* public, unchecked size query that also works for internal (MPIR_*) datatypes */
++int mpi_internal_type_size(MPI_Datatype datatype, MPI_Aint * size)
++{
++    int mpi_errno = MPI_SUCCESS;
++
++    MPIR_Datatype_get_size_macro(datatype, *size);
++    MPIR_Assert(*size >= 0);
++
++    return mpi_errno;
++}
++
++int mpi_internal_type_size_x(MPI_Datatype datatype, MPI_Count * size)
++{
++    int mpi_errno = MPI_SUCCESS;
++
++    MPIR_Datatype_get_size_macro(datatype, *size);
++
++    return mpi_errno;
++}

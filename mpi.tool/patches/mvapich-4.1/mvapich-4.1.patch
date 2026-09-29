@@ -783,15 +783,18 @@
 +    return mpi_internal_comm_translate_rank(request->comm,rank);
 +}
 +
-+#ifdef CHANNEL_MRAIL
-+extern MPID_Request *mv2_dummy_request;
-+#endif
-+
 +MPI_Request mpi_internal_get_request(MPIR_Request *request)
 +{
-+#ifdef CHANNEL_MRAIL
-+    if (request==mv2_dummy_request) return 0;
-+#endif
++    /* lightweight/pre-completed requests (MPI_PROC_NULL sends/receives, and sends/receives that complete
++     * inline before the posting call returns, e.g. an eager send delivered directly into the receiver's
++     * shared-memory queue) share one of a handful of statically allocated MPIR_Request objects per kind
++     * instead of a real per-call request - see MPIR_Request_builtin / MPIR_REQUEST_COMPLETE in
++     * src/include/mpir_request.h. Every such call shares the same handle for its kind, so a tool matching
++     * by request value cannot tell two such completions apart; map them all to 0 instead - the tractor's
++     * own convention for "no request/invalid", distinct from MPI_REQUEST_NULL (0x2c000000 here). */
++    if (request->handle >= MPIR_REQUEST_COMPLETE && request->handle < MPIR_REQUEST_COMPLETE + MPIR_REQUEST_N_BUILTIN) {
++        return 0;
++    }
 +    return request->handle;
 +}
 +
@@ -799,19 +802,16 @@
 +{
 +    int i;
 +    for (i=0;i<inum;i++)  {
-+#ifdef CHANNEL_MRAIL
-+        if (requests_in[i]==mv2_dummy_request) requests_out[i]=0; else 
-+#endif
-+        requests_out[i]=requests_in[i]->handle;
++        requests_out[i]=mpi_internal_get_request(requests_in[i]);
 +    }
 +    return 0;
 +}
 +
 +MPI_Request MPI_Check_dummy(MPI_Request request)
 +{
-+#ifdef CHANNEL_MRAIL
-+        if (request==mv2_dummy_request->handle) return 0;
-+#endif
++    if (request >= MPIR_REQUEST_COMPLETE && request < MPIR_REQUEST_COMPLETE + MPIR_REQUEST_N_BUILTIN) {
++        return 0;
++    }
 +    return request;
 +}
 +

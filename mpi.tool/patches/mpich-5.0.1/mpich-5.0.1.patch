@@ -404,7 +404,7 @@
  
 --- a/src/mpi/group/group_impl.c
 +++ b/src/mpi/group/group_impl.c
-@@ -453,3 +453,240 @@
+@@ -453,3 +453,253 @@
    fn_fail:
      goto fn_exit;
  }
@@ -601,6 +601,16 @@
 +
 +MPI_Request mpi_internal_get_request(MPIR_Request *request)
 +{
++    /* lightweight/pre-completed requests (MPI_PROC_NULL sends/receives, and sends/receives that complete
++     * inline before the posting call returns, e.g. an eager send delivered directly into the receiver's
++     * shared-memory queue) share one of a handful of statically allocated MPIR_Request objects per kind
++     * instead of a real per-call request - see MPIR_Request_builtin / MPIR_REQUEST_COMPLETE in
++     * src/include/mpir_request.h. Every such call shares the same handle for its kind, so a tool matching
++     * by request value cannot tell two such completions apart; map them all to 0 instead - the tractor's
++     * own convention for "no request/invalid", distinct from MPI_REQUEST_NULL (0x2c000000 here). */
++    if (request->handle >= MPIR_REQUEST_COMPLETE && request->handle < MPIR_REQUEST_COMPLETE + MPIR_REQUEST_N_BUILTIN) {
++        return 0;
++    }
 +    return request->handle;
 +}
 +
@@ -608,13 +618,16 @@
 +{
 +    int i;
 +    for (i=0;i<inum;i++)  {
-+        requests_out[i]=requests_in[i]->handle;
++        requests_out[i]=mpi_internal_get_request(requests_in[i]);
 +    }
 +    return 0;
 +}
 +
 +MPI_Request MPI_Check_dummy(MPI_Request request)
 +{
++    if (request >= MPIR_REQUEST_COMPLETE && request < MPIR_REQUEST_COMPLETE + MPIR_REQUEST_N_BUILTIN) {
++        return 0;
++    }
 +    return request;
 +}
 +

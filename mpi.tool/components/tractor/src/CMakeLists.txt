@@ -240,7 +240,7 @@ if(_eng_lower STREQUAL "auto")
     message(STATUS "tractor: BUILD_TRACTOR_ENGINEERING_VERSION=auto -> 'off' (not applicable to TARGET=fab_layers)")
     set(_eng_lower off)
   else()
-    # every patch under ../../patches (mpich-4.3.2, mpich-5.0.1, mvapich-2.3.5,
+    # every patch under ../../patches (mpich-3.4.3, mpich-4.3.2, mpich-5.0.1, mpich-5.0.2, mvapich-2.3.5,
     # mvapich-4.1) adds the same MPICH_API_PUBLIC (exported) symbol
     # mpi_internal_comm_translate_rank(); a stock/unpatched MPI never defines it, so
     # trying to link a program that references it tells us the install is patched
