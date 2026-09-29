@@ -1,6 +1,6 @@
 diff -ruN a/src/include/mpiallstates.h b/src/include/mpiallstates.h
---- a/src/include/mpiallstates.h	2022-05-23 18:43:51.000000000 +0100
-+++ b/src/include/mpiallstates.h	2026-09-27 18:02:12.336559906 +0100
+--- a/src/include/mpiallstates.h
++++ b/src/include/mpiallstates.h
 @@ -156,6 +156,7 @@
  	MPID_STATE_MPIC_SSEND,
  	MPID_STATE_MPIC_WAIT,
@@ -10,8 +10,8 @@ diff -ruN a/src/include/mpiallstates.h b/src/include/mpiallstates.h
  	MPID_STATE_MPIDI_CH3I_ACCEPTQ_ENQUEUE,
  	MPID_STATE_MPIDI_CH3I_ACCUMULATE,
 diff -ruN a/src/include/mpiimpl.h b/src/include/mpiimpl.h
---- a/src/include/mpiimpl.h	2022-05-16 17:58:22.000000000 +0100
-+++ b/src/include/mpiimpl.h	2026-09-27 18:02:12.336934067 +0100
+--- a/src/include/mpiimpl.h
++++ b/src/include/mpiimpl.h
 @@ -1283,6 +1283,7 @@
      struct MPID_Comm *node_comm; /* Comm of processes in this comm that are on
                                      the same node as this process. */
@@ -1077,8 +1077,8 @@ diff -ruN a/src/mpi/coll/helper_fns.c b/src/mpi/coll/helper_fns.c
 +}
 +#endif
 diff -ruN a/src/mpi/coll/helper_fns.h b/src/mpi/coll/helper_fns.h
---- a/src/mpi/coll/helper_fns.h	2022-05-16 17:58:22.000000000 +0100
-+++ b/src/mpi/coll/helper_fns.h	2026-09-27 18:02:12.337485945 +0100
+--- a/src/mpi/coll/helper_fns.h
++++ b/src/mpi/coll/helper_fns.h
 @@ -26,35 +26,6 @@
  #define MPIC_REQUEST_PTR_ARRAY_SIZE 64
  #endif
@@ -1716,8 +1716,8 @@ diff -ruN a/src/mpi/coll/helper_fns.h b/src/mpi/coll/helper_fns.h
  #undef FCNAME
  #endif /*_HELPER_FNS_H_*/
 diff -ruN a/src/mpi/coll/Makefile.mk b/src/mpi/coll/Makefile.mk
---- a/src/mpi/coll/Makefile.mk	2022-05-16 17:58:22.000000000 +0100
-+++ b/src/mpi/coll/Makefile.mk	2026-09-27 18:02:12.337558744 +0100
+--- a/src/mpi/coll/Makefile.mk
++++ b/src/mpi/coll/Makefile.mk
 @@ -19,6 +19,7 @@
  # The code for the MPI operations (e.g., MPI_SUM) is not included in 
  # mpi_sources
@@ -1727,8 +1727,8 @@ diff -ruN a/src/mpi/coll/Makefile.mk b/src/mpi/coll/Makefile.mk
      src/mpi/coll/barrier.c         \
      src/mpi/coll/op_create.c       \
 diff -ruN a/src/mpi/coll/reduce_osu.c b/src/mpi/coll/reduce_osu.c
---- a/src/mpi/coll/reduce_osu.c	2022-05-16 17:58:22.000000000 +0100
-+++ b/src/mpi/coll/reduce_osu.c	2026-09-27 18:03:16.695692836 +0100
+--- a/src/mpi/coll/reduce_osu.c
++++ b/src/mpi/coll/reduce_osu.c
 @@ -1662,7 +1662,6 @@
      MPID_Op *op_ptr;
      void **tmp_buf=NULL;
@@ -1773,8 +1773,8 @@ diff -ruN a/src/mpi/coll/reduce_osu.c b/src/mpi/coll/reduce_osu.c
  
      if(src_array != NULL) {
 diff -ruN a/src/mpi/comm/commutil.c b/src/mpi/comm/commutil.c
---- a/src/mpi/comm/commutil.c	2022-05-16 17:58:22.000000000 +0100
-+++ b/src/mpi/comm/commutil.c	2026-09-27 18:02:12.338104508 +0100
+--- a/src/mpi/comm/commutil.c
++++ b/src/mpi/comm/commutil.c
 @@ -110,8 +110,11 @@
      comm_p->hierarchy_kind = MPID_HIERARCHY_FLAT;
      comm_p->node_comm = NULL;
@@ -1836,8 +1836,8 @@ diff -ruN a/src/mpi/comm/commutil.c b/src/mpi/comm/commutil.c
           * intra/inter-node communicators since those free calls won't
           * release this context ID and releasing this before then could lead
 diff -ruN a/src/mpi/group/group_translate_ranks.c b/src/mpi/group/group_translate_ranks.c
---- a/src/mpi/group/group_translate_ranks.c	2022-05-16 17:58:22.000000000 +0100
-+++ b/src/mpi/group/group_translate_ranks.c	2026-09-27 18:02:12.338345586 +0100
+--- a/src/mpi/group/group_translate_ranks.c
++++ b/src/mpi/group/group_translate_ranks.c
 @@ -6,6 +6,7 @@
   */
  
@@ -2168,8 +2168,8 @@ diff -ruN a/src/mpi/group/group_translate_ranks.c b/src/mpi/group/group_translat
 +    return comm->handle;
 +}
 diff -ruN a/src/mpi/pt2pt/mpir_request.c b/src/mpi/pt2pt/mpir_request.c
---- a/src/mpi/pt2pt/mpir_request.c	2022-05-16 17:58:22.000000000 +0100
-+++ b/src/mpi/pt2pt/mpir_request.c	2026-09-27 18:02:12.338467928 +0100
+--- a/src/mpi/pt2pt/mpir_request.c
++++ b/src/mpi/pt2pt/mpir_request.c
 @@ -354,7 +354,7 @@
  			&ierr );
  		    rc = (int) ierr;
@@ -2189,8 +2189,8 @@ diff -ruN a/src/mpi/pt2pt/mpir_request.c b/src/mpi/pt2pt/mpir_request.c
  		{;}, "**user", "**userquery %d", rc);
  	}
 diff -ruN a/src/mpid/ch3/channels/psm/src/psm_queue.c b/src/mpid/ch3/channels/psm/src/psm_queue.c
---- a/src/mpid/ch3/channels/psm/src/psm_queue.c	2022-05-16 17:58:22.000000000 +0100
-+++ b/src/mpid/ch3/channels/psm/src/psm_queue.c	2026-09-27 18:02:12.338789489 +0100
+--- a/src/mpid/ch3/channels/psm/src/psm_queue.c
++++ b/src/mpid/ch3/channels/psm/src/psm_queue.c
 @@ -425,9 +425,13 @@
  #define FCNAME MPL_QUOTE(FUNCNAME)
  void psm_pe_yield()
@@ -2206,8 +2206,8 @@ diff -ruN a/src/mpid/ch3/channels/psm/src/psm_queue.c b/src/mpid/ch3/channels/ps
  
  #undef FUNCNAME
 diff -ruN a/src/mpid/common/sched/mpid_sched.c b/src/mpid/common/sched/mpid_sched.c
---- a/src/mpid/common/sched/mpid_sched.c	2022-05-16 17:58:22.000000000 +0100
-+++ b/src/mpid/common/sched/mpid_sched.c	2026-09-27 18:02:12.338885792 +0100
+--- a/src/mpid/common/sched/mpid_sched.c
++++ b/src/mpid/common/sched/mpid_sched.c
 @@ -851,6 +851,38 @@
  }
  
@@ -2266,8 +2266,8 @@ diff -ruN a/src/mpid/common/sched/mpid_sched.c b/src/mpid/common/sched/mpid_sche
                          MPIR_Comm_release(e->u.recv.comm);
                          dtype_release_if_not_builtin(e->u.recv.datatype);
 diff -ruN a/src/mpid/common/sched/mpid_sched.h b/src/mpid/common/sched/mpid_sched.h
---- a/src/mpid/common/sched/mpid_sched.h	2022-05-16 17:58:22.000000000 +0100
-+++ b/src/mpid/common/sched/mpid_sched.h	2026-09-27 18:02:12.338982797 +0100
+--- a/src/mpid/common/sched/mpid_sched.h
++++ b/src/mpid/common/sched/mpid_sched.h
 @@ -122,5 +122,6 @@
  /* prototypes */
  int MPIDU_Sched_progress(int *made_progress);
@@ -2276,8 +2276,8 @@ diff -ruN a/src/mpid/common/sched/mpid_sched.h b/src/mpid/common/sched/mpid_sche
  
  #endif /* !defined(MPID_SCHED_H_INCLUDED) */
 diff -ruN a/src/util/logging/common/state_names.h b/src/util/logging/common/state_names.h
---- a/src/util/logging/common/state_names.h	2022-05-23 18:43:51.000000000 +0100
-+++ b/src/util/logging/common/state_names.h	2026-09-27 18:02:12.339069902 +0100
+--- a/src/util/logging/common/state_names.h
++++ b/src/util/logging/common/state_names.h
 @@ -158,6 +158,7 @@
      { MPID_STATE_MPIC_SSEND, "MPIC_Ssend", (const char *)0 },
      { MPID_STATE_MPIC_WAIT, "MPIC_Wait", (const char *)0 },
