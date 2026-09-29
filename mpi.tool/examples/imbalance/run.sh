@@ -1,7 +1,7 @@
 #!/bin/bash
 
 compiler=oneAPI:2026.1.0
-export mpi_type=mpich:5.1.0x-mt-ofi-eng
+export mpi_type=mpich:5.0.1x-mt-ofi-eng
 export libfabric_eng='-eng'
 #export mpi_type=mpich:4.3.2x-mt-ofi
 . env.sh
