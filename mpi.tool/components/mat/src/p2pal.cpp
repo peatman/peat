@@ -131,11 +131,13 @@ void P2PAL::print_P2PF(const MAT_Record &left, const MAT_Record &right)
 #else
     char tbuf[1024];
 #endif
+    // phase[1] (post: Isend/Irecv itself) for both sides - what pet registers events under. The receiver's
+    // completion (phase[2]: Wait/Test/Request_Release/...) is NOT duplicated here: it's already written as a
+    // same-rank PEAT_RT_Bind_Completion line (post -> completion), which always precedes this line in the
+    // same file, so qTV chases that instead of carrying a second copy of it in every peer line.
     sprintf(&tbuf[4], "%d:%s:%d:%s:%s:%d:%s:%lld\n", PEAT_RT_Bind_Peer,
-            global_func_id.name_by_idx(left.ph[1].func_id),
-            left.rank, peat_ids_string(left.ph[1].ids).c_str(),
-            global_func_id.name_by_idx(right.ph[2].func_id),
-            right.rank, peat_ids_string(right.ph[2].ids).c_str(),
+            global_func_id.name_by_idx(left.ph[1].func_id), left.rank, peat_ids_string(left.ph[1].ids).c_str(),
+            global_func_id.name_by_idx(right.ph[1].func_id), right.rank, peat_ids_string(right.ph[1].ids).c_str(),
             left.size);
     assert(left.size == right.size);
     if (print_on_send) {
@@ -222,7 +224,11 @@ void P2PAL::print_P2PF(const MAT_Record &left, const MAT_Record &right)
                     right.ph[0].ids[0], right.ph[1].ids[0], right.ph[2].ids[0]);
             peat_throw_error("Sizes mismatch\n");
         }
-        if (left.ph[0].func_id == right.ph[0].func_id && right.ph[0].func_id != MPI_SENDRECV_ID && left.ph[0].func_id != MPI_SENDRECV_REPLACE_ID) {
+        if (left.ph[0].func_id == right.ph[0].func_id && 
+            right.ph[0].func_id != MPI_SENDRECV_ID && 
+            right.ph[0].func_id != MPI_SENDRECV_REPLACE_ID &&
+            right.ph[0].func_id != MPIC_SENDRECV_ID && 
+            right.ph[0].func_id != MPIC_SENDRECV_REPLACE_ID) {
             peat_throw_error("Same functions used for send and receive\n");
         }
     }

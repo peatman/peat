@@ -333,6 +333,12 @@ class Elements
     std::vector<PEAT_Thread> max_omp_tid;
     std::vector<PEAT_Thread> max_gpu_tid;
 
+    // rank -> (post ids -> completion ids), from PEAT_RT_Bind_Completion/Initiation/Destroying lines, filled
+    // while reading that rank's own bind file. A PEAT_RT_Bind_Peer line's receiver side names the post
+    // (phase[1]); this lets get_message substitute the completion event instead, without mat having to
+    // duplicate the completion's ids into every peer line (see P2PAL::print_P2PF).
+    std::vector<std::map<PEAT_Event_IDs, PEAT_Event_IDs>> bind_completion_map;
+
     // Messages related data structures
     std::vector<std::map<PEAT_UID, TV_Message>> messages;
     std::map<double, PEAT_Viewport> candidates;

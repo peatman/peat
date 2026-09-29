@@ -22,7 +22,7 @@ ZLIBLIB=-lz
 #CXX=icpx
 CXX=g++
 
-CONTROLS=-DREMOVE_T_OVERHEAD
+CONTROLS=-DREMOVE_T_OVERHEAD -D_PET_USE_BIND_STORE_
 #CXXFLAGS=-O2 -std=c++20 -g  -I. -I../../common $(ZLIBINCLUDE) -qopenmp $(CONTROLS) #-static-intel #-DNDEBUG=1 -W -Wall -Wnon-virtual-dtor -Wctor-dtor-privacy -Wshadow
 CXXFLAGS=-O2 -std=c++20 -g  -I. -I../../common $(ZLIBINCLUDE) -fopenmp $(CONTROLS) #-static-intel #-DNDEBUG=1 -W -Wall -Wnon-virtual-dtor -Wctor-dtor-privacy -Wshadow
 #-Wold-style-cast 
@@ -38,7 +38,7 @@ CXXFLAGS=-O2 -std=c++20 -g  -I. -I../../common $(ZLIBINCLUDE) -fopenmp $(CONTROL
 .SUFFIXES: .cpp .o .h
 
 EXECUTABLE=pet
-PET_MAIN_FILES = collstorage pet_core pet_node pet_rank pet_thread requests stat te_timeline tempdebug timeline events
+PET_MAIN_FILES = collstorage pet_bind pet_core pet_node pet_rank pet_thread requests stat te_timeline tempdebug timeline events
 PET_EVENT_FILES = base coll collective comm completion local localbuf start tar tor gpu ompt
 COMMON_FILES = file_io func_id utils common_types communicators transport model_id ptp func_split
 

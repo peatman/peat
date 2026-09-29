@@ -94,6 +94,8 @@ PET_Event *PET_Event::get_current_event()
 
 PET_Event::~PET_Event()
 {
+    if (pet_rank) // cached pointer, set in assign_cache_pointers(): safe even during PET_Core teardown, unlike re-deriving via nodes[node].ranks[rank]
+        pet_rank->unregister_event_by_ids(this);
     if (progress_owner) {
         progress_owner->notify_before_destroy(this);
         progress_owner = NULL;

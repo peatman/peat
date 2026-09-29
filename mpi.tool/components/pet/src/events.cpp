@@ -496,6 +496,7 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
         input_HWC->read_lines(trace_line_HWC, rank, ':');
         event->read_event(rank, trace_line_MPI, trace_line_HWC, host_evt, hdr); // same header, tscs of the receive part
     }
+    event->pet_rank->register_event_by_ids(event); // O(1) lookup by id path, any nesting depth: replaces the old child-walk search
     /*if (event->rank == 23 && event->ids[0] == 59) {
         event->rank = 23;
     }*/

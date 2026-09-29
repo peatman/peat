@@ -209,7 +209,9 @@ int main(int argc, char **argv)
     } else {
         Model_ID model_id_storage;
         if (glob_param.output_path.empty()) {
-            glob_param.output_path = glob_param.input_path + DIR_DELIMITER + "out";
+            // matching-only writes just the .bind files: put them next to the raw trace (pet assumes bind files
+            // live alongside .mpi/.hwc). A full run also rewrites .mpi/.hwc, which must not land on the input, hence "out".
+            glob_param.output_path = glob_param.matching_only ? glob_param.input_path : glob_param.input_path + DIR_DELIMITER + "out";
         }
         model_id_storage.initialize(glob_param);
 
@@ -239,7 +241,11 @@ int main(int argc, char **argv)
             {
                 glob_param.pe_MPI_files_in_rank[*it] = MPI_files.at(*it);
                 std::string mpi_out_name = make_out_file_name(glob_param.output_path, MPI_files.at(*it), glob_param.output_files, ".gz");
-                std::string bind_out_name = mpi_out_name;
+                // bind files don't carry the ".out" marker mpi/hwc output does: they're the only output written
+                // in matching-only mode (-m), so there's no risk of colliding with the input .bind file, and
+                // dropping it keeps the name pet/qTV expect (see get_file_names/parse_trace_info_file, which
+                // only look for the ".bind" substring and a rank digit - neither cares about a trailing suffix).
+                std::string bind_out_name = make_out_file_name(glob_param.output_path, MPI_files.at(*it), "", ".gz");
                 bind_out_name.replace(bind_out_name.rfind(glob_param.mpi_files), glob_param.mpi_files.length(), glob_param.bind_files);
                 glob_param.pe_bind_files_in_rank_out[*it] = bind_out_name;
                 if (!glob_param.matching_only) {

@@ -231,6 +231,30 @@ PEAT_Bool PET_ToR_Event::bind()
 {
     if (is_bound())
         return true;
+#ifdef _PET_USE_BIND_STORE_
+    // mat matched this record against the whole trace already (any nesting depth, any collective); a NULL
+    // here means mat itself couldn't resolve it. Not defined by default for exactly that reason - define
+    // _PET_USE_BIND_STORE_ to try/continue this path.
+    if (!ready_to_bind())
+        return false;
+    const PET_Bind_Store &bind_store = get_core()->get_bind_store();
+    const PET_Bind_Key *peer_key = check_tx() ? bind_store.find_send_peer(rank, ids) : bind_store.find_recv_peer(rank, ids);
+    if (!peer_key)
+        return false;
+    PET_Event *peer_event = get_core()->get_pet_rank(peer_key->rank)->find_event_by_ids(peer_key->ids);
+    if (!peer_event)
+        return false; // the peer record hasn't been read yet; bind() is retried later as estimation progresses
+    PET_ToR_Event *event = static_cast<PET_ToR_Event *>(peer_event);
+    if (check_tx()) {
+        set_peer_for_send(event);
+        event->set_peer_for_recv(this);
+    }
+    if (check_rx()) {
+        set_peer_for_recv(event);
+        event->set_peer_for_send(this);
+    }
+    return true;
+#else
     if (ready_to_bind()) {
         PET_ToR_Event *event = static_cast<PET_ToR_Event *>(get_core()->find_peer(this));
         if (event) {
@@ -248,6 +272,7 @@ PEAT_Bool PET_ToR_Event::bind()
         }
     }
     return false;
+#endif
 }
 
 PEAT_Bool PET_ToR_Event::safe_to_delete()

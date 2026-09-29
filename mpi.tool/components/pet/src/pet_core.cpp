@@ -97,6 +97,16 @@ PET_Core::PET_Core(const Global_Parameters &glob, const Model_ID &model_id_stora
     output_bind = new File_Storage_GZ(globals.pe_bind_files_in_rank_out, PEAT_FIO_FLAG_WRITE, "w9", globals.verbose);
 
     user_region_file = new Address_File_Storage(globals, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, &model_id_storage);
+    {
+        // mat's peer/completion/collective bindings, computed once offline over the whole trace (see PET_Bind_Store);
+        // mat writes them next to the raw trace by default when run with -m/--matching-only.
+        std::vector<PEAT_Rank> all_ranks;
+        for (PEAT_Rank r = 0; r < ptp->get_rank_num(); r++)
+            all_ranks.push_back(r);
+        bind_store.load(globals, *user_region_file, all_ranks, globals.verbose);
+        if (globals.verbose)
+            bind_store.print_stats(stderr);
+    }
     func_split = new PEAT_Function_Splitter(globals);
     transport = new PEAT_Transport(glob, get_target_freq());
     nodes.resize(ptp->get_tgt_node_num());

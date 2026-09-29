@@ -118,10 +118,10 @@ if ($properties=~/INPUT_REQUEST_MULTIPLE/) {
    $declare_input_request="MPI_Request t_req[inum];";
    $save_input_request="__msl_dup_requests(t_req, requests, inum);"; 
    $save_input_request="
-   #ifndef _OPENMPI_ 
+   #ifndef _OPENMPI_
        __msl_cvt_drequests(t_req,(const MPID_Request **) requests, inum);
    #else
-       __msl_dup_requests(t_req, requests, inum);
+       mpi_internal_get_requests(inum, requests, t_req); // maps OpenMPI's shared inline-completion sentinel to MPI_REQUEST_NULL per entry
    #endif
    " if $properties =~/COLT/;
 
@@ -150,13 +150,19 @@ if ($properties=~/INPUT_REQUEST_SINGLE/) {
    #endif" if $properties =~/COLT/;
    $save_input_request="t_req=*request;";
    $save_input_request="
-   #ifndef _OPENMPI_ 
+   #ifndef _OPENMPI_
        t_req=__msl_get_drequest((const MPID_Request *) request);
    #else
-       t_req=*request;
+       t_req=mpi_internal_get_request(*request); // maps OpenMPI's shared inline-completion sentinel to MPI_REQUEST_NULL
    #endif
    " if $properties =~/COLT/;
-   $save_input_request="t_req=request;" if $properties =~/PEAT_PROP_REQUEST_DIRECT/;  
+   $save_input_request="
+   #ifndef _OPENMPI_
+       t_req=request;
+   #else
+       t_req=mpi_internal_get_request(request); // maps OpenMPI's shared inline-completion sentinel to MPI_REQUEST_NULL
+   #endif
+   " if $properties =~/PEAT_PROP_REQUEST_DIRECT/;
 
    $save_local_comms="
    #ifndef _OPENMPI_ 

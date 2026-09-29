@@ -91,12 +91,15 @@ int T_Type_size(MPI_Datatype datatype, MPI_Aint *size)
 struct MPID_Comm;
 struct MPID_Request;
 /* stub for openmpi */
-#ifdef _OPENMPI_ 
+#ifdef _OPENMPI_
 int mpi_internal_get_comms(int inum, MPI_Request *requests_in, MPI_Comm *comms_out);
 MPI_Comm mpi_internal_get_comm(MPI_Request request);
-MPI_Request mpi_internal_get_request(MPI_Request request) {return request;};
-MPI_Request __msl_get_drequest(MPI_Request request) {return request;};
-// int mpi_internal_get_requests(int inum, const MPI_Request *requests_in, MPI_Request *requests_out) {for (int i=0;i<inum;i++) requests_out[i]=requests_in[i];};
+/* incorporated to source tree via the openmpi patch provided in PEAT (mirrors the mpich branch below):
+   maps OpenMPI's shared inline-completion sentinel (ompi_request_empty) to MPI_REQUEST_NULL, since matching
+   by request value can't tell apart multiple calls that all share that one address - see coll_base_p2p.h. */
+MPI_Request mpi_internal_get_request(MPI_Request request);
+int mpi_internal_get_requests(int inum, MPI_Request *requests_in, MPI_Request *requests_out);
+MPI_Request __msl_get_drequest(MPI_Request request) {return mpi_internal_get_request(request);};
 MPI_Comm mpi_internal_get_mpicomm_from_mpidcomm(MPI_Comm comm) {return comm;};
 int mpi_internal_comm_translate_rank(MPI_Comm comm, int rank); 
 int mpi_internal_comm_translate_rank_verbose(MPI_Comm comm, int rank);

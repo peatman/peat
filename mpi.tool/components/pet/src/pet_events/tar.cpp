@@ -101,6 +101,39 @@ PEAT_Bool PET_TaR_Event::bind()
 {
     if (is_bound())
         return true;
+#ifdef _PET_USE_BIND_STORE_
+    // see the matching #ifdef in PET_ToR_Event::bind() (tor.cpp). A sendrecv's send-half and receive-half
+    // share this event's (rank,ids) but are matched independently by mat, so they live in the two different
+    // directional maps under the same key (see PET_Bind_Store).
+    if (!ready_to_bind())
+        return false;
+    const PET_Bind_Store &bind_store = get_core()->get_bind_store();
+    PET_ToR_Event *recv_event = static_cast<PET_ToR_Event *>(get_peer_for_send());
+    if (recv_event == NULL) {
+        const PET_Bind_Key *peer_key = bind_store.find_send_peer(rank, ids);
+        if (peer_key) {
+            PET_Event *peer_event = get_core()->get_pet_rank(peer_key->rank)->find_event_by_ids(peer_key->ids);
+            if (peer_event) {
+                recv_event = static_cast<PET_ToR_Event *>(peer_event);
+                set_peer_for_send(recv_event);
+                recv_event->set_peer_for_recv(this);
+            }
+        }
+    }
+    PET_ToR_Event *send_event = static_cast<PET_ToR_Event *>(get_peer_for_recv());
+    if (send_event == NULL) {
+        const PET_Bind_Key *peer_key = bind_store.find_recv_peer(rank, ids);
+        if (peer_key) {
+            PET_Event *peer_event = get_core()->get_pet_rank(peer_key->rank)->find_event_by_ids(peer_key->ids);
+            if (peer_event) {
+                send_event = static_cast<PET_ToR_Event *>(peer_event);
+                set_peer_for_recv(send_event);
+                send_event->set_peer_for_send(this);
+            }
+        }
+    }
+    return recv_event && send_event;
+#else
     if (ready_to_bind()) {
         PET_ToR_Event *recv_event = static_cast<PET_ToR_Event *>(get_peer_for_send());
         if (recv_event == NULL) {
@@ -125,6 +158,7 @@ PEAT_Bool PET_TaR_Event::bind()
         }
     }
     return false;
+#endif
 }
 
 PEAT_Bool PET_TaR_Event::is_rdv(PEAT_DIRECTION direction) const

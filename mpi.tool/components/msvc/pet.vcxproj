@@ -55,7 +55,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level2</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>REMOVE_T_OVERHEAD;ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_PET_USE_BIND_STORE_;REMOVE_T_OVERHEAD;ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <OpenMPSupport>false</OpenMPSupport>
@@ -85,7 +85,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>REMOVE_T_OVERHEAD;ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_PET_USE_BIND_STORE_;REMOVE_T_OVERHEAD;ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <SDLCheck>true</SDLCheck>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <OpenMPSupport>false</OpenMPSupport>
@@ -130,6 +130,7 @@
     <ClCompile Include="..\pet\src\pet_events\base.cpp" />
     <ClCompile Include="..\pet\src\pet_events\gpu.cpp" />
     <ClCompile Include="..\pet\src\pet_events\ompt.cpp" />
+    <ClCompile Include="..\pet\src\pet_bind.cpp" />
     <ClCompile Include="..\pet\src\pet_rank.cpp" />
     <ClCompile Include="..\pet\src\pet_thread.cpp" />
     <ClCompile Include="..\pet\src\te_timeline.cpp" />
@@ -175,6 +176,7 @@
     <ClInclude Include="..\pet\src\pet_defines.h" />
     <ClInclude Include="..\pet\src\collstorage.h" />
     <ClInclude Include="..\common\func_split.h" />
+    <ClInclude Include="..\pet\src\pet_bind.h" />
     <ClInclude Include="..\pet\src\pet_event.h" />
     <ClInclude Include="..\pet\src\pet_fabric_event.h" />
     <ClInclude Include="..\pet\src\pet_rank.h" />

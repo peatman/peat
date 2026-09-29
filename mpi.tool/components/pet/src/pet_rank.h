@@ -124,10 +124,23 @@ class PET_Rank
     PET_Event *last_read_event;
     PEAT_Bool orphans_processed;
     std::list<PET_Collective_Event *> nb_collectives; // outstanding nonblocking collectives (owners of foreign progress records)
+    std::map<PEAT_Event_IDs, PET_Event *> events_by_ids; // every currently-live event of this rank, keyed by its full id path (any nesting depth)
 
   public:
     void register_nb_collective(PET_Collective_Event *event) { nb_collectives.push_back(event); }
     void unregister_nb_collective(PET_Collective_Event *event) { nb_collectives.remove(event); }
+    void register_event_by_ids(PET_Event *event) { events_by_ids[event->ids] = event; }
+    void unregister_event_by_ids(PET_Event *event)
+    {
+        std::map<PEAT_Event_IDs, PET_Event *>::iterator it = events_by_ids.find(event->ids);
+        if (it != events_by_ids.end() && it->second == event)
+            events_by_ids.erase(it);
+    }
+    PET_Event *find_event_by_ids(const PEAT_Event_IDs &ids)
+    {
+        std::map<PEAT_Event_IDs, PET_Event *>::iterator it = events_by_ids.find(ids);
+        return it == events_by_ids.end() ? NULL : it->second;
+    }
     PET_Collective_Event *find_nb_collective(PEAT_MPI_Comm comm, PEAT_MPI_Tag tag, const PET_Event *exclude)
     {
         // most recent first: tags are reused once a collective is done

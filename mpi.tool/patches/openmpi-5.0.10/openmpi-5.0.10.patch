@@ -2143,7 +2143,7 @@
              return err;
 --- /dev/null
 +++ b/ompi/mca/coll/base/coll_base_p2p.c
-@@ -0,0 +1,475 @@
+@@ -0,0 +1,496 @@
 +/*
 + * Copyright (c) 2026      The Open MPI Project.  All rights reserved.
 + * $COPYRIGHT$
@@ -2610,6 +2610,27 @@
 +    return nresolved;
 +}
 +
++MPI_Request mpi_internal_get_request(MPI_Request request)
++{
++    if (&ompi_request_empty == request) {
++        return MPI_REQUEST_NULL;
++    }
++    return request;
++}
++
++int mpi_internal_get_requests(int inum, MPI_Request *requests_in, MPI_Request *requests_out)
++{
++    int i;
++
++    if (inum < 0 || (inum > 0 && (NULL == requests_in || NULL == requests_out))) {
++        return MPI_UNDEFINED;
++    }
++    for (i = 0; i < inum; ++i) {
++        requests_out[i] = mpi_internal_get_request(requests_in[i]);
++    }
++    return inum;
++}
++
 +int mpi_internal_request_translate_rank(MPI_Request request, int rank)
 +{
 +    MPI_Comm comm = mpi_internal_get_comm(request);
@@ -2621,7 +2642,7 @@
 +}
 --- /dev/null
 +++ b/ompi/mca/coll/base/coll_base_p2p.h
-@@ -0,0 +1,470 @@
+@@ -0,0 +1,510 @@
 +/*
 + * Copyright (c) 2026      The Open MPI Project.  All rights reserved.
 + * $COPYRIGHT$
@@ -3030,6 +3051,46 @@
 +
 +OMPI_DECLSPEC int mpi_internal_comm_translate_rank_verbose(const struct ompi_communicator_t *comm,
 +                                                   int rank);
++
++/**
++ * Return the real per-call request handle for a completion call.
++ *
++ * OpenMPI's PML returns a request handle pointing at one shared, statically
++ * allocated sentinel (ompi_request_empty) instead of allocating a real
++ * per-call request whenever a send or receive completes inline, before the
++ * posting call even returns. Every such call in a process shares the
++ * identical address, so a tool matching by request value cannot tell two
++ * such completions apart. This maps that sentinel to MPI_REQUEST_NULL so
++ * request-tracking tools can skip it the same way they already skip a real
++ * MPI_REQUEST_NULL, and fall back to matching by message envelope instead.
++ *
++ * @param request (IN)  Request, as returned by one of the functions above
++ *                      or passed to one of the completion calls.
++ * @return              request, or MPI_REQUEST_NULL if request is the
++ *                      shared inline-completion sentinel.
++ */
++OMPI_DECLSPEC MPI_Request mpi_internal_get_request(MPI_Request request);
++
++/**
++ * Return the real per-call request handles for an array of requests, as
++ * mpi_internal_get_request() does for a single one.
++ *
++ * The arrays are parallel: requests_out[i] is derived from requests_in[i].
++ * requests_out must hold at least inum entries; requests_in and
++ * requests_out may be the same array. Useful in the array forms of the
++ * completion calls (wait_all, test_some and friends).
++ *
++ * @param inum (IN)          Number of requests.
++ * @param requests_in (IN)   Requests, entries may be MPI_REQUEST_NULL.
++ * @param requests_out (OUT) Requests, one per entry, as for
++ *                           mpi_internal_get_request().
++ * @return                   Number of requests processed (0 to inum), or
++ *                           MPI_UNDEFINED if inum is negative or an array
++ *                           is NULL.
++ */
++OMPI_DECLSPEC int mpi_internal_get_requests(int inum,
++                                            MPI_Request *requests_in,
++                                            MPI_Request *requests_out);
 +
 +/**
 + * Return the communicator a request belongs to.

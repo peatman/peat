@@ -24,6 +24,7 @@
 #include <mutex>
 #include <set>
 
+#include "pet_bind.h"
 #include "pet_event.h"
 #include "pet_node.h"
 #include "ptp.h"
@@ -104,6 +105,7 @@ class PET_Core
 
     void register_parallel_region(PET_Event *event) { nodes.at(event->node).ranks.at(event->rank).register_parallel_region(event); }
     PEAT_Thread get_max_thread_id(const PEAT_Rank rank) const { return user_region_file->last_thread_idx.at(rank); }
+    const PET_Bind_Store &get_bind_store() const { return bind_store; }
     PEAT_Bool is_nested_format(const PEAT_Rank rank) const { return user_region_file->is_nested_format(rank); }
     int get_id_columns(const PEAT_Rank rank) const { return user_region_file->get_id_columns(rank); }
     PEAT_Addr get_addr_by_id(const PEAT_Rank rank, const PEAT_UID addr) const { return user_region_file->get_addr_by_id(rank, addr)->addr; }
@@ -456,6 +458,7 @@ class PET_Core
     Address_File_Storage *user_region_file;
     PEAT_Function_Splitter *func_split;
     Global_Parameters globals;
+    PET_Bind_Store bind_store; // mat's precomputed peer/completion/collective bindings; see PET_Bind_Store
 
     std::map<PEAT_Rank, User_Region_Store> addr_idx;
     PEAT_FREQ freq;

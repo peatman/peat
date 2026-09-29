@@ -668,7 +668,7 @@ struct Event_Address_Info {
     }
     ~Event_Address_Info()
     {
-        delete addr;
+        delete[] addr; // addr is allocated with new[] above; plain delete is UB (alloc-dealloc-mismatch)
     }
     Event_Address_Info &operator=(Event_Address_Info &s)
     {

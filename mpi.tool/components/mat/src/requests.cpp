@@ -334,6 +334,49 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
         discard_collective_event(rank, event.requests.at(0), is_remote);
         return;
     }
+    if (event.func_id == MPID_REQUEST_RELEASE_ID) {
+        // MPICH's internal completion for requests that never go through MPI_Wait/Test (e.g. a collective
+        // implementation's internal progress requests). The tractor's hand-coded wrapper deliberately leaves
+        // triggered_request_num at 0 (see T_MPID_Request_release in t_mpidef.h), so this can't fall through to
+        // the generic wait/test loop below like OpenMPI's ompi_coll_p2p_free/cancel do (those set it via
+        // PMPI_Request_get_status). Same peer lookup as MPI_REQUEST_FREE_ID; unlike free/cancel, a release
+        // means the request genuinely completed, so there's no discard fallback if it isn't found.
+        // fill it will predefined dummies 
+        event.Requests.triggered_request_num = 1;
+		event.statuses.resize(1);
+        event.statuses[0].bytes = -1;;
+        event.statuses[0].tag = com_store->get_MPI_ANY_TAG();
+        event.statuses[0].src = com_store->get_MPI_ANY_SOURCE();
+        event.statuses[0].index = 0;
+
+#ifdef PEAT_MPI
+        if (!is_remote) {
+            if (!p2p_func_store->flown_away_requests.empty()) {
+                if (p2p_func_store->flown_away_requests.count(rank)) {
+                    std::map<PEAT_MPI_Request, std::list<MAT_Request_Record>>::iterator req_it = p2p_func_store->flown_away_requests.at(rank).find(event.requests.at(0));
+                    if (req_it != p2p_func_store->flown_away_requests.at(rank).end()) {
+                        if (!req_it->second.empty()) {
+                            send_cn(event, req_it->second.front().peer);
+                            req_it->second.pop_front();
+                        }
+                        return;
+                    }
+                }
+            }
+            if (!coll_func_store->flown_away_requests.empty()) {
+                if (coll_func_store->flown_away_requests.count(rank)) {
+                    std::map<PEAT_MPI_Request, MAT_Request_Record>::iterator req_it = coll_func_store->flown_away_requests.at(rank).find(event.requests.at(0));
+                    if (req_it != coll_func_store->flown_away_requests.at(rank).end()) {
+                        send_cn(event, req_it->second.peer);
+                        coll_func_store->flown_away_requests.at(rank).erase(req_it);
+                        return;
+                    }
+                }
+            }
+        }
+#endif
+        // return;
+    }
 
     if (global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_START)) { // start,startall
 #ifdef PEAT_MPI

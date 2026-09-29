@@ -153,7 +153,7 @@ bool Elements::get_message(const PEAT_Rank rank, File_Storage_GZ *input_bind, TV
                     }
                 }
             } break;
-            case PEAT_RT_Bind_Peer: { // type:func:from_rank:ids:func:to_rank:ids:size
+            case PEAT_RT_Bind_Peer: { // func_A:rank_A:idsA:func_B:rank_B:idsB:size - both sides at phase[1] (the post); see P2PAL::print_P2PF
                 PEAT_Rank from_rank = -1;
                 extract(from_rank, trace_line_bind.at(2));
                 PEAT_Event_IDs from_ids;
@@ -162,8 +162,15 @@ bool Elements::get_message(const PEAT_Rank rank, File_Storage_GZ *input_bind, TV
                 extract(to_rank, trace_line_bind.at(pos + 1));
                 PEAT_Event_IDs to_ids;
                 pos = bind_ids(trace_line_bind, pos + 2, to_rank, to_ids);
-                PEAT_Message_Size size = -1;
-                extract(size, trace_line_bind.at(pos));
+                // draw to the receiver's completion (Wait/Test/Request_Release/...), not its post, when one was
+                // recorded: mat writes to_rank's completion line for its own post before this line, in the same
+                // file, whenever this Bind_Peer line is itself in to_rank's file (mat's default: written to the
+                // receiver's file) - so it's already in bind_completion_map by the time we get here.
+                if (to_rank == rank) {
+                    std::map<PEAT_Event_IDs, PEAT_Event_IDs>::const_iterator comp_it = bind_completion_map[rank].find(to_ids);
+                    if (comp_it != bind_completion_map[rank].end())
+                        to_ids = comp_it->second;
+                }
                 TV_Event *from = find_event(from_rank, from_ids);
                 TV_Event *to = find_event(to_rank, to_ids);
                 if (from && to) {
@@ -176,6 +183,7 @@ bool Elements::get_message(const PEAT_Rank rank, File_Storage_GZ *input_bind, TV
                 PEAT_Event_IDs from_ids, to_ids;
                 int pos = bind_ids(trace_line_bind, 2, from_rank, from_ids);
                 bind_ids(trace_line_bind, pos + 1, to_rank, to_ids);
+                bind_completion_map[rank][from_ids] = to_ids; // post -> completion, for PEAT_RT_Bind_Peer to chase
                 TV_Event *from = find_event(from_rank, from_ids);
                 TV_Event *to = find_event(to_rank, to_ids);
                 if (from && to) {
@@ -411,6 +419,8 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
         pb->setFormat("Reading bind files " + prog_bar_text + " done");
         QApplication::processEvents();
         m_r = bind_file_names.size();
+        bind_completion_map.clear();
+        bind_completion_map.resize(m_r); // sized single-threaded: each rank below only ever touches its own index
         if (tp.mpi_messages[0] || tp.mpi_messages[1] || tp.mpi_messages[2] || tp.mpi_messages[3]) {
 #pragma omp parallel for schedule(dynamic) num_threads(load_threads)
             for (PEAT_Rank r = 0; r < m_r; ++r) {

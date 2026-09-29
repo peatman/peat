@@ -29,7 +29,7 @@ set(PET_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../common)
 set(PET_EVENTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/pet_events)
 
 add_executable(pet
-  main.cpp collstorage.cpp pet_core.cpp pet_node.cpp pet_rank.cpp pet_thread.cpp
+  main.cpp collstorage.cpp pet_bind.cpp pet_core.cpp pet_node.cpp pet_rank.cpp pet_thread.cpp
   requests.cpp stat.cpp te_timeline.cpp tempdebug.cpp timeline.cpp events.cpp
   ${PET_EVENTS_DIR}/base.cpp ${PET_EVENTS_DIR}/coll.cpp ${PET_EVENTS_DIR}/collective.cpp
   ${PET_EVENTS_DIR}/comm.cpp ${PET_EVENTS_DIR}/completion.cpp ${PET_EVENTS_DIR}/local.cpp
@@ -42,7 +42,7 @@ add_executable(pet
 target_include_directories(pet PRIVATE . ${PET_COMMON_DIR})
 target_compile_features(pet PRIVATE cxx_std_20)
 target_compile_options(pet PRIVATE -O2 -g)
-target_compile_definitions(pet PRIVATE REMOVE_T_OVERHEAD)
+target_compile_definitions(pet PRIVATE REMOVE_T_OVERHEAD _PET_USE_BIND_STORE_)
 target_link_libraries(pet PRIVATE ZLIB::ZLIB OpenMP::OpenMP_CXX)
 
 install(TARGETS pet RUNTIME DESTINATION ${CMAKE_CURRENT_SOURCE_DIR}/../../../bin)

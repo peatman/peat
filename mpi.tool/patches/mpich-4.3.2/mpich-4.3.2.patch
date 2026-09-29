@@ -479,7 +479,7 @@
  
 --- a/src/mpi/group/group_impl.c
 +++ b/src/mpi/group/group_impl.c
-@@ -687,3 +687,253 @@
+@@ -687,3 +687,250 @@
    fn_fail:
      goto fn_exit;
  }
@@ -700,9 +700,6 @@
 +
 +MPI_Request MPI_Check_dummy(MPI_Request request)
 +{
-+#ifdef CHANNEL_MRAIL
-+        if (request==mv2_dummy_request->handle) return 0;
-+#endif
 +    return request;
 +}
 +

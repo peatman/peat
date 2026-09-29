@@ -783,6 +783,10 @@ struct PET_TaR_Event : public PET_ToR_Event {
     PEAT_Event_IDs peer_ids_2;
     PEAT_Event_IDs peer_completion_ids_2;
     PEAT_MPI_Func_ID peer_func_id_2, peer_completion_func_id_2;
+    /* mat treats the two directions of one sendrecv as two independent P2P records, each bound to its own
+       (possibly different) peer; ids is the first physical line's own id path (send side), ids_2 the second
+       line's (recv side) - captured so a bind-store lookup can resolve each direction separately. */
+    PEAT_Event_IDs ids_2;
 
   public:
     PET_TaR_Event(PET_Core *p) : PET_ToR_Event(p), process_second_line(false), t_bytes_2(-1), tag_2(-1), peer_rank_2(-1),
