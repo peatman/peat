@@ -31,10 +31,10 @@ export FABRIC=on
 #do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng          fab_layers off   off  off  off off off
 #do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng          fab_layers off   on  off  off off off
 #do_not_remove=1 ./Build.sh mpich:5.0.1x-mt-ofi-eng           mpich5     off   on  off  off off off
-do_not_remove=1 ./Build.sh openmpi:5.0.10x-eng               openmpi5   off   on  off  off off off 
+#do_not_remove=1 ./Build.sh openmpi:5.0.10x-eng               openmpi5   off   on  off  off off off 
 #do_not_remove=1 ./Build.sh openmpi:5.0.10x                   openmpi5   off   on  off  off off off 
 
- exit
+#exit
 
 ./Build.sh  mpich:5.0.1x-mt-ofi-eng     fab_layers off   off  off  off off off &
 ./Build.sh  mpich:5.0.1x-mt-ofi-eng     fab_layers off   on   off  off off off &
