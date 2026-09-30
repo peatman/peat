@@ -86,6 +86,65 @@ int T_Type_size(MPI_Datatype datatype, MPI_Aint *size)
     return PMPI_Type_size(datatype, (int *) size);
 }
 
+/* Number of entries in the per-peer arrays (counts, displacements, types) of a
+   collective. Used by the generated collective wrappers instead of a plain
+   PMPI_Comm_size, because the array length is not the communicator size for
+   every collective:
+   - neighbourhood collectives (MPI_Neighbor_*): send arrays have one entry per
+     outgoing neighbour, receive arrays one per incoming neighbour. Cartesian:
+     2*ndims each (MPI_PROC_NULL neighbours at non-periodic edges keep their
+     slot), graph: MPI_Graph_neighbors_count for both, distributed graph:
+     MPI_Dist_graph_neighbors_count in/out degree. Same as MPICH's
+     MPIR_Topo_canon_nhb_count.
+   - other collectives on an inter-communicator: the arrays describe the remote
+     group, so both sizes are MPI_Comm_remote_size.
+   - MPI_Reduce_scatter's recvcounts describes the local group even on an
+     inter-communicator (T_COMM_SIZE_LOCAL).
+   - everything else: MPI_Comm_size. */
+enum t_comm_size_kind {
+    T_COMM_SIZE_PEERS = 0,     /* per-rank arrays: local size, remote size on an inter-communicator */
+    T_COMM_SIZE_NEIGHBORS = 1, /* neighbourhood collective: out-degree (send), in-degree (recv) */
+    T_COMM_SIZE_LOCAL = 2      /* per-rank arrays that always cover the local group */
+};
+
+static inline void determine_comm_size(MPI_Comm comm, int kind, int *send_size, int *recv_size)
+{
+    int flag = 0;
+
+    if (kind == T_COMM_SIZE_NEIGHBORS) {
+        int topo = MPI_UNDEFINED, ndims = 0, rank = 0, weighted = 0;
+        PMPI_Topo_test(comm, &topo);
+        switch (topo) {
+        case MPI_CART:
+            PMPI_Cartdim_get(comm, &ndims);
+            *send_size = *recv_size = 2 * ndims;
+            return;
+        case MPI_GRAPH:
+            PMPI_Comm_rank(comm, &rank);
+            PMPI_Graph_neighbors_count(comm, rank, recv_size);
+            *send_size = *recv_size;
+            return;
+        case MPI_DIST_GRAPH:
+            PMPI_Dist_graph_neighbors_count(comm, recv_size, send_size, &weighted);
+            return;
+        default: /* no topology: the MPI call itself is erroneous, record nothing */
+            debug_printf("determine_comm_size: neighbourhood collective on a communicator without topology (%x)\n", (int) comm);
+            *send_size = *recv_size = 0;
+            return;
+        }
+    }
+    if (kind == T_COMM_SIZE_PEERS) {
+        PMPI_Comm_test_inter(comm, &flag);
+        if (flag) {
+            PMPI_Comm_remote_size(comm, send_size);
+            *recv_size = *send_size;
+            return;
+        }
+    }
+    PMPI_Comm_size(comm, send_size);
+    *recv_size = *send_size;
+}
+
 #ifdef _TRACTOR_PARSE_COLT_
 
 struct MPID_Comm;
@@ -346,7 +405,7 @@ int PMPIC_Sendrecv_replace(void *buf, MPI_Aint count, MPI_Datatype datatype, int
 int PMPIC_Isend(const void *buf, MPI_Aint count, MPI_Datatype datatype, int dest, int tag, MPID_Comm *comm, MPID_Request **request, int *errflag);
 int PMPIC_Irecv(void *buf, MPI_Aint count, MPI_Datatype datatype, int source, int tag, MPID_Comm *comm, MPID_Request **request);
 
-int PMPIC_Probe(int source, int tag, MPID_Comm *comm, MPI_Status *status);
+int PMPIC_Probe(int source, int tag, MPI_Comm comm, MPI_Status *status); /* takes the MPI_Comm handle in every MPICH/MVAPICH, unlike the other MPIC_* helpers */
 int PMPIC_Wait(MPID_Request *request_ptr);
 int PMPIC_Waitall(int numreq, MPID_Request *requests[], MPI_Status statuses[], int *errflag);
 int PMPIC_Waitany(int numreq, MPID_Request *requests[], int *index, MPI_Status *status, int *errflag);
@@ -360,7 +419,7 @@ int PMPIC_Sendrecv_replace(void *buf, MPI_Aint count, MPI_Datatype datatype, int
 int PMPIC_Isend(const void *buf, MPI_Aint count, MPI_Datatype datatype, int dest, int tag, MPID_Comm *comm, MPID_Request **request, int errflag);
 int PMPIC_Irecv(void *buf, MPI_Aint count, MPI_Datatype datatype, int source, int tag, MPID_Comm *comm, MPID_Request **request);
 
-int PMPIC_Probe(int source, int tag, MPID_Comm *comm, MPI_Status *status);
+int PMPIC_Probe(int source, int tag, MPI_Comm comm, MPI_Status *status); /* takes the MPI_Comm handle in every MPICH/MVAPICH, unlike the other MPIC_* helpers */
 int PMPIC_Wait(MPID_Request *request_ptr);
 int PMPIC_Waitall(int numreq, MPID_Request *requests[], MPI_Status *statuses);
 int PMPIC_Waitany(int numreq, MPID_Request *requests[], int *index, MPI_Status *status);

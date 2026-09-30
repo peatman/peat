@@ -331,7 +331,8 @@ $event_request="event->$basic_struct.request=mpi_internal_get_request(*request);
 $tag_peer="event->$basic_struct.tag=tag;" if $properties=~/TAG/;
 $tag_peer="$tag_peer event->$basic_struct.peer=peer_rank;" if $properties=~/PEER/;
 
-$tag_peer="$tag_peer event->$basic_struct.peer=get_rank_from_req_colt(comm,peer_rank);" if $properties=~/PEER/ && $properties=~/COLT/;
+my $colt_mpid_comm = ($properties=~/COLT/ && $properties!~/CLASS_PROBE/);
+$tag_peer="$tag_peer event->$basic_struct.peer=get_rank_from_req_colt(comm,peer_rank);" if $properties=~/PEER/ && $colt_mpid_comm;
 
 $message="event->$basic_struct.message=*message;" if $properties=~/MESSAGE/ && $properties=~/CLASS_P2P/;
 $handle="event->$basic_struct.window=win;" if $properties=~/HWINDOW/ && $properties=~/CLASS_OSC/;
@@ -343,7 +344,7 @@ $event_message="event->$basic_struct.message=*message;" if $properties=~/MESSAGE
 $comm="event->$basic_struct.comm=comm;" if $properties=~/COMM/;
 #$comm="event->$basic_struct.comm=(long long) comm;" if $properties=~/COMM/ && $properties=~/COLT/ ;
 #$comm="event->$basic_struct.comm=MPI_COMM_WORLD;" if $properties=~/COMM/ && $properties=~/COLT/;
-$comm="event->$basic_struct.comm=mpi_internal_get_mpicomm_from_mpidcomm(comm);" if $properties=~/COMM/ && $properties=~/COLT/;
+$comm="event->$basic_struct.comm=mpi_internal_get_mpicomm_from_mpidcomm(comm);" if $properties=~/COMM/ && $colt_mpid_comm;
 #$comm="event->$basic_struct.comm=last_coll_comm;" if $properties=~/COMM/ && $properties=~/COLT/;
 $get_datasize="T_Type_size$colt(type,&data_size);"if $properties=~/BYTES/;
 $transfer_bytes="event->$basic_struct.transfer_bytes=(count*data_size);"if $properties=~/BYTES/;
@@ -367,7 +368,7 @@ if ($properties=~/STATUS/) {
     $event_status_begin="if (*flag) {" if $properties=~/FLAG/;
     $event_status="event->$basic_struct.transfer_bytes=MPI_STATUS_GET_COUNT_P(status);";
     $event_status="$event_status event->$basic_struct.tag=status->MPI_TAG;" if $properties=~/TAG/;
-    if ($properties=~/COLT/) {
+    if ($colt_mpid_comm) {
         $event_status="$event_status event->$basic_struct.peer=get_rank_from_req_colt(comm,peer_rank>=0 ? peer_rank : status->MPI_SOURCE);" if $properties=~/PEER/;
     } else  {
         $event_status="$event_status event->$basic_struct.peer=peer_rank>=0 ? peer_rank : status->MPI_SOURCE;" if $properties=~/PEER/;
@@ -496,7 +497,12 @@ if ($properties=~/TYPEMATCH/) {
     #$r_type_size="event->collective.sr_type_sizes[1]=comm_size; { int type_sizes[comm_size]; for (i=0;i<comm_size;i++) T_Type_size(rtypes[i],&type_sizes[i]); __msl_record_ints(tid,type_sizes,comm_size);}" if $properties=~/VECTOR_TYPE/;
 }
 if ($properties=~/VECTOR/) {
-    $comm_size="PMPI_Comm_size( comm, &comm_size );";
+    # entries of the per-peer arrays: comm size, remote size on an inter-communicator, or the
+    # topology's out/in degree for neighbourhood collectives (see determine_comm_size in t_mpidef.h)
+    my $size_kind="T_COMM_SIZE_PEERS";
+    $size_kind="T_COMM_SIZE_NEIGHBORS" if $line[2]=~/Neighbor_/i;
+    $size_kind="T_COMM_SIZE_LOCAL" if $properties=~/COUNTMATCH/; # MPI_Reduce_scatter: recvcounts covers the local group
+    $comm_size="determine_comm_size(comm, $size_kind, &comm_size, &comm_rsize);";
 
     if ($properties=~/COUNTMATCH/) {
         $s_count="event->collective.sr_bytes[0]=1;__msl_record_long(tid,((long long)count*(long long)s_type_size));" if $properties=~/SCALAR_SEND/;
@@ -561,30 +567,30 @@ if ($properties=~/VECTOR/) {
         if ($properties=~/ROOT_RECV/) {
         $r_count="
         if (amiroot) {
-            event->collective.sr_bytes[1]=comm_size;
+            event->collective.sr_bytes[1]=comm_rsize;
             { 
-                long long r_bytes[comm_size]; 
-                for (i=0;i<comm_size;i++) {
+                long long r_bytes[comm_rsize]; 
+                for (i=0;i<comm_rsize;i++) {
                     $r_type_size_v r_bytes[i]=(long long)rcounts[i]*(long long)r_type_size;
 #ifdef _TRACTOR_EXTRA_FIELDS_
                     tr_bytes+=r_bytes[i]; 
 #endif
                 } 
-                __msl_record_longs(tid,r_bytes,comm_size);
+                __msl_record_longs(tid,r_bytes,comm_rsize);
             }
         } else event->collective.sr_bytes[1]=0;" if $properties=~/VECTOR_RECV/;
         } else {
         $r_count="
-        event->collective.sr_bytes[1]=comm_size;
+        event->collective.sr_bytes[1]=comm_rsize;
         { 
-            long long r_bytes[comm_size]; 
-            for (i=0;i<comm_size;i++) {
+            long long r_bytes[comm_rsize]; 
+            for (i=0;i<comm_rsize;i++) {
                 $r_type_size_v r_bytes[i]=(long long)rcounts[i]*(long long)r_type_size;
 #ifdef _TRACTOR_EXTRA_FIELDS_
                 tr_bytes+=r_bytes[i]; 
 #endif
             } 
-            __msl_record_longs(tid,r_bytes,comm_size);
+            __msl_record_longs(tid,r_bytes,comm_rsize);
         }" if $properties=~/VECTOR_RECV/;
         }
     }

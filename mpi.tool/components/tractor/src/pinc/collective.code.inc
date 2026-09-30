@@ -27,7 +27,7 @@ $prototype {
     $rbuf_bottom
 
 #ifndef _TRACTOR_PASSTHROUGH_
-    int rv, i,comm_size,amiroot=1;
+    int rv, i,comm_size,comm_rsize,amiroot=1; 
     MPI_Aint s_type_size = 0, r_type_size = 0;
     long long tsc_entry,tsc_exit,tsc_mpi_entry,tsc_mpi_exit,local_tool_overhead;
     const PEAT_MPI_Func_ID_Through fidc=$funcid_through;
