@@ -368,7 +368,7 @@ void t_local_comms::comm_end(const MPI_Comm comm, const PEAT_Clock end, bool com
 
 void t_local_comms::track_internal_comm(const MPI_Comm comm, const PEAT_Clock begin) {
     std::list<t_comm>::iterator result;
-    if (get_local_comm_id(comm, begin, std::list<t_comm>::iterator result)) return; //user space comm exists
+    if (get_local_comm_id(comm, begin, result)) return; //user space comm exists
 }
 
 #define PRINT_PARAMETERS(width, string) int(width + strlen(string)) / 2, string, int(width - strlen(string)) / 2, ""
