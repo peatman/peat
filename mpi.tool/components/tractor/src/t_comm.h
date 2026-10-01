@@ -61,6 +61,20 @@ extern "C" {
 #define T_MPI_INTRA_COMM 0
 #define T_MPI_INTER_COMM 1
 
+static bool compare_ranks(const std::vector<int>& comm1_ranks, const std::vector<int>& comm2_ranks) {
+    if (comm1_ranks.size() != comm2_ranks.size()) {
+        debug_printf("(local) sizes mismatch %d != %d.\n", comm1_ranks.size(), comm2_ranks.size());
+        return false;
+    }
+    for (size_t size = comm1_ranks.size(), it = 0; it < size; ++it) {
+        if (comm1_ranks.at(it) != comm2_ranks.at(it)) {
+            debug_printf("(local) translation %d mismatch %d != %d.\n", it, comm1_ranks.at(it), comm2_ranks.at(it));
+            return false;
+        }
+    }
+    return true;
+};
+
 struct t_comm {
     t_comm() : idx(-1), gid(-1), kind(T_MPI_INVALID_COMM), comm(MPI_COMM_NULL), begin_time(-1), end_time(-1)
     {
@@ -75,55 +89,25 @@ struct t_comm {
     size_t pack_size() const;
     size_t pack(char *ptr) const;
     size_t unpack(char *ptr);
-    friend bool compare_ranks(const t_comm &comm1, const t_comm &comm2)
+
+    friend bool compare_comms(const t_comm &comm1, const t_comm &comm2)
     {
-        // debug_printf("comparing comms %x and %x...",comm1.comm,comm2.comm);
+        debug_printf("comparing comms %x and %x...",comm1.comm,comm2.comm);
         if (comm1.kind != comm2.kind)
             return false;
-        bool result = true;
-        if (comm1.l_comm2world_ranks.size() != comm2.l_comm2world_ranks.size()) {
-            debug_printf("Local sizes mismatch %d != %d.", comm1.l_comm2world_ranks.size(), comm2.l_comm2world_ranks.size());
-            result = false;
+        bool result = false;
+        if (comm1.kind == T_MPI_INTER_COMM) {
+            // try to compare both ways
+            result = compare_ranks(comm1.l_comm2world_ranks, comm2.l_comm2world_ranks) || compare_ranks(comm1.r_comm2world_ranks, comm2.r_comm2world_ranks);
+            if (!result) {
+                result = compare_ranks(comm1.l_comm2world_ranks, comm2.r_comm2world_ranks) || compare_ranks(comm1.r_comm2world_ranks, comm2.l_comm2world_ranks);
+            }
+        } else {
+            result = compare_ranks(comm1.l_comm2world_ranks, comm2.l_comm2world_ranks);
         }
-        if (comm1.r_comm2world_ranks.size() != comm2.r_comm2world_ranks.size()) {
-            debug_printf("Remote sizes mismatch %d != %d.", comm1.r_comm2world_ranks.size(), comm2.r_comm2world_ranks.size());
-            result = false;
-        }
-        const std::vector<int> *comm2_local, *comm2_remote;
-        comm2_local = &comm2.l_comm2world_ranks;
-        comm2_remote = &comm2.r_comm2world_ranks;
-        if (comm1.kind == T_MPI_INTER_COMM && result == false) {
-            /* try the other way */
-            comm2_local = &comm2.r_comm2world_ranks;
-            comm2_remote = &comm2.l_comm2world_ranks;
-            result = true;
-            if (comm1.l_comm2world_ranks.size() != comm2.r_comm2world_ranks.size()) {
-                debug_printf("Local/Remote sizes mismatch %d != %d.\n", comm1.l_comm2world_ranks.size(), comm2.l_comm2world_ranks.size());
-                return false;
-            }
-            if (comm1.r_comm2world_ranks.size() != comm2.l_comm2world_ranks.size()) {
-                debug_printf("Remote/Local sizes mismatch %d != %d.\n", comm1.r_comm2world_ranks.size(), comm2.r_comm2world_ranks.size());
-                return false;
-            }
-        }
-        if (result == true) {
-            for (size_t size = comm1.l_comm2world_ranks.size(), it = 0; it < size; ++it) {
-                if (comm1.l_comm2world_ranks.at(it) != comm2_local->at(it)) {
-                    debug_printf("(local) translation %d mismatch %d != %d.\n", it, comm1.l_comm2world_ranks.at(it), comm2_local->at(it));
-                    return false;
-                }
-            }
-            for (size_t size = comm1.r_comm2world_ranks.size(), it = 0; it < size; ++it) {
-                if (comm1.r_comm2world_ranks.at(it) != comm2_remote->at(it)) {
-                    debug_printf("(remote) translation %d mismatch %d != %d.\n", it, comm1.r_comm2world_ranks.at(it), comm2_remote->at(it));
-                    return false;
-                }
-            }
-        } else
-            return false;
-        // debug_printf("matched.\n");
-        return true;
-    }
+        debug_printf("result:. (%d)\n",(int) result);
+        return result;
+    };
 };
 
 struct r_comm {
@@ -173,6 +157,7 @@ struct t_local_comms {
         __DEBUG_EPILOG_COMM_LAYER__
     }
     void comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, bool force_add = false);
+    void track_internal_comm(const MPI_Comm comm, const PEAT_Clock begin);
     void intra_comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, bool force_add = false);
     void inter_comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, bool force_add = false);
     void comm_end(const MPI_Comm comm, const PEAT_Clock end, bool complete_any_way = false);
@@ -186,15 +171,23 @@ struct t_local_comms {
     // PEAT_MPI_Comm get_global_comm_id(const MPI_Comm comm, const PEAT_Clock cur_time) const;
     PEAT_MPI_Comm get_global_comm_id(const MPI_Comm comm, const PEAT_Clock tsc)
     {
+        __DEBUG_PROLOG_COMM_LAYER__
         std::list<t_comm>::iterator result;
+        if (comm==0) return 0;
         bool bFound = get_local_comm_id(comm, tsc, result);
         if (bFound) {
-            if (result->gid >= 0)
+            if (result->gid >= 0) {
+               __DEBUG_EPILOG_COMM_LAYER__
                 return result->gid;
+            }
+            __DEBUG_EPILOG_COMM_LAYER__
             return (PEAT_MPI_Comm)comm;
         } else {
-            return 0;
+            __DEBUG_EPILOG_COMM_LAYER__
+            return (PEAT_MPI_Comm) comm;
         }
+      __DEBUG_EPILOG_COMM_LAYER__
+      return (PEAT_MPI_Comm) comm;
     }
     int index;
     int comm_world_size;
@@ -219,7 +212,7 @@ struct t_global_comms {
         size_t num_comms = r_list.size();
         for (size_t i = 0; i < num_comms; i++) {
             memcpy(ptr + i * sizeof(r_comm), &r_list[i], sizeof(r_comm));
-            // debug_printf("Packing global comm=%x(gid=%d),(%ld,%ld), at rank (%d)\n",r_list[i].comm,r_list[i].gid, r_list[i].begin_time,r_list[i].end_time,r_list[i].rank);
+            debug_printf("Packing global comm=%x(gid=%d),(%ld,%ld), at rank (%d)\n",r_list[i].comm,r_list[i].gid, r_list[i].begin_time,r_list[i].end_time,r_list[i].rank);
         }
         return sizeof(r_comm) * num_comms;
     }
@@ -231,7 +224,7 @@ struct t_global_comms {
         for (ptr_it = 0; ptr_it < total_size;) {
             t_comm tmp_comm;
             ptr_it += tmp_comm.unpack(ptr + ptr_it);
-            // debug_printf("unpacking comm=%x(%d),(%ld,%ld),%d(%d)\n",tmp_comm.comm,tmp_comm.idx,tmp_comm.begin_time,tmp_comm.end_time,total_size,ptr_it);
+            debug_printf("unpacking comm=%x(%d),(%ld,%ld),%d(%d)\n",tmp_comm.comm,tmp_comm.idx,tmp_comm.begin_time,tmp_comm.end_time,total_size,ptr_it);
             t_list.push_back(tmp_comm);
         }
         return ptr_it;
@@ -240,12 +233,12 @@ struct t_global_comms {
     bool find_local_comm(const t_comm &comm, std::list<t_comm> &t_list, std::list<t_comm>::iterator &result) const
     {
         for (std::list<t_comm>::iterator comm_it = t_list.begin(); comm_it != t_list.end(); ++comm_it) {
-            if (compare_ranks(comm, *comm_it)) {
+            if (compare_comms(comm, *comm_it)) {
                 result = comm_it;
                 return true;
             }
         }
-        std::cerr << "Error in communicator find_local_comm function. Can't find comm id " << std::hex << comm.comm << std::dec << "\n";
+        std::cerr << "Error in communicator find_local_comm function. Can't find comm id " << std::hex << comm.comm << std::dec <<" Rank " << t_mpi_rank << ".\n";
         assert(0);
         return false;
     }

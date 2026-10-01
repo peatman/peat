@@ -27,7 +27,7 @@ $prototype {
     $rbuf_bottom
 
 #ifndef _TRACTOR_PASSTHROUGH_
-    int rv, i,comm_size,amiroot=1;
+    int rv, i,comm_size,comm_rsize,amiroot=1; /* comm_size: entries of the send-side per-peer arrays, comm_rsize: receive side */
     MPI_Aint s_type_size = 0, r_type_size = 0;
     int level=-1;              /* nesting level of this call, -1 if not traced */
     long long children_base=0; /* records of the next level existing at entry */
@@ -88,9 +88,8 @@ $prototype {
         $event_rbuf
 #endif
         $event_request
-        event->tscs[0]=tsc_entry;
-        event->tscs[1]=tsc_mpi_entry-tsc_entry;
-        event->tscs[2]=tsc_mpi_exit-tsc_entry;
+        event->tscs[0] = tsc_entry;
+        event->tscs[1] = tsc_mpi_entry;
 #ifdef _HWCOUNTERS_ENABLED_
         memcpy(counters.hwcs,l_hwcs,num_hwcs*sizeof(l_hwcs[0]));
         gt_info(hwc).get_all_counters(&counters.hwcs[num_hwcs]);
@@ -101,7 +100,8 @@ $prototype {
 #endif
         // counting_permit-=2*counting_permission_pcontrol[$funcid_through];
         tsc_exit = peat_get_time();
-        event->tscs[3]=tsc_exit-tsc_entry;
+        event->tscs[2] = tsc_mpi_exit;
+        event->tscs[3] = tsc_exit;
         __msl_check_chain(tid,level);
         local_tool_overhead=tsc_mpi_entry-tsc_entry+tsc_exit-tsc_mpi_exit;
         global_mpi_time+=tsc_mpi_exit-tsc_mpi_entry;

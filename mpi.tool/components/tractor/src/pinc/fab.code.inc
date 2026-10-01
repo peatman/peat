@@ -50,12 +50,13 @@ $prototype {
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
         tsc_mpi_exit = peat_get_time();
         f_event->func_id = $funcid_through;
-        f_event->tscs[0]=tsc_entry;
+        f_event->tscs[0] = tsc_entry;
+        f_event->tscs[1] = tsc_mpi_entry - tsc_entry;
         f_event->fab.num_calls=1;
         f_event->fab.total_clocks_bitween_calls=0;
         tsc_exit = peat_get_time();
-        f_event->tscs[2]=tsc_exit - tsc_mpi_exit;
-        f_event->tscs[3]=tsc_exit - tsc_entry;
+        f_event->tscs[2] = tsc_exit - tsc_mpi_exit;
+        f_event->tscs[3] = tsc_exit - tsc_entry;
         f_event->fab.num_calls=1;
         f_event->fab.total_clocks_bitween_calls=0;
         local_tool_overhead=tsc_mpi_entry-tsc_entry+tsc_exit-tsc_mpi_exit;

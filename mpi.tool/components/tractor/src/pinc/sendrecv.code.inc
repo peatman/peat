@@ -22,7 +22,8 @@ $prototype {
     $sbuf_bottom
     $rbuf_bottom
 #ifndef _TRACTOR_PASSTHROUGH_
-    int rv, i, comm_rank, s_count, r_count;
+    int rv, i, comm_rank;
+    long long s_count, r_count;
     MPI_Aint s_data_size = 0, r_data_size = 0;
     int level=-1;              /* nesting level of this call, -1 if not traced */
     long long children_base=0; /* records of the next level existing at entry */
@@ -42,15 +43,17 @@ $prototype {
     t_memory_event l_mem;
 #endif
 
-    MPI_Status local_status;
+    $declare_status
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
         tsc_entry = peat_get_time_tid(&tid_in);
         $datasize;
-        if (status==MPI_STATUS_IGNORE) status=&local_status;
+        $fix_status
         counting_permit+=4*counting_permission_pcontrol[$funcid_through];
         tid=__msl_get_tid(tid_in);
         level=__msl_enter_call(tid);
         children_base=__msl_child_base(tid,level);
+        __msl_allocate_event(tid,level,1,&event[0],&counters[0]);
+        __msl_allocate_event(tid,level,1,&event[1],&counters[1]);
 #ifdef _HWCOUNTERS_ENABLED_
         gt_info(hwc).get_all_counters(l_hwcs);
 #endif
@@ -69,8 +72,6 @@ $prototype {
     if (level>=0) __msl_leave_call(tid); /* also when the record was discarded */
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
         tsc_mpi_exit = peat_get_time();
-        /* two records (send part, receive part) allocated at exit: nothing can nest between them */
-        __msl_allocate_event(tid,level,1,&event[0],&counters[0]);
         stack_unwind$colt(gt_info(max_ret_level),counters[0].addrs,gt_info(ret_levels));
 
         event[0]->func_id = $funcid_through;
@@ -79,20 +80,20 @@ $prototype {
         event[0]->p2p_pr_pb.tag=$stag;
         event[0]->p2p_pr_pb.peer=$dest;
         event[0]->p2p_pr_pb.transfer_bytes=(s_count*s_data_size);
-        __msl_allocate_event(tid,level,1,&event[1],&counters[1]);
         __msl_uncount_event(tid,level); /* the pair is one call: one child of the enclosing record */
         memcpy(counters[1].addrs,counters[0].addrs,gt_info(num_addrs)*sizeof(void *));
         memcpy((void *)event[1],(const void *) event[0],sizeof(msl_event));
         event[1]->num_children=0; /* the children belong to the first record */
-        event[1]->p2p_pr_pb.tag=status->MPI_TAG;
-        event[1]->p2p_pr_pb.peer=$status_peer;
-        event[1]->p2p_pr_pb.transfer_bytes=MPI_STATUS_GET_COUNT_P(status);
+        event[1]->p2p_pr_pb.tag=$recv_tag;
+        event[1]->p2p_pr_pb.peer=$recv_peer;
+        event[1]->p2p_pr_pb.transfer_bytes=$recv_bytes;
+        $event_request
 #ifdef _TRACTOR_EXTRA_FIELDS_
         $event_buf
 #endif
-        event[0]->tscs[0]=tsc_entry;
-        event[0]->tscs[1]=tsc_mpi_entry-tsc_entry;
-        event[0]->tscs[2]=tsc_mpi_exit-tsc_entry;
+        $internal_comm_tracking
+        event[0]->tscs[0] = tsc_entry;
+        event[0]->tscs[1] = tsc_mpi_entry;
 
 #ifdef _HWCOUNTERS_ENABLED_
         memcpy(counters[0].hwcs,l_hwcs,num_hwcs*sizeof(l_hwcs[0]));
@@ -106,11 +107,13 @@ $prototype {
 #endif
         // counting_permit-=4*counting_permission_pcontrol[$funcid_through];
         tsc_exit = peat_get_time();
-        event[0]->tscs[3]=tsc_exit-tsc_entry;
-        event[1]->tscs[0]=tsc_entry;
-        event[1]->tscs[1]=
-        event[1]->tscs[2]=
-        event[1]->tscs[3]=0;
+        event[0]->tscs[2] = tsc_mpi_exit;
+        event[0]->tscs[3] = tsc_exit;
+        event[1]->tscs[0] = event[0]->tscs[0];
+        event[1]->tscs[1] = event[0]->tscs[1];
+        event[1]->tscs[2] = event[0]->tscs[2];
+        event[1]->tscs[3] = event[0]->tscs[3];
+        // event[1]->tscs[1] = event[1]->tscs[2] = event[1]->tscs[3]  = 0;
         __msl_check_chain(tid,level);
         local_tool_overhead=tsc_mpi_entry-tsc_entry+tsc_exit-tsc_mpi_exit;
         $global_mpi_time

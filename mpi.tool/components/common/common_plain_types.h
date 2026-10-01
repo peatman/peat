@@ -567,6 +567,9 @@ enum PEAT_Property {
     PEAT_PROP_MPI1,
     PEAT_PROP_MPI2,
     PEAT_PROP_MPI3,
+    PEAT_PROP_MPI4,
+    PEAT_PROP_MPI41, // MPI-4.1 additions (need MPI_SUBVERSION>=1 on a 4.x library)
+    PEAT_PROP_MPI5,
     PEAT_PROP_BLOCK,
     PEAT_PROP_NON_BLOCK,
     PEAT_PROP_REQUEST,

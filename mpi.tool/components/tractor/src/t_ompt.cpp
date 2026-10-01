@@ -57,10 +57,9 @@ static msl_event *record_ompt_event(short func0, short func1, const void *pcode)
     }
     t_event->func_id = func1;
     t_event->tscs[0] = tsc_entry;
-    t_event->tscs[3] = tsc_entry;
     t_event->tscs[2] = tid;
     t_event->ompt.pcode = (PEAT_Addr)pcode;
-    t_event->tscs[1] = peat_get_time_core(&core_id) - tsc_entry;
+    t_event->tscs[1] = peat_get_time_core(&core_id);
 #endif
     __DEBUG_EPILOG_OMPT_LAYER__
     return t_event;
@@ -104,9 +103,9 @@ static void t_ompt_callback_parallel_end(ompt_data_t *parallel_data,
     if (event && begins == 0) {
         debug_printf("Parallel section ended. Event  %p \n", event);
 #ifdef _TRACTOR_COLLECT_STAT_
-        overall_durations[OMPT_PARALLEL_ID_THROUGH] += event->tscs[3] - (stored_section_events.tscs[3] + stored_section_events.tscs[1]);
+        overall_durations[OMPT_PARALLEL_ID_THROUGH] += event->tscs[0] - stored_section_events.tscs[1];
         overall_entries[OMPT_PARALLEL_ID_THROUGH]++;
-        overall_tool_overhead[OMPT_PARALLEL_ID_THROUGH] += event->tscs[1] + stored_section_events.tscs[1];
+        overall_tool_overhead[OMPT_PARALLEL_ID_THROUGH] += event->tscs[1] + stored_section_events.tscs[1] - event->tscs[0] - stored_section_events.tscs[0];
 #endif
     }
     if (event) {
@@ -131,7 +130,7 @@ static void t_ompt_callback_thread_begin(ompt_thread_t thread_type, ompt_data_t 
 #ifdef _TRACTOR_COLLECT_STAT_
         overall_durations[OMPT_THREAD_BEGIN_ID_THROUGH] += event->tscs[2] - event->tscs[1];
         overall_entries[OMPT_THREAD_BEGIN_ID_THROUGH]++;
-        overall_tool_overhead[OMPT_THREAD_BEGIN_ID_THROUGH] += event->tscs[1] + event->tscs[3] - event->tscs[2];
+        overall_tool_overhead[OMPT_THREAD_BEGIN_ID_THROUGH] += event->tscs[1] - event->tscs[0] + event->tscs[3] - event->tscs[2];
 #endif
     }
     __DEBUG_EPILOG_OMPT_LAYER__
@@ -147,7 +146,7 @@ static void t_ompt_callback_thread_end(ompt_data_t *thread_data)
 #ifdef _TRACTOR_COLLECT_STAT_
         overall_durations[OMPT_THREAD_END_ID_THROUGH] += event->tscs[2] - event->tscs[1];
         overall_entries[OMPT_THREAD_END_ID_THROUGH]++;
-        overall_tool_overhead[OMPT_THREAD_END_ID_THROUGH] += event->tscs[1] + event->tscs[3] - event->tscs[2];
+        overall_tool_overhead[OMPT_THREAD_END_ID_THROUGH] += event->tscs[1] - event->tscs[0] + event->tscs[3] - event->tscs[2];
 #endif
     }
     __DEBUG_EPILOG_OMPT_LAYER__
@@ -171,7 +170,7 @@ static void t_ompt_callback_target_data_op_emi(
 #ifdef _TRACTOR_COLLECT_STAT_
         overall_durations[OMPT_TARGET_DATA_OP_EMI_ID_THROUGH] += event->tscs[2] - event->tscs[1];
         overall_entries[OMPT_TARGET_DATA_OP_EMI_ID_THROUGH]++;
-        overall_tool_overhead[OMPT_TARGET_DATA_OP_EMI_ID_THROUGH] += event->tscs[1] + event->tscs[3] - event->tscs[2];
+        overall_tool_overhead[OMPT_TARGET_DATA_OP_EMI_ID_THROUGH] += event->tscs[1] - event->tscs[0] + event->tscs[3] - event->tscs[2];
 #endif
     }
     __DEBUG_EPILOG_OMPT_LAYER__
@@ -191,7 +190,7 @@ static void t_ompt_callback_target_data_op(
 #ifdef _TRACTOR_COLLECT_STAT_
         overall_durations[OMPT_TARGET_DATA_OP_ID_THROUGH] += event->tscs[2] - event->tscs[1];
         overall_entries[OMPT_TARGET_DATA_OP_ID_THROUGH]++;
-        overall_tool_overhead[OMPT_TARGET_DATA_OP_ID_THROUGH] += event->tscs[1] + event->tscs[3] - event->tscs[2];
+        overall_tool_overhead[OMPT_TARGET_DATA_OP_ID_THROUGH] += event->tscs[1] - event->tscs[0] + event->tscs[3] - event->tscs[2];
 #endif
     }
     __DEBUG_EPILOG_OMPT_LAYER__
@@ -214,7 +213,7 @@ static void t_ompt_callback_target_emi(
 #ifdef _TRACTOR_COLLECT_STAT_
         overall_durations[OMPT_TARGET_EMI_ID_THROUGH] += event->tscs[2] - event->tscs[1];
         overall_entries[OMPT_TARGET_EMI_ID_THROUGH]++;
-        overall_tool_overhead[OMPT_TARGET_EMI_ID_THROUGH] += event->tscs[1] + event->tscs[3] - event->tscs[2];
+        overall_tool_overhead[OMPT_TARGET_EMI_ID_THROUGH] += event->tscs[1] - event->tscs[0] + event->tscs[3] - event->tscs[2];
 #endif
     }
     __DEBUG_EPILOG_OMPT_LAYER__
@@ -236,7 +235,7 @@ static void t_ompt_callback_target(
 #ifdef _TRACTOR_COLLECT_STAT_
         overall_durations[OMPT_TARGET_ID_THROUGH] += event->tscs[2] - event->tscs[1];
         overall_entries[OMPT_TARGET_ID_THROUGH]++;
-        overall_tool_overhead[OMPT_TARGET_ID_THROUGH] += event->tscs[1] + event->tscs[3] - event->tscs[2];
+        overall_tool_overhead[OMPT_TARGET_ID_THROUGH] += event->tscs[1] - event->tscs[0] + event->tscs[3] - event->tscs[2];
 #endif
     }
     __DEBUG_EPILOG_OMPT_LAYER__
@@ -257,7 +256,7 @@ static void t_ompt_callback_target_map_emi(
 #ifdef _TRACTOR_COLLECT_STAT_
         overall_durations[OMPT_TARGET_MAP_EMI_ID_THROUGH] += event->tscs[2] - event->tscs[1];
         overall_entries[OMPT_TARGET_MAP_EMI_ID_THROUGH]++;
-        overall_tool_overhead[OMPT_TARGET_MAP_EMI_ID_THROUGH] += event->tscs[1] + event->tscs[3] - event->tscs[2];
+        overall_tool_overhead[OMPT_TARGET_MAP_EMI_ID_THROUGH] += event->tscs[1] - event->tscs[0] + event->tscs[3] - event->tscs[2];
 #endif
     }
     __DEBUG_EPILOG_OMPT_LAYER__
@@ -276,7 +275,7 @@ static void t_ompt_callback_target_map(
 #ifdef _TRACTOR_COLLECT_STAT_
         overall_durations[OMPT_TARGET_MAP_ID_THROUGH] += event->tscs[2] - event->tscs[1];
         overall_entries[OMPT_TARGET_MAP_ID_THROUGH]++;
-        overall_tool_overhead[OMPT_TARGET_MAP_ID_THROUGH] += event->tscs[1] + event->tscs[3] - event->tscs[2];
+        overall_tool_overhead[OMPT_TARGET_MAP_ID_THROUGH] += event->tscs[1] - event->tscs[0] + event->tscs[3] - event->tscs[2];
 #endif
     }
     __DEBUG_EPILOG_OMPT_LAYER__
@@ -334,12 +333,12 @@ static void t_ompt_callback_sync_region(
         if (event && endpoint == ompt_scope_beginend) {
             event->ompt.task_data = ompt_data_value(task_data);
             event->ompt.parallel_data = ompt_data_value(parallel_data);
-            event->tscs[2] = tsc_entry - event->tscs[3];
-            event->tscs[3] = peat_get_time_core(&core_id) - event->tscs[3];
+            event->tscs[2] = tsc_entry;
+            event->tscs[3] = peat_get_time_core(&core_id);
 #ifdef _TRACTOR_COLLECT_STAT_
             overall_durations[OMPT_SYNC_REGION_ID_THROUGH] += event->tscs[2] - event->tscs[1];
             overall_entries[OMPT_SYNC_REGION_ID_THROUGH]++;
-            overall_tool_overhead[OMPT_SYNC_REGION_ID_THROUGH] += event->tscs[1] + event->tscs[3] - event->tscs[2];
+            overall_tool_overhead[OMPT_SYNC_REGION_ID_THROUGH] += event->tscs[1] - event->tscs[0] + event->tscs[3] - event->tscs[2];
 #endif
         }
     }
@@ -354,12 +353,12 @@ static void t_ompt_callback_sync_region(
         if (event) {
             event->ompt.task_data = ompt_data_value(task_data);
             event->ompt.parallel_data = ompt_data_value(parallel_data);
-            event->tscs[2] = tsc_entry - event->tscs[3];
-            event->tscs[3] = peat_get_time_core(&core_id) - event->tscs[3];
+            event->tscs[2] = tsc_entry;
+            event->tscs[3] = peat_get_time_core(&core_id);
 #ifdef _TRACTOR_COLLECT_STAT_
             overall_durations[OMPT_SYNC_REGION_ID_THROUGH] += event->tscs[2] - event->tscs[1];
             overall_entries[OMPT_SYNC_REGION_ID_THROUGH]++;
-            overall_tool_overhead[OMPT_SYNC_REGION_ID_THROUGH] += event->tscs[1] + event->tscs[3] - event->tscs[2];
+            overall_tool_overhead[OMPT_SYNC_REGION_ID_THROUGH] += event->tscs[1] - event->tscs[0] + event->tscs[3] - event->tscs[2];
 #endif
         } else {
             debug_printf("Null Event returned for kind %d and tid %d\n", kind, tid);
@@ -399,12 +398,12 @@ static void t_ompt_callback_sync_region_wait(
         if (event && endpoint == ompt_scope_beginend) {
             event->ompt.task_data = ompt_data_value(task_data);
             event->ompt.parallel_data = ompt_data_value(parallel_data);
-            event->tscs[2] = tsc_entry - event->tscs[3];
-            event->tscs[3] = peat_get_time_core(&core_id) - event->tscs[3];
+            event->tscs[2] = tsc_entry;
+            event->tscs[3] = peat_get_time_core(&core_id);
 #ifdef _TRACTOR_COLLECT_STAT_
             overall_durations[OMPT_SYNC_REGION_WAIT_ID_THROUGH] += event->tscs[2] - event->tscs[1];
             overall_entries[OMPT_SYNC_REGION_WAIT_ID_THROUGH]++;
-            overall_tool_overhead[OMPT_SYNC_REGION_WAIT_ID_THROUGH] += event->tscs[1] + event->tscs[3] - event->tscs[2];
+            overall_tool_overhead[OMPT_SYNC_REGION_WAIT_ID_THROUGH] += event->tscs[1] - event->tscs[0] + event->tscs[3] - event->tscs[2];
 #endif
         }
     }
@@ -419,12 +418,12 @@ static void t_ompt_callback_sync_region_wait(
         if (event) {
             event->ompt.task_data = ompt_data_value(task_data);
             event->ompt.parallel_data = ompt_data_value(parallel_data);
-            event->tscs[2] = tsc_entry - event->tscs[3];
-            event->tscs[3] = peat_get_time_core(&core_id) - event->tscs[3];
+            event->tscs[2] = tsc_entry;
+            event->tscs[3] = peat_get_time_core(&core_id);
 #ifdef _TRACTOR_COLLECT_STAT_
             overall_durations[OMPT_SYNC_REGION_WAIT_ID_THROUGH] += event->tscs[2] - event->tscs[1];
             overall_entries[OMPT_SYNC_REGION_WAIT_ID_THROUGH]++;
-            overall_tool_overhead[OMPT_SYNC_REGION_WAIT_ID_THROUGH] += event->tscs[1] + event->tscs[3] - event->tscs[2];
+            overall_tool_overhead[OMPT_SYNC_REGION_WAIT_ID_THROUGH] += event->tscs[1] - event->tscs[0] + event->tscs[3] - event->tscs[2];
 #endif
         } else {
             debug_printf("Null Event returned for kind %d and tid %d\n", kind, tid);
@@ -453,7 +452,7 @@ static void t_ompt_callback_task_create(
 #ifdef _TRACTOR_COLLECT_STAT_
         overall_durations[OMPT_TASK_CREATE_ID_THROUGH] += event->tscs[2] - event->tscs[1];
         overall_entries[OMPT_TASK_CREATE_ID_THROUGH]++;
-        overall_tool_overhead[OMPT_TASK_CREATE_ID_THROUGH] += event->tscs[1] + event->tscs[3] - event->tscs[2];
+        overall_tool_overhead[OMPT_TASK_CREATE_ID_THROUGH] += event->tscs[1] - event->tscs[0] + event->tscs[3] - event->tscs[2];
 #endif
     }
     __DEBUG_EPILOG_OMPT_LAYER__
@@ -475,7 +474,7 @@ static void t_ompt_callback_dependences(
 #ifdef _TRACTOR_COLLECT_STAT_
         overall_durations[OMPT_DEPENDENCES_ID_THROUGH] += event->tscs[2] - event->tscs[1];
         overall_entries[OMPT_DEPENDENCES_ID_THROUGH]++;
-        overall_tool_overhead[OMPT_DEPENDENCES_ID_THROUGH] += event->tscs[1] + event->tscs[3] - event->tscs[2];
+        overall_tool_overhead[OMPT_DEPENDENCES_ID_THROUGH] += event->tscs[1] - event->tscs[0] + event->tscs[3] - event->tscs[2];
 #endif
     }
     __DEBUG_EPILOG_OMPT_LAYER__
@@ -495,7 +494,7 @@ static void t_ompt_callback_task_dependence(
 #ifdef _TRACTOR_COLLECT_STAT_
         overall_durations[OMPT_TASK_DEPENDENCE_ID_THROUGH] += event->tscs[2] - event->tscs[1];
         overall_entries[OMPT_TASK_DEPENDENCE_ID_THROUGH]++;
-        overall_tool_overhead[OMPT_TASK_DEPENDENCE_ID_THROUGH] += event->tscs[1] + event->tscs[3] - event->tscs[2];
+        overall_tool_overhead[OMPT_TASK_DEPENDENCE_ID_THROUGH] += event->tscs[1] - event->tscs[0] + event->tscs[3] - event->tscs[2];
 #endif
     }
     __DEBUG_EPILOG_OMPT_LAYER__
@@ -515,7 +514,7 @@ static void t_ompt_callback_task_schedule(
 #ifdef _TRACTOR_COLLECT_STAT_
         overall_durations[OMPT_TASK_SCHEDULE_ID_THROUGH] += event->tscs[2] - event->tscs[1];
         overall_entries[OMPT_TASK_SCHEDULE_ID_THROUGH]++;
-        overall_tool_overhead[OMPT_TASK_SCHEDULE_ID_THROUGH] += event->tscs[1] + event->tscs[3] - event->tscs[2];
+        overall_tool_overhead[OMPT_TASK_SCHEDULE_ID_THROUGH] += event->tscs[1] - event->tscs[0] + event->tscs[3] - event->tscs[2];
 #endif
     }
     __DEBUG_EPILOG_OMPT_LAYER__
@@ -544,7 +543,7 @@ static void t_ompt_callback_implicit_task(
 #ifdef _TRACTOR_COLLECT_STAT_
         overall_durations[OMPT_IMPLICIT_TASK_ID_THROUGH] += event->tscs[2] - event->tscs[1];
         overall_entries[OMPT_IMPLICIT_TASK_ID_THROUGH]++;
-        overall_tool_overhead[OMPT_IMPLICIT_TASK_ID_THROUGH] += event->tscs[1] + event->tscs[3] - event->tscs[2];
+        overall_tool_overhead[OMPT_IMPLICIT_TASK_ID_THROUGH] += event->tscs[1] - event->tscs[0] + event->tscs[3] - event->tscs[2];
 #endif
     }
     __DEBUG_EPILOG_OMPT_LAYER__

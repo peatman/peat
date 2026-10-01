@@ -76,9 +76,8 @@ $prototype {
         t_event->func_id = $funcid_through;
         t_event->num_children += (short)(__msl_child_base(tid,level) - children_base);
         $record_out_params
-        t_event->tscs[0]=tsc_entry;
-        t_event->tscs[1]=tsc_mpi_entry-tsc_entry;
-        t_event->tscs[2]=tsc_mpi_exit-tsc_entry;
+        t_event->tscs[0] = tsc_entry;
+        t_event->tscs[1] = tsc_mpi_entry;
 #ifdef _HWCOUNTERS_ENABLED_
         memcpy(counters.hwcs,l_hwcs,num_hwcs*sizeof(l_hwcs[0]));
         gt_info(hwc).get_all_counters(&counters.hwcs[num_hwcs]);
@@ -89,7 +88,8 @@ $prototype {
 #endif
         // counting_permit-=2*counting_permission_pcontrol[$funcid_through];
         tsc_exit = peat_get_time();
-        t_event->tscs[3]=tsc_exit-tsc_entry;
+        t_event->tscs[2] = tsc_mpi_exit;
+        t_event->tscs[3] = tsc_exit;
         __msl_check_chain(tid,level);
         local_tool_overhead=tsc_mpi_entry-tsc_entry+tsc_exit-tsc_mpi_exit;
         global_gpu_time+=tsc_mpi_exit-tsc_mpi_entry;

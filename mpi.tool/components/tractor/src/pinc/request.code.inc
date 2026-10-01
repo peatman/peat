@@ -88,11 +88,8 @@ $prototype {
         $event_sbuf
 #endif
         if (!reused) {
-            event->tscs[0]=tsc_entry;
-            event->tscs[1]=tsc_mpi_entry - tsc_entry;
-            event->tscs[2]=tsc_mpi_exit - tsc_entry;
-        } else {
-            event->tscs[2]=tsc_mpi_exit - event->tscs[0];
+            event->tscs[0] = tsc_entry;
+            event->tscs[1] = tsc_mpi_entry;
         }
 #ifdef _HWCOUNTERS_ENABLED_
         memcpy(counters.hwcs,l_hwcs,num_hwcs*sizeof(l_hwcs[0]));
@@ -104,11 +101,8 @@ $prototype {
 #endif
         // counting_permit-=2*counting_permission_pcontrol[$funcid_through];
         tsc_exit = peat_get_time();
-        if (!reused) {
-            event->tscs[3]=tsc_exit - tsc_entry;
-        } else {
-            event->tscs[3]=tsc_exit - event->tscs[0];
-        }
+        event->tscs[2] = tsc_mpi_exit;
+        event->tscs[3] = tsc_exit;
         __msl_check_chain(tid,level);
         local_tool_overhead=tsc_mpi_entry-tsc_entry+tsc_exit-tsc_mpi_exit;
         $global_mpi_time

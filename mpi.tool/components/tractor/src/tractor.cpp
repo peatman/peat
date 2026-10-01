@@ -1825,24 +1825,35 @@ int tractor::write_trace(void)
 
 PEAT_Rank tractor::get_real_rank(MPI_Comm comm, PEAT_Rank rank_in, PEAT_Clock tsc)
 {
+    __DEBUG_PROLOG_TRACTOR_LAYER__
     if (resolve_comms_and_ranks) {
-        if (rank_in < 0)
+        if (rank_in < 0) {
+            __DEBUG_EPILOG_TRACTOR_LAYER__
             return rank_in;
+        }
         std::list<t_comm>::iterator event_comm_it;
-        if (comm == MPI_COMM_WORLD)
+        if (comm == MPI_COMM_WORLD) {
+            __DEBUG_EPILOG_TRACTOR_LAYER__
             return rank_in;
-        if (comm == MPI_COMM_SELF)
+        }
+        if (comm == MPI_COMM_SELF) {
+            __DEBUG_EPILOG_TRACTOR_LAYER__
             return t_mpi_rank;
-        if (comm == MPI_COMM_NULL)
+        }
+        if (comm == MPI_COMM_NULL)  {
+            __DEBUG_EPILOG_TRACTOR_LAYER__
             return rank_in;
+        }
         const bool communicator_id_found = local_comms->get_local_comm_id(comm, tsc, event_comm_it);
         if (communicator_id_found) {
             if (event_comm_it->kind == T_MPI_INTER_COMM) {
                 if (get_val(event_comm_it->l_comm2world_ranks, t_mpi_rank) >= 0) {
                     if (event_comm_it->r_comm2world_ranks.size() > rank_in) {
+                        __DEBUG_EPILOG_TRACTOR_LAYER__
                         return event_comm_it->r_comm2world_ranks.at(rank_in);
                     } else {
                         debug_printf("Destination rank %d is out of range for rank %d in intercomm %x, remote size %ld\n", rank_in, t_mpi_rank, comm, event_comm_it->r_comm2world_ranks.size());
+                        __DEBUG_EPILOG_TRACTOR_LAYER__
                         return rank_in;
                     }
                 }
@@ -1850,39 +1861,54 @@ PEAT_Rank tractor::get_real_rank(MPI_Comm comm, PEAT_Rank rank_in, PEAT_Clock ts
                 if (get_val(event_comm_it->r_comm2world_ranks, t_mpi_rank) >= 0) {
                     // I suppose this shouldn't happen
                     if (event_comm_it->l_comm2world_ranks.size() > rank_in) {
+                        __DEBUG_EPILOG_TRACTOR_LAYER__
                         return event_comm_it->l_comm2world_ranks.at(rank_in);
                     } else {
                         debug_printf("Destination rank %d is out of range for rank %d in intercomm %x local size %ld\n", rank_in, t_mpi_rank, comm, event_comm_it->l_comm2world_ranks.size());
+                        __DEBUG_EPILOG_TRACTOR_LAYER__
                         return rank_in;
                     }
                 }
             } else {
                 // T_MPI_INTRA_COMM
                 if (event_comm_it->l_comm2world_ranks.size() > rank_in) {
+                    __DEBUG_EPILOG_TRACTOR_LAYER__
                     return event_comm_it->l_comm2world_ranks.at(rank_in);
                 } else {
                     debug_printf("Destination rank %d is out of range for rank %d in intracomm %x local size %ld\n", rank_in, t_mpi_rank, comm, event_comm_it->l_comm2world_ranks.size());
+                    __DEBUG_EPILOG_TRACTOR_LAYER__
                     return rank_in;
                 }
             }
         }
         debug_printf("No comm %x has been found in rank %d\n", comm, t_mpi_rank);
+        __DEBUG_EPILOG_TRACTOR_LAYER__
         return -rank_in; // to signalize error
     } else {
+        __DEBUG_EPILOG_TRACTOR_LAYER__
         return rank_in;
     }
 }
 PEAT_MPI_Comm tractor::get_global_comm_id(MPI_Comm comm, PEAT_Clock tsc)
 {
+    __DEBUG_PROLOG_TRACTOR_LAYER__
     if (resolve_comms_and_ranks) {
-        if (comm == MPI_COMM_WORLD)
+        if (comm == MPI_COMM_WORLD) {
+            __DEBUG_EPILOG_TRACTOR_LAYER__
             return 2;
-        if (comm == MPI_COMM_SELF)
+        }
+        if (comm == MPI_COMM_SELF)  {
+            __DEBUG_EPILOG_TRACTOR_LAYER__
             return 1;
-        if (comm == MPI_COMM_NULL)
+        }
+        if (comm == MPI_COMM_NULL)  {
+            __DEBUG_EPILOG_TRACTOR_LAYER__
             return 0;
+        }
+        __DEBUG_EPILOG_TRACTOR_LAYER__
         return local_comms->get_global_comm_id(comm, tsc);
     } else {
+        __DEBUG_EPILOG_TRACTOR_LAYER__
         return (PEAT_MPI_Comm)((PEAT_MPI_Long_Comm)comm);
         /*
         #ifndef OMPI_MPI_H
@@ -1893,6 +1919,8 @@ PEAT_MPI_Comm tractor::get_global_comm_id(MPI_Comm comm, PEAT_Clock tsc)
         #endif
         */
     }
+    __DEBUG_EPILOG_TRACTOR_LAYER__
+   return 0;
 }
 
 const std::string tractor::get_binary_by_addr(PEAT_Addr addr, PEAT_Addr &base, PEAT_Addr &low, PEAT_Addr &high)
@@ -2002,8 +2030,8 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
         return ret;
     std::map<MPI_Request, T_MPI_Comm> req_comm;
     std::map<MPI_Win, MPI_Comm> win_comm;
-    int tsc_mpi_entry_ind = 1;
-    int tsc_mpi_exit_ind = 2;
+    // int tsc_mpi_entry_ind = 1;
+    // int tsc_mpi_exit_ind = 2;
     long processed_events = 0;
     static PEAT_Clock tsc_counter = 0; /* start of the previously written record: starts are written relative to it */
     static long global_id = 0;
@@ -2174,12 +2202,11 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
         if (max_thread_id < tid)
             max_thread_id = tid;
         PEAT_Clock l_tscs[4];
-        /* like the fabric records: start relative to the previously written record, tool prolog (mpi entry - entry),
-           tool epilog (exit - mpi exit), duration (exit - entry) */
+        //perform local conversion instead of doing it in 1000 other places
         l_tscs[0] = rec.tscs[0] - tsc_counter;
-        l_tscs[1] = rec.tscs[1];
+        l_tscs[1] = rec.tscs[1] - rec.tscs[0];
         l_tscs[2] = rec.tscs[3] - rec.tscs[2];
-        l_tscs[3] = rec.tscs[3];
+        l_tscs[3] = rec.tscs[3] - rec.tscs[0];
         tsc_counter = rec.tscs[0];
         long long l_tsc_counter = rec.tscs[0]; // for comm queries
         gzprintf(fps_hwc, ":%lld:%lld:%lld:%lld", l_tscs[0], l_tscs[1], l_tscs[2], l_tscs[3]);
@@ -2248,7 +2275,7 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                     if(func_base==MPI_FILE_OPEN_ID) {
                         t_gzprintf(fps_mpi, ":%x:%llx",
                                  get_global_comm_id(rec.mpi_fio.comm,
-                                 tsc_mpi_entry + l_tsc_counter),            // 4
+                                 tsc_mpi_entry),            // 4
                                  rec.mpi_fio.fh                // 5
                                  );
                     } else {
@@ -2263,7 +2290,7 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                 t_gzprintf(fps_mpi, ":%llx:%llx:%llx:%lld:%lld",
                            rec.mpi_fio.fh, // 4
                            get_global_comm_id(rec.mpi_fio.comm,
-                                              tsc_mpi_entry + l_tsc_counter),                        // 5
+                                              tsc_mpi_entry),                        // 5
                            MPI_Check_dummy(rec.mpi_fio.request), // 6
                            rec.mpi_fio.offset,                   // 7
                            rec.mpi_fio.transfer_bytes            // 8
@@ -2467,13 +2494,13 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                     func_base < MPI_END_COMM_COLLECTIVE_GROUP ||
                 func_base == MPI_COMM_FREE_ID) {
                 t_gzprintf(fps_mpi, ":%x:%x:%x:%x:%llx",
-                           get_global_comm_id(rec.comms.comm, tsc_mpi_entry + l_tsc_counter),       // 4
-                           get_global_comm_id(rec.comms.newcomm, tsc_mpi_entry + l_tsc_counter),    // 5
-                           get_global_comm_id(rec.comms.remotecomm, tsc_mpi_entry + l_tsc_counter), // 6
-                           get_global_comm_id(rec.comms.intercomm, tsc_mpi_entry + l_tsc_counter),  // 7
+                           get_global_comm_id(rec.comms.comm, tsc_mpi_entry),       // 4
+                           get_global_comm_id(rec.comms.newcomm, tsc_mpi_entry),    // 5
+                           get_global_comm_id(rec.comms.remotecomm, tsc_mpi_entry), // 6
+                           get_global_comm_id(rec.comms.intercomm, tsc_mpi_entry),  // 7
                            MPI_Check_dummy(rec.comms.request)                                       // 8
                 );
-                req_comm[MPI_Check_dummy(rec.comms.request)] = T_MPI_Comm(rec.comms.newcomm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
+                req_comm[MPI_Check_dummy(rec.comms.request)] = T_MPI_Comm(rec.comms.newcomm, tsc_mpi_entry); // save comm for later WAIT or TEST
             }
 
             /***********************************************************************************************************************************************************************************************/
@@ -2484,10 +2511,10 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                 // peer and other   5   6   7  8  9 10
                 t_gzprintf(fps_mpi, ":%x:%d:%llx:%llx:%d:%lld",
                            get_global_comm_id(rec.p2p_pr_pb.comm,
-                                              tsc_mpi_entry + l_tsc_counter), // 4
+                                              tsc_mpi_entry), // 4
                            get_real_rank(rec.p2p_pr_pb.comm,
                                          rec.p2p_pr_pb.peer,
-                                         tsc_mpi_entry + l_tsc_counter),                               // 5
+                                         tsc_mpi_entry),                               // 5
                            MPI_Check_dummy(rec.p2p_pr_pb.request), // 6
                            rec.p2p_pr_pb.message,                  // 7
                            rec.p2p_pr_pb.tag,                      // 8
@@ -2502,7 +2529,7 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                 gt_func_stat.stat_for_func[func_id_t].sizes[group] += rec.p2p_pr_pb.transfer_bytes;
                 stat_processed = 1;
     #endif                                                                                                                                                                                                // _T_PER_INTERVAL_STAT_WRITE_
-                req_comm[MPI_Check_dummy(rec.p2p_pr_pb.request)] = T_MPI_Comm(rec.p2p_pr_pb.comm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
+                req_comm[MPI_Check_dummy(rec.p2p_pr_pb.request)] = T_MPI_Comm(rec.p2p_pr_pb.comm, tsc_mpi_entry); // save comm for later WAIT or TEST
             }
 
             /***********************************************************************************************************************************************************************************************/
@@ -2510,10 +2537,10 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
             if (func_base >= MPI_P2P_COLL_TRANSFER_START && func_base < MPI_P2P_COLL_TRANSFER_END ||
                 func_base >= MPI_P2P_COLL_PROBE_START && func_base < MPI_P2P_COLL_PROBE_END) {
                 // peer and other   5   6   7  8  9 10
-                // do not try to resolve ranks and comms for collective transfers
+                // do not try to resolve ranks for collective transfers
                 t_gzprintf(fps_mpi, ":%x:%d:%llx:%llx:%d:%lld",
                            get_global_comm_id(rec.p2p_pr_pb.comm,
-                                              tsc_mpi_entry + l_tsc_counter),                          // 4
+                                              tsc_mpi_entry),                          // 4
                            rec.p2p_pr_pb.peer,                     // 5
                            MPI_Check_dummy(rec.p2p_pr_pb.request), // 6
                            rec.p2p_pr_pb.message,                  // 7
@@ -2529,7 +2556,7 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                 gt_func_stat.stat_for_func[func_id_t].sizes[group] += rec.p2p_pr_pb.transfer_bytes;
                 stat_processed = 1;
     #endif                                                                                                                                                                                                // _T_PER_INTERVAL_STAT_WRITE_
-                req_comm[MPI_Check_dummy(rec.p2p_pr_pb.request)] = T_MPI_Comm(rec.p2p_pr_pb.comm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
+                req_comm[MPI_Check_dummy(rec.p2p_pr_pb.request)] = T_MPI_Comm(rec.p2p_pr_pb.comm, tsc_mpi_entry); // save comm for later WAIT or TEST
             }
 
             if (func_base >= MPI_START_OSC_GROUP && func_base < MPI_END_OSC_GROUP) {
@@ -2541,10 +2568,10 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                     win_comm[rec.one_sided_comm.window] = comm;
                 }
                 t_gzprintf(fps_mpi, ":%x:%d:%llx:%llx:%d:%lld",
-                           get_global_comm_id(comm, tsc_mpi_entry + l_tsc_counter), // 4
+                           get_global_comm_id(comm, tsc_mpi_entry), // 4
                            get_real_rank(comm,
                                          rec.one_sided_comm.peer,
-                                         tsc_mpi_entry + l_tsc_counter),                                    // 5
+                                         tsc_mpi_entry),                                    // 5
                            MPI_Check_dummy(rec.one_sided_comm.request), // 6
                            rec.one_sided_comm.window,                   // 7
                            rec.one_sided_comm.size,                     // 8
@@ -2558,7 +2585,7 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                 gt_func_stat.stat_for_func[func_id_t].sizes[group] += rec.one_sided_comm.transfer_bytes;
                 stat_processed = 1;
     #endif                                                                                                                                                                                                          // _T_PER_INTERVAL_STAT_WRITE_
-                req_comm[MPI_Check_dummy(rec.one_sided_comm.request)] = T_MPI_Comm(rec.one_sided_comm.comm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
+                req_comm[MPI_Check_dummy(rec.one_sided_comm.request)] = T_MPI_Comm(rec.one_sided_comm.comm, tsc_mpi_entry); // save comm for later WAIT or TEST
             }
 
             /***********************************************************************************************************************************************************************************************/
@@ -2636,10 +2663,10 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                 // collectives      5  6  7  8  9  10 11
                 t_gzprintf(fps_mpi, ":%x:%d:%llx:%d:%d",
                            get_global_comm_id(rec.collective.comm,
-                                              tsc_mpi_entry + l_tsc_counter), // 4
+                                              tsc_mpi_entry), // 4
                            get_real_rank(rec.collective.comm,
                                          rec.collective.root,
-                                         tsc_mpi_entry + l_tsc_counter),                                // 5
+                                         tsc_mpi_entry),                                // 5
                            MPI_Check_dummy(rec.collective.request), // 6
                            rec.collective.sr_bytes[0],              // 7
                            rec.collective.sr_bytes[1]               // 8
@@ -2689,7 +2716,7 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                 gt_func_stat.stat_for_func[func_id_t].sizes[group] += cumulative_size;
                 stat_processed = 1;
     #endif                                                                                                                                                                                                  // _T_PER_INTERVAL_STAT_WRITE_
-                req_comm[MPI_Check_dummy(rec.collective.request)] = T_MPI_Comm(rec.collective.comm, tsc_mpi_entry + l_tsc_counter); // save comm for later WAIT or TEST
+                req_comm[MPI_Check_dummy(rec.collective.request)] = T_MPI_Comm(rec.collective.comm, tsc_mpi_entry); // save comm for later WAIT or TEST
             }
 
     /***********************************************************************************************************************************************************************************************/
@@ -2752,12 +2779,12 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
         return level < levels && max_events[idx] > 0 && record_counter[idx] < max_events[idx];
     };
     /* the second record of a sendrecv pair (zero mpi entry offset) follows the first one with the same ids */
-    auto is_second_line = [&](int tid, int level, short func_id) -> bool {
+    auto is_second_line = [&](int tid, int level, PEAT_Clock tsc_counter, short func_id) -> bool {
         const int idx = tid * levels + level;
         if (!has_record(tid, level))
             return false;
         const msl_event &next = current_array[idx][record_counter[idx]];
-        return next.tscs[1] == 0 && next.func_id == func_id && (next.tscs[2] == 0 && next.tscs[3] == 0);
+        return next.tscs[0] == tsc_counter && next.func_id == func_id ;
     };
 
     struct t_walk_frame {
@@ -2783,7 +2810,7 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
             const short func_id = current_array[tid * levels + level][record_counter[tid * levels + level]].func_id;
             long long children = emit_record(tid, level, false);
             advance(tid, level);
-            if (is_second_line(tid, level, func_id)) {
+            if (is_second_line(tid, level, tsc_counter, func_id)) {
                 emit_record(tid, level, true);
                 advance(tid, level);
             }

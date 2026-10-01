@@ -24,6 +24,7 @@
 
 #include "t_comm.h"
 #include "tractor.h"
+#include "t_debug.h"
 
 size_t t_comm::pack_size() const
 {
@@ -177,7 +178,7 @@ size_t t_local_comms::unpack_global(char *ptr, size_t total_size)
     for (r_comm *r_comm_ptr = (r_comm *)ptr; (char *)r_comm_ptr < ptr + total_size; r_comm_ptr++) {
         // find suitable comm and isert gid into it;
         std::list<t_comm>::iterator result;
-        // debug_printf("Unpacking global comm=%x(%d), (%ld,%ld),%d(%d) at rank %d\n",r_comm_ptr->comm,r_comm_ptr->gid,r_comm_ptr->begin_time,r_comm_ptr->end_time,total_size,(char *)r_comm_ptr-ptr,t_mpi_rank);
+        debug_printf("Unpacking global comm=%x(%d), (%ld,%ld),%d(%d) at rank %d\n",r_comm_ptr->comm,r_comm_ptr->gid,r_comm_ptr->begin_time,r_comm_ptr->end_time,total_size,(char *)r_comm_ptr-ptr,t_mpi_rank);
 
         bool bFound = get_local_comm_id(r_comm_ptr->comm, r_comm_ptr->begin_time + 1, result);
         if (bFound) {
@@ -204,29 +205,42 @@ t_local_comms::~t_local_comms()
 bool t_local_comms::get_local_comm_id(const MPI_Comm comm, const PEAT_Clock cur_time, std::list<t_comm>::iterator &result)
 {
     __DEBUG_PROLOG_COMM_LAYER__
-    // debug_printf("Obtaining global communicator for %llx after TSC time %lld at rank %d (commstore %p)\n", (PEAT_MPI_Long_Comm) comm, cur_time, t_mpi_rank,(void *) &comm_store);
-    // debug_printf("Obtaining global communicator for %llx after TSC time %lld at rank %d (commstore size is %d)\n", (PEAT_MPI_Long_Comm) comm, cur_time, t_mpi_rank,comm_store.size());
+    debug_printf("Obtaining global communicator for %x after TSC time %lld at rank %d (commstore %p)\n", (int) comm, cur_time, t_mpi_rank,(void *) &comm_store);
+    debug_printf("Obtaining global communicator for %x after TSC time %lld at rank %d (commstore size is %d)\n", (int) comm, cur_time, t_mpi_rank,comm_store.size());
     if (comm != 0 && comm != MPI_COMM_NULL && comm != MPI_COMM_SELF && comm != MPI_COMM_WORLD) {
         std::map<MPI_Comm, std::list<t_comm>>::const_iterator comm_list;
         try {
             comm_list = comm_store.find(comm); // don't want an exception here by .at()
         } catch (...) {
             std::cerr << "An exeption was raised while obtaining global communicator " << std::hex << comm << " after TSC time " << std::dec << cur_time << " at rank " << t_mpi_rank << std::endl;
-            // debug_printf("An exeption was raised while obtaining global communicator %llx after TSC time %lld at rank %d (commstore size is %d)\n", (PEAT_MPI_Long_Comm) comm, cur_time, t_mpi_rank,comm_store.size());
+            // debug_printf("An exeption was raised while obtaining global communicator %x after TSC time %lld at rank %d (commstore size is %d)\n", (int) comm, cur_time, t_mpi_rank,comm_store.size());
         }
         if (comm_store.end() == comm_list) {
             std::cerr << "Error in communicator get_local_comm_id function. Can't find comm id " << std::hex << comm << std::dec << " at rank " << t_mpi_rank << "\n";
         } else {
             std::list<t_comm> &comm_list = comm_store.at(comm);
+            // result = comm_list.end();
             for (std::list<t_comm>::iterator it_comm = comm_list.begin(); it_comm != comm_list.end(); ++it_comm) {
                 // const t_comm &item = *it_comm;
-                if (cur_time >= it_comm->begin_time && (-1 == it_comm->end_time || it_comm->end_time >= cur_time)) {
-                    result = it_comm;
-                    return true;
+                // if (comm_list.end() == result) result = it_comm; //I'm not sure how this can be matched since MPIC_XXX routines sometimes use comms not visible to user
+                if (cur_time >= it_comm->begin_time) {
+                    // result = it_comm;
+                    if (-1 == it_comm->end_time || it_comm->end_time >= cur_time) {
+                        result = it_comm;
+                        __DEBUG_EPILOG_COMM_LAYER__
+                        return true;
+                    }  
                 }
             }
+            /*
+            if (comm_list.end() != result) {
+                __DEBUG_EPILOG_COMM_LAYER__
+                return true;
+            }
+            */
             std::cerr << "Error in communicator t_comm::get_local_comm_id function. Can't find communicator " << std::hex << comm << " after TSC time " << std::dec << cur_time << " at rank " << t_mpi_rank << "\n";
-            // debug_printf("Error in communicator t_comm::get_local_comm_id function. Can't find communicator %llx after TSC time %lld at rank %d\n", (PEAT_MPI_Long_Comm) comm, cur_time, t_mpi_rank);
+            debug_printf("Error in communicator t_comm::get_local_comm_id function. Can't find communicator %x after TSC time %lld at rank %d\n", (int) comm, cur_time, t_mpi_rank);
+            // print_backtrace();
             // assert(!"Can't find communicator");
         }
     }
@@ -352,6 +366,11 @@ void t_local_comms::comm_end(const MPI_Comm comm, const PEAT_Clock end, bool com
     __DEBUG_EPILOG_COMM_LAYER__
 }
 
+void t_local_comms::track_internal_comm(const MPI_Comm comm, const PEAT_Clock begin) {
+    std::list<t_comm>::iterator result;
+    if (get_local_comm_id(comm, begin, std::list<t_comm>::iterator result)) return; //user space comm exists
+}
+
 #define PRINT_PARAMETERS(width, string) int(width + strlen(string)) / 2, string, int(width - strlen(string)) / 2, ""
 #define SEPARATOR(width)                   \
     gzprintf(file, "%d:", PEAT_RT_Remark); \
@@ -465,20 +484,20 @@ bool t_global_comms::bind_local_comms()
         for (rank_it = 0; rank_it < comm_size; ++rank_it) {
             std::list<t_comm> &t_list = g_comm_store.at(rank_it);
             // if (t_list.empty()) continue;
-            //  debug_printf("Processing rank %d, global list size %d\n",rank_it, t_list.size());
+            debug_printf("Processing rank %d, global list size %d\n",rank_it, t_list.size());
             for (std::list<t_comm>::iterator comm_it = t_list.begin(); !t_list.empty(); comm_it = t_list.begin()) {
                 if (comm_it->kind == T_MPI_INTRA_COMM) {
                     std::list<r_comm> r_list;
                     for (int i = 0; i < comm_it->l_comm2world_ranks.size(); i++) {
-                        // debug_printf("(intra local) iteration %d, comm %x...",i,comm_it->comm);
-                        // debug_printf("(intra local) getting rank %d...",comm_it->l_comm2world_ranks.at(i));
+                        debug_printf("(intra local) iteration %d, comm %x...",i,comm_it->comm);
+                        debug_printf("(intra local) getting rank %d...",comm_it->l_comm2world_ranks.at(i));
                         if (comm_it->l_comm2world_ranks.at(i) != rank_it) {
                             std::list<t_comm> &t_tmp_list = g_comm_store.at(comm_it->l_comm2world_ranks.at(i));
-                            // debug_printf("(intra local) list size %d...",t_tmp_list.size());
+                            debug_printf("(intra local) list size %d...",t_tmp_list.size());
 
                             std::list<t_comm>::iterator result;
                             if (find_local_comm(*comm_it, t_tmp_list, result)) {
-                                // debug_printf("(intra local) inserting comm %x from rank %d...\n",result->comm, comm_it->l_comm2world_ranks.at(i));
+                                debug_printf("(intra local) inserting comm %x from rank %d...\n",result->comm, comm_it->l_comm2world_ranks.at(i));
                                 r_comm tr_comm(*result);
                                 tr_comm.gid = g_index;
                                 tr_comm.rank = comm_it->l_comm2world_ranks.at(i);
@@ -487,7 +506,7 @@ bool t_global_comms::bind_local_comms()
                                 gd_comms[comm_it->l_comm2world_ranks.at(i)].push_back(tr_comm);
                             }
                         } else {
-                            // debug_printf("(intra local) inserting original comm...%x\n",comm_it->comm);
+                            debug_printf("(intra local) inserting original comm...%x\n",comm_it->comm);
                             r_comm tr_comm(*comm_it);
                             tr_comm.gid = g_index;
                             tr_comm.rank = rank_it;
@@ -495,7 +514,7 @@ bool t_global_comms::bind_local_comms()
                             gd_comms[rank_it].push_back(tr_comm);
                         }
                     }
-                    // debug_printf("(intra) Finished matching comm %x at rank %d gid=%d\n",comm_it->comm,rank_it, g_index);
+                    debug_printf("(intra) Finished matching comm %x at rank %d gid=%d\n",comm_it->comm,rank_it, g_index);
                     t_list.erase(comm_it);
                     g_comms[g_index++] = r_list;
                     continue;
@@ -503,15 +522,15 @@ bool t_global_comms::bind_local_comms()
                 if (comm_it->kind == T_MPI_INTER_COMM) {
                     std::list<r_comm> r_list;
                     for (int i = 0; i < comm_it->l_comm2world_ranks.size(); i++) {
-                        // debug_printf("(inter local) iteration %d, comm %x...",i,comm_it->comm);
-                        // debug_printf("(inter local) getting rank %d...",comm_it->l_comm2world_ranks.at(i));
+                        debug_printf("(inter local) iteration %d, comm %x...",i,comm_it->comm);
+                        debug_printf("(inter local) getting rank %d...",comm_it->l_comm2world_ranks.at(i));
                         if (comm_it->l_comm2world_ranks.at(i) != rank_it) {
                             std::list<t_comm> &t_tmp_list = g_comm_store.at(comm_it->l_comm2world_ranks.at(i));
-                            // debug_printf("(inter local) list size %d...",t_tmp_list.size());
+                            debug_printf("(inter local) list size %d...",t_tmp_list.size());
 
                             std::list<t_comm>::iterator result;
                             if (find_local_comm(*comm_it, t_tmp_list, result)) {
-                                // debug_printf("(inter local) inserting comm %x from rank %d...\n",result->comm, comm_it->l_comm2world_ranks.at(i));
+                                debug_printf("(inter local) inserting comm %x from rank %d...\n",result->comm, comm_it->l_comm2world_ranks.at(i));
                                 r_comm tr_comm(*result);
                                 tr_comm.gid = g_index;
                                 tr_comm.rank = comm_it->l_comm2world_ranks.at(i);
@@ -520,7 +539,7 @@ bool t_global_comms::bind_local_comms()
                                 gd_comms[comm_it->l_comm2world_ranks.at(i)].push_back(tr_comm);
                             }
                         } else {
-                            // debug_printf("(inter local) inserting original comm...%x\n",comm_it->comm);
+                            debug_printf("(inter local) inserting original comm...%x\n",comm_it->comm);
                             r_comm tr_comm(*comm_it);
                             tr_comm.gid = g_index;
                             tr_comm.rank = rank_it;
@@ -529,15 +548,15 @@ bool t_global_comms::bind_local_comms()
                         }
                     }
                     for (size_t i = 0; i < comm_it->r_comm2world_ranks.size(); i++) {
-                        // debug_printf("(inter remote) iteration %d, comm %x...",i,comm_it->comm);
-                        // debug_printf("(inter remote) getting rank %d...",comm_it->r_comm2world_ranks.at(i));
+                        debug_printf("(inter remote) iteration %d, comm %x...",i,comm_it->comm);
+                        debug_printf("(inter remote) getting rank %d...",comm_it->r_comm2world_ranks.at(i));
                         if (comm_it->r_comm2world_ranks.at(i) != rank_it) {
                             std::list<t_comm> &t_tmp_list = g_comm_store.at(comm_it->r_comm2world_ranks.at(i));
-                            // debug_printf("(local) list size %d...",t_tmp_list.size());
+                            debug_printf("(local) list size %d...",t_tmp_list.size());
 
                             std::list<t_comm>::iterator result;
                             if (find_local_comm(*comm_it, t_tmp_list, result)) {
-                                // debug_printf("(inter local) inserting comm %x from rank %d...\n",result->comm, comm_it->r_comm2world_ranks.at(i));
+                                debug_printf("(inter local) inserting comm %x from rank %d...\n",result->comm, comm_it->r_comm2world_ranks.at(i));
                                 r_comm tr_comm(*result);
                                 tr_comm.gid = g_index;
                                 tr_comm.rank = comm_it->r_comm2world_ranks.at(i);
@@ -546,7 +565,7 @@ bool t_global_comms::bind_local_comms()
                                 gd_comms[comm_it->r_comm2world_ranks.at(i)].push_back(tr_comm);
                             }
                         } else {
-                            // debug_printf("(inter remote) inserting original comm...%x\n",comm_it->comm);
+                            debug_printf("(inter remote) inserting original comm...%x\n",comm_it->comm);
                             r_comm tr_comm(*comm_it);
                             tr_comm.gid = g_index;
                             tr_comm.rank = rank_it;
@@ -554,7 +573,7 @@ bool t_global_comms::bind_local_comms()
                             gd_comms[rank_it].push_back(tr_comm);
                         }
                     }
-                    // debug_printf("(inter) Finished matching comm %x at rank %d gid=%d\n",comm_it->comm,rank_it, g_index);
+                    debug_printf("(inter) Finished matching comm %x at rank %d gid=%d\n",comm_it->comm,rank_it, g_index);
                     t_list.erase(comm_it);
                     g_comms[g_index++] = r_list;
                 }

@@ -329,10 +329,8 @@ struct msl_event {
         /*          File IO     */
         struct { // 8 + 8 + 4 + 4
             PEAT_Message_Size transfer_bytes;
-            union {
-                MPI_Offset offset;
-                MPI_Comm comm;
-            };
+            MPI_Offset offset;
+            MPI_Comm comm;
             MPI_File fh;
             MPI_Request request; /* actual request or "0" if no request */
 #ifdef _TRACTOR_EXTRA_FIELDS_

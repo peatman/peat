@@ -37,10 +37,10 @@ counters.mems[0] = l_mem;
 gt_info(mprof).get_mem_status(&counters.mems[1]);
 #endif
 event->tscs[0] = tsc_entry;
-event->tscs[1] = tsc_mpi_entry - tsc_entry;
-event->tscs[2] = tsc_mpi_exit - tsc_entry;
+event->tscs[1] = tsc_mpi_entry;
+event->tscs[2] = tsc_mpi_exit;
 tsc_exit = peat_get_time();
-event->tscs[3] = tsc_exit - tsc_entry;
+event->tscs[3] = tsc_exit;
 __msl_check_chain(tid, level);
 local_tool_overhead = tsc_mpi_entry - tsc_entry + tsc_exit - tsc_mpi_exit;
 global_tool_overhead += local_tool_overhead;

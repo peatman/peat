@@ -2,6 +2,7 @@
 *.json 
 *.vs 
 *.vc 
+*.tsv
 mpi.tool/bin
 mpi.tool/lib
 mpi.tool/components/tractor/Build*.dir

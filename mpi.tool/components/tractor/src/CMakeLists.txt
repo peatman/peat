@@ -392,21 +392,28 @@ endif()
 
 # cpp_input / TARGET-specific CONTROLS
 set(_cpp_input)
+# highest MPI standard level whose wrappers mpi_layer.pl emits (-m); the generated code is
+# additionally guarded by MPI_VERSION/MPI_SUBVERSION from the mpi.h in use
+set(_maxmpi 3)
 if(TRACTOR_TARGET STREQUAL "impi")
   list(APPEND _cpp_input -D_MPICH_=3 -D_IMPI_)
   list(APPEND TRACTOR_CONTROLS _MPICH_=3 _IMPI_ _I_MPI_WEAK_EXPORTS_ I_MPI_BUILD)
+  set(_maxmpi 4)
 elseif(TRACTOR_TARGET STREQUAL "mpich4")
   list(APPEND _cpp_input -D_MPICH_=4)
   list(APPEND TRACTOR_CONTROLS _MPICH_=4)
+  set(_maxmpi 4)
 elseif(TRACTOR_TARGET STREQUAL "mpich5")
   list(APPEND _cpp_input -D_MPICH_=5)
   list(APPEND TRACTOR_CONTROLS _MPICH_=5)
+  set(_maxmpi 5)
 elseif(TRACTOR_TARGET STREQUAL "mvapich2")
   list(APPEND _cpp_input -D_MPICH_=3 -D_MVAPICH_)
   list(APPEND TRACTOR_CONTROLS _MPICH_=3 _MVAPICH_ _VERBS_PROFILE_)
 elseif(TRACTOR_TARGET STREQUAL "mvapich4")
   list(APPEND _cpp_input -D_MPICH_=4 -D_MVAPICH_)
   list(APPEND TRACTOR_CONTROLS _MPICH_=4 _MVAPICH_)
+  set(_maxmpi 4)
 endif()
 # _STATUS_LO_HI_ picks the MPICH-family status struct layout; OpenMPI uses its
 # own (_ucount) - applies to every other TARGET, including fab_layers
@@ -566,7 +573,7 @@ add_custom_command(
 
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp ${_fab_shim_outputs}
-  COMMAND ${PERL_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer.pl -p on -e ${_print_extended_stuff} -m 3 -t ${_pct} -c ${_parse_gpu_flag}
+  COMMAND ${PERL_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer.pl -p on -e ${_print_extended_stuff} -m ${_maxmpi} -t ${_pct} -c ${_parse_gpu_flag}
           -s ${_mpi_layer_skip_core} -i mpi_func.inc -o mpi_layer.cpp ${_fab_func_layers}
   DEPENDS mpi_layer.cpp.in mpi_layer.cpp.in.end mpi_layer.pl
           ${CMAKE_CURRENT_BINARY_DIR}/mpi_func_ids_through.h

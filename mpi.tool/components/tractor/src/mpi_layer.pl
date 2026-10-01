@@ -178,6 +178,10 @@ if ($properties=~/INPUT_REQUEST_SINGLE/) {
    $event_record_input_request="event->requests.input_request_num=1;";
    $event_rbuf="event->requests.requests.virt_addr=request;event->requests.requests.size=sizeof(MPI_Request);" if $print_extended_stuff;
    $event_record_input_request_addr="event->requests.request_addr=(PEAT_Addr)request;";
+   if ($properties =~/PEAT_PROP_REQUEST_DIRECT/) { # MPI_Request by value (MPI_Pready/MPI_Parrived): no address to record, keep the handle value
+       $event_rbuf="event->requests.requests.virt_addr=(void *)(intptr_t)request;event->requests.requests.size=sizeof(MPI_Request);" if $print_extended_stuff;
+       $event_record_input_request_addr="event->requests.request_addr=(PEAT_Addr)(intptr_t)request;";
+   }
 }
 
 if ($properties=~/MSTATUSES/) {
@@ -281,6 +285,7 @@ my $funcid_through="$line[0]_THROUGH";
 my $funcid="$line[0]";
 my $datasize;
 my $event_buf;
+my $internal_comm_tracking;
 
 my $colt="_colt" if $properties =~/COLT/; # MPI-internal helper variants
 my $reused="reused=__msl_reuse_event(tid,level,&event,&counters,$funcid_through); if (!reused) " if $properties =~/PEAT_PROP_COMPRESSIBLE/ ;
@@ -322,6 +327,24 @@ if ($funcid=~/REPLACE/) {
 my $status_peer="src >=0 ? src : status->MPI_SOURCE";
 
 $status_peer="get_rank_from_req_colt(comm,$status_peer)" if $properties =~ /COLT/;
+$internal_comm_tracking="track_internal_comm(event[0]->$basic_struct.comm,tsc_mpi_exit);" if $properties=~/COMM/ && $properties=~/COLT/;
+
+# blocking: receive side is described by the returned status
+my $declare_status="MPI_Status local_status;";
+my $fix_status="if (status==MPI_STATUS_IGNORE) status=&local_status;";
+my $recv_tag="status->MPI_TAG";
+my $recv_peer=$status_peer;
+my $recv_bytes="MPI_STATUS_GET_COUNT_P(status)";
+my $event_request="";
+if ($properties =~/NON_BLOCK/) { # MPI_Isendrecv*: no status yet, record the posted receive and the request
+    $declare_status="";
+    $fix_status="";
+    $recv_tag="rtag";
+    $recv_peer="src";
+    $recv_peer="get_rank_from_req_colt(comm,src)" if $properties =~ /COLT/;
+    $recv_bytes="(r_count*r_data_size)";
+    $event_request="event[0]->p2p_pr_pb.request=*request; event[1]->p2p_pr_pb.request=*request;";
+}
 
 my $print_code=`cat pinc/sendrecv.code.inc`;
 eval $print_code;
@@ -352,8 +375,12 @@ $event_request="event->$basic_struct.request=*request;" if $properties=~/REQUEST
 $event_request="event->$basic_struct.request=mpi_internal_get_request(*request);" if $properties=~/REQUEST/ && $properties=~/COLT/; #casting from MPID_Request*
 $tag_peer="event->$basic_struct.tag=tag;" if $properties=~/TAG/;
 $tag_peer="$tag_peer event->$basic_struct.peer=peer_rank;" if $properties=~/PEER/;
+$internal_comm_tracking="track_internal_comm(event->$basic_struct.comm,tsc_mpi_exit);" if $properties=~/COMM/ && $properties=~/COLT/;
 
-$tag_peer="$tag_peer event->$basic_struct.peer=get_rank_from_req_colt(comm,peer_rank);" if $properties=~/PEER/ && $properties=~/COLT/;
+# MPIC_Probe is the one colt helper that takes the MPI_Comm handle (not MPIR_Comm*), so probe-class colt
+# functions use comm and ranks as they are, without the MPID->MPI comm / rank translation.
+my $colt_mpid_comm = ($properties=~/COLT/ && $properties!~/CLASS_PROBE/);
+$tag_peer="$tag_peer event->$basic_struct.peer=get_rank_from_req_colt(comm,peer_rank);" if $properties=~/PEER/ && $colt_mpid_comm;
 
 $message="event->$basic_struct.message=*message;" if $properties=~/MESSAGE/ && $properties=~/CLASS_P2P/;
 $handle="event->$basic_struct.window=win;" if $properties=~/HWINDOW/ && $properties=~/CLASS_OSC/;
@@ -365,10 +392,11 @@ $event_message="event->$basic_struct.message=*message;" if $properties=~/MESSAGE
 $comm="event->$basic_struct.comm=comm;" if $properties=~/COMM/;
 #$comm="event->$basic_struct.comm=(long long) comm;" if $properties=~/COMM/ && $properties=~/COLT/ ;
 #$comm="event->$basic_struct.comm=MPI_COMM_WORLD;" if $properties=~/COMM/ && $properties=~/COLT/;
-$comm="event->$basic_struct.comm=mpi_internal_get_mpicomm_from_mpidcomm(comm);" if $properties=~/COMM/ && $properties=~/COLT/;
+$comm="event->$basic_struct.comm=mpi_internal_get_mpicomm_from_mpidcomm(comm);" if $properties=~/COMM/ && $colt_mpid_comm;
 #$comm="event->$basic_struct.comm=last_coll_comm;" if $properties=~/COMM/ && $properties=~/COLT/;
 $get_datasize="T_Type_size$colt(type,&data_size);"if $properties=~/BYTES/;
 $transfer_bytes="event->$basic_struct.transfer_bytes=(count*data_size);"if $properties=~/BYTES/;
+$transfer_bytes="event->$basic_struct.transfer_bytes=((long long)partitions*(long long)count*data_size);" if $properties=~/BYTES/ && $line[3]=~/\bint partitions\b/; # partitioned P2P (MPI_Psend_init/MPI_Precv_init): total bytes over all partitions
 $transfer_bytes="event->$basic_struct.transfer_bytes=size;"if $properties=~/SIZE/;
 $event_buf="
         event->$basic_struct.buf.virt_addr=buf;
@@ -389,7 +417,7 @@ if ($properties=~/STATUS/) {
     $event_status_begin="if (*flag) {" if $properties=~/FLAG/;
     $event_status="event->$basic_struct.transfer_bytes=MPI_STATUS_GET_COUNT_P(status);";
     $event_status="$event_status event->$basic_struct.tag=status->MPI_TAG;" if $properties=~/TAG/;
-    if ($properties=~/COLT/) {
+    if ($colt_mpid_comm) {
         $event_status="$event_status event->$basic_struct.peer=get_rank_from_req_colt(comm,peer_rank>=0 ? peer_rank : status->MPI_SOURCE);" if $properties=~/PEER/;
     } else  {
         $event_status="$event_status event->$basic_struct.peer=peer_rank>=0 ? peer_rank : status->MPI_SOURCE;" if $properties=~/PEER/;
@@ -518,7 +546,12 @@ if ($properties=~/TYPEMATCH/) {
     #$r_type_size="event->collective.sr_type_sizes[1]=comm_size; { int type_sizes[comm_size]; for (i=0;i<comm_size;i++) T_Type_size(rtypes[i],&type_sizes[i]); __msl_record_ints(tid,level,type_sizes,comm_size);}" if $properties=~/VECTOR_TYPE/;
 }
 if ($properties=~/VECTOR/) {
-    $comm_size="PMPI_Comm_size( comm, &comm_size );";
+    # entries of the per-peer arrays: comm size, remote size on an inter-communicator, or the
+    # topology's out/in degree for neighbourhood collectives (see determine_comm_size in t_mpidef.h)
+    my $size_kind="T_COMM_SIZE_PEERS";
+    $size_kind="T_COMM_SIZE_NEIGHBORS" if $line[2]=~/Neighbor_/i;
+    $size_kind="T_COMM_SIZE_LOCAL" if $properties=~/COUNTMATCH/; # MPI_Reduce_scatter: recvcounts covers the local group
+    $comm_size="determine_comm_size(comm, $size_kind, &comm_size, &comm_rsize);";
 
     if ($properties=~/COUNTMATCH/) {
         $s_count="event->collective.sr_bytes[0]=1;__msl_record_long(tid,level,((long long)count*(long long)s_type_size));" if $properties=~/SCALAR_SEND/;
@@ -583,30 +616,30 @@ if ($properties=~/VECTOR/) {
         if ($properties=~/ROOT_RECV/) {
         $r_count="
         if (amiroot) {
-            event->collective.sr_bytes[1]=comm_size;
+            event->collective.sr_bytes[1]=comm_rsize;
             { 
-                long long r_bytes[comm_size]; 
-                for (i=0;i<comm_size;i++) {
+                long long r_bytes[comm_rsize]; 
+                for (i=0;i<comm_rsize;i++) {
                     $r_type_size_v r_bytes[i]=(long long)rcounts[i]*(long long)r_type_size;
 #ifdef _TRACTOR_EXTRA_FIELDS_
                     tr_bytes+=r_bytes[i]; 
 #endif
                 } 
-                __msl_record_longs(tid,level,r_bytes,comm_size);
+                __msl_record_longs(tid,level,r_bytes,comm_rsize);
             }
         } else event->collective.sr_bytes[1]=0;" if $properties=~/VECTOR_RECV/;
         } else {
         $r_count="
-        event->collective.sr_bytes[1]=comm_size;
+        event->collective.sr_bytes[1]=comm_rsize;
         { 
-            long long r_bytes[comm_size]; 
-            for (i=0;i<comm_size;i++) {
+            long long r_bytes[comm_rsize]; 
+            for (i=0;i<comm_rsize;i++) {
                 $r_type_size_v r_bytes[i]=(long long)rcounts[i]*(long long)r_type_size;
 #ifdef _TRACTOR_EXTRA_FIELDS_
                 tr_bytes+=r_bytes[i]; 
 #endif
             } 
-            __msl_record_longs(tid,level,r_bytes,comm_size);
+            __msl_record_longs(tid,level,r_bytes,comm_rsize);
         }" if $properties=~/VECTOR_RECV/;
         }
     }
@@ -941,10 +974,31 @@ $class=1 if $properties =~/MPI1/;
 $class=2 if $properties =~/MPI2/;
 $class=3 if $properties =~/MPI3/;
 $class=4 if $properties =~/MPI4/;
+$class=5 if $properties =~/MPI5/;
 return ($class>$mpilevel);
 }
 
+# MPI_VERSION / MPI_SUBVERSION guard derived from the PEAT_PROP_MPIx tag, so a wrapper is
+# only compiled when the mpi.h being built against actually declares the function
+sub mpi_version_guard {
+my $properties=shift;
+return "#if MPI_VERSION >= 5\n" if $properties =~/PEAT_PROP_MPI5\b/;
+return "#if (MPI_VERSION > 4) || (MPI_VERSION == 4 && MPI_SUBVERSION >= 1)\n" if $properties =~/PEAT_PROP_MPI41\b/;
+return "#if MPI_VERSION >= 4\n" if $properties =~/PEAT_PROP_MPI4\b/;
+return "";
+}
+
 sub make_c_func {
+my $lineref=shift;
+my $fab_layer=shift;
+my $guard=mpi_version_guard($$lineref[6]);
+print $guard if $guard ne "";
+make_c_func_body($lineref,$fab_layer);
+print "#endif /* MPI version guard */\n" if $guard ne "";
+return;
+}
+
+sub make_c_func_body {
 my $lineref=shift;
 my $fab_layer=shift;
 
