@@ -1,0 +1,7 @@
+p2p_test
+coll_test
+comm_test
+rma_test
+fio_test
+trace.*/
+fio_test.*.dat

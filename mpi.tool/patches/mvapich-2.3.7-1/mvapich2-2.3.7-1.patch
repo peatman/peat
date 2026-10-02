@@ -1846,7 +1846,7 @@ diff -ruN a/src/mpi/group/group_translate_ranks.c b/src/mpi/group/group_translat
  #include "group.h"
  
  /* -- Begin Profiling Symbol Block for routine MPI_Group_translate_ranks */
-@@ -224,3 +225,320 @@
+@@ -224,3 +225,330 @@
      /* --END ERROR HANDLING-- */
  }
  
@@ -2158,13 +2158,23 @@ diff -ruN a/src/mpi/group/group_translate_ranks.c b/src/mpi/group/group_translat
 +}
 +
 +#undef FUNCNAME
-+#define FUNCNAME mpi_internal_get_mpicomm_from_mpidcomm
++#define FUNCNAME mpi_internal_get_top_comm_handle_from_comm
 +#undef FCNAME
 +#define FCNAME MPL_QUOTE(FUNCNAME)
 +
-+MPI_Comm mpi_internal_get_mpicomm_from_mpidcomm(MPID_Comm *comm)
++MPI_Comm mpi_internal_get_top_comm_handle_from_comm(MPID_Comm *comm)
 +{
-+    if (comm->parent_comm) return mpi_internal_get_mpicomm_from_mpidcomm(comm->parent_comm);
++    if (comm->parent_comm) return mpi_internal_get_top_comm_handle_from_comm(comm->parent_comm);
++    return comm->handle;
++}
++
++#undef FUNCNAME
++#define FUNCNAME mpi_internal_get_comm_handle_from_comm
++#undef FCNAME
++#define FCNAME MPL_QUOTE(FUNCNAME)
++
++MPI_Comm mpi_internal_get_comm_handle_from_comm(MPID_Comm *comm)
++{
 +    return comm->handle;
 +}
 diff -ruN a/src/mpi/pt2pt/mpir_request.c b/src/mpi/pt2pt/mpir_request.c

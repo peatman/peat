@@ -103,7 +103,7 @@
      int node_count;             /* number of nodes this comm is spread over */
  
      int is_low_group;           /* For intercomms only, this boolean is
-@@ -471,4 +475,16 @@
+@@ -471,4 +475,19 @@
  int MPIR_finalize_builtin_comms(void);
  
  void MPIR_Comm_set_session_ptr(MPIR_Comm * comm_ptr, MPIR_Session * session_ptr);
@@ -117,7 +117,10 @@
 +MPI_Request MPI_Check_dummy(MPI_Request request) MPICH_API_PUBLIC;
 +MPIR_Comm* mpi_internal_get_comm(MPIR_Request *request) MPICH_API_PUBLIC;
 +int mpi_internal_get_comms(int inum,MPIR_Request **requests_in, MPIR_Comm **comms_out) MPICH_API_PUBLIC;
-+MPI_Comm mpi_internal_get_mpicomm_from_mpidcomm(MPIR_Comm *comm) MPICH_API_PUBLIC;
++/* handle of the top-most user-visible ancestor (walks parent_comm chain) */
++MPI_Comm mpi_internal_get_top_comm_handle_from_comm(MPIR_Comm *comm) MPICH_API_PUBLIC;
++/* handle of this very comm, internal or not */
++MPI_Comm mpi_internal_get_comm_handle_from_comm(MPIR_Comm *comm) MPICH_API_PUBLIC;
 +
  #endif /* MPIR_COMM_H_INCLUDED */
 --- a/src/mpi/coll/helper_fns.c
@@ -588,7 +591,7 @@
  
 --- a/src/mpi/group/group_impl.c
 +++ b/src/mpi/group/group_impl.c
-@@ -687,3 +687,253 @@
+@@ -687,3 +687,258 @@
    fn_fail:
      goto fn_exit;
  }
@@ -837,9 +840,14 @@
 +    return 0;
 +}
 +
-+MPI_Comm mpi_internal_get_mpicomm_from_mpidcomm(MPIR_Comm *comm)
++MPI_Comm mpi_internal_get_top_comm_handle_from_comm(MPIR_Comm *comm)
 +{
-+    if (comm->parent_comm) return mpi_internal_get_mpicomm_from_mpidcomm(comm->parent_comm);
++    if (comm->parent_comm) return mpi_internal_get_top_comm_handle_from_comm(comm->parent_comm);
++    return comm->handle;
++}
++
++MPI_Comm mpi_internal_get_comm_handle_from_comm(MPIR_Comm *comm)
++{
 +    return comm->handle;
 +}
 --- a/src/mpi/romio/version.m4
