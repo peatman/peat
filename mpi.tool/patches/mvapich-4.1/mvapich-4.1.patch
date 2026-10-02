@@ -103,7 +103,7 @@
      int node_count;             /* number of nodes this comm is spread over */
  
      int is_low_group;           /* For intercomms only, this boolean is
-@@ -471,4 +475,16 @@
+@@ -471,4 +475,45 @@
  int MPIR_finalize_builtin_comms(void);
  
  void MPIR_Comm_set_session_ptr(MPIR_Comm * comm_ptr, MPIR_Session * session_ptr);
@@ -117,9 +117,48 @@
 +MPI_Request MPI_Check_dummy(MPI_Request request) MPICH_API_PUBLIC;
 +MPIR_Comm* mpi_internal_get_comm(MPIR_Request *request) MPICH_API_PUBLIC;
 +int mpi_internal_get_comms(int inum,MPIR_Request **requests_in, MPIR_Comm **comms_out) MPICH_API_PUBLIC;
-+MPI_Comm mpi_internal_get_mpicomm_from_mpidcomm(MPIR_Comm *comm) MPICH_API_PUBLIC;
++/* handle of the top-most user-visible ancestor (walks parent_comm chain) */
++MPI_Comm mpi_internal_get_top_comm_handle_from_comm(MPIR_Comm *comm) MPICH_API_PUBLIC;
++/* handle of this very comm, internal or not */
++MPI_Comm mpi_internal_get_comm_handle_from_comm(MPIR_Comm *comm) MPICH_API_PUBLIC;
++
++/* Kinds of MPICH-internal communicators (never visible to the user, hence never
++ * seen by the MPI/PMPI comm-management interception). */
++enum {
++    MPI_INTERNAL_COMM__LOCALCOMM = 1,        /* intercomm->local_comm */
++    MPI_INTERNAL_COMM__NODE_COMM,            /* comm->node_comm */
++    MPI_INTERNAL_COMM__NODE_ROOTS_COMM,      /* comm->node_roots_comm */
++    MPI_INTERNAL_COMM__MULTI_LEADS_COMM,     /* ch4 MPIDI_COMM(comm, multi_leads_comm) */
++    MPI_INTERNAL_COMM__INTER_NODE_LEADS_COMM,/* ch4 MPIDI_COMM(comm, inter_node_leads_comm) */
++    MPI_INTERNAL_COMM__SUB_NODE_COMM,        /* ch4 MPIDI_COMM(comm, sub_node_comm) */
++    MPI_INTERNAL_COMM__INTRA_NODE_LEADS_COMM,/* ch4 MPIDI_COMM(comm, intra_node_leads_comm) */
++    MPI_INTERNAL_COMM__BOOTSTRAP              /* e.g. MPIR_Comm_create_from_group_impl's new_comm: a
++                                               * top-level comm committed outside any public MPI_Comm_*
++                                               * entry point, so it has no parent_comm of its own */
++};
++
++/* Proxies called whenever an internal communicator is created/destroyed. mpi_internal_xxx
++ * are weak aliases of pmpi_internal_xxx (same scheme as MPI_xxx and PMPI_xxx), so a tool
++ * may override mpi_internal_xxx and chain to pmpi_internal_xxx.
++ * comm->parent_comm is already set on the create call.
++ * NOTE: a comm's own node_comm/node_roots_comm are reported before the comm
++ * itself when the comm is built via MPIR_Comm_commit (e.g. the ch4 split comms). */
++void mpi_internal_comm_create(MPIR_Comm *comm, MPIR_Comm *parent_comm, int kind) MPICH_API_PUBLIC;
++void mpi_internal_comm_free(MPIR_Comm *comm) MPICH_API_PUBLIC;
++void pmpi_internal_comm_create(MPIR_Comm *comm, MPIR_Comm *parent_comm, int kind) MPICH_API_PUBLIC;
++void pmpi_internal_comm_free(MPIR_Comm *comm) MPICH_API_PUBLIC;
 +
  #endif /* MPIR_COMM_H_INCLUDED */
+--- a/src/include/mpir_datatype.h
++++ b/src/include/mpir_datatype.h
+@@ -623,4 +623,7 @@
+                                                  const MPI_Aint disp_array[],
+                                                  int dispinbytes, MPI_Aint old_extent);
+ 
++int mpi_internal_type_size(MPI_Datatype datatype, MPI_Aint * size) MPICH_API_PUBLIC;
++int mpi_internal_type_size_x(MPI_Datatype datatype, MPI_Count * size) MPICH_API_PUBLIC;
++
+ #endif /* MPIR_DATATYPE_H_INCLUDED */
 --- a/src/mpi/coll/helper_fns.c
 +++ b/src/mpi/coll/helper_fns.c
 @@ -47,6 +47,29 @@
@@ -528,7 +567,16 @@
  
      /* abstractions bleed a bit here... :(*/
      comm_p->next_sched_tag = MPIR_FIRST_NBC_TAG;
-@@ -631,6 +634,8 @@
+@@ -410,6 +413,8 @@
+     /* FIXME  : No local functions for the topology routines */
+ 
+     intercomm_ptr->local_comm = localcomm_ptr;
++    localcomm_ptr->parent_comm = intercomm_ptr;
++    mpi_internal_comm_create(localcomm_ptr, intercomm_ptr, MPI_INTERNAL_COMM__LOCALCOMM);
+ 
+     /* sets up the SMP-aware sub-communicators and tables */
+     /* This routine maybe used inside MPI_Comm_idup, so we can't synchronize
+@@ -631,6 +636,8 @@
           * any node awareness.  Node-aware collectives are an optimization. */
          MPL_DBG_MSG_P(MPIR_DBG_COMM, VERBOSE, "MPIR_Find_local failed for comm_ptr=%p", comm);
          MPL_free(comm->intranode_table);
@@ -537,23 +585,38 @@
  
          mpi_errno = MPI_SUCCESS;
          goto fn_exit;
-@@ -681,6 +686,7 @@
+@@ -681,6 +688,8 @@
  
          comm->node_comm->local_size = num_local;
          comm->node_comm->remote_size = num_local;
 +        comm->node_comm->parent_comm = comm;
++        mpi_internal_comm_create(comm->node_comm, comm, MPI_INTERNAL_COMM__NODE_COMM);
  
          MPIR_Comm_set_session_ptr(comm->node_comm, comm->session_ptr);
  
-@@ -708,6 +714,7 @@
+@@ -708,6 +717,8 @@
  
          comm->node_roots_comm->local_size = num_external;
          comm->node_roots_comm->remote_size = num_external;
 +        comm->node_roots_comm->parent_comm = comm;
++        mpi_internal_comm_create(comm->node_roots_comm, comm, MPI_INTERNAL_COMM__NODE_ROOTS_COMM);
  
          MPIR_Comm_set_session_ptr(comm->node_roots_comm, comm->session_ptr);
  
-@@ -788,6 +795,7 @@
+@@ -783,11 +794,20 @@
+ 
+     MPIR_FUNC_ENTER;
+ 
++    /* report every genuine top-level comm the instant its handle is known, before any of its
++     * own pre-commit internal traffic (e.g. init_comm_seq's sequence-number broadcast) can
++     * reference it; MPIR_Comm_create_subcomms (node_comm/node_roots_comm) never reaches this
++     * function via MPIR_Comm_commit, and LOCALCOMM already sets parent_comm before calling
++     * commit, so neither is duplicated */
++    if (!comm->parent_comm)
++        mpi_internal_comm_create(comm, NULL, MPI_INTERNAL_COMM__BOOTSTRAP);
++
+     /* It's OK to relax these assertions, but we should do so very
+      * intentionally.  For now this function is the only place that we create
       * our hierarchy of communicators */
      MPIR_Assert(comm->node_comm == NULL);
      MPIR_Assert(comm->node_roots_comm == NULL);
@@ -561,7 +624,7 @@
  
      /* Notify device of communicator creation */
      mpi_errno = MPIR_Comm_commit_internal(comm);
-@@ -804,11 +812,13 @@
+@@ -804,11 +824,13 @@
  
      if (comm->node_comm) {
          mpi_errno = MPIR_Coll_comm_init(comm->node_comm);
@@ -575,7 +638,18 @@
          MPIR_ERR_CHECK(mpi_errno);
      }
  
-@@ -1213,6 +1223,10 @@
+@@ -1180,6 +1202,10 @@
+         if (MPIR_Process.comm_parent == comm_ptr)
+             MPIR_Process.comm_parent = NULL;
+ 
++        /* parent_comm is only ever set on internal comms (local_comm, ch4 leader comms) */
++        if (comm_ptr->parent_comm)
++            mpi_internal_comm_free(comm_ptr);
++
+         /* Cleanup collectives-specific infrastructure */
+         mpi_errno = MPII_Coll_comm_cleanup(comm_ptr);
+         MPIR_ERR_CHECK(mpi_errno);
+@@ -1213,6 +1239,10 @@
              MPIR_Comm_release(comm_ptr->node_roots_comm);
          MPL_free(comm_ptr->intranode_table);
          MPL_free(comm_ptr->internode_table);
@@ -586,9 +660,81 @@
  
          MPIR_stream_comm_free(comm_ptr);
  
+@@ -1423,3 +1453,45 @@
+         *kinds = MPIR_Process.memory_alloc_kinds;
+     }
+ }
++
++/* -- Begin Profiling Symbol Block for internal communicator create/free proxies */
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak mpi_internal_comm_create = pmpi_internal_comm_create
++#pragma weak mpi_internal_comm_free = pmpi_internal_comm_free
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF pmpi_internal_comm_create  mpi_internal_comm_create
++#pragma _HP_SECONDARY_DEF pmpi_internal_comm_free  mpi_internal_comm_free
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate mpi_internal_comm_create as pmpi_internal_comm_create
++#pragma _CRI duplicate mpi_internal_comm_free as pmpi_internal_comm_free
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++void mpi_internal_comm_create(MPIR_Comm *comm, MPIR_Comm *parent_comm, int kind)
++                  __attribute__((weak,alias("pmpi_internal_comm_create")));
++void mpi_internal_comm_free(MPIR_Comm *comm)
++                  __attribute__((weak,alias("pmpi_internal_comm_free")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef mpi_internal_comm_create
++#define mpi_internal_comm_create pmpi_internal_comm_create
++#undef mpi_internal_comm_free
++#define mpi_internal_comm_free pmpi_internal_comm_free
++
++/* default implementations are no-ops: the hooks exist only to be overridden by a tool */
++void mpi_internal_comm_create(MPIR_Comm *comm, MPIR_Comm *parent_comm, int kind)
++{
++    (void) comm;
++    (void) parent_comm;
++    (void) kind;
++}
++
++void mpi_internal_comm_free(MPIR_Comm *comm)
++{
++    (void) comm;
++}
++#undef mpi_internal_comm_create
++#undef mpi_internal_comm_free
++#endif
+--- a/src/mpi/datatype/datatype_impl.c
++++ b/src/mpi/datatype/datatype_impl.c
+@@ -430,3 +430,23 @@
+ 
+     return MPI_SUCCESS;
+ }
++
++/* public, unchecked size query that also works for internal (MPIR_*) datatypes */
++int mpi_internal_type_size(MPI_Datatype datatype, MPI_Aint * size)
++{
++    int mpi_errno = MPI_SUCCESS;
++
++    MPIR_Datatype_get_size_macro(datatype, *size);
++    MPIR_Assert(*size >= 0);
++
++    return mpi_errno;
++}
++
++int mpi_internal_type_size_x(MPI_Datatype datatype, MPI_Count * size)
++{
++    int mpi_errno = MPI_SUCCESS;
++
++    MPIR_Datatype_get_size_macro(datatype, *size);
++
++    return mpi_errno;
++}
 --- a/src/mpi/group/group_impl.c
 +++ b/src/mpi/group/group_impl.c
-@@ -687,3 +687,253 @@
+@@ -687,3 +687,258 @@
    fn_fail:
      goto fn_exit;
  }
@@ -837,9 +983,14 @@
 +    return 0;
 +}
 +
-+MPI_Comm mpi_internal_get_mpicomm_from_mpidcomm(MPIR_Comm *comm)
++MPI_Comm mpi_internal_get_top_comm_handle_from_comm(MPIR_Comm *comm)
 +{
-+    if (comm->parent_comm) return mpi_internal_get_mpicomm_from_mpidcomm(comm->parent_comm);
++    if (comm->parent_comm) return mpi_internal_get_top_comm_handle_from_comm(comm->parent_comm);
++    return comm->handle;
++}
++
++MPI_Comm mpi_internal_get_comm_handle_from_comm(MPIR_Comm *comm)
++{
 +    return comm->handle;
 +}
 --- a/src/mpi/romio/version.m4
@@ -868,6 +1019,55 @@
          MPIDI_IPC_remote_complete(sreq, hdr->ipc_hdr.ipc_type);
          if (MPIR_CVAR_CH4_IPC_RNDV_PROTOCOL ==
              MPIR_CVAR_CH4_IPC_RNDV_PROTOCOL_rput) {
+--- a/src/mpid/ch4/src/ch4_comm.c
++++ b/src/mpid/ch4/src/ch4_comm.c
+@@ -783,6 +783,9 @@
+             MPIDI_COMM(comm, multi_leads_comm)->coll.pof2 =
+                 MPL_pof2(MPIDI_COMM(comm, multi_leads_comm)->local_size);
+             MPIDI_COMM(comm, multi_leads_comm)->remote_size = num_external;
++            MPIDI_COMM(comm, multi_leads_comm)->parent_comm = comm;
++            mpi_internal_comm_create(MPIDI_COMM(comm, multi_leads_comm), comm,
++                                        MPI_INTERNAL_COMM__MULTI_LEADS_COMM);
+ 
+             MPIR_Comm_map_irregular(MPIDI_COMM(comm, multi_leads_comm), comm,
+                                     external_procs, num_external, MPIR_COMM_MAP_DIR__L2L, NULL);
+@@ -849,6 +852,12 @@
+                                      &(MPIDI_COMM(comm, inter_node_leads_comm)));
+     if (mpi_errno)
+         MPIR_ERR_POP(mpi_errno);
++    /* MPIR_Comm_split_impl yields NULL on ranks with color == MPI_UNDEFINED */
++    if (MPIDI_COMM(comm, inter_node_leads_comm) != NULL) {
++        MPIDI_COMM(comm, inter_node_leads_comm)->parent_comm = comm;
++        mpi_internal_comm_create(MPIDI_COMM(comm, inter_node_leads_comm), comm,
++                                    MPI_INTERNAL_COMM__INTER_NODE_LEADS_COMM);
++    }
+ 
+     /* Create the intra-node sub comms */
+     mpi_errno =
+@@ -856,6 +865,11 @@
+                              MPIR_Comm_rank(comm->node_comm), &(MPIDI_COMM(comm, sub_node_comm)));
+     if (mpi_errno)
+         MPIR_ERR_POP(mpi_errno);
++    if (MPIDI_COMM(comm, sub_node_comm) != NULL) {
++        MPIDI_COMM(comm, sub_node_comm)->parent_comm = comm->node_comm;
++        mpi_internal_comm_create(MPIDI_COMM(comm, sub_node_comm), comm->node_comm,
++                                    MPI_INTERNAL_COMM__SUB_NODE_COMM);
++    }
+ 
+     if (MPIR_Comm_rank(comm->node_comm) % sub_node_comm_size == 0)
+         is_leader_color = 1;
+@@ -868,6 +882,11 @@
+                                      &(MPIDI_COMM(comm, intra_node_leads_comm)));
+     if (mpi_errno)
+         MPIR_ERR_POP(mpi_errno);
++    if (MPIDI_COMM(comm, intra_node_leads_comm) != NULL) {
++        MPIDI_COMM(comm, intra_node_leads_comm)->parent_comm = comm->node_comm;
++        mpi_internal_comm_create(MPIDI_COMM(comm, intra_node_leads_comm), comm->node_comm,
++                                    MPI_INTERNAL_COMM__INTRA_NODE_LEADS_COMM);
++    }
+ 
+   fn_exit:
+     MPIR_FUNC_EXIT;
 --- a/src/mpid/common/sched/mpidu_sched.c
 +++ b/src/mpid/common/sched/mpidu_sched.c
 @@ -1054,7 +1054,8 @@

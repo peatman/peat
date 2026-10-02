@@ -18,6 +18,8 @@
 
 #include <cassert>
 #include <cstring>
+#include <sys/syscall.h>
+#include <unistd.h>
 
 #include <mpi.h>
 #include <stdlib.h>
@@ -29,7 +31,7 @@
 size_t t_comm::pack_size() const
 {
     return sizeof(idx) + sizeof(gid) + sizeof(kind) + sizeof(comm) +
-           sizeof(begin_time) + sizeof(end_time) +
+           sizeof(begin_time) + sizeof(end_time) + sizeof(is_internal) +
            sizeof(int) * l_comm2world_ranks.size() + sizeof(size_t) + // (size of size)
            sizeof(int) * r_comm2world_ranks.size() + sizeof(size_t);
 }
@@ -55,6 +57,9 @@ size_t t_comm::pack(char *ptr) const
     ptr_it += ssize;
     ssize = sizeof(end_time);
     memcpy(ptr + ptr_it, &end_time, ssize);
+    ptr_it += ssize;
+    ssize = sizeof(is_internal);
+    memcpy(ptr + ptr_it, &is_internal, ssize);
     ptr_it += ssize;
 
     /* local ranks */
@@ -106,6 +111,9 @@ size_t t_comm::unpack(char *ptr)
     ssize = sizeof(end_time);
     memcpy(&end_time, ptr + ptr_it, ssize);
     ptr_it += ssize;
+    ssize = sizeof(is_internal);
+    memcpy(&is_internal, ptr + ptr_it, ssize);
+    ptr_it += ssize;
 
     /* local ranks */
     size_t l_c2wr;
@@ -138,26 +146,33 @@ size_t t_comm::unpack(char *ptr)
     return ptr_it;
 }
 
-size_t t_local_comms::pack_size()
+/* iterate every (MPI_Comm -> list<t_comm>) store and accumulate its packed size */
+static size_t pack_size_of_map(const std::map<MPI_Comm, std::list<t_comm>> &store)
 {
-    __DEBUG_PROLOG_COMM_LAYER__
     size_t total_size = 0;
-    for (std::map<MPI_Comm, std::list<t_comm>>::const_iterator comm_store_it = comm_store.begin(); comm_store_it != comm_store.end(); ++comm_store_it) {
+    for (std::map<MPI_Comm, std::list<t_comm>>::const_iterator comm_store_it = store.begin(); comm_store_it != store.end(); ++comm_store_it) {
         for (std::list<t_comm>::const_iterator t_comm_it = comm_store_it->second.begin(); t_comm_it != comm_store_it->second.end(); ++t_comm_it) {
             total_size += t_comm_it->pack_size();
         }
     }
+    return total_size;
+}
+
+size_t t_local_comms::pack_size(int is_internal)
+{
+    __DEBUG_PROLOG_COMM_LAYER__
+    size_t total_size = pack_size_of_map(is_internal ? mpi_internal_comm_store : comm_store);
     __DEBUG_EPILOG_COMM_LAYER__
     return total_size;
 }
 
-size_t t_local_comms::pack_local(char *ptr, size_t total_size)
+size_t t_local_comms::pack_local(char *ptr, size_t total_size, int is_internal)
 {
     __DEBUG_PROLOG_COMM_LAYER__
     size_t ptr_it = 0;
     for (int i = 3; i < index; i++) {
         std::list<t_comm>::const_iterator result;
-        bool bFound = find_by_idx(i, result);
+        bool bFound = find_by_idx(i, is_internal, result);
         if (bFound) {
             ptr_it += result->pack(ptr + ptr_it);
             // debug_printf("Comm=%x(%d) packed, (%ld,%ld),%d(%d)\n",result->comm,result->idx,result->begin_time,result->end_time,total_size,ptr_it);
@@ -180,12 +195,17 @@ size_t t_local_comms::unpack_global(char *ptr, size_t total_size)
         std::list<t_comm>::iterator result;
         debug_printf("Unpacking global comm=%x(%d), (%ld,%ld),%d(%d) at rank %d\n",r_comm_ptr->comm,r_comm_ptr->gid,r_comm_ptr->begin_time,r_comm_ptr->end_time,total_size,(char *)r_comm_ptr-ptr,t_mpi_rank);
 
-        bool bFound = get_local_comm_id(r_comm_ptr->comm, r_comm_ptr->begin_time + 1, result);
+        bool bFound = get_local_comm_id_in_store(r_comm_ptr->comm, r_comm_ptr->begin_time + 1, r_comm_ptr->is_internal, result);
         if (bFound) {
             if (result->begin_time == r_comm_ptr->begin_time && result->end_time == r_comm_ptr->end_time) {
                 assert(result->gid == r_comm_ptr->gid || result->gid == -1);
                 result->gid = r_comm_ptr->gid;
                 ptr_it += sizeof(r_comm); // sanity check
+            } else {
+                debug_printf("unpack_global mismatch: wanted comm=%x(idx=%d) (%lld,%lld) is_internal=%d"
+                             " but local store has comm=%x(idx=%d) (%lld,%lld) is_internal=%d at rank %d\n",
+                             r_comm_ptr->comm, r_comm_ptr->gid, r_comm_ptr->begin_time, r_comm_ptr->end_time, r_comm_ptr->is_internal,
+                             result->comm, result->idx, result->begin_time, result->end_time, result->is_internal, t_mpi_rank);
             }
         } else {
             assert(0);
@@ -202,56 +222,72 @@ t_local_comms::~t_local_comms()
     __DEBUG_EPILOG_COMM_LAYER__
 }
 
+/* look up comm in a single store (comm_store or mpi_internal_comm_store), honoring begin/end time validity */
+static bool find_comm_in_map(std::map<MPI_Comm, std::list<t_comm>> &store, const MPI_Comm comm, const PEAT_Clock cur_time, std::list<t_comm>::iterator &result)
+{
+    std::map<MPI_Comm, std::list<t_comm>>::iterator comm_list = store.find(comm);
+    if (store.end() == comm_list)
+        return false;
+    for (std::list<t_comm>::iterator it_comm = comm_list->second.begin(); it_comm != comm_list->second.end(); ++it_comm) {
+        if (cur_time >= it_comm->begin_time) {
+            if (-1 == it_comm->end_time || it_comm->end_time >= cur_time) {
+                result = it_comm;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/* quiet lookup (no stderr on miss), for diagnostics only */
+bool t_local_comms::has_local_comm_id(const MPI_Comm comm, const PEAT_Clock cur_time)
+{
+    std::list<t_comm>::iterator result;
+    if (comm == 0 || comm == MPI_COMM_NULL || comm == MPI_COMM_SELF || comm == MPI_COMM_WORLD) return true;
+    if (find_comm_in_map(comm_store, comm, cur_time, result)) return true;
+    if (find_comm_in_map(mpi_internal_comm_store, comm, cur_time, result)) return true;
+    return false;
+}
+
+/* unlike get_local_comm_id, only searches the store matching is_internal: handle recycling means
+ * the same value can independently be "open" in both stores at once, so a caller that already
+ * knows which pool a comm belongs to (e.g. unpack_global, via the gathered r_comm's is_internal)
+ * must not let the other pool's unrelated entry win a false match */
+bool t_local_comms::get_local_comm_id_in_store(const MPI_Comm comm, const PEAT_Clock cur_time, int is_internal, std::list<t_comm>::iterator &result)
+{
+    if (comm == 0 || comm == MPI_COMM_NULL || comm == MPI_COMM_SELF || comm == MPI_COMM_WORLD) return false;
+    return find_comm_in_map(is_internal ? mpi_internal_comm_store : comm_store, comm, cur_time, result);
+}
+
 bool t_local_comms::get_local_comm_id(const MPI_Comm comm, const PEAT_Clock cur_time, std::list<t_comm>::iterator &result)
 {
     __DEBUG_PROLOG_COMM_LAYER__
     debug_printf("Obtaining global communicator for %x after TSC time %lld at rank %d (commstore %p)\n", (int) comm, cur_time, t_mpi_rank,(void *) &comm_store);
     debug_printf("Obtaining global communicator for %x after TSC time %lld at rank %d (commstore size is %d)\n", (int) comm, cur_time, t_mpi_rank,comm_store.size());
     if (comm != 0 && comm != MPI_COMM_NULL && comm != MPI_COMM_SELF && comm != MPI_COMM_WORLD) {
-        std::map<MPI_Comm, std::list<t_comm>>::const_iterator comm_list;
-        try {
-            comm_list = comm_store.find(comm); // don't want an exception here by .at()
-        } catch (...) {
-            std::cerr << "An exeption was raised while obtaining global communicator " << std::hex << comm << " after TSC time " << std::dec << cur_time << " at rank " << t_mpi_rank << std::endl;
-            // debug_printf("An exeption was raised while obtaining global communicator %x after TSC time %lld at rank %d (commstore size is %d)\n", (int) comm, cur_time, t_mpi_rank,comm_store.size());
+        /* user-visible comms take priority, but internal (tractor-created) comms must resolve too */
+        if (find_comm_in_map(comm_store, comm, cur_time, result)) {
+            __DEBUG_EPILOG_COMM_LAYER__
+            return true;
         }
-        if (comm_store.end() == comm_list) {
-            std::cerr << "Error in communicator get_local_comm_id function. Can't find comm id " << std::hex << comm << std::dec << " at rank " << t_mpi_rank << "\n";
-        } else {
-            std::list<t_comm> &comm_list = comm_store.at(comm);
-            // result = comm_list.end();
-            for (std::list<t_comm>::iterator it_comm = comm_list.begin(); it_comm != comm_list.end(); ++it_comm) {
-                // const t_comm &item = *it_comm;
-                // if (comm_list.end() == result) result = it_comm; //I'm not sure how this can be matched since MPIC_XXX routines sometimes use comms not visible to user
-                if (cur_time >= it_comm->begin_time) {
-                    // result = it_comm;
-                    if (-1 == it_comm->end_time || it_comm->end_time >= cur_time) {
-                        result = it_comm;
-                        __DEBUG_EPILOG_COMM_LAYER__
-                        return true;
-                    }  
-                }
-            }
-            /*
-            if (comm_list.end() != result) {
-                __DEBUG_EPILOG_COMM_LAYER__
-                return true;
-            }
-            */
-            std::cerr << "Error in communicator t_comm::get_local_comm_id function. Can't find communicator " << std::hex << comm << " after TSC time " << std::dec << cur_time << " at rank " << t_mpi_rank << "\n";
-            debug_printf("Error in communicator t_comm::get_local_comm_id function. Can't find communicator %x after TSC time %lld at rank %d\n", (int) comm, cur_time, t_mpi_rank);
-            // print_backtrace();
-            // assert(!"Can't find communicator");
+        if (find_comm_in_map(mpi_internal_comm_store, comm, cur_time, result)) {
+            __DEBUG_EPILOG_COMM_LAYER__
+            return true;
         }
+        std::cerr << "Error in communicator t_comm::get_local_comm_id function. Can't find communicator " << std::hex << comm << " after TSC time " << std::dec << cur_time << " at rank " << t_mpi_rank << "\n";
+        debug_printf("Error in communicator t_comm::get_local_comm_id function. Can't find communicator %x after TSC time %lld at rank %d\n", (int) comm, cur_time, t_mpi_rank);
+        // print_backtrace();
+        // assert(!"Can't find communicator");
     }
     __DEBUG_EPILOG_COMM_LAYER__
     return false;
 }
 
-bool t_local_comms::find_by_idx(const int idx, std::list<t_comm>::const_iterator &result)
+bool t_local_comms::find_by_idx(const int idx, int is_internal, std::list<t_comm>::const_iterator &result)
 {
     __DEBUG_PROLOG_COMM_LAYER__
-    for (std::map<MPI_Comm, std::list<t_comm>>::const_iterator comm_list = comm_store.begin(); comm_list != comm_store.end(); ++comm_list) {
+    const std::map<MPI_Comm, std::list<t_comm>> &store = is_internal ? mpi_internal_comm_store : comm_store;
+    for (std::map<MPI_Comm, std::list<t_comm>>::const_iterator comm_list = store.begin(); comm_list != store.end(); ++comm_list) {
         for (std::list<t_comm>::const_iterator it_comm = comm_list->second.begin(); it_comm != comm_list->second.end(); ++it_comm) {
             if (it_comm->idx == idx) {
                 result = it_comm;
@@ -264,100 +300,129 @@ bool t_local_comms::find_by_idx(const int idx, std::list<t_comm>::const_iterator
     return false;
 }
 
-void t_local_comms::comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, bool force_add)
+void t_local_comms::comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, int is_internal)
 {
     __DEBUG_PROLOG_COMM_LAYER__
-    if (MPI_COMM_NULL != newcomm || force_add) {
+    if (MPI_COMM_NULL != newcomm) {
+        init(); /* no-op once post_mpi_init() has run; needed here too since MPICH can create
+                   internal sub-comms of MPI_COMM_WORLD while still inside PMPI_Init */
         int is_inter;
         PMPI_Comm_test_inter(newcomm, &is_inter);
         if (is_inter) {
-            inter_comm_begin(newcomm, begin, force_add);
+            inter_comm_begin(newcomm, begin, is_internal);
         } else {
-            intra_comm_begin(newcomm, begin, force_add);
+            intra_comm_begin(newcomm, begin, is_internal);
         }
     }
     __DEBUG_EPILOG_COMM_LAYER__
 }
 
-void t_local_comms::intra_comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, bool force_add)
+void t_local_comms::intra_comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, int is_internal)
 {
     __DEBUG_PROLOG_COMM_LAYER__
-    if (MPI_COMM_NULL != newcomm || force_add) {
+    if (MPI_COMM_NULL != newcomm) {
         t_comm comm_elem;
         comm_elem.comm = newcomm;
         comm_elem.begin_time = begin;
         comm_elem.idx = index;
         comm_elem.kind = T_MPI_INTRA_COMM;
+        comm_elem.is_internal = is_internal;
 
-        if (MPI_COMM_NULL != newcomm) {
-            PEAT_Rank newcomm_size;
-            MPI_Group newcomm_group;
-            PMPI_Comm_size(newcomm, &newcomm_size);
-            PMPI_Comm_group(newcomm, &newcomm_group);
-            PEAT_Rank newcomm_ranks[comm_world_size];
-            PMPI_Group_translate_ranks(newcomm_group, newcomm_size, comm_world_ranks, comm_world_group, newcomm_ranks);
-            comm_elem.l_comm2world_ranks.resize(newcomm_size, -1);
-            memcpy(comm_elem.l_comm2world_ranks.data(), newcomm_ranks, newcomm_size * sizeof(PEAT_Rank));
-            // move these two lines inside (don't store empty comms)
-            newcomm_lock.lock();
+        PEAT_Rank newcomm_size;
+        MPI_Group newcomm_group;
+        PMPI_Comm_size(newcomm, &newcomm_size);
+        PMPI_Comm_group(newcomm, &newcomm_group);
+        PEAT_Rank newcomm_ranks[comm_world_size];
+        PMPI_Group_translate_ranks(newcomm_group, newcomm_size, comm_world_ranks, comm_world_group, newcomm_ranks);
+        comm_elem.l_comm2world_ranks.resize(newcomm_size, -1);
+        memcpy(comm_elem.l_comm2world_ranks.data(), newcomm_ranks, newcomm_size * sizeof(PEAT_Rank));
+        // move these two lines inside (don't store empty comms)
+        bool consumed_idx = false;
+        newcomm_lock.lock();
+        if (is_internal) {
+            mpi_internal_comm_store[newcomm].push_back(comm_elem);
+        } else {
+            /* this handle may already carry a still-open MPI_INTERNAL_COMM__BOOTSTRAP placeholder,
+             * created from inside MPIR_Comm_commit before this authoritative registration could run;
+             * reuse its idx/begin_time (don't consume a fresh idx, don't lose the earlier begin_time
+             * that made the comm resolvable during its own pre-commit internal traffic) */
+            /*std::list<t_comm> &pending = mpi_internal_comm_store[newcomm];
+            if (!pending.empty() && -1 == pending.back().end_time) {
+                comm_elem.idx = pending.back().idx;
+                comm_elem.begin_time = pending.back().begin_time;
+                pending.pop_back();
+                consumed_idx = true;
+            }*/
             comm_store[newcomm].push_back(comm_elem);
-            newcomm_lock.unlock();
-            debug_printf("New communicator (%x) arrived:size=%d,index=%d at rank %d, starting from %lld.\n", newcomm, newcomm_size, index, t_mpi_rank, begin);
-            PMPI_Group_free(&newcomm_group);
-            ++index;
         }
+        newcomm_lock.unlock();
+        debug_printf("New communicator (%x) arrived:size=%d,index=%d at rank %d, starting from %lld, tid=%ld.\n", newcomm, newcomm_size, comm_elem.idx, t_mpi_rank, comm_elem.begin_time, (long) syscall(SYS_gettid));
+        PMPI_Group_free(&newcomm_group);
+        if (!consumed_idx) ++index;
     }
     __DEBUG_EPILOG_COMM_LAYER__
 }
 
-void t_local_comms::inter_comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, bool force_add)
+void t_local_comms::inter_comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, int is_internal)
 {
     __DEBUG_PROLOG_COMM_LAYER__
     t_comm comm_elem;
-    if (MPI_COMM_NULL != newcomm || force_add) {
+    if (MPI_COMM_NULL != newcomm) {
         comm_elem.comm = newcomm;
         comm_elem.begin_time = begin;
         comm_elem.idx = index;
         comm_elem.kind = T_MPI_INTER_COMM;
-        if (MPI_COMM_NULL != newcomm) {
-            PEAT_Rank newcomm_l_size;
-            MPI_Group newcomm_l_group;
-            PEAT_Rank newcomm_r_size;
-            MPI_Group newcomm_r_group;
-            PMPI_Comm_size(newcomm, &newcomm_l_size);
-            PMPI_Comm_group(newcomm, &newcomm_l_group);
-            PMPI_Comm_remote_size(newcomm, &newcomm_r_size);
-            PMPI_Comm_remote_group(newcomm, &newcomm_r_group);
-            PEAT_Rank newcomm_l_ranks[comm_world_size];
-            PEAT_Rank newcomm_r_ranks[comm_world_size];
-            PMPI_Group_translate_ranks(newcomm_l_group, newcomm_l_size, comm_world_ranks, comm_world_group, newcomm_l_ranks);
-            PMPI_Group_translate_ranks(newcomm_r_group, newcomm_r_size, comm_world_ranks, comm_world_group, newcomm_r_ranks);
-            comm_elem.l_comm2world_ranks.resize(newcomm_l_size, -1);
-            comm_elem.r_comm2world_ranks.resize(newcomm_r_size, -1);
-            memcpy(comm_elem.l_comm2world_ranks.data(), newcomm_l_ranks, newcomm_l_size * sizeof(PEAT_Rank));
-            memcpy(comm_elem.r_comm2world_ranks.data(), newcomm_r_ranks, newcomm_r_size * sizeof(PEAT_Rank));
-            // move these two lines inside (don't store empty comms)
-            newcomm_lock.lock();
+        comm_elem.is_internal = is_internal;
+        PEAT_Rank newcomm_l_size;
+        MPI_Group newcomm_l_group;
+        PEAT_Rank newcomm_r_size;
+        MPI_Group newcomm_r_group;
+        PMPI_Comm_size(newcomm, &newcomm_l_size);
+        PMPI_Comm_group(newcomm, &newcomm_l_group);
+        PMPI_Comm_remote_size(newcomm, &newcomm_r_size);
+        PMPI_Comm_remote_group(newcomm, &newcomm_r_group);
+        PEAT_Rank newcomm_l_ranks[comm_world_size];
+        PEAT_Rank newcomm_r_ranks[comm_world_size];
+        PMPI_Group_translate_ranks(newcomm_l_group, newcomm_l_size, comm_world_ranks, comm_world_group, newcomm_l_ranks);
+        PMPI_Group_translate_ranks(newcomm_r_group, newcomm_r_size, comm_world_ranks, comm_world_group, newcomm_r_ranks);
+        comm_elem.l_comm2world_ranks.resize(newcomm_l_size, -1);
+        comm_elem.r_comm2world_ranks.resize(newcomm_r_size, -1);
+        memcpy(comm_elem.l_comm2world_ranks.data(), newcomm_l_ranks, newcomm_l_size * sizeof(PEAT_Rank));
+        memcpy(comm_elem.r_comm2world_ranks.data(), newcomm_r_ranks, newcomm_r_size * sizeof(PEAT_Rank));
+        // move these two lines inside (don't store empty comms)
+        bool consumed_idx = false;
+        newcomm_lock.lock();
+        if (is_internal) {
+            mpi_internal_comm_store[newcomm].push_back(comm_elem);
+        } else {
+            /* see intra_comm_begin: reuse any still-open BOOTSTRAP placeholder's idx/begin_time */
+            /* std::list<t_comm> &pending = mpi_internal_comm_store[newcomm];
+            if (!pending.empty() && -1 == pending.back().end_time) {
+                comm_elem.idx = pending.back().idx;
+                comm_elem.begin_time = pending.back().begin_time;
+                pending.pop_back();
+                consumed_idx = true;
+            } */
             comm_store[newcomm].push_back(comm_elem);
-            newcomm_lock.unlock();
-            debug_printf("New Inter communicator (%x) arrived:size=%d,%d ,index=%d at rank %d, starting from %lld.\n", newcomm, newcomm_l_size, newcomm_r_size, index, t_mpi_rank, begin);
-            PMPI_Group_free(&newcomm_l_group);
-            PMPI_Group_free(&newcomm_r_group);
-            ++index;
         }
+        newcomm_lock.unlock();
+        debug_printf("New Inter communicator (%x) arrived:size=%d,%d ,index=%d at rank %d, starting from %lld.\n", newcomm, newcomm_l_size, newcomm_r_size, comm_elem.idx, t_mpi_rank, comm_elem.begin_time);
+        PMPI_Group_free(&newcomm_l_group);
+        PMPI_Group_free(&newcomm_r_group);
+        if (!consumed_idx) ++index;
     }
     __DEBUG_EPILOG_COMM_LAYER__
 }
 
-void t_local_comms::comm_end(const MPI_Comm comm, const PEAT_Clock end, bool complete_any_way)
+void t_local_comms::comm_end(const MPI_Comm comm, const PEAT_Clock end, int is_internal)
 {
     __DEBUG_PROLOG_COMM_LAYER__
-    std::list<t_comm> &comm_list = comm_store[comm];
+    std::list<t_comm> &comm_list = is_internal ? mpi_internal_comm_store[comm] : comm_store[comm];
     if (comm_list.empty()) {
         std::cerr << "Error. Can't find communicator " << std::hex << comm << " to set completion time.\n";
     } else {
         t_comm &cur_comm = comm_list.back();               // get last element because ID reusage
-        if (-1 != cur_comm.end_time && !complete_any_way) { // Communicators must be new for completion because ID reusage.
+        if (-1 != cur_comm.end_time) { // Communicators must be new for completion because ID reusage.
             std::cerr << "communicator_end: Wrong comminucator(" << std::hex << comm << std::dec << ") found for end time\n";
         }
         cur_comm.end_time = end;
@@ -428,14 +493,43 @@ void t_local_comms::print_comms_report(gzFile file, const PEAT_Record_Type line_
     __DEBUG_EPILOG_COMM_LAYER__
 }
 
-bool t_global_comms::bind_local_comms()
+/* some internal-comm creation paths (e.g. MPIR_Subcomm_create/free's own lifecycle, independent of
+ * the normal comm_end-on-free path) can leave an entry permanently open (end_time==-1) even though
+ * its handle was legitimately reused later; find_comm_in_map then matches the stale entry first and
+ * shadows the real one. Close every still-open internal entry using the begin_time of whichever
+ * (user or internal) entry next reused that same handle - the true end of its validity window. */
+void t_local_comms::close_stale_internal_entries()
+{
+    __DEBUG_PROLOG_COMM_LAYER__
+    for (std::map<MPI_Comm, std::list<t_comm>>::iterator store_it = mpi_internal_comm_store.begin(); store_it != mpi_internal_comm_store.end(); ++store_it) {
+        const MPI_Comm handle = store_it->first;
+        std::map<MPI_Comm, std::list<t_comm>>::iterator user_store_it = comm_store.find(handle);
+        for (std::list<t_comm>::iterator entry = store_it->second.begin(); entry != store_it->second.end(); ++entry) {
+            if (-1 != entry->end_time) continue;
+            PEAT_Clock next_begin = -1;
+            for (std::list<t_comm>::iterator other = store_it->second.begin(); other != store_it->second.end(); ++other) {
+                if (other == entry) continue;
+                if (other->begin_time > entry->begin_time && (-1 == next_begin || other->begin_time < next_begin)) next_begin = other->begin_time;
+            }
+            if (user_store_it != comm_store.end()) {
+                for (std::list<t_comm>::iterator other = user_store_it->second.begin(); other != user_store_it->second.end(); ++other) {
+                    if (other->begin_time > entry->begin_time && (-1 == next_begin || other->begin_time < next_begin)) next_begin = other->begin_time;
+                }
+            }
+            if (-1 != next_begin) entry->end_time = next_begin;
+        }
+    }
+    __DEBUG_EPILOG_COMM_LAYER__
+}
+
+int t_global_comms::bind_local_comm(int is_internal, int start_index)
 {
     __DEBUG_PROLOG_COMM_LAYER__
     int comm_size, comm_rank;
     PMPI_Comm_size(MPI_COMM_WORLD, &comm_size);
     PMPI_Comm_rank(MPI_COMM_WORLD, &comm_rank);
-    MPI_Count local_size = (MPI_Count)gt_info(local_comms)->pack_size();
-    // debug_printf("(bind_local_comms) size %d \n",local_size);
+    MPI_Count local_size = (MPI_Count)gt_info(local_comms)->pack_size(is_internal);
+    // debug_printf("(bind_local_comm) size %d \n",local_size);
     MPI_Count sizes[comm_size];
     MPI_Aint displs[comm_size];
     char send_buf[local_size];
@@ -446,13 +540,13 @@ bool t_global_comms::bind_local_comms()
         displs[rank_it] = (MPI_Aint)total_size;
         total_size += sizes[rank_it];
     }
-    // debug_printf("(bind_local_comms) total_size %ld \n",total_size);
+    // debug_printf("(bind_local_comm) total_size %ld \n",total_size);
     char global_recv_buf[total_size];
-    // debug_printf("(bind_local_comms) packing local...");
-    MPI_Count pack_size = (MPI_Count)gt_info(local_comms)->pack_local(send_buf, local_size);
+    // debug_printf("(bind_local_comm) packing local...");
+    MPI_Count pack_size = (MPI_Count)gt_info(local_comms)->pack_local(send_buf, local_size, is_internal);
     // debug_printf("finished\n");
     assert(pack_size == local_size);
-    // debug_printf("(bind_local_comms) gathering locals...");
+    // debug_printf("(bind_local_comm) gathering locals...");
 #ifndef _NO_C_VR
     PMPI_Gatherv_c(send_buf, pack_size, MPI_BYTE, global_recv_buf, sizes, displs, MPI_BYTE, 0, gt_info(TRACTOR_COMM_WORLD)); // get comms
 #else
@@ -469,18 +563,18 @@ bool t_global_comms::bind_local_comms()
     }
 #endif
     // debug_printf("finished\n");
+    int g_index = start_index;
     if (comm_rank == 0) {
         // actual binding starts here
         g_comm_store.clear();
         g_comm_store.resize(comm_size);
+        gd_comms.clear(); // distribution buffer is scoped to this store's round only
         for (rank_it = 0; rank_it < comm_size; ++rank_it) {
             std::list<t_comm> t_list;
             unpack_local(&global_recv_buf[displs[rank_it]], (size_t)sizes[rank_it], t_list);
             g_comm_store[rank_it] = t_list;
         }
-        // now g_comm_store contains all gathered comms across all ranks
-        g_comms.clear();
-        int g_index = 3; // 0,1 and 2 have been already taken by MPI_COMM_NULL,MPI_COMM_SELF, and MPI_COMM_WORLD respectively
+        // now g_comm_store contains all gathered comms (of this store only) across all ranks
         for (rank_it = 0; rank_it < comm_size; ++rank_it) {
             std::list<t_comm> &t_list = g_comm_store.at(rank_it);
             // if (t_list.empty()) continue;
@@ -625,7 +719,23 @@ bool t_global_comms::bind_local_comms()
     if (sizes[comm_rank] != local_size)
         debug_printf("Sizes mismatch %d!=%d\n", sizes[comm_rank], local_size);
     assert(sizes[comm_rank] == local_size);
+    int max_id = g_index - 1; // only meaningful on rank 0 until broadcast below
+    PMPI_Bcast(&max_id, 1, MPI_INT, 0, gt_info(TRACTOR_COMM_WORLD));
     __DEBUG_EPILOG_COMM_LAYER__
+    return max_id;
+}
+
+bool t_global_comms::bind_local_comms()
+{
+    __DEBUG_PROLOG_COMM_LAYER__
+    gt_info(local_comms)->close_stale_internal_entries();
+    g_comms.clear();
+    // user comms and mpi-internal comms are bound separately, in two independent rounds,
+    // with internal ids continuing right after the highest id assigned to a user comm
+    int max_user_id = bind_local_comm(/*is_internal=*/0, 3); // 0,1,2 taken by COMM_NULL/SELF/WORLD
+    bind_local_comm(1, max_user_id + 1);
+    __DEBUG_EPILOG_COMM_LAYER__
+    return true;
 }
 
 void t_global_comms::print_comms_report(gzFile file, const PEAT_Record_Type line_prefix) const

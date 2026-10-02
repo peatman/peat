@@ -28,7 +28,7 @@ $prototype {
     pid_t tid_in;
     int tid;
     msl_event *f_event;
-    bool l_skip_parse=(gt_info(t_permit_collect_fab)==0);
+    bool l_skip_parse=tractor_finished || (gt_info(t_permit_collect_fab)==0);
     $rtdl // if necessary initialize pointer
     // init_fab_hooks();
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {

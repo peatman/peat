@@ -92,6 +92,7 @@ static int print_all = 0;
 char counting_permission[MPI_MAX_FUNCID_THROUGH];
 char fullstack_permission[MPI_MAX_FUNCID_THROUGH];
 char counting_permission_pcontrol[MPI_MAX_FUNCID_THROUGH];
+bool tractor_finished = false;
 long onetimealloc;
 int t_mpi_rank = -1;
 long long bytes_allocated;
@@ -224,6 +225,7 @@ tractor::tractor(void)
     grp_world = MPI_GROUP_NULL;
     grp_smp = MPI_GROUP_NULL;
     grp_master = MPI_GROUP_NULL;
+    local_comms = NULL;
     start_sync = stop_sync = NULL;
 #ifdef USE_NANO_TIMER
     char *temp = __msl_getenv("PEAT_TRACTOR_SYSTIMER");
@@ -254,6 +256,10 @@ tractor::tractor(void)
     ret_levels = &level0;
     write_on_finalize = 0;
     parse_env_vars();
+    /* allocate (but don't init()) before PMPI_Init runs: MPICH can create internal sub-comms
+       of MPI_COMM_WORLD via our mpi_internal_comm_create hook while still inside PMPI_Init */
+    if (t_mpi_rank >= 0)
+        local_comms = new t_local_comms;
 #ifdef _HWCOUNTERS_ENABLED_
     num_hwcs = hwc.get_num_counters();
 #endif
@@ -1176,15 +1182,15 @@ void tractor::post_mpi_init(void)
     debug_printf("rank %d: msl_post_mpi_init called...\n", t_mpi_rank);
     if (tractor_initialized < 1)
         return;
+    int old_skip_parse =  mpi_skip_parse;
     mpi_skip_parse = 1;
     if (t_mpi_rank >= 0) {
         PMPI_Comm_dup(MPI_COMM_WORLD, &TRACTOR_COMM_WORLD);
         gt_ninfo = new t_nodes_info;
         nodes_info(NULL);
-        local_comms = new t_local_comms;
-        local_comms->init();
+        local_comms->init(); /* no-op if already done by an internal comm created during PMPI_Init */
     }
-    mpi_skip_parse = 0;
+    mpi_skip_parse = old_skip_parse;
 #ifdef _USE_SIGNALS_
     //  protect writing trace
     if (t_use_signals)
@@ -1206,6 +1212,7 @@ void tractor::pre_finalize(int abort)
 #ifdef _FAB_PROFILE_
     t_permit_collect_fab = 0;
 #endif
+    int old_skip_parse =  mpi_skip_parse;
     mpi_skip_parse = 1;
     if (t_mpi_rank >= 0 && abort == 0) {
         nodes_info(gt_ninfo);
@@ -1229,7 +1236,7 @@ void tractor::pre_finalize(int abort)
             PMPI_Group_free(&grp_world);
         local_comms->finalize();
     }
-    mpi_skip_parse = 0;
+    mpi_skip_parse = old_skip_parse;
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
 
@@ -1332,10 +1339,11 @@ void tractor::ptpd_init(void)
         ptpd_argv[4] = NULL;
         int r_size_master = size_master + ((int)(ptpd_timenode != NULL));
         debug_printf("Rank 0: MPI_Comm_spawn (%d %s %s %s %s) is being executed.\n", r_size_master, ptpd_execfile, ptpd_ui, ptpd_fn, gz_mode);
+        int old_skip_parse =  mpi_skip_parse;
         mpi_skip_parse = 1;
 
         PMPI_Comm_spawn(ptpd_execfile, ptpd_argv, r_size_master, ptpd_info, 0, MPI_COMM_SELF, &ptpd_comm, ptpd_errcodes);
-        mpi_skip_parse = 0;
+        mpi_skip_parse = old_skip_parse;
         if (ptpd_errcodes)
             t_free(ptpd_errcodes, (size_master + 2) * sizeof(int));
         if (ptpd_argv)
@@ -1583,6 +1591,9 @@ void tractor::end(void)
             t_free(fps_extras, slots * sizeof(FILE *));
         fps_events = fps_extras = NULL;
     }
+    /* from here on, any instrumentation hook fired by a library's own ELF-level destructors
+       (e.g. libfabric's vrb_fini running after this object's dtor) must become a no-op */
+    tractor_finished = true;
     debug_printf("Rank %d: Tractor Destructor finished...\n", t_mpi_rank);
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
@@ -2492,7 +2503,7 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
 
             if (func_base >= MPI_START_COMM_COLLECTIVE_GROUP &&
                     func_base < MPI_END_COMM_COLLECTIVE_GROUP ||
-                func_base == MPI_COMM_FREE_ID) {
+                func_base == MPI_COMM_FREE_ID || func_base == MPIC_COMM_FREE_ID || func_base == MPIC_COMM_CREATE_ID) {
                 t_gzprintf(fps_mpi, ":%x:%x:%x:%x:%llx",
                            get_global_comm_id(rec.comms.comm, tsc_mpi_entry),       // 4
                            get_global_comm_id(rec.comms.newcomm, tsc_mpi_entry),    // 5

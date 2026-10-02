@@ -9,7 +9,7 @@ iterations=${2:-10}
 ranks_arg=$3
 
 compiler=oneAPI:2026.1.0
-export mpi_type=${mpi_type:-mpich:5.0.1x-mt-ofi-eng}
+export mpi_type=${mpi_type:-mpich:5.0.2x-mt-ofi-eng}
 export libfabric_eng='-eng'
 . env.sh
 set -x

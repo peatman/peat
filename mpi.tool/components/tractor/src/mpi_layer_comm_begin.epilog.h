@@ -26,7 +26,7 @@ event->num_children += (short)(__msl_child_base(tid, level) - children_base);
 __write_comms__
 memcpy(counters.addrs, p_entrys, sizeof(void *) * gt_info(num_addrs));
 //    } // if (__builtin_expect((counting_permission[fidc]>0 && !l_skip_parse),1))
-gt_info(local_comms)->comm_begin(event->comms.newcomm, tsc_entry);
+gt_info(local_comms)->comm_begin(event->comms.newcomm, tsc_entry,is_internal);
 #ifdef _HWCOUNTERS_ENABLED_
 memcpy(counters.hwcs, l_hwcs, num_hwcs * sizeof(l_hwcs[0]));
 gt_info(hwc).get_all_counters(&counters.hwcs[num_hwcs]);

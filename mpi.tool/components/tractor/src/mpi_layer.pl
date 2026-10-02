@@ -297,7 +297,8 @@ if ($properties =~/DATA_TXRX/) {
 my $comm="comm";
 #$comm="MPI_COMM_WORLD" if $properties =~/COLT/;
 #$comm="(long long) comm" if $properties=~/COMM/ && $properties=~/COLT/ ;
-$comm="mpi_internal_get_mpicomm_from_mpidcomm(comm)" if $properties=~/COMM/ && $properties=~/COLT/;
+#$comm="mpi_internal_get_top_comm_handle_from_comm(comm)" if $properties=~/COMM/ && $properties=~/COLT/;
+$comm="mpi_internal_get_comm_handle_from_comm(comm)" if $properties=~/COMM/ && $properties=~/COLT/;
 #$comm="last_coll_comm" if $properties =~/COLT/;
 my $stag="stag";
 my $dest="dest";
@@ -327,7 +328,7 @@ if ($funcid=~/REPLACE/) {
 my $status_peer="src >=0 ? src : status->MPI_SOURCE";
 
 $status_peer="get_rank_from_req_colt(comm,$status_peer)" if $properties =~ /COLT/;
-$internal_comm_tracking="track_internal_comm(event[0]->$basic_struct.comm,tsc_mpi_exit);" if $properties=~/COMM/ && $properties=~/COLT/;
+# $internal_comm_tracking="track_internal_comm(event[0]->$basic_struct.comm,tsc_mpi_exit);" if $properties=~/COMM/ && $properties=~/COLT/;
 
 # blocking: receive side is described by the returned status
 my $declare_status="MPI_Status local_status;";
@@ -375,7 +376,7 @@ $event_request="event->$basic_struct.request=*request;" if $properties=~/REQUEST
 $event_request="event->$basic_struct.request=mpi_internal_get_request(*request);" if $properties=~/REQUEST/ && $properties=~/COLT/; #casting from MPID_Request*
 $tag_peer="event->$basic_struct.tag=tag;" if $properties=~/TAG/;
 $tag_peer="$tag_peer event->$basic_struct.peer=peer_rank;" if $properties=~/PEER/;
-$internal_comm_tracking="track_internal_comm(event->$basic_struct.comm,tsc_mpi_exit);" if $properties=~/COMM/ && $properties=~/COLT/;
+#$internal_comm_tracking="track_internal_comm(event->$basic_struct.comm,tsc_mpi_exit);" if $properties=~/COMM/ && $properties=~/COLT/;
 
 # MPIC_Probe is the one colt helper that takes the MPI_Comm handle (not MPIR_Comm*), so probe-class colt
 # functions use comm and ranks as they are, without the MPID->MPI comm / rank translation.
@@ -392,7 +393,10 @@ $event_message="event->$basic_struct.message=*message;" if $properties=~/MESSAGE
 $comm="event->$basic_struct.comm=comm;" if $properties=~/COMM/;
 #$comm="event->$basic_struct.comm=(long long) comm;" if $properties=~/COMM/ && $properties=~/COLT/ ;
 #$comm="event->$basic_struct.comm=MPI_COMM_WORLD;" if $properties=~/COMM/ && $properties=~/COLT/;
-$comm="event->$basic_struct.comm=mpi_internal_get_mpicomm_from_mpidcomm(comm);" if $properties=~/COMM/ && $colt_mpid_comm;
+
+#$comm="event->$basic_struct.comm=mpi_internal_get_top_comm_handle_from_comm(comm);" if $properties=~/COMM/ && $colt_mpid_comm;
+$comm="event->$basic_struct.comm=mpi_internal_get_comm_handle_from_comm(comm);" if $properties=~/COMM/ && $colt_mpid_comm;
+
 #$comm="event->$basic_struct.comm=last_coll_comm;" if $properties=~/COMM/ && $properties=~/COLT/;
 $get_datasize="T_Type_size$colt(type,&data_size);"if $properties=~/BYTES/;
 $transfer_bytes="event->$basic_struct.transfer_bytes=(count*data_size);"if $properties=~/BYTES/;

@@ -313,7 +313,8 @@ typedef enum TMPIfunc_id {
     MPI_END_COMM_COLLECTIVE_GROUP, // End communicators collective function group
 
     MPI_COMM_FREE_ID,
-
+    MPIC_COMM_CREATE_ID,
+    MPIC_COMM_FREE_ID,
     MPI_END_COLLECTIVE_GROUP, // End whole collective function group
 
     MPI_START_OSC_GROUP = 599, // Start one sided communication function group

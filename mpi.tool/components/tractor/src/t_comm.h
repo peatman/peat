@@ -76,7 +76,7 @@ static bool compare_ranks(const std::vector<int>& comm1_ranks, const std::vector
 };
 
 struct t_comm {
-    t_comm() : idx(-1), gid(-1), kind(T_MPI_INVALID_COMM), comm(MPI_COMM_NULL), begin_time(-1), end_time(-1)
+    t_comm() : idx(-1), gid(-1), kind(T_MPI_INVALID_COMM), comm(MPI_COMM_NULL), begin_time(-1), end_time(-1), is_internal(0)
     {
     }
     int idx;
@@ -85,6 +85,7 @@ struct t_comm {
     MPI_Comm comm;
     PEAT_Clock begin_time;
     PEAT_Clock end_time;
+    int is_internal; // user-created (0) vs mpi-internal (1) comm; binding must never match across the two
     std::vector<int> l_comm2world_ranks, r_comm2world_ranks; // position is comm_rank, value is COMM_WORLD_rank //map<comm_rank, COMM_WORLD_rank>
     size_t pack_size() const;
     size_t pack(char *ptr) const;
@@ -94,6 +95,8 @@ struct t_comm {
     {
         debug_printf("comparing comms %x and %x...",comm1.comm,comm2.comm);
         if (comm1.kind != comm2.kind)
+            return false;
+        if (comm1.is_internal != comm2.is_internal)
             return false;
         bool result = false;
         if (comm1.kind == T_MPI_INTER_COMM) {
@@ -117,10 +120,11 @@ struct r_comm {
     int gid;
     PEAT_Rank rank;
     int kind;
-    r_comm() : gid(-1), rank(-1), comm(MPI_COMM_NULL), begin_time(-1), end_time(-1), kind(T_MPI_INVALID_COMM)
+    int is_internal;
+    r_comm() : gid(-1), rank(-1), comm(MPI_COMM_NULL), begin_time(-1), end_time(-1), kind(T_MPI_INVALID_COMM), is_internal(0)
     {
     }
-    r_comm(const t_comm &tr_comm) : gid(-1), rank(-1), begin_time(tr_comm.begin_time), end_time(tr_comm.end_time), comm(tr_comm.comm), kind(tr_comm.kind)
+    r_comm(const t_comm &tr_comm) : gid(-1), rank(-1), begin_time(tr_comm.begin_time), end_time(tr_comm.end_time), comm(tr_comm.comm), kind(tr_comm.kind), is_internal(tr_comm.is_internal)
     {
     }
     r_comm &operator=(const t_comm &tr_comm)
@@ -129,6 +133,7 @@ struct r_comm {
         end_time = tr_comm.end_time;
         comm = tr_comm.comm;
         kind = tr_comm.kind;
+        is_internal = tr_comm.is_internal;
         return *this;
     }
 };
@@ -139,9 +144,15 @@ struct t_local_comms {
         __DEBUG_EPILOG_COMM_LAYER__
     }
     ~t_local_comms();
+    /* idempotent: MPICH can create internal (node_comm etc.) sub-communicators of MPI_COMM_WORLD
+       while still inside PMPI_Init, before tractor's post_mpi_init() gets a chance to call this */
     void init()
     {
         __DEBUG_PROLOG_COMM_LAYER__
+        if (comm_world_ranks) {
+            __DEBUG_EPILOG_COMM_LAYER__
+            return;
+        }
         PMPI_Comm_size(MPI_COMM_WORLD, &comm_world_size);
         PMPI_Comm_group(MPI_COMM_WORLD, &comm_world_group);
         comm_world_ranks = (int *)t_malloc(sizeof(int) * comm_world_size, 128);
@@ -156,17 +167,20 @@ struct t_local_comms {
         PMPI_Group_free(&comm_world_group);
         __DEBUG_EPILOG_COMM_LAYER__
     }
-    void comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, bool force_add = false);
+    void comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, int is_internal);
     void track_internal_comm(const MPI_Comm comm, const PEAT_Clock begin);
-    void intra_comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, bool force_add = false);
-    void inter_comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, bool force_add = false);
-    void comm_end(const MPI_Comm comm, const PEAT_Clock end, bool complete_any_way = false);
+    void intra_comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, int is_internal);
+    void inter_comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, int is_internal);
+    void comm_end(const MPI_Comm comm, const PEAT_Clock end, int is_internal);
     bool get_local_comm_id(const MPI_Comm comm, const PEAT_Clock cur_time, std::list<t_comm>::iterator &result);
-    bool find_by_idx(const int idx, std::list<t_comm>::const_iterator &result);
+    bool get_local_comm_id_in_store(const MPI_Comm comm, const PEAT_Clock cur_time, int is_internal, std::list<t_comm>::iterator &result);
+    bool has_local_comm_id(const MPI_Comm comm, const PEAT_Clock cur_time);
+    bool find_by_idx(const int idx, int is_internal, std::list<t_comm>::const_iterator &result);
+    void close_stale_internal_entries();
 
     void print_comms_report(gzFile file, const PEAT_Record_Type line_prefix) const;
-    size_t pack_size();
-    size_t pack_local(char *ptr, size_t total_size);
+    size_t pack_size(int is_internal);
+    size_t pack_local(char *ptr, size_t total_size, int is_internal);
     size_t unpack_global(char *ptr, size_t total_size);
     // PEAT_MPI_Comm get_global_comm_id(const MPI_Comm comm, const PEAT_Clock cur_time) const;
     PEAT_MPI_Comm get_global_comm_id(const MPI_Comm comm, const PEAT_Clock tsc)
@@ -194,6 +208,7 @@ struct t_local_comms {
     int *comm_world_ranks;
     MPI_Group comm_world_group; // MPI_GROUP_EMPTY
     std::map<MPI_Comm, std::list<t_comm>> comm_store;
+    std::map<MPI_Comm, std::list<t_comm>> mpi_internal_comm_store;
     std::mutex newcomm_lock;
 };
 
@@ -230,6 +245,9 @@ struct t_global_comms {
         return ptr_it;
     }
     bool bind_local_comms();
+    /* binds one store (comm_store or mpi_internal_comm_store) only, assigning global ids from
+     * start_index; returns the highest global id assigned (start_index-1 if the store was empty) */
+    int bind_local_comm(int is_internal, int start_index);
     bool find_local_comm(const t_comm &comm, std::list<t_comm> &t_list, std::list<t_comm>::iterator &result) const
     {
         for (std::list<t_comm>::iterator comm_it = t_list.begin(); comm_it != t_list.end(); ++comm_it) {

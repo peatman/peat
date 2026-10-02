@@ -10,6 +10,7 @@ mpi.tool/components/tractor/Build*.log
 mpi.tool/components/tractor/src-*
 *.o
 *.log
+*.bak
 *.so*
 mpi.tool/components/qTV/build.cl
 mpi.tool/components/qTV/build 

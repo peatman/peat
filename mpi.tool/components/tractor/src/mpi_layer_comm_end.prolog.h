@@ -17,8 +17,7 @@
  */
 
 int rv;
-int i;
-MPI_Comm lcomm = *comm;
+copy_comm;
 PEAT_Clock tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
 int tid;
 int level = -1;
