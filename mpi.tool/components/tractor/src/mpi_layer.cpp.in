@@ -19,9 +19,12 @@
 #include "mpi.h"
 #include "stdlib.h"
 #include "string.h"
+#include <sys/syscall.h>
+#include <unistd.h>
 // #include "grad.h"
 #include "mpi_func_ids.h"
 #include "tractor.h"
+#include "t_debug.h"
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
 extern "C" {
 #endif
@@ -39,17 +42,9 @@ PEAT_Clock global_parallel_stop = 0;
 PEAT_Clock global_progress_calls = 0;
 PEAT_Clock global_progress_yields = 0;
 
-static PEAT_Clock progress_duration;
-static PEAT_Clock yields_duration;
-static PEAT_Clock progress2yield_duration;
-static PEAT_Clock first_progress_entry[4096];
-static PEAT_Clock last_progress_exit[4096];
-static PEAT_Clock first_progress_entry_colt[4096];
-static PEAT_Clock last_progress_exit_colt[4096];
-static PEAT_Clock num_colts[4096];
-static PEAT_Clock in_mpi_call[4096];
 static MPI_Comm last_coll_comm = MPI_COMM_WORLD;
-int skip_parse = 0;
+int mpi_skip_parse = 0;
+int gpu_skip_parse = 0;
 
 #include "t_extradef.h"
 #include "t_mpidef.h"
@@ -62,7 +57,8 @@ static int MPI_Init_internal(int *argc, char ***argv, void **p_entrys)
     const PEAT_MPI_Func_ID fid = MPI_INIT_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_INIT_ID_THROUGH;
     long long tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
-    int tid;
+    int tid, level = -1;
+    long long children_base = 0;
     msl_extras_counters counters;
     msl_event *event;
     pid_t tid_in;
@@ -70,13 +66,13 @@ static int MPI_Init_internal(int *argc, char ***argv, void **p_entrys)
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     counting_permit += 2;
     tid = __msl_get_tid(tid_in);
-    __msl_allocate_event(tid, 0, &event, &counters);
-    event->func_id[0] = fid;
-    event->func_id[1] = fidc;
+    level = __msl_enter_call(tid);
+    children_base = __msl_child_base(tid, level);
+    __msl_allocate_event(tid, level, 0, &event, &counters);
+    event->func_id = fidc;
     event->collective.comm = last_coll_comm = MPI_COMM_WORLD;
     event->collective.root = -1;
     memcpy(counters.addrs, p_entrys, sizeof(void *) * gt_info(num_addrs));
-    first_progress_entry[tid] = last_progress_exit[tid] = 0;
 #ifdef _HWCOUNTERS_ENABLED_
     gt_info(hwc).get_all_counters(&counters.hwcs[0]);
 #endif
@@ -94,6 +90,8 @@ static int MPI_Init_internal(int *argc, char ***argv, void **p_entrys)
     debug_printf("Rank %d: after mpi_init...\n", t_mpi_rank);
 
     tsc_mpi_exit = global_parallel_start = peat_get_time();
+    __msl_leave_call(tid);
+    event->num_children += (short)(__msl_child_base(tid, level) - children_base);
     gt_info(post_mpi_init());
 #endif
 #ifdef _TRACTOR_USE_PTPD_
@@ -102,8 +100,7 @@ static int MPI_Init_internal(int *argc, char ***argv, void **p_entrys)
     // counting_permit-=2;
     tsc_exit = peat_get_time();
     event->tscs[0] = tsc_entry;
-    event->tscs[1] = tsc_mpi_entry - tsc_entry;
-    event->tscs[2] = tsc_mpi_exit - tsc_entry;
+    event->tscs[1] = tsc_mpi_entry;
 #ifdef _HWCOUNTERS_ENABLED_
     gt_info(hwc).get_all_counters(&counters.hwcs[gt_info(num_hwcs)]);
 #endif
@@ -112,7 +109,8 @@ static int MPI_Init_internal(int *argc, char ***argv, void **p_entrys)
 #endif
     // PMPI_Barrier(gt_info(TRACTOR_COMM_WORLD));
     gt_info(post_ptpd_init());
-    event->tscs[3] = tsc_exit - tsc_entry;
+    event->tscs[2] = tsc_mpi_exit;
+    event->tscs[3] = tsc_exit;
 #if 1
     local_tool_overhead = tsc_mpi_entry - tsc_entry + tsc_exit - tsc_mpi_exit;
     global_mpi_time += tsc_mpi_exit - tsc_mpi_entry;
@@ -132,11 +130,11 @@ int MPI_Init(int *argc, char ***argv)
 {
     __DEBUG_PROLOG_MPI_LAYER__
     void *return_addr[gt_info(num_addrs)];
-    skip_parse = 1;
+    mpi_skip_parse = 0;
     // gt_info(init());
     stack_unwind0(gt_info(max_ret_level), return_addr, gt_info(ret_levels));
     int ierr = MPI_Init_internal(argc, argv, return_addr);
-    skip_parse = 0;
+    // mpi_skip_parse = 0;
     __DEBUG_EPILOG_MPI_LAYER__
     return ierr;
 }
@@ -149,7 +147,8 @@ static int MPI_Init_thread_internal(int *argc, char ***argv, int requested, int 
     const PEAT_MPI_Func_ID fid = MPI_INIT_THREAD_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_INIT_THREAD_ID_THROUGH;
     long long tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
-    int tid;
+    int tid, level = -1;
+    long long children_base = 0;
     pid_t tid_in;
     msl_extras_counters counters;
     msl_event *event;
@@ -157,12 +156,12 @@ static int MPI_Init_thread_internal(int *argc, char ***argv, int requested, int 
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     counting_permit += 2;
     tid = __msl_get_tid(tid_in);
-    __msl_allocate_event(tid, 0, &event, &counters);
-    event->func_id[0] = fid;
-    event->func_id[1] = fidc;
+    level = __msl_enter_call(tid);
+    children_base = __msl_child_base(tid, level);
+    __msl_allocate_event(tid, level, 0, &event, &counters);
+    event->func_id = fidc;
     event->collective.comm = last_coll_comm = MPI_COMM_WORLD;
     event->collective.root = -1;
-    first_progress_entry[tid] = last_progress_exit[tid] = 0;
     memcpy(counters.addrs, p_entrys, sizeof(void *) * gt_info(num_addrs));
 #ifdef _HWCOUNTERS_ENABLED_
     gt_info(hwc).get_all_counters(&counters.hwcs[0]);
@@ -180,6 +179,8 @@ static int MPI_Init_thread_internal(int *argc, char ***argv, int requested, int 
     //    }
     debug_printf("Rank %d: after mpi_init_thread...\n", t_mpi_rank);
     tsc_mpi_exit = global_parallel_start = peat_get_time();
+    __msl_leave_call(tid);
+    event->num_children += (short)(__msl_child_base(tid, level) - children_base);
 #ifndef _TRACTOR_PASSTHROUGH_
     gt_info(post_mpi_init());
 #endif
@@ -189,8 +190,7 @@ static int MPI_Init_thread_internal(int *argc, char ***argv, int requested, int 
     // counting_permit-=2;
     tsc_exit = peat_get_time();
     event->tscs[0] = tsc_entry;
-    event->tscs[1] = tsc_mpi_entry - tsc_entry;
-    event->tscs[2] = tsc_mpi_exit - tsc_entry;
+    event->tscs[1] = tsc_mpi_entry;
 #ifdef _HWCOUNTERS_ENABLED_
     gt_info(hwc).get_all_counters(&counters.hwcs[gt_info(num_hwcs)]);
 #endif
@@ -199,7 +199,8 @@ static int MPI_Init_thread_internal(int *argc, char ***argv, int requested, int 
 #endif
     // PMPI_Barrier(gt_info(TRACTOR_COMM_WORLD));
     gt_info(post_ptpd_init());
-    event->tscs[3] = tsc_exit - tsc_entry;
+    event->tscs[2] = tsc_mpi_exit;
+    event->tscs[3] = tsc_exit;
 #if 1
     local_tool_overhead = tsc_mpi_entry - tsc_entry + tsc_exit - tsc_mpi_exit;
     global_mpi_time += tsc_mpi_exit - tsc_mpi_entry;
@@ -218,12 +219,12 @@ static int MPI_Init_thread_internal(int *argc, char ***argv, int requested, int 
 int MPI_Init_thread(int *argc, char ***argv, int requested, int *provided)
 {
     __DEBUG_PROLOG_MPI_LAYER__
-    skip_parse = 1;
+    mpi_skip_parse = 0;
     void *return_addr[gt_info(num_addrs)];
     // gt_info(init());
     stack_unwind0(gt_info(max_ret_level), return_addr, gt_info(ret_levels));
     int ierr = MPI_Init_thread_internal(argc, argv, requested, provided, return_addr);
-    skip_parse = 0;
+    // mpi_skip_parse = 0;
     __DEBUG_EPILOG_MPI_LAYER__
     return ierr;
 }
@@ -236,7 +237,8 @@ static int MPI_Finalize_internal(void **p_entrys)
     const PEAT_MPI_Func_ID fid = MPI_FINALIZE_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_FINALIZE_ID_THROUGH;
     long long tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
-    int tid;
+    int tid, level = -1;
+    long long children_base = 0;
     pid_t tid_in;
     msl_extras_counters counters;
     msl_event *event;
@@ -244,12 +246,12 @@ static int MPI_Finalize_internal(void **p_entrys)
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     counting_permit += 2;
     tid = __msl_get_tid(tid_in);
-    __msl_allocate_event(tid, 0, &event, &counters);
-    event->func_id[0] = fid;
-    event->func_id[1] = fidc;
+    level = __msl_enter_call(tid);
+    children_base = __msl_child_base(tid, level);
+    __msl_allocate_event(tid, level, 0, &event, &counters);
+    event->func_id = fidc;
     event->collective.root = -1;
     event->collective.comm = last_coll_comm = MPI_COMM_WORLD;
-    first_progress_entry[tid] = last_progress_exit[tid] = 0;
 #ifdef _HWCOUNTERS_ENABLED_
     gt_info(hwc).get_all_counters(&counters.hwcs[0]);
 #endif
@@ -270,18 +272,20 @@ static int MPI_Finalize_internal(void **p_entrys)
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     //    }
     tsc_mpi_exit = peat_get_time();
+    __msl_leave_call(tid);
+    event->num_children += (short)(__msl_child_base(tid, level) - children_base);
     // counting_permit-=2;
     tsc_exit = peat_get_time();
     event->tscs[0] = tsc_entry;
-    event->tscs[1] = tsc_mpi_entry - tsc_entry;
-    event->tscs[2] = tsc_mpi_exit - tsc_entry;
+    event->tscs[1] = tsc_mpi_entry;
 #ifdef _HWCOUNTERS_ENABLED_
     gt_info(hwc).get_all_counters(&counters.hwcs[gt_info(num_hwcs)]);
 #endif
 #ifdef _MEMPROFILE_STORE_
     gt_info(mprof).get_mem_status(&counters.mems[1]);
 #endif
-    event->tscs[3] = tsc_exit - tsc_entry;
+    event->tscs[2] = tsc_mpi_exit;
+    event->tscs[3] = tsc_exit;
 #ifdef _TRACTOR_COLLECT_STAT_
 #if 1
     local_tool_overhead = tsc_mpi_entry - tsc_entry + tsc_exit - tsc_mpi_exit;
@@ -303,13 +307,13 @@ int MPI_Finalize(void)
 {
     __DEBUG_PROLOG_MPI_LAYER__
     debug_printf("Rank %d: called mpi_finalize...\n", t_mpi_rank);
-    skip_parse = 1;
+    mpi_skip_parse = 1;
     void *return_addr[gt_info(num_addrs)];
     stack_unwind0(gt_info(max_ret_level), return_addr, gt_info(ret_levels));
     debug_printf("Rank %d: before mpi_finalize...\n", t_mpi_rank);
     int rv = MPI_Finalize_internal(return_addr);
     debug_printf("Rank %d: after mpi_finalize...\n", t_mpi_rank);
-    skip_parse = 0;
+    // mpi_skip_parse = 0;
     __DEBUG_EPILOG_MPI_LAYER__
     return rv;
 }
@@ -322,7 +326,8 @@ static int MPI_Abort_internal(MPI_Comm comm, int errorcode, void **p_entrys)
     const PEAT_MPI_Func_ID fid = MPI_ABORT_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_ABORT_ID_THROUGH;
     long long tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
-    int tid;
+    int tid, level = -1;
+    long long children_base = 0;
     pid_t tid_in;
     msl_extras_counters counters;
     msl_event *event;
@@ -330,12 +335,12 @@ static int MPI_Abort_internal(MPI_Comm comm, int errorcode, void **p_entrys)
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     counting_permit += 2;
     tid = __msl_get_tid(tid_in);
-    __msl_allocate_event(tid, 0, &event, &counters);
-    event->func_id[0] = fid;
-    event->func_id[1] = fidc;
+    level = __msl_enter_call(tid);
+    children_base = __msl_child_base(tid, level);
+    __msl_allocate_event(tid, level, 0, &event, &counters);
+    event->func_id = fidc;
     event->collective.root = -1;
     event->collective.comm = last_coll_comm = MPI_COMM_WORLD;
-    first_progress_entry[tid] = last_progress_exit[tid] = 0;
 #ifdef _HWCOUNTERS_ENABLED_
     gt_info(hwc).get_all_counters(&counters.hwcs[0]);
 #endif
@@ -354,18 +359,20 @@ static int MPI_Abort_internal(MPI_Comm comm, int errorcode, void **p_entrys)
     //    if (__builtin_expect((counting_permission[fidc]>0),1)) {
     //    }
     tsc_mpi_exit = peat_get_time();
+    __msl_leave_call(tid);
+    event->num_children += (short)(__msl_child_base(tid, level) - children_base);
     // counting_permit-=2;
     tsc_exit = peat_get_time();
     event->tscs[0] = tsc_entry;
-    event->tscs[1] = tsc_mpi_entry - tsc_entry;
-    event->tscs[2] = tsc_mpi_exit - tsc_entry;
+    event->tscs[1] = tsc_mpi_entry;
 #ifdef _HWCOUNTERS_ENABLED_
     gt_info(hwc).get_all_counters(&counters.hwcs[gt_info(num_hwcs)]);
 #endif
 #ifdef _MEMPROFILE_STORE_
     gt_info(mprof).get_mem_status(&counters.mems[1]);
 #endif
-    event->tscs[3] = tsc_exit - tsc_entry;
+    event->tscs[2] = tsc_mpi_exit;
+    event->tscs[3] = tsc_exit;
 #ifdef _TRACTOR_COLLECT_STAT_
 #if 1
     local_tool_overhead = tsc_mpi_entry - tsc_entry + tsc_exit - tsc_mpi_exit;
@@ -391,14 +398,14 @@ int MPI_Abort(MPI_Comm comm, int errorcode)
     const PEAT_MPI_Func_ID fid = MPI_ABORT_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_ABORT_ID_THROUGH;
     debug_printf("Rank %d: called mpi_abort...\n", t_mpi_rank);
-    skip_parse = 1;
+    mpi_skip_parse = 1;
     void *return_addr[gt_info(num_addrs)];
     stack_unwind(gt_info(max_ret_level), return_addr, gt_info(ret_levels));
     debug_printf("Rank %d: before mpi_abort...\n", t_mpi_rank);
     int rv = MPI_Abort_internal(comm, errorcode, return_addr);
     // this code is probably never executed
     debug_printf("Rank %d: after mpi_abort...\n", t_mpi_rank);
-    skip_parse = 0;
+    // mpi_skip_parse = 0;
     __DEBUG_EPILOG_MPI_LAYER__
     return rv;
 }
@@ -409,23 +416,24 @@ int MPI_Pcontrol_internal(const int ctl, void **p_entrys)
 #ifndef _TRACTOR_PASSTHROUGH_
     long long tsc_entry, tsc_exit, tsc_mpi_entry, tsc_mpi_exit, local_tool_overhead;
     pid_t tid_in;
-    int tid;
+    int tid, level = -1;
+    long long children_base = 0;
     msl_extras_counters counters;
     msl_event *event;
-    bool l_skip_parse = skip_parse;
+    bool l_skip_parse = mpi_skip_parse;
 //    if(__builtin_expect(!l_skip_parse,1)) {
     tsc_entry = peat_get_time_tid(&tid_in);
     counting_permit += 2;
     tid = __msl_get_tid(tid_in);
-    __msl_allocate_event(tid, 0, &event, &counters);
-    first_progress_entry[tid] = last_progress_exit[tid] = 0;
+    level = __msl_enter_call(tid);
+    children_base = __msl_child_base(tid, level);
+    __msl_allocate_event(tid, level, 0, &event, &counters);
 #ifdef _HWCOUNTERS_ENABLED_
     gt_info(hwc).get_all_counters(&counters.hwcs[0]);
 #endif
 #ifdef _MEMPROFILE_STORE_
     gt_info(mprof).get_mem_status(&counters.mems[0]);
 #endif
-    in_mpi_call[tid] = 1;
     tsc_mpi_entry = peat_get_time();
 //    }//if(__builtin_expect((counting_permission[MPI_PCONTROL_ID_THROUGH]>0 && !l_skip_parse),1))
 #endif
@@ -433,14 +441,13 @@ int MPI_Pcontrol_internal(const int ctl, void **p_entrys)
 #ifndef _TRACTOR_PASSTHROUGH_
     //    if(__builtin_expect(!l_skip_parse,1)) {
     tsc_mpi_exit = peat_get_time();
-    in_mpi_call[tid] = 0;
+    __msl_leave_call(tid);
     memcpy(counters.addrs, p_entrys, sizeof(void *) * gt_info(num_addrs));
-    event->func_id[0] = MPI_PCONTROL_ID;
-    event->func_id[1] = MPI_PCONTROL_ID_THROUGH;
+    event->func_id = MPI_PCONTROL_ID_THROUGH;
+    event->num_children += (short)(__msl_child_base(tid, level) - children_base);
     event->pcontrol.ctl = ctl;
     event->tscs[0] = tsc_entry;
-    event->tscs[1] = tsc_mpi_entry - tsc_entry;
-    event->tscs[2] = tsc_mpi_exit - tsc_entry;
+    event->tscs[1] = tsc_mpi_entry;
 #ifdef _HWCOUNTERS_ENABLED_
     gt_info(hwc).get_all_counters(&counters.hwcs[gt_info(num_hwcs)]);
 #endif
@@ -449,7 +456,8 @@ int MPI_Pcontrol_internal(const int ctl, void **p_entrys)
 #endif
     // counting_permit-=2;
     tsc_exit = peat_get_time();
-    event->tscs[3] = tsc_exit - tsc_entry;
+    event->tscs[2] = tsc_mpi_exit;
+    event->tscs[3] = tsc_exit;
     local_tool_overhead = tsc_mpi_entry - tsc_entry + tsc_exit - tsc_mpi_exit;
     global_mpi_time += tsc_mpi_exit - tsc_mpi_entry;
     global_tool_overhead += local_tool_overhead;
@@ -513,11 +521,14 @@ void __MPI_PCONTROL(const int *ctl, char *cmd, char *data);
 #pragma weak _MPI_PCONTROL__ = mpi_pcontrol
 #pragma weak __MPI_PCONTROL = mpi_pcontrol
 
+#define copy_comm MPI_Comm lcomm = *comm
+
 static int MPI_Comm_create_internal(MPI_Comm comm, MPI_Group group, MPI_Comm *newcomm, void **p_entrys)
 {
     __DEBUG_PROLOG_MPI_LAYER__
     const PEAT_MPI_Func_ID fid = MPI_COMM_CREATE_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_COMM_CREATE_ID_THROUGH;
+    const int is_internal = 0;
 #include "mpi_layer_comm_begin.prolog.h"
 #ifdef _TRACTOR_PCALL_
     rv = PMPI_Comm_create(comm, group, newcomm);
@@ -536,6 +547,7 @@ int MPI_Comm_create_group_internal(MPI_Comm comm, MPI_Group group, int tag, MPI_
     __DEBUG_PROLOG_MPI_LAYER__
     const PEAT_MPI_Func_ID fid = MPI_COMM_CREATE_GROUP_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_COMM_CREATE_GROUP_ID_THROUGH;
+    const int is_internal = 0;
 #include "mpi_layer_comm_begin.prolog.h"
 #ifdef _TRACTOR_PCALL_
     rv = PMPI_Comm_create_group(comm, group, tag, newcomm);
@@ -554,6 +566,7 @@ static int MPI_Intercomm_create_internal(MPI_Comm local_comm, int local_leader, 
     __DEBUG_PROLOG_MPI_LAYER__
     const PEAT_MPI_Func_ID fid = MPI_INTERCOMM_CREATE_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_INTERCOMM_CREATE_ID_THROUGH;
+    const int is_internal = 0;
 #include "mpi_layer_comm_begin.prolog.h"
 #ifdef _TRACTOR_PCALL_
     rv = PMPI_Intercomm_create(local_comm, local_leader, remote_comm, remote_leader, tag, newintercomm);
@@ -574,6 +587,7 @@ static int MPI_Intercomm_merge_internal(MPI_Comm intercomm, int high, MPI_Comm *
     __DEBUG_PROLOG_MPI_LAYER__
     const PEAT_MPI_Func_ID fid = MPI_INTERCOMM_MERGE_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_INTERCOMM_MERGE_ID_THROUGH;
+    const int is_internal = 0;
 #include "mpi_layer_comm_begin.prolog.h" // input comm is inter
 #ifdef _TRACTOR_PCALL_
     rv = PMPI_Intercomm_merge(intercomm, high, newintracomm);
@@ -592,6 +606,7 @@ static int MPI_Comm_dup_internal(MPI_Comm comm, MPI_Comm *newcomm, void **p_entr
     __DEBUG_PROLOG_MPI_LAYER__
     const PEAT_MPI_Func_ID fid = MPI_COMM_DUP_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_COMM_DUP_ID_THROUGH;
+    const int is_internal = 0;
 #include "mpi_layer_comm_begin.prolog.h"
 #ifdef _TRACTOR_PCALL_
     rv = PMPI_Comm_dup(comm, newcomm);
@@ -610,6 +625,7 @@ static int MPI_Comm_dup_with_info_internal(MPI_Comm comm, MPI_Info info, MPI_Com
     __DEBUG_PROLOG_MPI_LAYER__
     const PEAT_MPI_Func_ID fid = MPI_COMM_DUP_WITH_INFO_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_COMM_DUP_WITH_INFO_ID_THROUGH;
+    const int is_internal = 0;
 #include "mpi_layer_comm_begin.prolog.h"
 #ifdef _TRACTOR_PCALL_
     rv = PMPI_Comm_dup_with_info(comm, info, newcomm);
@@ -628,6 +644,7 @@ static int MPI_Comm_idup_internal(MPI_Comm comm, MPI_Comm *newcomm, MPI_Request 
     __DEBUG_PROLOG_MPI_LAYER__
     const PEAT_MPI_Func_ID fid = MPI_COMM_IDUP_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_COMM_IDUP_ID_THROUGH;
+    const int is_internal = 0;
 #include "mpi_layer_comm_begin.prolog.h"
 #ifdef _TRACTOR_PCALL_
     rv = PMPI_Comm_idup(comm, newcomm, request);
@@ -647,6 +664,7 @@ static int MPIX_Comm_shrink_internal(MPI_Comm comm, MPI_Comm *newcomm, void **p_
     __DEBUG_PROLOG_MPI_LAYER__
     const PEAT_MPI_Func_ID fid = MPIX_COMM_SHRINK_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPIX_COMM_SHRINK_ID_THROUGH;
+    const int is_internal = 0;
 #include "mpi_layer_comm_begin.prolog.h"
 #ifdef _TRACTOR_PCALL_
 #ifndef OPEN_MPI
@@ -662,11 +680,12 @@ static int MPIX_Comm_shrink_internal(MPI_Comm comm, MPI_Comm *newcomm, void **p_
     return rv;
 }
 
-static int MPI_Comm_connect_internal(MTIconst char *port_name, MPI_Info info, int root, MPI_Comm comm, MPI_Comm *newcomm, void **p_entrys)
+static int MPI_Comm_connect_internal(const char *port_name, MPI_Info info, int root, MPI_Comm comm, MPI_Comm *newcomm, void **p_entrys)
 {
     __DEBUG_PROLOG_MPI_LAYER__
     const PEAT_MPI_Func_ID fid = MPI_COMM_CONNECT_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_COMM_CONNECT_ID_THROUGH;
+    const int is_internal = 0;
 #include "mpi_layer_comm_begin.prolog.h"
 #ifdef _TRACTOR_PCALL_
     rv = PMPI_Comm_connect(port_name, info, root, comm, newcomm);
@@ -685,6 +704,7 @@ static int MPI_Comm_disconnect_internal(MPI_Comm *comm, void **p_entrys)
     __DEBUG_PROLOG_MPI_LAYER__
     const PEAT_MPI_Func_ID fid = MPI_COMM_DISCONNECT_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_COMM_DISCONNECT_ID_THROUGH;
+    const int is_internal = 0;
 #include "mpi_layer_comm_end.prolog.h"
 #ifdef _TRACTOR_PCALL_
     rv = PMPI_Comm_disconnect(comm);
@@ -699,6 +719,7 @@ static int MPI_Comm_free_internal(MPI_Comm *comm, void **p_entrys)
     __DEBUG_PROLOG_MPI_LAYER__
     const PEAT_MPI_Func_ID fid = MPI_COMM_FREE_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_COMM_FREE_ID_THROUGH;
+    const int is_internal = 0;
 #include "mpi_layer_comm_end.prolog.h"
 #ifdef _TRACTOR_PCALL_
     rv = PMPI_Comm_free(comm);
@@ -713,6 +734,7 @@ static int MPI_Comm_split_internal(MPI_Comm comm, int color, int key, MPI_Comm *
     __DEBUG_PROLOG_MPI_LAYER__
     const PEAT_MPI_Func_ID fid = MPI_COMM_SPLIT_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_COMM_SPLIT_ID_THROUGH;
+    const int is_internal = 0;
 #include "mpi_layer_comm_begin.prolog.h"
 #ifdef _TRACTOR_PCALL_
     rv = PMPI_Comm_split(comm, color, key, newcomm);
@@ -731,6 +753,7 @@ static int MPI_Comm_split_type_internal(MPI_Comm comm, int split_type, int key, 
     __DEBUG_PROLOG_MPI_LAYER__
     const PEAT_MPI_Func_ID fid = MPI_COMM_SPLIT_TYPE_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_COMM_SPLIT_TYPE_ID_THROUGH;
+    const int is_internal = 0;
 #include "mpi_layer_comm_begin.prolog.h"
 #ifdef _TRACTOR_PCALL_
     rv = PMPI_Comm_split_type(comm, split_type, key, info, newcomm);
@@ -744,11 +767,12 @@ static int MPI_Comm_split_type_internal(MPI_Comm comm, int split_type, int key, 
     return rv;
 }
 
-static int MPI_Cart_create_internal(MPI_Comm comm, int ndims, MTIconst int *dims, MTIconst int *periods, int reorder, MPI_Comm *newcomm, void **p_entrys)
+static int MPI_Cart_create_internal(MPI_Comm comm, int ndims, const int *dims, const int *periods, int reorder, MPI_Comm *newcomm, void **p_entrys)
 {
     __DEBUG_PROLOG_MPI_LAYER__
     const PEAT_MPI_Func_ID fid = MPI_CART_CREATE_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_CART_CREATE_ID_THROUGH;
+    const int is_internal = 0;
 #include "mpi_layer_comm_begin.prolog.h"
 #ifdef _TRACTOR_PCALL_
     rv = PMPI_Cart_create(comm, ndims, dims, periods, reorder, newcomm);
@@ -762,11 +786,12 @@ static int MPI_Cart_create_internal(MPI_Comm comm, int ndims, MTIconst int *dims
     return rv;
 }
 
-static int MPI_Cart_sub_internal(MPI_Comm comm, MTIconst int *remain_dims, MPI_Comm *newcomm, void **p_entrys)
+static int MPI_Cart_sub_internal(MPI_Comm comm, const int *remain_dims, MPI_Comm *newcomm, void **p_entrys)
 {
     __DEBUG_PROLOG_MPI_LAYER__
     const PEAT_MPI_Func_ID fid = MPI_CART_SUB_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_CART_SUB_ID_THROUGH;
+    const int is_internal = 0;
 #include "mpi_layer_comm_begin.prolog.h"
 #ifdef _TRACTOR_PCALL_
     rv = PMPI_Cart_sub(comm, remain_dims, newcomm);
@@ -780,11 +805,12 @@ static int MPI_Cart_sub_internal(MPI_Comm comm, MTIconst int *remain_dims, MPI_C
     return rv;
 }
 
-int MPI_Graph_create_internal(MPI_Comm comm, int nnodes, MTIconst int *index, MTIconst int *edges, int reorder, MPI_Comm *newcomm, void **p_entrys)
+int MPI_Graph_create_internal(MPI_Comm comm, int nnodes, const int *index, const int *edges, int reorder, MPI_Comm *newcomm, void **p_entrys)
 {
     __DEBUG_PROLOG_MPI_LAYER__
     const PEAT_MPI_Func_ID fid = MPI_GRAPH_CREATE_ID;
     const PEAT_MPI_Func_ID_Through fidc = MPI_GRAPH_CREATE_ID_THROUGH;
+    const int is_internal = 0;
 #include "mpi_layer_comm_begin.prolog.h"
 #ifdef _TRACTOR_PCALL_
     rv = PMPI_Graph_create(comm, nnodes, index, edges, reorder, newcomm);
@@ -798,4 +824,250 @@ int MPI_Graph_create_internal(MPI_Comm comm, int nnodes, MTIconst int *index, MT
     return rv;
 }
 
+static int MPI_Dist_graph_create_internal(MPI_Comm comm, int n, const int *sources, const int *degrees, const int *destinations, const int *weights, MPI_Info info, int reorder, MPI_Comm *newcomm, void **p_entrys)
+{
+    __DEBUG_PROLOG_MPI_LAYER__
+    const PEAT_MPI_Func_ID fid = MPI_DIST_GRAPH_CREATE_ID;
+    const PEAT_MPI_Func_ID_Through fidc = MPI_DIST_GRAPH_CREATE_ID_THROUGH;
+    const int is_internal = 0;
+#include "mpi_layer_comm_begin.prolog.h"
+#ifdef _TRACTOR_PCALL_
+    rv = PMPI_Dist_graph_create(comm, n, sources, degrees, destinations, weights, info, reorder, newcomm);
+#endif
+#define __write_comms__ \
+    event->comms.comm = comm; \
+    event->comms.newcomm = *newcomm;
+#include "mpi_layer_comm_begin.epilog.h"
+#undef __write_comms__
+    __DEBUG_EPILOG_MPI_LAYER__
+    return rv;
+}
 
+static int MPI_Dist_graph_create_adjacent_internal(MPI_Comm comm, int indegree, const int *sources, const int *sourceweights, int outdegree, const int *destinations, const int *destweights, MPI_Info info, int reorder, MPI_Comm *newcomm, void **p_entrys)
+{
+    __DEBUG_PROLOG_MPI_LAYER__
+    const PEAT_MPI_Func_ID fid = MPI_DIST_GRAPH_CREATE_ADJACENT_ID;
+    const PEAT_MPI_Func_ID_Through fidc = MPI_DIST_GRAPH_CREATE_ADJACENT_ID_THROUGH;
+    const int is_internal = 0;
+#include "mpi_layer_comm_begin.prolog.h"
+#ifdef _TRACTOR_PCALL_
+    rv = PMPI_Dist_graph_create_adjacent(comm, indegree, sources, sourceweights, outdegree, destinations, destweights, info, reorder, newcomm);
+#endif
+#define __write_comms__ \
+    event->comms.comm = comm; \
+    event->comms.newcomm = *newcomm;
+#include "mpi_layer_comm_begin.epilog.h"
+#undef __write_comms__
+    __DEBUG_EPILOG_MPI_LAYER__
+    return rv;
+}
+
+static int MPI_Comm_spawn_internal(const char *command, char **argv, int maxprocs, MPI_Info info, int root, MPI_Comm comm, MPI_Comm *newcomm, int *array_of_errcodes, void **p_entrys)
+{
+    __DEBUG_PROLOG_MPI_LAYER__
+    const PEAT_MPI_Func_ID fid = MPI_COMM_SPAWN_ID;
+    const PEAT_MPI_Func_ID_Through fidc = MPI_COMM_SPAWN_ID_THROUGH;
+    const int is_internal = 0;
+#include "mpi_layer_comm_begin.prolog.h"
+#ifdef _TRACTOR_PCALL_
+    rv = PMPI_Comm_spawn(command, argv, maxprocs, info, root, comm, newcomm, array_of_errcodes);
+#endif
+#define __write_comms__ \
+    event->comms.comm = comm; \
+    event->comms.newcomm = *newcomm;
+#include "mpi_layer_comm_begin.epilog.h"
+#undef __write_comms__
+    __DEBUG_EPILOG_MPI_LAYER__
+    return rv;
+}
+
+static int MPI_Comm_spawn_multiple_internal(int count, char **array_of_commands, char ***array_of_argv, const int *array_of_maxprocs, const MPI_Info *array_of_info, int root, MPI_Comm comm, MPI_Comm *newcomm, int *array_of_errcodes, void **p_entrys)
+{
+    __DEBUG_PROLOG_MPI_LAYER__
+    const PEAT_MPI_Func_ID fid = MPI_COMM_SPAWN_MULTIPLE_ID;
+    const PEAT_MPI_Func_ID_Through fidc = MPI_COMM_SPAWN_MULTIPLE_ID_THROUGH;
+    const int is_internal = 0;
+#include "mpi_layer_comm_begin.prolog.h"
+#ifdef _TRACTOR_PCALL_
+    rv = PMPI_Comm_spawn_multiple(count, array_of_commands, array_of_argv, array_of_maxprocs, array_of_info, root, comm, newcomm, array_of_errcodes);
+#endif
+#define __write_comms__ \
+    event->comms.comm = comm; \
+    event->comms.newcomm = *newcomm;
+#include "mpi_layer_comm_begin.epilog.h"
+#undef __write_comms__
+    __DEBUG_EPILOG_MPI_LAYER__
+    return rv;
+}
+
+static int MPI_Comm_accept_internal(const char *port_name, MPI_Info info, int root, MPI_Comm comm, MPI_Comm *newcomm, void **p_entrys)
+{
+    __DEBUG_PROLOG_MPI_LAYER__
+    const PEAT_MPI_Func_ID fid = MPI_COMM_ACCEPT_ID;
+    const PEAT_MPI_Func_ID_Through fidc = MPI_COMM_ACCEPT_ID_THROUGH;
+    const int is_internal = 0;
+#include "mpi_layer_comm_begin.prolog.h"
+#ifdef _TRACTOR_PCALL_
+    rv = PMPI_Comm_accept(port_name, info, root, comm, newcomm);
+#endif
+#define __write_comms__ \
+    event->comms.comm = comm; \
+    event->comms.newcomm = *newcomm;
+#include "mpi_layer_comm_begin.epilog.h"
+#undef __write_comms__
+    __DEBUG_EPILOG_MPI_LAYER__
+    return rv;
+}
+
+static int MPI_Comm_join_internal(int fd, MPI_Comm *newcomm, void **p_entrys)
+{
+    __DEBUG_PROLOG_MPI_LAYER__
+    const PEAT_MPI_Func_ID fid = MPI_COMM_JOIN_ID;
+    const PEAT_MPI_Func_ID_Through fidc = MPI_COMM_JOIN_ID_THROUGH;
+    const int is_internal = 0;
+#include "mpi_layer_comm_begin.prolog.h"
+#ifdef _TRACTOR_PCALL_
+    rv = PMPI_Comm_join(fd, newcomm);
+#endif
+#define __write_comms__ \
+    event->comms.newcomm = *newcomm;
+#include "mpi_layer_comm_begin.epilog.h"
+#undef __write_comms__
+    __DEBUG_EPILOG_MPI_LAYER__
+    return rv;
+}
+
+#if MPI_VERSION >= 4
+static int MPI_Comm_idup_with_info_internal(MPI_Comm comm, MPI_Info info, MPI_Comm *newcomm, MPI_Request *request, void **p_entrys)
+{
+    __DEBUG_PROLOG_MPI_LAYER__
+    const PEAT_MPI_Func_ID fid = MPI_COMM_IDUP_WITH_INFO_ID;
+    const PEAT_MPI_Func_ID_Through fidc = MPI_COMM_IDUP_WITH_INFO_ID_THROUGH;
+    const int is_internal = 0;
+#include "mpi_layer_comm_begin.prolog.h"
+#ifdef _TRACTOR_PCALL_
+    rv = PMPI_Comm_idup_with_info(comm, info, newcomm, request);
+#endif
+#define __write_comms__ \
+    event->comms.request = *request; \
+    event->comms.comm = comm; \
+    event->comms.newcomm = *newcomm;
+#include "mpi_layer_comm_begin.epilog.h"
+#undef __write_comms__
+    __DEBUG_EPILOG_MPI_LAYER__
+    return rv;
+}
+#endif
+
+#if MPI_VERSION >= 4
+static int MPI_Comm_create_from_group_internal(MPI_Group group, const char *stringtag, MPI_Info info, MPI_Errhandler errhandler, MPI_Comm *newcomm, void **p_entrys)
+{
+    __DEBUG_PROLOG_MPI_LAYER__
+    const PEAT_MPI_Func_ID fid = MPI_COMM_CREATE_FROM_GROUP_ID;
+    const PEAT_MPI_Func_ID_Through fidc = MPI_COMM_CREATE_FROM_GROUP_ID_THROUGH;
+    const int is_internal = 0;
+#include "mpi_layer_comm_begin.prolog.h"
+#ifdef _TRACTOR_PCALL_
+    rv = PMPI_Comm_create_from_group(group, stringtag, info, errhandler, newcomm);
+#endif
+#define __write_comms__ \
+    event->comms.newcomm = *newcomm;
+#include "mpi_layer_comm_begin.epilog.h"
+#undef __write_comms__
+    __DEBUG_EPILOG_MPI_LAYER__
+    return rv;
+}
+#endif
+
+#if MPI_VERSION >= 4
+static int MPI_Intercomm_create_from_groups_internal(MPI_Group local_group, int local_leader, MPI_Group remote_group, int remote_leader, const char *stringtag, MPI_Info info, MPI_Errhandler errhandler, MPI_Comm *newintercomm, void **p_entrys)
+{
+    __DEBUG_PROLOG_MPI_LAYER__
+    const PEAT_MPI_Func_ID fid = MPI_INTERCOMM_CREATE_FROM_GROUPS_ID;
+    const PEAT_MPI_Func_ID_Through fidc = MPI_INTERCOMM_CREATE_FROM_GROUPS_ID_THROUGH;
+    const int is_internal = 0;
+#include "mpi_layer_comm_begin.prolog.h"
+#ifdef _TRACTOR_PCALL_
+    rv = PMPI_Intercomm_create_from_groups(local_group, local_leader, remote_group, remote_leader, stringtag, info, errhandler, newintercomm);
+#endif
+#define __write_comms__ \
+    event->comms.newcomm = *newintercomm;
+#include "mpi_layer_comm_begin.epilog.h"
+#undef __write_comms__
+    __DEBUG_EPILOG_MPI_LAYER__
+    return rv;
+}
+#endif
+
+
+#ifdef _PARSE_MPI_INTERNAL_
+#ifdef _OPENMPI_
+void mpi_internal_comm_create_internal(MPID_Comm *comm, MPID_Comm *parent_comm, int kind, void **p_entrys) {}
+void mpi_internal_comm_free_internal(MPID_Comm *comm, void **p_entrys) {}
+#else
+void pmpi_internal_comm_create(MPID_Comm *comm, MPID_Comm *parent_comm, int kind);
+void pmpi_internal_comm_free(MPID_Comm *comm);
+#undef copy_comm
+#define copy_comm MPI_Comm lcomm = mpi_internal_get_comm_handle_from_comm(comm)
+
+void mpi_internal_comm_create_internal(MPID_Comm *comm, MPID_Comm *parent_comm, int kind, void **p_entrys) 
+{
+    __DEBUG_PROLOG_MPI_LAYER__
+    const PEAT_MPI_Func_ID_Through fidc = MPID_COMM_CREATE_ID_THROUGH;
+    const int is_internal = 1;
+    if (mpi_skip_parse) {
+        __DEBUG_EPILOG_MPI_LAYER__
+        return;
+    }
+    const MPI_Comm parent_handle = mpi_internal_get_comm_handle_from_comm(parent_comm);
+    const MPI_Comm comm_handle = mpi_internal_get_comm_handle_from_comm(comm);
+    pid_t peek_tid_in;
+    peat_get_time_tid(&peek_tid_in);
+    int peek_tid = gt_info(get_tid(peek_tid_in));
+    int peek_level = gt_info(current_level(peek_tid));
+    msl_event *last = gt_info(last_returned_event)[peek_tid][peek_level];
+    if (last && last->func_id == fidc && last->comms.comm == parent_handle && last->comms.newcomm == comm_handle || comm_handle == MPI_COMM_WORLD || comm_handle == MPI_COMM_SELF) {
+        __DEBUG_EPILOG_MPI_LAYER__
+        return;
+    }
+#include "mpi_layer_comm_begin.prolog.h"
+#ifdef _TRACTOR_PCALL_
+//    pmpi_internal_comm_create(comm, parent_comm, kind); //its no-op at least now
+#endif
+#define __write_comms__ \
+    event->comms.comm = mpi_internal_get_comm_handle_from_comm(parent_comm); \
+    event->comms.newcomm = mpi_internal_get_comm_handle_from_comm(comm);
+#include "mpi_layer_comm_begin.epilog.h"
+#undef __write_comms__
+
+    __DEBUG_EPILOG_MPI_LAYER__
+}
+void mpi_internal_comm_free_internal(MPID_Comm *comm, void **p_entrys) 
+{
+    __DEBUG_PROLOG_MPI_LAYER__
+    const PEAT_MPI_Func_ID_Through fidc = MPID_COMM_FREE_ID_THROUGH;
+    const int is_internal = 1;
+    if (mpi_skip_parse) {
+        __DEBUG_EPILOG_MPI_LAYER__
+        return;
+    }
+    const MPI_Comm comm_handle = mpi_internal_get_comm_handle_from_comm(comm);
+    pid_t peek_tid_in;
+    peat_get_time_tid(&peek_tid_in);
+    int peek_tid = gt_info(get_tid(peek_tid_in));
+    int peek_level = gt_info(current_level(peek_tid));
+    msl_event *last = gt_info(last_returned_event)[peek_tid][peek_level];
+    if (last && last->func_id == fidc && last->comms.comm == comm_handle || comm_handle == MPI_COMM_WORLD || comm_handle == MPI_COMM_SELF) {
+        __DEBUG_EPILOG_MPI_LAYER__
+        return;
+    }
+    // debug_printf ("internal comm destruction %x\n", mpi_internal_get_comm_handle_from_comm(comm));
+#include "mpi_layer_comm_end.prolog.h"
+#ifdef _TRACTOR_PCALL_
+//    pmpi_internal_comm_free(comm);  //its no-op at least now
+#endif
+#include "mpi_layer_comm_end.epilog.h"
+    __DEBUG_EPILOG_MPI_LAYER__
+}
+#endif
+#endif

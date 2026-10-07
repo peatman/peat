@@ -39,66 +39,74 @@ bool Mat::parse_single_event(const int rank)
 {
     line_mpi.clear();
     line_hwc.clear();
-    if (!input_MPI->is_file_good(rank) || !input_HWC->is_file_good(rank)) {
+    if (!input_MPI->is_file_good(rank) || (!globals.matching_only && !input_HWC->is_file_good(rank))) {
         return false;
     }
     input_MPI->read_lines(line_mpi, rank, ':');
-    input_HWC->read_lines(line_hwc, rank, ':');
+    if (!globals.matching_only) {
+        input_HWC->read_lines(line_hwc, rank, ':');
+    }
     // matdbg(0) << "P" << rank << std::endl;
     if (line_mpi.size() < 2) {
         return false;
     }
     Tractor_Event t_event(rank, line_mpi, line_hwc, model_id.num_hwcs, model_id.num_addrs, user_region_store, com_store);
     PEAT_MPI_Func_ID mpifunc = t_event.func_id;
+    // nested records (progress engine calls issued inside another traced call) do not count as user-level events
+    const bool nested_record = t_event.nested ? t_event.level > 0 : global_func_id.check_property(mpifunc, PEAT_PROP_MPI_INTERNAL);
     PEAT_Clock mpi_time = 0, uc_time = 0, t_time = 0, occ_inc = 0;
-    if (!second_line) {
-        t_event.tsc_time.func.in += tsc_predictor.at(rank);
-        if (!global_func_id.check_property(mpifunc, PEAT_PROP_COLT)) {
-            tsc_predictor[rank] = t_event.tsc_time.func.in;
-            mpi_time = t_event.tsc_time.mpi.out - t_event.tsc_time.mpi.in;
-            if (t_event.func_id != MPI_INIT_ID && t_event.func_id != MPI_INIT_THREAD_ID && !is_omp(t_event.func_class)) {
-                uc_time = t_event.tsc_time.func.in - tsc_corrector[rank];
+    if (!globals.matching_only) { // tsc_time is all sentinel (-1) without hwc data, so these are meaningless
+        if (!second_line) {
+            t_event.tsc_time.func.in += tsc_predictor.at(rank);
+            if (t_event.nested) // nested format: every record start is relative to the previous record at any level
+                tsc_predictor[rank] = t_event.tsc_time.func.in;
+            if (!nested_record) {
+                tsc_predictor[rank] = t_event.tsc_time.func.in;
+                mpi_time = t_event.tsc_time.mpi.out - t_event.tsc_time.mpi.in;
+                if (t_event.func_id != MPI_INIT_ID && t_event.func_id != MPI_INIT_THREAD_ID && !is_omp(t_event.func_class)) {
+                    uc_time = t_event.tsc_time.func.in - tsc_corrector[rank];
+                } else {
+                    t_time = 0;
+                }
+                if (t_event.thread_id == 0) {
+                    tsc_corrector[rank] = t_event.tsc_time.func.in + t_event.tsc_time.func.out;
+                }
+                occ_inc = 1;
+            }
+            if (t_event.func_id != MPI_INIT_ID && t_event.func_id != MPI_INIT_THREAD_ID && t_event.func_id != MPI_FINALIZE_ID && t_event.thread_id == 0) {
+                if (is_omp(t_event.func_class)) { // temporal clutch until fixed in tractor
+                    if (t_event.func_id == OMPT_SYNC_REGION_ID || t_event.func_id == OMPT_SYNC_REGION_WAIT_ID) {
+                        t_time = t_event.tsc_time.mpi.in + t_event.tsc_time.func.out - t_event.tsc_time.mpi.out;
+                    } else {
+                        t_time = t_event.tsc_time.mpi.in;
+                    }
+                } else {
+                    t_time = t_event.tsc_time.mpi.in + t_event.tsc_time.func.out - t_event.tsc_time.mpi.out;
+                }
             } else {
                 t_time = 0;
             }
-            if (t_event.thread_id == 0) {
-                tsc_corrector[rank] = t_event.tsc_time.func.in + t_event.tsc_time.func.out;
-            }
-            occ_inc = 1;
         }
-        if (t_event.func_id != MPI_INIT_ID && t_event.func_id != MPI_INIT_THREAD_ID && t_event.func_id != MPI_FINALIZE_ID && t_event.thread_id == 0) {
-            if (is_omp(t_event.func_class)) { // temporal clutch until fixed in tractor
-                if (t_event.func_id == OMPT_SYNC_REGION_ID || t_event.func_id == OMPT_SYNC_REGION_WAIT_ID) {
-                    t_time = t_event.tsc_time.mpi.in + t_event.tsc_time.func.out - t_event.tsc_time.mpi.out;
-                } else {
-                    t_time = t_event.tsc_time.mpi.in;
-                }
-            } else {
-                t_time = t_event.tsc_time.mpi.in + t_event.tsc_time.func.out - t_event.tsc_time.mpi.out;
-            }
-        } else {
-            t_time = 0;
-        }
+        t_event.tsc_time.mpi.in += t_event.tsc_time.func.in;
+        t_event.tsc_time.mpi.out += t_event.tsc_time.func.in;
+        t_event.tsc_time.func.out += t_event.tsc_time.func.in;
+        if (t_event.tsc_time.pe.in > 0)
+            t_event.tsc_time.pe.in += t_event.tsc_time.func.in;
+        if (t_event.tsc_time.pe.out > 0)
+            t_event.tsc_time.pe.out += t_event.tsc_time.func.in;
+        t_event.tsc_u_time = t_event.tsc_time; // update unmodified time
+
+        /* update time according to ptpd or similar method */
+        t_event.tsc_time.func.in = ptp->get_real_time(t_event.tsc_time.func.in, rank);
+        t_event.tsc_time.func.out = ptp->get_real_time(t_event.tsc_time.func.out, rank);
+        t_event.tsc_time.mpi.in = ptp->get_real_time(t_event.tsc_time.mpi.in, rank);
+        t_event.tsc_time.mpi.out = ptp->get_real_time(t_event.tsc_time.mpi.out, rank);
+        if (t_event.tsc_time.pe.in > 0)
+            t_event.tsc_time.pe.in = ptp->get_real_time(t_event.tsc_time.pe.in, rank);
+        if (t_event.tsc_time.pe.out > 0)
+            t_event.tsc_time.pe.out = ptp->get_real_time(t_event.tsc_time.pe.out, rank);
     }
-    t_event.tsc_time.mpi.in += t_event.tsc_time.func.in;
-    t_event.tsc_time.mpi.out += t_event.tsc_time.func.in;
-    t_event.tsc_time.func.out += t_event.tsc_time.func.in;
-    if (t_event.tsc_time.pe.in > 0)
-        t_event.tsc_time.pe.in += t_event.tsc_time.func.in;
-    if (t_event.tsc_time.pe.out > 0)
-        t_event.tsc_time.pe.out += t_event.tsc_time.func.in;
-    t_event.tsc_u_time = t_event.tsc_time; // update unmodified time
-
-    /* update time according to ptpd or similar method */
-    t_event.tsc_time.func.in = ptp->get_real_time(t_event.tsc_time.func.in, rank);
-    t_event.tsc_time.func.out = ptp->get_real_time(t_event.tsc_time.func.out, rank);
-    t_event.tsc_time.mpi.in = ptp->get_real_time(t_event.tsc_time.mpi.in, rank);
-    t_event.tsc_time.mpi.out = ptp->get_real_time(t_event.tsc_time.mpi.out, rank);
-    if (t_event.tsc_time.pe.in > 0)
-        t_event.tsc_time.pe.in = ptp->get_real_time(t_event.tsc_time.pe.in, rank);
-    if (t_event.tsc_time.pe.out > 0)
-        t_event.tsc_time.pe.out = ptp->get_real_time(t_event.tsc_time.pe.out, rank);
-
+/* this section is not working as designed if --matching-only is enabled so some imbalance may occur */
     PEAT_Clock tsc_t = t_event.tsc_time.func.in;
     while (timeline.count(tsc_t) > 0)
         tsc_t++;
@@ -385,8 +393,13 @@ Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : globals(glob), m
 
     input_MPI = new File_Storage_GZ(globals.pe_MPI_files_in_rank, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, globals.verbose);
     input_HWC = new File_Storage_GZ(globals.pe_HWC_files_in_rank, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, globals.verbose);
+#ifdef MAT_PROCESS_HWC_MPI_OUTPUT
     output_MPI = new File_Storage_GZ(globals.pe_MPI_files_in_rank_out, PEAT_FIO_FLAG_WRITE, "w9", globals.verbose);
     output_HWC = new File_Storage_GZ(globals.pe_HWC_files_in_rank_out, PEAT_FIO_FLAG_WRITE, "w9", globals.verbose);
+#else
+    output_MPI = NULL;
+    output_HWC = NULL;
+#endif
     output_bind = new File_Storage_GZ(globals.pe_bind_files_in_rank_out, PEAT_FIO_FLAG_WRITE, "w9", globals.verbose);
 
 #ifdef PEAT_MPI
@@ -437,9 +450,11 @@ Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : globals(glob), m
 Mat::~Mat()
 {
     delete input_MPI;
-    delete output_MPI;
     delete input_HWC;
+#ifdef MAT_PROCESS_HWC_MPI_OUTPUT
+    delete output_MPI;
     delete output_HWC;
+#endif
     delete output_bind;
     delete user_region_store;
     delete gpu_func_store;
@@ -712,15 +727,15 @@ void Mat::process()
     if (!pc_levels.empty()) {
         for (std::map<int, int>::iterator tm_it = pc_levels.begin(); tm_it != pc_levels.end(); ++tm_it) {
             printf("%20s: %7d\n", "PC Region", tm_it->first);
-            std::map<T_property, Mat_Time> t_times = timings[tm_it->first];
-            for (std::map<T_property, Mat_Time>::iterator t_it = t_times.begin(); t_it != t_times.end(); ++t_it) {
+            std::map<PEAT_Property, Mat_Time> t_times = timings[tm_it->first];
+            for (std::map<PEAT_Property, Mat_Time>::iterator t_it = t_times.begin(); t_it != t_times.end(); ++t_it) {
                 printf("%20s: %10lld - %12lld\n", print_record_properties(t_it->first), t_it->second.occurences, t_it->second.durations);
             }
         }
     }
     printf("%20s:\n", "Out of any PC region");
-    std::map<T_property, Mat_Time> t_times = timings[0];
-    for (std::map<T_property, Mat_Time>::iterator t_it = t_times.begin(); t_it != t_times.end(); ++t_it) {
+    std::map<PEAT_Property, Mat_Time> t_times = timings[0];
+    for (std::map<PEAT_Property, Mat_Time>::iterator t_it = t_times.begin(); t_it != t_times.end(); ++t_it) {
         printf("%20s: %10lld - %12lld\n", print_record_properties(t_it->first), t_it->second.occurences, t_it->second.durations);
     }
 

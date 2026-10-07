@@ -28,8 +28,8 @@
 struct CTT_Event {
     PEAT_Clock duration, occurences;
     PEAT_Rank rank;
-    T_property func_class;
-    CTT_Event() : duration(0), occurences(0), rank(-1), func_class(T_PROPERTY_NONE) {}
+    PEAT_Property func_class;
+    CTT_Event() : duration(0), occurences(0), rank(-1), func_class(PEAT_PROPERTY_NONE) {}
     std::vector<PEAT_UID> addrs;
     struct p2p_properties {
         PEAT_Message_Size size;

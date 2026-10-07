@@ -34,6 +34,10 @@
 #endif
 #include "t_base_event.h"
 
+#if defined(_FAB_PROFILE_)
+#include "t_fab.h"
+#endif
+
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -72,7 +76,9 @@ struct t_bin {
 struct num_processed_events {
     long processed_events = 0;
     long max_uniq_idx = 0;
+    long max_fab_uniq_idx = 0;
     long max_thread_id = 0;
+    int nesting_levels = 1; /* achieved, number of id columns written */
 };
 
 #ifdef GPUPARSE
@@ -94,6 +100,20 @@ struct T_Stat_Record {
     }
 };
 #endif
+/*
+
+#if defined(_FAB_PROFILE_)
+enum t_fab_layer {
+    T_FAB_LAYER_NONE=0,
+    T_FAB_LAYER_VERBS,
+    T_FAB_LAYER_OFI,
+    T_FAB_LAYER_PSM2,
+    T_FAB_LAYER_PSM3,
+    T_FAB_LAYER_UCX,
+    T_FAB_LAYER_MAX
+};
+#endif
+*/
 struct tractor : t_base_event {
     int print_all;
     int tractor_initialized;
@@ -102,6 +122,10 @@ struct tractor : t_base_event {
     int pcontrol;
     int t_write_main_files;
     int t_use_signals;
+#ifdef _FAB_PROFILE_
+    int t_collect_fab;
+    int t_permit_collect_fab;
+#endif
     char mpi_filename[1024];
     char hwc_filename[1024];
     char com_filename[1024];
@@ -191,10 +215,14 @@ struct tractor : t_base_event {
     char ptpd_in_binpath[MAX_PATH];
 #endif
 
+#if defined(_FAB_PROFILE_)
+    t_fab_profiler t_fab_prof;
+    // t_fab_layer fab_layer;
+#endif
+
     char gz_mode[16];
-    FILE **fps_events;
+    FILE **fps_events; /* realtime dump: one temporary file per (thread, level), index tid * levels + level */
     FILE **fps_extras;
-    FILE **fps_c_extras;
 
     MPI_Group grp_world, grp_smp, grp_master;
     MPI_Comm comm_smp, comm_master, TRACTOR_COMM_WORLD;
@@ -206,13 +234,14 @@ struct tractor : t_base_event {
     std::string node_topology;
     tractor(void);
     ~tractor(void);
-    virtual void dump_extras(pid_t tid, msl_base_chain **chain, int is_colt);
-    virtual void dump_events(pid_t tid, msl_adv_chain **chain);
+    virtual void dump_extras(pid_t tid, int level, msl_base_chain **chain);
+    virtual void dump_events(pid_t tid, int level, msl_adv_chain **chain);
+    int fp_index(int tid, int level) const { return tid * t_max_nesting_levels + level; }
 
     void init(void);
     int parse_boundaries(char *boundaries);
     int parse_levels(char *levels);
-    void update_extras_pointers(int tid, long long *max_ext_count, msl_extra_info **cur_exts_array, bool is_colt);
+    void update_extras_pointers(int tid, int level, long long *max_ext_count, msl_extra_info **cur_exts_array);
 
     void finalize(void);
     void abort(void);
@@ -232,7 +261,7 @@ struct tractor : t_base_event {
     void finalize_extra(const int tid);
     void nodes_info(t_nodes_info *ninfo);
     void get_rank_time(PEAT_Clock *start, PEAT_Clock *start_parallel, PEAT_Clock *end_parallel, PEAT_Clock *end, PEAT_Clock *overall_tool_overhead, PEAT_Clock *overall_MPI, PEAT_Clock *overall_GPU);
-    int t_check_chain(pid_t tid);
+    int t_check_chain(pid_t tid, int level);
 
     int write_trace(void);
     PEAT_Rank get_real_rank(MPI_Comm comm, PEAT_Rank rank_in, PEAT_Clock tsc);

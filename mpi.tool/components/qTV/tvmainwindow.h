@@ -152,7 +152,7 @@ class TVMainWindow : public QMainWindow
     QLabel *label_alt;
     QLabel *label_shift;
     QLabel *label_candidate;
-    TraceInfo info;
+    Trace_Info info;
     QFileInfo trace_file;
     TV_TraceParts tp;
     TV_TraceParts shown;

@@ -9,14 +9,14 @@ export mpi_type=mpich:5.0.1x-mt-sock-eng
 . env.sh
 set -x
 
-#LD_PRELOAD=../../lib/intel/libtractor_dbg.mvapich4.ct.so 
-#LD_PRELOAD=../../lib/intel/libtractor.mvapich4.ct.so 
-#LD_PRELOAD=../../lib/intel/libtractor_dbg.mpich4.ct.so 
-#LD_PRELOAD=../../lib/intel/libtractor.mpich5.so 
-LD_PRELOAD=../../lib/intel/libtractor.mpich5.ct.so 
-#LD_PRELOAD=../../lib/gnu/libtractor_dbg.mpich5.so 
-#LD_PRELOAD=../../lib/intel/libtractor.mvapich4.so 
-#LD_PRELOAD=../../lib/intel/libtractor.impi.so 
+#LD_PRELOAD=../../../../lib/intel/libtractor_dbg.mvapich4.ct.so 
+#LD_PRELOAD=../../../../lib/intel/libtractor.mvapich4.ct.so 
+#LD_PRELOAD=../../../../lib/intel/libtractor_dbg.mpich4.ct.so 
+#LD_PRELOAD=../../../../lib/intel/libtractor.mpich5.so 
+LD_PRELOAD=../../../../lib/intel/libtractor.mpich5.ct.so 
+#LD_PRELOAD=../../../../lib/gnu/libtractor_dbg.mpich5.so 
+#LD_PRELOAD=../../../../lib/intel/libtractor.mvapich4.so 
+#LD_PRELOAD=../../../../lib/intel/libtractor.impi.so 
 
 
 export PEAT_TRACTOR_PRINT_FUNC_NAMES=1

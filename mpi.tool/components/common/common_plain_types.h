@@ -513,8 +513,8 @@ const char* printTCommonFileRecordType( PEAT_func_idNum id )
 
 #endif
 
-enum T_property {
-    T_PROPERTY_NONE,
+enum PEAT_Property {
+    PEAT_PROPERTY_NONE,
     PEAT_PROP_CLASS_START,
     PEAT_PROP_CLASS_P2P,
     PEAT_PROP_CLASS_PROBE,
@@ -525,17 +525,26 @@ enum T_property {
     PEAT_PROP_CLASS_OSC,
     PEAT_PROP_CLASS_FIO,
     PEAT_PROP_CLASS_COMM,
+    PEAT_PROP_CLASS_PSM2,
+    PEAT_PROP_CLASS_PSM3,
+    PEAT_PROP_CLASS_VERBS,
+    PEAT_PROP_CLASS_SMPI,
+    PEAT_PROP_CLASS_UCX,
+    PEAT_PROP_CLASS_OFI,
     PEAT_PROP_CLASS_CL,
     PEAT_PROP_CLASS_ZE,
     PEAT_PROP_CLASS_OMPT,
     PEAT_PROP_CLASS_GPU, // CL and ZE
     PEAT_PROP_CLASS_END,
+    PEAT_PROP_T_PREFIX,
+    PEAT_PROP_MV2_PREFIX,
     PEAT_PROP_CODE_USER,
     PEAT_PROP_CODE_TRACTOR_OVERHEAD,
     PEAT_PROP_CODE_ALL,
+    PEAT_PROP_MV2_PROXY,
     PEAT_PROP_CREATE_ALLOC,
     PEAT_PROP_SKIP,
-    PEAT_PROP_COLT,
+    PEAT_PROP_MPI_INTERNAL,
     PEAT_PROP_CALL_INTERNAL,
     PEAT_PROP_IGNORE,
     PEAT_PROP_BYTES,
@@ -558,6 +567,9 @@ enum T_property {
     PEAT_PROP_MPI1,
     PEAT_PROP_MPI2,
     PEAT_PROP_MPI3,
+    PEAT_PROP_MPI4,
+    PEAT_PROP_MPI41, // MPI-4.1 additions (need MPI_SUBVERSION>=1 on a 4.x library)
+    PEAT_PROP_MPI5,
     PEAT_PROP_BLOCK,
     PEAT_PROP_NON_BLOCK,
     PEAT_PROP_REQUEST,
@@ -598,9 +610,9 @@ enum T_property {
     PEAT_PROP_BUILTIN,
     PEAT_PROP_NON_DETERMINISTIC,
     PEAT_PROP_SIZE,
-    T_PROPERTY_SIZE
+    PEAT_POPERTY_SIZE
 };
-static const char *print_record_properties(T_property id)
+static const char *print_record_properties(PEAT_Property id)
 {
     switch (id) {
     case PEAT_PROP_CODE_TRACTOR_OVERHEAD:
@@ -651,6 +663,16 @@ static const char *print_record_properties(T_property id)
 #endif
 
 #ifdef __cplusplus
+/* PEAT_OMP must be decided here, where PEAT_Mutex is defined: a translation unit that includes this header before
+   common_types.h would otherwise see an empty mutex and a different layout of every object holding one.
+   std::shared_mutex needs C++17; older dialects (the tractor is built with -std=c++11 by some compilers) keep
+   the empty mutex, as they never had a real one. */
+#if defined(_OPENMP) && !defined(PEAT_OMP) && defined(__cplusplus) && __cplusplus >= 201703L
+#define PEAT_OMP
+#endif
+#ifdef PEAT_OMP
+#include <shared_mutex>
+#endif
 struct PEAT_Mutex
 #ifdef PEAT_OMP
     : public std::shared_mutex

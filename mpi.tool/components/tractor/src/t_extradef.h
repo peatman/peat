@@ -30,9 +30,13 @@ extern long long overall_durations[MPI_MAX_FUNCID_THROUGH];
 extern long long overall_entries[MPI_MAX_FUNCID_THROUGH];
 extern char *mpi_function_names[MPI_MAX_FUNCID_THROUGH];
 #endif
+extern int mpi_func_ids_trans[MPI_MAX_FUNCID_THROUGH]; /* through id -> base id */
 extern char counting_permission[MPI_MAX_FUNCID_THROUGH];
 extern char counting_permission_pcontrol[MPI_MAX_FUNCID_THROUGH];
 extern char fullstack_permission[MPI_MAX_FUNCID_THROUGH];
+/* set once tractor::end() starts: libfabric's own ELF-level destructors (e.g. vrb_fini) can still
+   call our fi_* wrappers after tractor's own global object has already been torn down */
+extern bool tractor_finished;
 
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
 }

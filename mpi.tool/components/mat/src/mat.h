@@ -65,7 +65,7 @@ class Mat
     std::map<int, int> p_control_in_use;
     std::map<int, int> pc_levels;
     PEAT_Rank get_soonest_event(PEAT_Clock &tsc);
-    std::map<PEAT_Num, std::map<T_property, Mat_Time>> timings;
+    std::map<PEAT_Num, std::map<PEAT_Property, Mat_Time>> timings;
     Mat(Global_Parameters &file_names, Model_ID &model_id_storage);
     ~Mat();
     void write_trace_info(const std::string &name);

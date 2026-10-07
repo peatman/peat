@@ -6,7 +6,7 @@ export mpi_type=mpich:5.0.1x-mt-ofi-eng
 . env.sh
 set -x
 
-LD_PRELOAD=../../lib/intel/libtractor.mpich5.eng.so 
+LD_PRELOAD=../../../../lib/intel/libtractor.mpich5.eng.so 
 
 
 export PEAT_TRACTOR_PRINT_FUNC_NAMES=1

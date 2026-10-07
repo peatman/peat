@@ -32,7 +32,7 @@ SUFFIX=
 PTPD=on
 MEMPROFILE=off
 TARGET=impi
-PARSE_COLT=off
+PARSE_MPI_INTERNAL=off
 PARSE_GPU=off
 OVERALLSTATONLY=off
 VIRT2PHYS=off
@@ -44,20 +44,29 @@ PRINT_EXTENDED_STUFF=off #on# to enable
 MAXMPI=3
 OMPT=on
 
-CPP=/usr/bin/cpp -E
+CPP:=/usr/bin/cpp -E
 
 TRACTOR_BUILD_DATE:="$(shell date)"
 #compiler options
 OPT=-O3 #-Zp4
 FPIC=-fpic
-INCLUDE=-I. -I../../common -I$(HWLOC_PATH)/include 
-LIBS=-lz  -L$(HWLOC_PATH)/lib -lhwloc 
+INCLUDE=-I. -I../../common 
+LIBS=-lz -lhwloc
 PTPD_LIBS=-lz
+# HWLOC_PATH is optional: when unset, -I$(HWLOC_PATH)/include and -L$(HWLOC_PATH)/lib
+# collapse to -I/include and -L/lib - on merged-usr systems /lib is /usr/lib, so the
+# stray -L/lib (ahead of $(MPICXX)'s own -L<mpi>/lib) can make the linker resolve -lmpi
+# against whatever other MPI's libmpi.so happens to live in /usr/lib instead of the
+# intended one - only add these flags when HWLOC_PATH is actually set.
+ifneq "$(HWLOC_PATH)" ""
+INCLUDE+=-I$(HWLOC_PATH)/include
+LIBS+=-L$(HWLOC_PATH)/lib
+endif
 
 PCT=off
 
-CONTROLS= -D_TRACTOR_COLLECT_STAT_ -D_T_PER_INRTERVAL_STAT_WRITE_ -D_USE_COMM_DISAMBIGUATION_ -D_TRACTOR_PCALL_ -DUSE_NANO_TIMER  \
--D_TRACTOR_MAJOR_VERSION_=$(MAJOR) -D_TRACTOR_MINOR_VERSION_=$(MINOR) -D_TRACTOR_BUILD_DATE_=\"$(TRACTOR_BUILD_DATE)\" # -D_T_USE_GETTID_INT_ -D_T_SKIP_VOLATILE_ -D_TRACTOR_PASSTHROUGH_ #-D_TRACTOR_STORE_UNIQ_INDEX_
+CONTROLS= -D_TRACTOR_COLLECT_STAT_ -D_T_PER_INTERVAL_STAT_WRITE_ -D_USE_COMM_DISAMBIGUATION_ -D_TRACTOR_PCALL_ \
+-D_TRACTOR_MAJOR_VERSION_=$(MAJOR) -D_TRACTOR_MINOR_VERSION_=$(MINOR) -D_TRACTOR_BUILD_DATE_=\"$(TRACTOR_BUILD_DATE)\" -DUSE_NANO_TIMER # -D_T_USE_GETTID_INT_ -D_T_SKIP_VOLATILE_ -D_TRACTOR_PASSTHROUGH_ #-D_TRACTOR_STORE_UNIQ_INDEX_ 
 
 ifdef USE_SIGNALS
 CONTROLS+=-D_USE_SIGNALS_
@@ -70,13 +79,12 @@ CONTROLS+=-DGPUPARSE
 EXTRANAMELIB:=$(EXTRANAMELIB).gpu
 endif
 
-
 ifeq "$(TARGET)" "impi"
 CONTROLS+=-D_MPICH_=3 -D_IMPI_
 cpp_input=-D_MPICH_=3 -D_IMPI_
 
-CONTROLS+=-D_STATUS_LO_HI_ -D_MPI_MESSAGE_DEFINED_ -D_USE_PROTORYPES_WITH_CONST_ -D_I_MPI_WEAK_EXPORTS_ -DI_MPI_BUILD
-MAXMPI=3
+CONTROLS+=-D_STATUS_LO_HI_ -D_MPI_MESSAGE_DEFINED_ -D_USE_PROTORYPES_WITH_CONST_ -D_I_MPI_WEAK_EXPORTS_ -DI_MPI_BUILD 
+MAXMPI=4
 endif
 
 ifeq "$(TARGET)" "mpich4"
@@ -84,7 +92,7 @@ CONTROLS+=-D_MPICH_=4
 cpp_input=-D_MPICH_=4 
 
 CONTROLS+=-D_STATUS_LO_HI_ -D_MPI_MESSAGE_DEFINED_ -D_USE_PROTORYPES_WITH_CONST_ 
-MAXMPI=3
+MAXMPI=4
 endif
 
 ifeq "$(TARGET)" "mpich5"
@@ -92,7 +100,7 @@ CONTROLS+=-D_MPICH_=5
 cpp_input=-D_MPICH_=5 
 
 CONTROLS+=-D_STATUS_LO_HI_ -D_MPI_MESSAGE_DEFINED_ -D_USE_PROTORYPES_WITH_CONST_ 
-MAXMPI=3
+MAXMPI=5
 endif
 
 
@@ -100,16 +108,22 @@ ifeq "$(TARGET)" "mvapich2"
 
 CONTROLS+=-D_MPICH_=3 -D_MVAPICH_
 cpp_input=-D_MPICH_=3 -D_MVAPICH_
-
-CONTROLS+=-D_STATUS_LO_HI_  -D_MPI_MESSAGE_DEFINED_ -D_USE_PROTORYPES_WITH_CONST_ -D_NO_C_VR
-MAXMPI=3
+CONTROLS+=-D_VERBS_PROFILE_
 endif
 
-ifeq "$(PARSE_COLT)" "on" 
-CONTROLS+=-D_TRACTOR_PARSE_COLT_ #-D_TRACTOR_PASSTHROUGH_ #-D_TRACTOR_STORE_UNIQ_INDEX_
+
+ifeq "$(filter openmpi%,$(TARGET))" ""
+CONTROLS+=-D_STATUS_LO_HI_
+endif
+
+CONTROLS+=-D_MPI_MESSAGE_DEFINED_ -D_USE_PROTORYPES_WITH_CONST_ -D_NO_C_VR
+# MAXMPI is the default from the top of the file unless a TARGET block above/below overrides it
+
+ifeq "$(PARSE_MPI_INTERNAL)" "on" 
+CONTROLS+=-D_PARSE_MPI_INTERNAL_ #-D_TRACTOR_PASSTHROUGH_ #-D_TRACTOR_STORE_UNIQ_INDEX_
 PCT=on
-EXTRANAMELIB:=$(EXTRANAMELIB).eng
-CONTROLS+=-D_USE_ENG_MPI_
+CT_SUFFIX=.eng
+cpp_input+=-D_PARSE_MPI_INTERNAL_
 endif
 
 ifeq "$(TARGET)" "mvapich4"
@@ -118,14 +132,15 @@ CONTROLS+=-D_MPICH_=4 -D_MVAPICH_
 cpp_input=-D_MPICH_=4 -D_MVAPICH_
 
 CONTROLS+=-D_STATUS_LO_HI_  -D_MPI_MESSAGE_DEFINED_ -D_USE_PROTORYPES_WITH_CONST_ -D_NO_C_VR
-MAXMPI=3
+MAXMPI=4
 
 endif
 
 #LIBS+= -L../../../misc -lmpiif 
 
-ifeq "$(TARGET)" "openmpi"
-CONTROLS+=-D_USE_PROTORYPES_WITH_CONST_ -D_MPI_MESSAGE_DEFINED_ -D_NO_C_VR -fms-extensions #-D_TRACTOR_EXTRA_FIELDS_ 
+ifeq "$(TARGET)" "openmpi5"
+CONTROLS+=-D_USE_PROTORYPES_WITH_CONST_ -D_MPI_MESSAGE_DEFINED_ -D_NO_C_VR -D_OPENMPI_=5  -fms-extensions -Wno-int-to-pointer-cast #-D_TRACTOR_EXTRA_FIELDS_ 
+cpp_input=-D_OPENMPI_=5
 MAXMPI=3
 endif
 
@@ -138,6 +153,8 @@ ifeq "$(DIAG)" "on"
 DBG=_dbg
 DEBUG+= -fno-inline -D_TRACTOR_DIAG_ -D_TRACTOR_DEBUG_TRACTOR_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_MPI_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_GPU_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_OMPT_ENTRY_EXIT_  -D_TRACTOR_DEBUG_COMM_ENTRY_EXIT_ 
 OPT=-O0
+OBJECTS+=t_debug.o
+LIBS+=-lunwind
 endif
 
 
@@ -208,7 +225,7 @@ EXTRANAMELIB:=$(EXTRANAMELIB).$(HWCOUNTERS)
 endif
 
 
-LIBSUFFIX=$(SUFFIX)$(DBG).$(TARGET)$(EXTRANAMELIB)
+LIBSUFFIX=$(SUFFIX)$(DBG).$(TARGET)$(EXTRANAMELIB)$(CT_SUFFIX)
 BINSUFFIX=$(SUFFIX)$(DBG).$(TARGET)
 MTBL=tractor$(LIBSUFFIX)
 MTB=lib$(MTBL).so.$(MAJOR).$(MINOR)
@@ -217,16 +234,8 @@ PTPD=$(PTPDL).$(MAJOR).$(MINOR)
 
 CMISC+=-D_TRACTOR_LIB_SUFFIX_=\"$(LIBSUFFIX)\" -D_TRACTOR_BIN_SUFFIX_=\"$(BINSUFFIX)\"   -D_TRACTOR_ZERO_ON_ALLOCATE_ #-D_TRACTOR_PASSTHROUGH_
 
-all: $(MTB) $(PTPD)
-
 $(MTB): $(CPSOURCES) $(OBJECTS)
 	$(MPICXX) -o $(MTB) $(DEBUG) $(OPT) $(OMP) $(LDOPTMT) $(CONTROLS) $(SHARED) $(OBJECTS) $(LIBS)
-
-install: $(MTB) $(PTPD)
-	(mkdir -p ../../../lib/$(COMPILER); chmod o+rx $(MTB); cp -v $(MTB) ../../../lib/$(COMPILER); mkdir -p ../../../bin/$(COMPILER); cp -v $(PTPD) ../../../bin/$(COMPILER);\
-	cd ../../../lib/$(COMPILER); ln -sf $(MTB) lib$(MTBL).so.$(MAJOR); ln -sf lib$(MTBL).so.$(MAJOR) lib$(MTBL).so; \
-	cd ../../bin/$(COMPILER); \
-	ln -sf $(PTPD) $(PTPDL) )
 
 mpi_layer.o: mpi_layer.cpp
 
@@ -244,13 +253,13 @@ $(OBJECTS):   $(FUNCID)
 $(PTPD): $(MTB) 
 	$(MPICC) -o $(PTPD) $(INCLUDE) $(CONTROLS) $(OPT) $(OMP) $(LDOPTMT) $(PTPD_LIBS) $(CXXMISC) src-ptpd.cpp t_globals.cpp  $(DEBUG) 
 
-.c.o:   mpi_func_ids_through.h mpi_func_names.h mpi_func_ids_trans.h
+.c.o:
 	$(MPICC) -o $@ -c $(INCLUDE) $(CONTROLS) $(CMISC) $(DEBUG) $(OPT) $(OMP) $(FPIC) $*.c
 #	$(MPICC) -o $@.s -s $(INCLUDE) $(CONTROLS) $(CMISC) $(DEBUG) $(OPT) $(OMP) $(FPIC) $*.c
 
-.cpp.o: mpi_func_ids_through.h mpi_func_names.h mpi_func_ids_trans.h  
+.cpp.o:
 	$(MPICXX) -o $@ -c $(INCLUDE) $(CONTROLS) $(CMISC) $(CXXMISC) $(DEBUG) $(OPT) $(OMP) $(FPIC) $*.cpp
-	$(MPICXX) -o $@.pp -E $(INCLUDE) $(CONTROLS) $(CMISC) $(CXXMISC) $(DEBUG) $(OPT) $(OMP) $(FPIC) $*.cpp
+#	$(MPICXX) -o $@.pp -E $(INCLUDE) $(CONTROLS) $(CMISC) $(CXXMISC) $(DEBUG) $(OPT) $(OMP) $(FPIC) $*.cpp
 #	$(MPICXX) -S $(INCLUDE) $(CONTROLS) $(CMISC) $(CXXMISC) $(DEBUG) $(OPT) $(OMP) $(FPIC) $*.cpp
 
 .f.o:   
@@ -258,3 +267,12 @@ $(PTPD): $(MTB)
 
 clean:
 	rm -f mpi_func_ids_through.h mpi_func_names.h mpi_func_ids_trans.h $(OBJECTS) lib$(MTBL).so lib$(MTBL).so.$(MAJOR) $(MTB) $(PTPD) $(PTPDL) mpi_layer.c 
+        
+
+all: $(MTB) $(PTPD)
+
+install: $(MTB) $(PTPD)
+	(mkdir -p ../../../lib/$(COMPILER); chmod o+rx $(MTB); cp -v $(MTB) ../../../lib/$(COMPILER); mkdir -p ../../../bin/$(COMPILER); cp -v $(PTPD) ../../../bin/$(COMPILER);\
+	cd ../../../lib/$(COMPILER); ln -sf $(MTB) lib$(MTBL).so.$(MAJOR); ln -sf lib$(MTBL).so.$(MAJOR) lib$(MTBL).so; \
+	cd ../../bin/$(COMPILER); \
+	ln -sf $(PTPD) $(PTPDL) )

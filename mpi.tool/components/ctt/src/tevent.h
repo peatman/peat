@@ -73,16 +73,18 @@ struct PEAT_Single_Event_Clock {
 };
 
 struct Tractor_Event : public Phase {
-    T_property func_class;
+    PEAT_Property func_class;
     PEAT_Rank rank;
-    PEAT_Signed_Num num_colts;
+    PEAT_Signed_Num num_children; // directly nested records (former num_colts); the id path is Phase::ids
+    int level;                    // nesting depth (0: top-level record)
+    PEAT_Bool nested;             // record came in the nested format (ids and num_children in the header)
     std::vector<PEAT_ULNum> params, out_params, extra_params;
     std::vector<PEAT_MPI_Request> requests;
     std::vector<PEAT_MPI_R4Status> statuses;
     std::vector<PEAT_UID> addrs;
     std::vector<PEAT_MPI_Memory_Buffer> buffers;
 
-    Tractor_Event() : func_class(T_PROPERTY_NONE), rank(-1), num_colts(0) {}
+    Tractor_Event() : func_class(PEAT_PROPERTY_NONE), rank(-1), num_children(0), level(0), nested(false) {}
     Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, const String_Split &line_hwc, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file, const Communicators *com_store);
     void get_extra_txrx(const String_Split &line, const Communicators *com_store);
     ~Tractor_Event()
@@ -94,7 +96,7 @@ struct Tractor_Event : public Phase {
         statuses.clear();
         addrs.clear();
         buffers.clear();
-        num_colts = -1;
+        num_children = -1;
     }
 
     // class specific values
@@ -187,7 +189,9 @@ struct Tractor_Event : public Phase {
         return Phase::pack_size() +
                sizeof(func_class) +
                sizeof(rank) +
-               sizeof(num_colts) +
+               sizeof(num_children) +
+               sizeof(level) +
+               sizeof(nested) +
                sizeof(P2P) +
                sizeof(Requests) +
                sizeof(Collective) +
@@ -222,8 +226,14 @@ struct Tractor_Event : public Phase {
         ssize = sizeof(rank);
         memcpy(ptr + ptr_it, &rank, ssize);
         ptr_it += ssize;
-        ssize = sizeof(num_colts);
-        memcpy(ptr + ptr_it, &num_colts, ssize);
+        ssize = sizeof(num_children);
+        memcpy(ptr + ptr_it, &num_children, ssize);
+        ptr_it += ssize;
+        ssize = sizeof(level);
+        memcpy(ptr + ptr_it, &level, ssize);
+        ptr_it += ssize;
+        ssize = sizeof(nested);
+        memcpy(ptr + ptr_it, &nested, ssize);
         ptr_it += ssize;
         ssize = sizeof(P2P);
         memcpy(ptr + ptr_it, &P2P, ssize);
@@ -271,8 +281,14 @@ struct Tractor_Event : public Phase {
         ssize = sizeof(rank);
         memcpy(&rank, ptr + ptr_it, ssize);
         ptr_it += ssize;
-        ssize = sizeof(num_colts);
-        memcpy(&num_colts, ptr + ptr_it, ssize);
+        ssize = sizeof(num_children);
+        memcpy(&num_children, ptr + ptr_it, ssize);
+        ptr_it += ssize;
+        ssize = sizeof(level);
+        memcpy(&level, ptr + ptr_it, ssize);
+        ptr_it += ssize;
+        ssize = sizeof(nested);
+        memcpy(&nested, ptr + ptr_it, ssize);
         ptr_it += ssize;
         ssize = sizeof(P2P);
         memcpy(&P2P, ptr + ptr_it, ssize);

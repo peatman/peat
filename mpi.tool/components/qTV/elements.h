@@ -30,7 +30,7 @@
 #include <mutex>
 
 #include "globals.h"
-#include "traceinfo.h"
+#include "trace_info.h"
 #include "tv_event.h"
 #define QTV_TR_VECTOR
 
@@ -66,11 +66,17 @@ class Elements
     String_Split *trace_line_MPIs;
     String_Split *trace_line_HWCs;
     String_Split *trace_line_binds;
+    String_Split *translated_hwcs;
 #else
     String_Split trace_line_MPI;
     String_Split trace_line_HWC;
     String_Split trace_line_bind;
+    String_Split translated_hwc;
 #endif
+    PTP *ptp; 
+    Model_ID *model_id; 
+    std::vector<PEAT_Clock> tsc_predictor;
+    void translate_hwc_line(const PEAT_Rank rank, const PEAT_MPI_Func_ID func_id, const bool is_second_line, PTP *ptp, const String_Split &hwc, String_Split &out_hwc);
   public:
     Elements(QFileInfo &name, TV_TraceParts *swn);
     ~Elements();
@@ -90,12 +96,14 @@ class Elements
     void draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImage, QImage *threadImages[], int render_threads, qint32 start, qint32 stop);
     void draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImage, QImage *threadImages[], int render_threads, const qreal start_time, const qreal stop_time);
     void move_viewport(int direction);
-    PEAT_Bool get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, File_Storage_GZ *input_HWC, PEAT_Clock min_clock, PEAT_Clock max_clock, TV_Event **event);
+    PEAT_Bool get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, File_Storage_GZ *input_HWC, PEAT_Clock min_clock, PEAT_Clock max_clock, TV_Event **event, PTP *ptp = NULL);
     PEAT_Bool get_message(const PEAT_Rank rank, File_Storage_GZ *input_bind, TV_TraceParts &tp);
     void compact_events(int nthreads);
-
+    
     bool find_idx(PEAT_Rank rank, PEAT_UID idx);
-    TV_Event *find_event(PEAT_Rank rank, PEAT_UID primary_id, PEAT_UID secondary_id) const;
+    TV_Event *find_event(PEAT_Rank rank, PEAT_UID top_id) const;             // top-level record by its id
+    TV_Event *find_event(PEAT_Rank rank, const PEAT_Event_IDs &ids) const;    // any record by its id path
+    int bind_ids(const String_Split &line, int pos, PEAT_Rank rank, PEAT_Event_IDs &ids) const; // id columns of a bind record, returns the next field
     TV_Event *find_event(PEAT_Rank rank, PEAT_Clock clk, int thread, int selector) const;
 
     void clear();
@@ -224,11 +232,11 @@ class Elements
         return;
     }
 
-    void get_functions_in_region(QTableWidget *tw, const PEAT_Clock start, const PEAT_Clock stop, const PEAT_Num height) const;
+    void get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_tw, QTableWidget *gpu_tw, const PEAT_Clock start, const PEAT_Clock stop, const PEAT_Num height) const;
     void get_messages_in_region(QTableWidget *initiation, QTableWidget *completion, QTableWidget *p2p, QTreeWidget *collective, QTableWidget *gpu, const PEAT_Clock start, const PEAT_Clock stop, const PEAT_Num height) const;
     void get_user_addresses_in_region(QTreeWidget *tw, const PEAT_Clock start, const PEAT_Clock stop, const PEAT_Num height) const;
     TV_Event *get_event(int x, int y, int width) const;
-    TraceInfo &get_trace_info()
+    Trace_Info &get_trace_info()
     {
         return trace_info;
     }
@@ -250,12 +258,61 @@ class Elements
     // Event data structures
     // typedef std::map<PEAT_Clock, TV_Event*>::const_iterator EventRankTypeConstIter;
     typedef std::vector<TV_Event *>::const_iterator EventRankTypeConstIter;
-    EventRankTypeConstIter lower_bound(const std::vector<TV_Event *> &it_rank, PEAT_Clock start_time) const;
+    // Local (non-std) binary search by e_time.func.in, tolerant of NULL entries (see compact_events).
+    template <typename T>
+    typename std::vector<T *>::const_iterator lower_bound(const std::vector<T *> &it_rank, PEAT_Clock start_time) const
+    {
+        PEAT_UID index = 0;
+        PEAT_UID max_index = it_rank.size() - 1;
+        PEAT_UID min_index = 0;
+        do {
+            index = (min_index + max_index) / 2;
+            const T *event = it_rank.at(index);
+            while (event == NULL && index < max_index - 1) {
+                event = it_rank.at(++index);
+            };
+
+            if (event == NULL)
+                index = (min_index + max_index) / 2; // restart
+
+            while (event == NULL && index > min_index + 1) {
+                event = it_rank.at(--index);
+            };
+
+            if (event == NULL)
+                break;
+
+            if (event->e_time.func.in == start_time)
+                break;
+
+            if (event->e_time.func.in < start_time) {
+                min_index = index;
+                // continue;
+            }
+            if (event->e_time.func.in > start_time) {
+                max_index = index;
+                // continue;
+            }
+        } while (max_index - min_index > 1);
+        if (min_index < max_index) {
+            const T *event = it_rank.at(max_index);
+            if (event->e_time.func.in < start_time) {
+                return it_rank.begin() + max_index;
+            }
+        }
+        return it_rank.begin() + min_index;
+    }
 
     // std::map<PEAT_Rank, std::map<PEAT_Clock, TV_Event*> > events;//map<rank, map<tscIn, Function> >
     std::vector<PEAT_Thread> max_mpi_tid;
     std::vector<PEAT_Thread> max_omp_tid;
     std::vector<PEAT_Thread> max_gpu_tid;
+
+    // rank -> (post ids -> completion ids), from PEAT_RT_Bind_Completion/Initiation/Destroying lines, filled
+    // while reading that rank's own bind file. A PEAT_RT_Bind_Peer line's receiver side names the post
+    // (phase[1]); this lets get_message substitute the completion event instead, without mat having to
+    // duplicate the completion's ids into every peer line (see P2PAL::print_P2PF).
+    std::vector<std::map<PEAT_Event_IDs, PEAT_Event_IDs>> bind_completion_map;
 
     // Messages related data structures
     std::vector<std::map<PEAT_UID, TV_Message>> messages;
@@ -277,11 +334,11 @@ class Elements
 #ifdef QTV_TR_VECTOR
     std::vector<std::vector<PEAT_UID>> events_tr;
 #else
-    std::vector<std::map<PEAT_UID, TV_Event *>> events_tr;
+    std::vector<std::map<PEAT_UID, TV_Event*>> events_tr;
 #endif
 
     bool find_collective(Collective &entry);
-    TraceInfo trace_info;
+    Trace_Info trace_info;
     QFileInfo trace_info_file;
     PEAT_Clock model_time_stop;
     PEAT_Clock model_time_start;
@@ -289,7 +346,7 @@ class Elements
     qreal zoom_time_stop;
     qint32 no_draw_elems;
     TV_TraceParts *shown;
-    bool add_event(TV_Event *event, TV_TraceParts &tp);
+    bool add_event(TV_Event* event, TV_TraceParts& tp);
     void add_message(TV_Event *from, TV_Event *to, TV_Pen_Message_Type type, TV_TraceParts &tp, PEAT_Rank rank = -1, PEAT_UID index = -1);
     void cut_events(PEAT_Rank rank, PEAT_UID max_uid)
     {

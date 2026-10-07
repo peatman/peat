@@ -45,15 +45,17 @@ set(SOURCES
 		elements.cpp
 		tdebug.cpp
 		tv_event.cpp
-		traceinfo.cpp
+		trace_info.cpp
 		globals.cpp
 		cutoffdialog.cpp
 		cutoffdialog.ui
 		legenddialog.cpp
 		legenddialog.ui
-	colorlistwidget.cpp 
-		messagestabwidget.cpp 
+		colorlistwidget.cpp
+		messagestabwidget.cpp
 		messagestabwidget.ui
+		functionstabwidget.cpp
+		functionstabwidget.ui
 		textviewer.cpp
 		icons.qrc
 		../common/file_io.cpp
@@ -72,13 +74,14 @@ set(HEADERS
         globals.h
         tv_event.h
         elements.h
-        traceinfo.h
+        trace_info.h
         cutoffdialog.h
 	colorlistwidget.h 
         textviewer.h
         tvmainwindow.h
         tracedialog.h
-        messagestabwidget.h 
+        messagestabwidget.h
+        functionstabwidget.h
         ../common/file_io.h
         ../common/common_types.h
         ../common/func_id.h
@@ -90,12 +93,27 @@ set(HEADERS
 #find_library(zlib zlib ../external/zlib/lib64)
 include_directories(.)
 
-if (${MSVC})
+# By default, qTV ignores mat's processed .mpi/.hwc output and always reads the original raw
+# trace files (doing its own PTP correction). Remove this define to make qTV prefer mat's
+# processed .mpi/.hwc output when present, falling back to raw only if it's missing.
+add_compile_definitions(TV_IGNORE_PROCESSED_OUTPUT)
+
+if (MSVC)
 #include_directories(../contrib/zlib/install/include ../contrib/jemalloc/include ../contrib/jemalloc/include/msvc_compat)
-include_directories(../contrib/zlib/install/include)
+include_directories(../contrib/zlib/install/msvc/include)
+link_directories(../contrib/zlib/install/msvc/lib)
 #link_directories(../contrib/zlib/install/lib ../contrib/jemalloc/lib64)
-link_directories(../contrib/zlib/install/lib)
 #add_compile_definitions(USE_JE_MALLOC JEMALLOC_STATIC JEMALLOC_EXPORT= JEMALLOC_NO_DEMANGLE)
+set(TV_ZLIB libzs)
+elseif (WIN32)
+include_directories(../contrib/zlib/install/mingw/include)
+link_directories(../contrib/zlib/install/mingw/lib)
+set(TV_ZLIB zs)
+else()
+set(TV_ZLIB z)
+endif()
+
+if (${MSVC})
 set_property(SOURCE tdebug.cpp  APPEND_STRING PROPERTY COMPILE_FLAGS "/Od")
 else()
 set_property(SOURCE tdebug.cpp  APPEND_STRING PROPERTY COMPILE_FLAGS "-O0")
@@ -127,16 +145,8 @@ else()
     endif()
 endif()
 
-if (${MSVC})
-#include_directories(../external/zlib/include)
-#link_directories(../external/zlib/lib64 ../external/jemalloc/lib64)
-#link_directories(../external/zlib/lib64)
-#target_link_libraries(qTV PRIVATE Qt${QT_VERSION_MAJOR}::Widgets OpenMP::OpenMP_CXX zlib jemalloc)
-target_link_libraries(qTV PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg OpenMP::OpenMP_CXX libzs)
-
-else()
-target_link_libraries(qTV PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg OpenMP::OpenMP_CXX z)
-endif()
+target_link_libraries(qTV PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg OpenMP::OpenMP_CXX ${TV_ZLIB})
+#target_link_libraries(qTV PRIVATE Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Svg OpenMP::OpenMP_CXX ${TV_ZLIB} jemalloc)
 
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.

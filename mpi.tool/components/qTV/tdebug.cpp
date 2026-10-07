@@ -122,8 +122,10 @@ void Elements::draw_elements(QProgressBar* pb, QScrollBar* sr, QImage* finalImag
                 break;
             }
             if (tid == 0) progress(prevclk, QApplication::processEvents);
-            const TV_Event* curFunc = cur_func;
-            for (int f = 0; curFunc != NULL; curFunc = cur_func->get_child(f++)) {
+            std::vector<const TV_Event *> subtree; // the call and its nested records at every level
+            cur_func->collect_subtree(subtree);
+            for (size_t f = 0; f < subtree.size(); f++) {
+                const TV_Event *curFunc = subtree[f];
                 long f_width = double(curFunc->e_time.func.duration()) * pix_in_tic;
                 long pe_width = double(curFunc->e_time.pe.duration()) * pix_in_tic;
                 if (pe_width == f_width) pe_width = 0;
@@ -236,7 +238,7 @@ void Elements::draw_elements(QProgressBar* pb, QScrollBar* sr, QImage* finalImag
                 if (f_width > wMinNameSize) {
                     p[tid]->setOpacity(1.0);
                     p[tid]->setPen(tv_colors.func_text);
-                    p[tid]->drawText(rfrom, Qt::AlignLeft | Qt::AlignVCenter, QString(global_func_id.name_by_idx(curFunc->func_id)) + QString("\nidx:") + QString().setNum(curFunc->primary_id)); //Slow!
+                    p[tid]->drawText(rfrom, Qt::AlignLeft | Qt::AlignVCenter, QString(global_func_id.name_by_idx(curFunc->func_id)) + QString("\nidx:") + QString().setNum(curFunc->ids[0])); //Slow!
                 }
                 /*
                 font.setPointSize(ps);

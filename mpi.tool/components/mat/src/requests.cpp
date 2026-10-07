@@ -93,18 +93,18 @@ int Request::select_event(PEAT_Rank rank, const PEAT_MPI_Request request, bool i
         fio_event = &t_fio_event;
     }
     if (p2p_event && coll_event) {
-        assert(p2p_event->ph[2].primary_id == p2p_event->ph[1].primary_id);
-        if (p2p_event->ph[2].primary_id < coll_event->coll_events_list.at(rank).primary_id)
+        assert(p2p_event->ph[2].ids[0] == p2p_event->ph[1].ids[0]);
+        if (p2p_event->ph[2].ids[0] < coll_event->coll_events_list.at(rank).ids[0])
             return 1;
-        if (p2p_event->ph[2].primary_id > coll_event->coll_events_list.at(rank).primary_id)
+        if (p2p_event->ph[2].ids[0] > coll_event->coll_events_list.at(rank).ids[0])
             return 2;
         assert(0);
     }
     if (p2p_event && fio_event) {
-        assert(p2p_event->ph[2].primary_id == p2p_event->ph[1].primary_id);
-        if (p2p_event->ph[2].primary_id < fio_event->ph[1].primary_id)
+        assert(p2p_event->ph[2].ids[0] == p2p_event->ph[1].ids[0]);
+        if (p2p_event->ph[2].ids[0] < fio_event->ph[1].ids[0])
             return 1;
-        if (p2p_event->ph[2].primary_id > fio_event->ph[1].primary_id)
+        if (p2p_event->ph[2].ids[0] > fio_event->ph[1].ids[0])
             return 2;
         assert(0);
     }
@@ -237,8 +237,7 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
     ph_cn.tsc_time = event.tsc_time;
     ph_cn.tsc_u_time = event.tsc_u_time;
     ph_cn.addrs = event.addrs;
-    ph_cn.primary_id = event.primary_id;
-    ph_cn.secondary_id = event.secondary_id;
+    ph_cn.ids = event.ids;
     if (!is_remote) {
         print_req_out(event);
     }
@@ -255,7 +254,7 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
                         p2p_func_store->flown_away_pers_requests.at(rank).erase(req_it);
                         return;
                     } /*else {
-                        std::cerr << "Invalid persistent request " << std::hex << event.requests.at(0) << std::dec << " detected during p2p persistent free.Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << " Remote: " << is_remote << ".Skipped." << std::endl;
+                        std::cerr << "Invalid persistent request " << std::hex << event.requests.at(0) << std::dec << " detected during p2p persistent free.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << ".Skipped." << std::endl;
                     }*/
                 }
             }
@@ -268,7 +267,7 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
                             req_it->second.pop_front();
                             return;
                         } /* else {
-                             std::cerr << "Invalid persistent request " << std::hex << event.requests.at(0) << std::dec << " detected during p2p free.Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << " Remote: " << is_remote << ".Skipped." << std::endl;
+                             std::cerr << "Invalid persistent request " << std::hex << event.requests.at(0) << std::dec << " detected during p2p free.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << ".Skipped." << std::endl;
                          }*/
                     }
                 }
@@ -281,7 +280,7 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
                         coll_func_store->flown_away_requests.at(rank).erase(req_it);
                         return;
                     } /*else {
-                        std::cerr << "Invalid persistent request " << std::hex << event.requests.at(0) << std::dec << " detected during free.Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << " Remote: " << is_remote << ".Skipped." << std::endl;
+                        std::cerr << "Invalid persistent request " << std::hex << event.requests.at(0) << std::dec << " detected during free.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << ".Skipped." << std::endl;
                     }*/
                 }
             }
@@ -293,10 +292,10 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
 #ifndef PEAT_MPI
             int my_rank = 0;
 #endif
-            fprintf(stderr, "Removing request %llx rank %d event %lld from rank %d in %d rank.(remote=%d)...", event.requests.at(0), rank, event.primary_id, rank, my_rank, is_remote);
+            fprintf(stderr, "Removing request %llx rank %d event %lld from rank %d in %d rank.(remote=%d)...", event.requests.at(0), rank, event.ids[0], rank, my_rank, is_remote);
         */
         if (resp) {
-            if (ph.primary_id >= 0) {
+            if (ph.ids[0] >= 0) {
                 print_req_bind(rank, event.requests.at(0), ph, event, is_remote);
             }
             // fprintf(stderr, "done.\n");
@@ -335,6 +334,49 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
         discard_collective_event(rank, event.requests.at(0), is_remote);
         return;
     }
+    if (event.func_id == MPID_REQUEST_RELEASE_ID) {
+        // MPICH's internal completion for requests that never go through MPI_Wait/Test (e.g. a collective
+        // implementation's internal progress requests). The tractor's hand-coded wrapper deliberately leaves
+        // triggered_request_num at 0 (see T_MPID_Request_release in t_mpidef.h), so this can't fall through to
+        // the generic wait/test loop below like OpenMPI's ompi_coll_p2p_free/cancel do (those set it via
+        // PMPI_Request_get_status). Same peer lookup as MPI_REQUEST_FREE_ID; unlike free/cancel, a release
+        // means the request genuinely completed, so there's no discard fallback if it isn't found.
+        // fill it will predefined dummies 
+        event.Requests.triggered_request_num = 1;
+		event.statuses.resize(1);
+        event.statuses[0].bytes = -1;;
+        event.statuses[0].tag = com_store->get_MPI_ANY_TAG();
+        event.statuses[0].src = com_store->get_MPI_ANY_SOURCE();
+        event.statuses[0].index = 0;
+
+#ifdef PEAT_MPI
+        if (!is_remote) {
+            if (!p2p_func_store->flown_away_requests.empty()) {
+                if (p2p_func_store->flown_away_requests.count(rank)) {
+                    std::map<PEAT_MPI_Request, std::list<MAT_Request_Record>>::iterator req_it = p2p_func_store->flown_away_requests.at(rank).find(event.requests.at(0));
+                    if (req_it != p2p_func_store->flown_away_requests.at(rank).end()) {
+                        if (!req_it->second.empty()) {
+                            send_cn(event, req_it->second.front().peer);
+                            req_it->second.pop_front();
+                        }
+                        return;
+                    }
+                }
+            }
+            if (!coll_func_store->flown_away_requests.empty()) {
+                if (coll_func_store->flown_away_requests.count(rank)) {
+                    std::map<PEAT_MPI_Request, MAT_Request_Record>::iterator req_it = coll_func_store->flown_away_requests.at(rank).find(event.requests.at(0));
+                    if (req_it != coll_func_store->flown_away_requests.at(rank).end()) {
+                        send_cn(event, req_it->second.peer);
+                        coll_func_store->flown_away_requests.at(rank).erase(req_it);
+                        return;
+                    }
+                }
+            }
+        }
+#endif
+        // return;
+    }
 
     if (global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_START)) { // start,startall
 #ifdef PEAT_MPI
@@ -365,7 +407,7 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
                 parse_P2P_start_phase(rank, ph_cn, *it, event.PControl.ctl, is_remote);
             } else {
                 if (*it != com_store->get_MPI_REQUEST_NULL()) { // only handle active requests
-                    std::cerr << "Invalid persistent request " << std::hex << *it << std::dec << " detected.Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << " Remote: " << is_remote << ".Skipped." << std::endl;
+                    std::cerr << "Invalid persistent request " << std::hex << *it << std::dec << " detected.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << ".Skipped." << std::endl;
                     p2p_func_store->thrown_away_requests[rank].insert(*it); // for lkater mpi_test/wait
                 }
             }
@@ -386,7 +428,7 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
         }
         std::set<PEAT_MPI_Request>::iterator thrown_it = p2p_func_store->thrown_away_requests[rank].find(request);
         if (thrown_it != p2p_func_store->thrown_away_requests[rank].end()) {
-            std::cerr << "Invalid request " << std::hex << request << std::dec << " detected. Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << " Remote: " << is_remote << std::endl;
+            std::cerr << "Invalid request " << std::hex << request << std::dec << " detected. Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << std::endl;
             p2p_func_store->thrown_away_requests[rank].erase(thrown_it);
             continue;
         }
@@ -458,7 +500,7 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
 #ifndef PEAT_MPI
                     PEAT_Rank my_rank = 0;
 #endif
-                    std::cerr << "Rank " << my_rank << ". Request " << std::hex << request << std::dec << " is 'lost'. Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << " Remote: " << is_remote << " Skipped." << std::endl;
+                    std::cerr << "Rank " << my_rank << ". Request " << std::hex << request << std::dec << " is 'lost'. Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << " Skipped." << std::endl;
                     // bool found_one_p2_p = parse_P2P_completion_phase(rank, ph_cn, request, tag, source, size, record.pc_level, qn_start, qn_stop, is_remote);
                 }
                 break;
@@ -472,7 +514,7 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
 #ifndef PEAT_MPI
                     PEAT_Rank my_rank = 0;
 #endif
-                    std::cerr << "Rank " << my_rank << ". Request " << std::hex << request << std::dec << " is 'lost'. Rank: " << rank << ". primary_id: " << event.primary_id << " secondary_id: " << event.secondary_id << " Remote: " << is_remote << " Skipped." << std::endl;
+                    std::cerr << "Rank " << my_rank << ". Request " << std::hex << request << std::dec << " is 'lost'. Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << " Skipped." << std::endl;
                     // bool found_one_p2_p = parse_P2P_completion_phase(rank, ph_cn, request, tag, source, size, record.pc_level, qn_start, qn_stop, is_remote);
                 }
             }
@@ -503,13 +545,11 @@ void Request::print_req_bind(PEAT_Rank rank, PEAT_MPI_Request req, const Phase &
         if (bind.func_id == MPI_REQUEST_FREE_ID || bind.func_id == MPI_CANCEL_ID) {
             tag = PEAT_RT_Bind_Destroying;
         }
-        sprintf(&tbuf[4], "%d:%s:%lld:%lld:%s:%lld:%lld\n", tag,
+        sprintf(&tbuf[4], "%d:%s:%s:%s:%s\n", tag,
                 global_func_id.name_by_idx(phase.func_id),
-                phase.primary_id,
-                phase.secondary_id,
+                peat_ids_string(phase.ids).c_str(),
                 global_func_id.name_by_idx(bind.func_id),
-                bind.primary_id,
-                bind.secondary_id);
+                peat_ids_string(bind.ids).c_str());
         delivery.receiver = mat_peer;
         delivery.func = phase.func_id;
         PEAT_Signed_Num size = (PEAT_Signed_Num)strlen(&tbuf[4]) + 5;
@@ -529,13 +569,11 @@ void Request::print_req_bind(PEAT_Rank rank, PEAT_MPI_Request req, const Phase &
         if (bind.func_id == MPI_REQUEST_FREE_ID || bind.func_id == MPI_CANCEL_ID) {
             tag = PEAT_RT_Bind_Destroying;
         }
-        output_bind->printf(rank, "%d:%s:%lld:%lld:%s:%lld:%lld\n", tag,
+        output_bind->printf(rank, "%d:%s:%s:%s:%s\n", tag,
                             global_func_id.name_by_idx(phase.func_id),
-                            phase.primary_id,
-                            phase.secondary_id,
+                            peat_ids_string(phase.ids).c_str(),
                             global_func_id.name_by_idx(bind.func_id),
-                            bind.primary_id,
-                            bind.secondary_id);
+                            peat_ids_string(bind.ids).c_str());
         p2p_func_store->messages_bound[rank]++;
     }
 }
@@ -552,25 +590,21 @@ void Request::print_req_bind(PEAT_Rank rank, const Collective_Entry &coll, const
         delivery.buffer = tbuf;
         delivery.receiver = mat_peer;
         delivery.func = coll.func_id;
-        sprintf(&tbuf[4], "%d:%s:%lld:%lld:%s:%lld:%lld\n", PEAT_RT_Bind_Completion,
+        sprintf(&tbuf[4], "%d:%s:%s:%s:%s\n", PEAT_RT_Bind_Completion,
                 global_func_id.name_by_idx(coll.func_id),
-                coll.coll_events_list.at(rank).primary_id,
-                coll.coll_events_list.at(rank).secondary_id,
+                peat_ids_string(coll.coll_events_list.at(rank).ids).c_str(),
                 global_func_id.name_by_idx(phase.func_id),
-                phase.primary_id,
-                phase.secondary_id);
+                peat_ids_string(phase.ids).c_str());
         PEAT_Signed_Num size = (PEAT_Signed_Num)strlen(&tbuf[4]) + 5;
         MPI_Isend(delivery.buffer, size, MPI_CHAR, mat_peer, TRACTOR_REQ_PRINT_STRING_TAG, mat_compute_comm, &delivery.request);
         active_deliveries->push_back(delivery);
 #endif
     } else {
-        output_bind->printf(rank, "%d:%s:%lld:%lld:%s:%lld:%lld\n", PEAT_RT_Bind_Completion,
+        output_bind->printf(rank, "%d:%s:%s:%s:%s\n", PEAT_RT_Bind_Completion,
                             global_func_id.name_by_idx(coll.func_id),
-                            coll.coll_events_list.at(rank).primary_id,
-                            coll.coll_events_list.at(rank).secondary_id,
+                            peat_ids_string(coll.coll_events_list.at(rank).ids).c_str(),
                             global_func_id.name_by_idx(phase.func_id),
-                            phase.primary_id,
-                            phase.secondary_id);
+                            peat_ids_string(phase.ids).c_str());
         p2p_func_store->messages_bound[rank]++;
     }
 }
@@ -579,10 +613,14 @@ void Request::print_req_out(const Tractor_Event &event)
 {
     if (event.Requests.flag == 0 && skip_locals)
         return; // skip missed Tests
-    output_MPI->printf(event.rank, "%lld:%lld:%d:%s:%d:%d:%d:%d:%llx", event.primary_id, event.secondary_id, event.thread_id, global_func_id.name_by_idx(event.func_id),
+#ifdef MAT_PROCESS_HWC_MPI_OUTPUT
+    output_MPI->printf(event.rank, "%s:%s:%d:%d:%d", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id),
                        event.Requests.input_request_num,
                        event.Requests.triggered_request_num,
-                       event.Requests.flag, event.num_colts, event.Requests.buf);
+                       event.Requests.flag);
+    if (!event.nested)
+        output_MPI->printf(event.rank, ":%d", event.num_children); // legacy num_colts
+    output_MPI->printf(event.rank, ":%llx", event.Requests.buf);
     for (int i = 0; i < event.Requests.input_request_num; i++) {
         output_MPI->printf(event.rank, ":%llx", event.requests[i]);
     }
@@ -592,7 +630,7 @@ void Request::print_req_out(const Tractor_Event &event)
     }
     output_MPI->printf(event.rank, "\n");
 #if 0
-    output_HWC->printf(event.rank, "%lld:%lld:%d:%lld:%lld:%lld:%lld:%lld:%lld", event.primary_id, event.secondary_id, event.thread_id,
+    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
         event.tsc_time.func.in,
         event.tsc_time.mpi.in,
         event.tsc_time.mpi.out,
@@ -601,7 +639,7 @@ void Request::print_req_out(const Tractor_Event &event)
         event.tsc_time.pe.out);
 
 #else
-    output_HWC->printf(event.rank, "%lld:%lld:%d:%lld:%lld:%lld:%lld", event.primary_id, event.secondary_id, event.thread_id,
+    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
                        event.tsc_time.mpi.in,
                        event.tsc_time.mpi.out,
                        event.tsc_time.pe.in,
@@ -611,6 +649,7 @@ void Request::print_req_out(const Tractor_Event &event)
         output_HWC->printf(event.rank, ":%lld", event.addrs.at(i));
     }
     output_HWC->printf(event.rank, "\n");
+#endif
 }
 
 #ifdef PEAT_MPI

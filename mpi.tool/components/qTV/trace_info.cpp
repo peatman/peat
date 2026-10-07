@@ -16,20 +16,20 @@
  * along with PEAT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "traceinfo.h"
+#include "trace_info.h"
 #include "../common/utils.h"
 #include <QDir>
 
-TraceInfo::TraceInfo() {}
+Trace_Info::Trace_Info() {}
 
-QString TraceInfo::make_absolute_path(const QString &file_path, const QString &relative_dir)
+QString Trace_Info::make_absolute_path(const QString &file_path, const QString &relative_dir)
 {
     QFileInfo file_info(file_path);
     QDir base_dir = file_info.absoluteDir();
     return QDir::cleanPath(base_dir.absoluteFilePath(relative_dir));
 }
 
-bool TraceInfo::parse_trace_info_file(QFileInfo &tracefile)
+bool Trace_Info::parse_trace_info_file(QFileInfo &tracefile)
 {
     QFileInfo user_file_info(tracefile);
     if (!user_file_info.exists()) {
@@ -41,7 +41,7 @@ bool TraceInfo::parse_trace_info_file(QFileInfo &tracefile)
     String_Split lines;
     trace.read_lines(lines, 0, '|', ';');
     std::string key = lines.at(0);
-    if (key != "PEATTRACEINFO")
+    if (key != "PEATTrace_Info")
         return false;
     do {
         trace.read_lines(lines, 0, '|', ';');
@@ -57,13 +57,11 @@ bool TraceInfo::parse_trace_info_file(QFileInfo &tracefile)
             mpi_files = lines.at(3);
             hwc_files = lines.at(4);
             bind_files = lines.at(5);
-            fab_files = lines.at(6);
             com_ext = lines.at(7);
             app_ext = lines.at(8);
             // mpi_files.remove( '.' );
             // hwc_files.remove( '.' );
             // bind_files.remove( '.' );
-            // fab_files.remove( '.' );
             // com_ext.remove( '.' );
             // app_ext.remove( '.' );
             break;
@@ -181,7 +179,7 @@ bool TraceInfo::parse_trace_info_file(QFileInfo &tracefile)
 
     return true;
 }
-void TraceInfo::update_src_dirs()
+void Trace_Info::update_src_dirs()
 {
     std::string filename = trace_info_file.toStdString();
     filename += ".user";

@@ -45,7 +45,9 @@ bool CTT::parse_single_event(const int rank, String_Split &line_mpi, String_Spli
     if (line_mpi.size() < 2) {
         return false;
     }
-    std::string mpi_func = line_mpi.at(3);
+    PEAT_Record_Header hdr; // ids, thread and nesting of the record
+    user_region_store->parse_record_header(hdr, line_mpi, rank);
+    std::string mpi_func = line_mpi.at(hdr.payload);
     if (!second_line) {
 #pragma omp atomic
         events_processed++;

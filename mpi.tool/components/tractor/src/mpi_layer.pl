@@ -40,12 +40,13 @@ if ($funcpars eq 'void' || $funcpars eq '') {
 
 my $print_extended_stuff=0;
 my $use_pragma_weak=0;
-my $parse_colt=0;
+my $parse_mpi_internal=0;
 my $mpifuncs;
 my $mpilayer;
 my $mpilevel=1;
 my $funccount=0;
 my $parse_gpu=0;
+my $skip_core=0;
 sub make_dup;
 
 #my $prolog="
@@ -85,28 +86,13 @@ my $event_record_input_request;
 my $event_rbuf;
 my $event_sbuf;
 my $event_record_input_request_addr;
-my $colt="_colt" if $properties =~/COLT/;
-my $is_not_colt="1";
-$is_not_colt="0" if $properties =~/COLT/;
-my $num_colts;
+my $mpi_internal="_mpi_internal" if $properties =~/MPI_INTERNAL/; # MPI-internal helper variants (T_Type_size_mpi_internal, get_rank_from_req_mpi_internal, stack_unwind_mpi_internal)
 my $global_mpi_time;
 
-$global_mpi_time="global_mpi_time+=tsc_mpi_exit-tsc_mpi_entry;" if !($properties=~/COLT/);
-
-if ($properties =~/COLT/) {
-    $num_colts="num_colts[tid]++;";
-} else {
-    $num_colts="num_colts[tid]=0;";
-}
-my $num_colts_write;
-if ($properties =~/COLT/) {
-    $num_colts_write="event->requests.num_colts=0;" ;
-} else {
-    $num_colts_write="event->requests.num_colts=num_colts[tid];" ;
-}
+$global_mpi_time="global_mpi_time+=tsc_mpi_exit-tsc_mpi_entry;" if !($properties=~/MPI_INTERNAL/);
 #if ($properties=~/INPUT_REQUEST_POINTER_MULTIPLE/) { 
 #   $record_input_request="__msl_record_requests(tid,*requests,inum);";
-#   $record_input_request="__msl_record_drequests(tid,*requests,inum);" if $properties =~/COLT/;
+#   $record_input_request="__msl_record_drequests(tid,*requests,inum);" if $properties =~/MPI_INTERNAL/;
 #   $event_record_input_request="event->requests.input_request_num=inum;";
 #   $event_rbuf="event->requests.requests.virt_addr=*requests;event->requests.requests.size=inum*sizeof(MPI_Request);" if $print_extended_stuff;
 #   $event_record_input_request_addr="event->requests.request_addr=(PEAT_Addr)*requests;";
@@ -114,45 +100,85 @@ if ($properties =~/COLT/) {
 my $declare_local_comms;
 my $save_local_comms;
 my $save_input_request;
-my $reused="if (event==NULL) reused=__msl_reuse_event(tid,&event, &counters, $funcid_through); if (!reused) " if $properties =~/COMPRESSIBLE/ ;
+my $reused="if (event==NULL) reused=__msl_reuse_event(tid,level,&event,&counters,$funcid_through); if (!reused) " if $properties =~/COMPRESSIBLE/ ;
 my $skip_parse_update;
 if ($properties =~/FLAG/) {
    my $add_l_flag="l_flag=((*flag)>0) && (!is_empty(status));" if $properties =~/STATUS/;
-   $add_l_flag="l_flag=((*flag)>0) && (!is_all_empty(inum,status));" if $properties =~/MSTATUSES/;
+   $add_l_flag="l_flag=((*flag)>0) && (!is_all_empty(inum,statuses));" if $properties =~/MSTATUSES/;
    $skip_parse_update="l_flag=*flag;";
-   $skip_parse_update="$add_l_flag l_skip_parse=(l_flag==0) && ((gt_info(compress_events) & 2)!=0); if (l_skip_parse) l_skip_parse=gt_info(discard_event)(tid, &event);" if $properties =~/COMPRESSIBLE/ ;
+   $skip_parse_update="$add_l_flag l_skip_parse=(l_flag==0) && ((gt_info(compress_events) & 2)!=0); if (l_skip_parse) l_skip_parse=__msl_discard_event(tid, level, &event, children_base);" if $properties =~/COMPRESSIBLE/ ;
 } else {
-   $skip_parse_update="l_skip_parse=(*onum!=MPI_UNDEFINED)  && ((gt_info(compress_events) & 2)!=0); if (l_skip_parse) l_skip_parse=gt_info(discard_event)(tid, &event);" if $properties =~/COMPRESSIBLE/ ;
+   $skip_parse_update="l_skip_parse=(*onum!=MPI_UNDEFINED)  && ((gt_info(compress_events) & 2)!=0); if (l_skip_parse) l_skip_parse=__msl_discard_event(tid, level, &event, children_base);" if $properties =~/COMPRESSIBLE/ ;
 }
 
 if ($properties=~/INPUT_REQUEST_MULTIPLE/) { 
    $declare_input_request="MPI_Request t_req[inum];";
    $save_input_request="__msl_dup_requests(t_req, requests, inum);"; 
-   $save_input_request="__msl_cvt_drequests(t_req,(const MPID_Request **) requests, inum);" if $properties =~/COLT/;
+   $save_input_request="
+   #ifndef _OPENMPI_
+       __msl_cvt_drequests(t_req,(const MPID_Request **) requests, inum);
+   #else
+       mpi_internal_get_requests(inum, requests, t_req); // maps OpenMPI's shared inline-completion sentinel to MPI_REQUEST_NULL per entry
+   #endif
+   " if $properties =~/MPI_INTERNAL/;
 
-   $save_local_comms="mpi_internal_get_comms(inum,requests,local_comms);" if $properties =~/COLT/;
-   $record_input_request="__msl_record_requests$colt(tid,t_req,inum);";
+   $save_local_comms="mpi_internal_get_comms(inum,requests,local_comms);" if $properties =~/MPI_INTERNAL/;
+   $record_input_request="__msl_record_requests(tid,level,t_req,inum);";
 
    $event_record_input_request="event->requests.input_request_num=inum;";
    $event_rbuf="event->requests.requests.virt_addr=requests;event->requests.requests.size=inum*sizeof(MPI_Request);" if $print_extended_stuff;
    $event_record_input_request_addr="event->requests.request_addr=(PEAT_Addr)requests;";
-   $declare_local_comms="MPID_Comm *local_comms[inum];" if $properties =~/COLT/;
+   $declare_local_comms="
+   #ifndef _OPENMPI_ 
+       MPID_Comm *local_comms[inum];
+   #else
+       MPI_Comm local_comms[inum];
+   #endif
+   " if $properties =~/MPI_INTERNAL/;
 }
 
 if ($properties=~/INPUT_REQUEST_SINGLE/) {
    $declare_input_request="MPI_Request t_req;";
-   $declare_local_comms="MPID_Comm *local_comm;" if $properties =~/COLT/;
+   $declare_local_comms="
+   #ifndef _OPENMPI_ 
+       MPID_Comm *local_comm;
+   #else
+       MPI_Comm local_comm;
+   #endif" if $properties =~/MPI_INTERNAL/;
    $save_input_request="t_req=*request;";
-   $save_input_request="t_req=request;" if $properties =~/PEAT_PROP_REQUEST_DIRECT/;  
-   $save_input_request="t_req=__msl_get_drequest((const MPID_Request *) request);" if $properties =~/COLT/;
+   $save_input_request="
+   #ifndef _OPENMPI_
+       t_req=__msl_get_drequest((const MPID_Request *) request);
+   #else
+       t_req=mpi_internal_get_request(*request); // maps OpenMPI's shared inline-completion sentinel to MPI_REQUEST_NULL
+   #endif
+   " if $properties =~/MPI_INTERNAL/;
+   $save_input_request="
+   #ifndef _OPENMPI_
+       t_req=request;
+   #else
+       t_req=mpi_internal_get_request(request); // maps OpenMPI's shared inline-completion sentinel to MPI_REQUEST_NULL
+   #endif
+   " if $properties =~/PEAT_PROP_REQUEST_DIRECT/;
 
-   $save_local_comms="local_comm=mpi_internal_get_comm(request);" if $properties =~/COLT/;
+   $save_local_comms="
+   #ifndef _OPENMPI_ 
+       local_comm=mpi_internal_get_comm(request);
+   #else
+       local_comm=mpi_internal_get_comm(*request);
+   #endif
+   " if $properties =~/MPI_INTERNAL/;
+   $save_local_comms="local_comm=mpi_internal_get_comm(request);" if $properties =~/MPI_INTERNAL/ && $properties =~/PEAT_PROP_REQUEST_DIRECT/;
 
-   $record_input_request="__msl_record_request$colt(tid,t_req);";
+   $record_input_request="__msl_record_request(tid,level,t_req);";
 
    $event_record_input_request="event->requests.input_request_num=1;";
    $event_rbuf="event->requests.requests.virt_addr=request;event->requests.requests.size=sizeof(MPI_Request);" if $print_extended_stuff;
    $event_record_input_request_addr="event->requests.request_addr=(PEAT_Addr)request;";
+   if ($properties =~/PEAT_PROP_REQUEST_DIRECT/) { # MPI_Request by value (MPI_Pready/MPI_Parrived): no address to record, keep the handle value
+       $event_rbuf="event->requests.requests.virt_addr=(void *)(intptr_t)request;event->requests.requests.size=sizeof(MPI_Request);" if $print_extended_stuff;
+       $event_record_input_request_addr="event->requests.request_addr=(PEAT_Addr)(intptr_t)request;";
+   }
 }
 
 if ($properties=~/MSTATUSES/) {
@@ -162,15 +188,15 @@ if ($properties=~/MSTATUSES/) {
     if (*onum!=MPI_UNDEFINED) {
         event->requests.flag=1;
         event->requests.triggered_request_num=*onum;
-        __msl_record_ints$colt (tid,indx,(*onum));
+        __msl_record_ints(tid,level,indx,(*onum));
         long long TSC[inum*4];
         for (i=0;i<*onum;i++) { 
             TSC[i*4+0]=indx[i];
-            TSC[i*4+1]=status[indx[i]].MPI_TAG;
-            TSC[i*4+2]=get_rank_from_req$colt(local_comms[indx[i]],status[indx[i]].MPI_SOURCE); ;
-            TSC[i*4+3]=MPI_STATUS_GET_COUNT_R(status[indx[i]]);
+            TSC[i*4+1]=statuses[indx[i]].MPI_TAG;
+            TSC[i*4+2]=get_rank_from_req$mpi_internal(local_comms[indx[i]],statuses[indx[i]].MPI_SOURCE); ;
+            TSC[i*4+3]=MPI_STATUS_GET_COUNT_R(statuses[indx[i]]);
         }
-        __msl_record_longs$colt (tid,TSC,(*onum)*4);
+        __msl_record_longs(tid,level,TSC,(*onum)*4);
     }";
    } else { # wait/test ALL
     $event_status="
@@ -179,15 +205,15 @@ if ($properties=~/MSTATUSES/) {
         long long TSC[inum*4];
         for (i=0;i<inum;i++) { 
             TSC[i*4+0]=i;
-            TSC[i*4+1]=status[i].MPI_TAG;
-            TSC[i*4+2]=get_rank_from_req$colt(local_comms[i],status[i].MPI_SOURCE);
-            TSC[i*4+3]=MPI_STATUS_GET_COUNT_R(status[i]);
+            TSC[i*4+1]=statuses[i].MPI_TAG;
+            TSC[i*4+2]=get_rank_from_req$mpi_internal(local_comms[i],statuses[i].MPI_SOURCE);
+            TSC[i*4+3]=MPI_STATUS_GET_COUNT_R(statuses[i]);
         }
-        __msl_record_longs$colt (tid,TSC,inum*4);
+        __msl_record_longs(tid,level,TSC,inum*4);
     }";
    };
-    $if_ignore_status="if (status==MPI_STATUSES_IGNORE) status=local_status;";
-    $declare_ignore_status="MPI_Status local_status[inum];"
+    $if_ignore_status="if (statuses==MPI_STATUSES_IGNORE) statuses=local_statuses;";
+    $declare_ignore_status="MPI_Status local_statuses[inum];"
 } else {
     if ($properties=~/STATUS/ ) { # wait test, ANY
         my $lcomm=($properties=~/INPUT_REQUEST_SINGLE/) ? "local_comm" : "local_comms[temp_index]";
@@ -198,9 +224,9 @@ if ($properties=~/MSTATUSES/) {
             long long TSC[4];
             TSC[0]=temp_index;
             TSC[1]=status->MPI_TAG;
-            TSC[2]=get_rank_from_req$colt($lcomm,status->MPI_SOURCE);
+            TSC[2]=get_rank_from_req$mpi_internal($lcomm,status->MPI_SOURCE);
             TSC[3]=MPI_STATUS_GET_COUNT_P(status);
-           __msl_record_longs$colt (tid,TSC,4);
+           __msl_record_longs(tid,level,TSC,4);
         }";
         $event_status="
         temp_index=*indx;
@@ -219,7 +245,7 @@ if ($properties=~/MSTATUSES/) {
             if (flag) {
                 TSC[0]=0;
                 TSC[1]=status.MPI_TAG;
-                TSC[2]=get_rank_from_req$colt(local_comm,status.MPI_SOURCE); ;
+                TSC[2]=get_rank_from_req$mpi_internal(local_comm,status.MPI_SOURCE); ;
                 TSC[3]=MPI_STATUS_GET_COUNT_R(status);
             } else {
                 TSC[0]=0;
@@ -227,9 +253,9 @@ if ($properties=~/MSTATUSES/) {
                 TSC[2]=-2;
                 TSC[3]=-1;
             }
-           __msl_record_longs$colt (tid,TSC,4);
+           __msl_record_longs(tid,level,TSC,4);
        }
-       " if $properties =~/COLT/ && $properties =~/INPUT_REQUEST_SINGLE/ && !($properties =~/PERSISTENT_REQUEST_START/); #only apply to single-request MPIC_XXX completion routines. Exclude MPI_STARTXXX.
+       " if $properties =~/MPI_INTERNAL/ && $properties =~/INPUT_REQUEST_SINGLE/ && !($properties =~/PERSISTENT_REQUEST_START/); #only apply to single-request MPIC_XXX / ompi_coll_p2p completion routines. Exclude MPI_STARTXXX.
    }
 
 }
@@ -256,31 +282,30 @@ my $funcid_through="$line[0]_THROUGH";
 my $funcid="$line[0]";
 my $datasize;
 my $event_buf;
+my $internal_comm_tracking;
 
-my $colt="_colt" if $properties =~/COLT/;
-my $is_not_colt="1";
-$is_not_colt="0" if $properties =~/COLT/;
-my $reused="reused=__msl_reuse_event(tid,&event, &counters, $funcid_through); if (!reused) " if $properties =~/PEAT_PROP_COMPRESSIBLE/ ;
-my $skip_parse_update="l_skip_parse=(*flag==0) && ((gt_info(compress_events) & 2)!=0); if (l_skip_parse) l_skip_parse=gt_info(discard_event)(tid, &event);" if $properties =~/PEAT_PROP_COMPRESSIBLE/ ;
-my $num_colts="num_colts[tid]++;" if $properties =~/COLT/;
+my $mpi_internal="_mpi_internal" if $properties =~/MPI_INTERNAL/; # MPI-internal helper variants
+my $reused="reused=__msl_reuse_event(tid,level,&event,&counters,$funcid_through); if (!reused) " if $properties =~/PEAT_PROP_COMPRESSIBLE/ ;
+my $skip_parse_update="l_skip_parse=(*flag==0) && ((gt_info(compress_events) & 2)!=0); if (l_skip_parse) l_skip_parse=__msl_discard_event(tid, level, &event, children_base);" if $properties =~/PEAT_PROP_COMPRESSIBLE/ ;
 my $global_mpi_time;
-$global_mpi_time="global_mpi_time+=tsc_mpi_exit-tsc_mpi_entry;" if !($properties=~/COLT/);
+$global_mpi_time="global_mpi_time+=tsc_mpi_exit-tsc_mpi_entry;" if !($properties=~/MPI_INTERNAL/);
 
 if ($properties =~/DATA_TXRX/) {
 my $comm="comm";
-#$comm="MPI_COMM_WORLD" if $properties =~/COLT/;
-#$comm="(long long) comm" if $properties=~/COMM/ && $properties=~/COLT/ ;
-$comm="mpi_internal_get_mpicomm_from_mpidcomm(comm)" if $properties=~/COMM/ && $properties=~/COLT/;
-#$comm="last_coll_comm" if $properties =~/COLT/;
+#$comm="MPI_COMM_WORLD" if $properties =~/MPI_INTERNAL/;
+#$comm="(long long) comm" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/ ;
+#$comm="mpi_internal_get_top_comm_handle_from_comm(comm)" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/;
+$comm="mpi_internal_get_comm_handle_from_comm(comm)" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/;
+#$comm="last_coll_comm" if $properties =~/MPI_INTERNAL/;
 my $stag="stag";
 my $dest="dest";
 
-$dest="get_rank_from_req_colt(comm,dest)" if $properties =~/COLT/;
+$dest="get_rank_from_req_mpi_internal(comm,dest)" if $properties =~/MPI_INTERNAL/;
 
 my $sbuf_bottom;
 my $rbuf_bottom;
 if ($funcid=~/REPLACE/) {
-    $datasize="T_Type_size$colt(type,&s_data_size);r_data_size=s_data_size;s_count=r_count=count;";
+    $datasize="T_Type_size$mpi_internal(type,&s_data_size);r_data_size=s_data_size;s_count=r_count=count;";
     $event_buf="
         event[1]->p2p_pr_pb.buf.virt_addr=buf;
         event[1]->p2p_pr_pb.buf.size=event[1]->p2p_pr_pb.transfer_bytes;
@@ -289,7 +314,7 @@ if ($funcid=~/REPLACE/) {
     " if $print_extended_stuff;
 
 } else {
-    $datasize="T_Type_size$colt(stype,&s_data_size);T_Type_size$colt(rtype,&r_data_size);s_count=scount;r_count=rcount;";
+    $datasize="T_Type_size$mpi_internal(stype,&s_data_size);T_Type_size$mpi_internal(rtype,&r_data_size);s_count=scount;r_count=rcount;";
     $event_buf="
         event[1]->p2p_pr_pb.buf.virt_addr=rbuf;
         event[1]->p2p_pr_pb.buf.size=event[1]->p2p_pr_pb.transfer_bytes;
@@ -299,7 +324,25 @@ if ($funcid=~/REPLACE/) {
 }
 my $status_peer="src >=0 ? src : status->MPI_SOURCE";
 
-$status_peer="get_rank_from_req_colt(comm,$status_peer)" if $properties =~ /COLT/;
+$status_peer="get_rank_from_req_mpi_internal(comm,$status_peer)" if $properties =~ /MPI_INTERNAL/;
+# $internal_comm_tracking="track_internal_comm(event[0]->$basic_struct.comm,tsc_mpi_exit);" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/;
+
+# blocking: receive side is described by the returned status
+my $declare_status="MPI_Status local_status;";
+my $fix_status="if (status==MPI_STATUS_IGNORE) status=&local_status;";
+my $recv_tag="status->MPI_TAG";
+my $recv_peer=$status_peer;
+my $recv_bytes="MPI_STATUS_GET_COUNT_P(status)";
+my $event_request="";
+if ($properties =~/NON_BLOCK/) { # MPI_Isendrecv*: no status yet, record the posted receive and the request
+    $declare_status="";
+    $fix_status="";
+    $recv_tag="rtag";
+    $recv_peer="src";
+    $recv_peer="get_rank_from_req_mpi_internal(comm,src)" if $properties =~ /MPI_INTERNAL/;
+    $recv_bytes="(r_count*r_data_size)";
+    $event_request="event[0]->p2p_pr_pb.request=*request; event[1]->p2p_pr_pb.request=*request;";
+}
 
 my $print_code=`cat pinc/sendrecv.code.inc`;
 eval $print_code;
@@ -327,12 +370,15 @@ my $event_status_begin="{";
 my $event_status_end="}";
 
 $event_request="event->$basic_struct.request=*request;" if $properties=~/REQUEST/;
-$event_request="event->$basic_struct.request=mpi_internal_get_request(*request);" if $properties=~/REQUEST/ && $properties=~/COLT/; #casting from MPID_Request*
+$event_request="event->$basic_struct.request=mpi_internal_get_request(*request);" if $properties=~/REQUEST/ && $properties=~/MPI_INTERNAL/; #casting from MPID_Request*
 $tag_peer="event->$basic_struct.tag=tag;" if $properties=~/TAG/;
 $tag_peer="$tag_peer event->$basic_struct.peer=peer_rank;" if $properties=~/PEER/;
+#$internal_comm_tracking="track_internal_comm(event->$basic_struct.comm,tsc_mpi_exit);" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/;
 
-my $colt_mpid_comm = ($properties=~/COLT/ && $properties!~/CLASS_PROBE/);
-$tag_peer="$tag_peer event->$basic_struct.peer=get_rank_from_req_colt(comm,peer_rank);" if $properties=~/PEER/ && $colt_mpid_comm;
+# MPIC_Probe is the one mpi_internal helper that takes the MPI_Comm handle (not MPIR_Comm*), so probe-class mpi_internal
+# functions use comm and ranks as they are, without the MPID->MPI comm / rank translation.
+my $mpi_internal_mpid_comm = ($properties=~/MPI_INTERNAL/ && $properties!~/CLASS_PROBE/);
+$tag_peer="$tag_peer event->$basic_struct.peer=get_rank_from_req_mpi_internal(comm,peer_rank);" if $properties=~/PEER/ && $mpi_internal_mpid_comm;
 
 $message="event->$basic_struct.message=*message;" if $properties=~/MESSAGE/ && $properties=~/CLASS_P2P/;
 $handle="event->$basic_struct.window=win;" if $properties=~/HWINDOW/ && $properties=~/CLASS_OSC/;
@@ -342,12 +388,16 @@ $handle="event->$basic_struct.fh=*fh;" if $properties=~/FILE_POINTER_HANDLE/ && 
 $offset="event->$basic_struct.offset=offset;" if $properties=~/OFFSET/ && $properties=~/CLASS_FIO/;
 $event_message="event->$basic_struct.message=*message;" if $properties=~/MESSAGE/ && $properties=~/CLASS_PROBE/;
 $comm="event->$basic_struct.comm=comm;" if $properties=~/COMM/;
-#$comm="event->$basic_struct.comm=(long long) comm;" if $properties=~/COMM/ && $properties=~/COLT/ ;
-#$comm="event->$basic_struct.comm=MPI_COMM_WORLD;" if $properties=~/COMM/ && $properties=~/COLT/;
-$comm="event->$basic_struct.comm=mpi_internal_get_mpicomm_from_mpidcomm(comm);" if $properties=~/COMM/ && $colt_mpid_comm;
-#$comm="event->$basic_struct.comm=last_coll_comm;" if $properties=~/COMM/ && $properties=~/COLT/;
-$get_datasize="T_Type_size$colt(type,&data_size);"if $properties=~/BYTES/;
+#$comm="event->$basic_struct.comm=(long long) comm;" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/ ;
+#$comm="event->$basic_struct.comm=MPI_COMM_WORLD;" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/;
+
+#$comm="event->$basic_struct.comm=mpi_internal_get_top_comm_handle_from_comm(comm);" if $properties=~/COMM/ && $mpi_internal_mpid_comm;
+$comm="event->$basic_struct.comm=mpi_internal_get_comm_handle_from_comm(comm);" if $properties=~/COMM/ && $mpi_internal_mpid_comm;
+
+#$comm="event->$basic_struct.comm=last_coll_comm;" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/;
+$get_datasize="T_Type_size$mpi_internal(type,&data_size);"if $properties=~/BYTES/;
 $transfer_bytes="event->$basic_struct.transfer_bytes=(count*data_size);"if $properties=~/BYTES/;
+$transfer_bytes="event->$basic_struct.transfer_bytes=((long long)partitions*(long long)count*data_size);" if $properties=~/BYTES/ && $line[3]=~/\bint partitions\b/; # partitioned P2P (MPI_Psend_init/MPI_Precv_init): total bytes over all partitions
 $transfer_bytes="event->$basic_struct.transfer_bytes=size;"if $properties=~/SIZE/;
 $event_buf="
         event->$basic_struct.buf.virt_addr=buf;
@@ -368,8 +418,8 @@ if ($properties=~/STATUS/) {
     $event_status_begin="if (*flag) {" if $properties=~/FLAG/;
     $event_status="event->$basic_struct.transfer_bytes=MPI_STATUS_GET_COUNT_P(status);";
     $event_status="$event_status event->$basic_struct.tag=status->MPI_TAG;" if $properties=~/TAG/;
-    if ($colt_mpid_comm) {
-        $event_status="$event_status event->$basic_struct.peer=get_rank_from_req_colt(comm,peer_rank>=0 ? peer_rank : status->MPI_SOURCE);" if $properties=~/PEER/;
+    if ($mpi_internal_mpid_comm) {
+        $event_status="$event_status event->$basic_struct.peer=get_rank_from_req_mpi_internal(comm,peer_rank>=0 ? peer_rank : status->MPI_SOURCE);" if $properties=~/PEER/;
     } else  {
         $event_status="$event_status event->$basic_struct.peer=peer_rank>=0 ? peer_rank : status->MPI_SOURCE;" if $properties=~/PEER/;
     }
@@ -380,12 +430,12 @@ if ($properties=~/STATUS/) {
 #    if (t_mpi_rank==1) {
 #    if (event->$basic_struct.peer<0 ) {
 #        fprintf(stderr,\"Incorrect rank translation: %d->%d on comm %lx\\n\",peer_rank, event->$basic_struct.peer,comm);
-#        event->$basic_struct.peer=get_rank_from_req_colt_v(comm,peer_rank>=0 ? peer_rank : status->MPI_SOURCE);
+#        event->$basic_struct.peer=get_rank_from_req_mpi_internal_v(comm,peer_rank>=0 ? peer_rank : status->MPI_SOURCE);
 #        mpi_internal_print_comm_tree(comm,0);
 #        //MPI_Abort(MPI_COMM_WORLD,0);
 #    } else {
 #        fprintf(stderr,\"Correct rank translation: %d->%d on comm %lx\\n\",peer_rank, event->$basic_struct.peer,comm);
-#        event->$basic_struct.peer=get_rank_from_req_colt_v(comm,peer_rank>=0 ? peer_rank : status->MPI_SOURCE);
+#        event->$basic_struct.peer=get_rank_from_req_mpi_internal_v(comm,peer_rank>=0 ? peer_rank : status->MPI_SOURCE);
 #        mpi_internal_print_comm_tree(comm,0);
 #    }
 #    }
@@ -488,13 +538,13 @@ my $event_rbuf;
 if ($properties=~/DATA_COLLECTIVE/) {
 if ($properties=~/TYPEMATCH/) {
     $s_type_size="T_Type_size(type,&s_type_size);r_type_size=s_type_size;" if $properties=~/SCALAR_TYPE/;
-#    $s_type_size="event->collective.sr_type_sizes[0]=comm_size; { int type_sizes[comm_size]; for (i=0;i<comm_size;i++) T_Type_size(types[i],&type_sizes[i]); __msl_record_ints(tid,s_type_sizes,comm_size);}" if $properties=~/VECTOR_TYPE/; # shouldn't happen
+#    $s_type_size="event->collective.sr_type_sizes[0]=comm_size; { int type_sizes[comm_size]; for (i=0;i<comm_size;i++) T_Type_size(types[i],&type_sizes[i]); __msl_record_ints(tid,level,s_type_sizes,comm_size);}" if $properties=~/VECTOR_TYPE/; # shouldn't happen
     undef $r_type_size;
 } else {
     $s_type_size="T_Type_size(stype,&s_type_size);" if $properties=~/SCALAR_TYPE/;
     $r_type_size="T_Type_size(rtype,&r_type_size);" if $properties=~/SCALAR_TYPE/;
-    #$s_type_size="event->collective.sr_type_sizes[0]=comm_size; { int type_sizes[comm_size]; for (i=0;i<comm_size;i++) T_Type_size(stypes[i],&type_sizes[i]); __msl_record_ints(tid,type_sizes,comm_size);}" if $properties=~/VECTOR_TYPE/;
-    #$r_type_size="event->collective.sr_type_sizes[1]=comm_size; { int type_sizes[comm_size]; for (i=0;i<comm_size;i++) T_Type_size(rtypes[i],&type_sizes[i]); __msl_record_ints(tid,type_sizes,comm_size);}" if $properties=~/VECTOR_TYPE/;
+    #$s_type_size="event->collective.sr_type_sizes[0]=comm_size; { int type_sizes[comm_size]; for (i=0;i<comm_size;i++) T_Type_size(stypes[i],&type_sizes[i]); __msl_record_ints(tid,level,type_sizes,comm_size);}" if $properties=~/VECTOR_TYPE/;
+    #$r_type_size="event->collective.sr_type_sizes[1]=comm_size; { int type_sizes[comm_size]; for (i=0;i<comm_size;i++) T_Type_size(rtypes[i],&type_sizes[i]); __msl_record_ints(tid,level,type_sizes,comm_size);}" if $properties=~/VECTOR_TYPE/;
 }
 if ($properties=~/VECTOR/) {
     # entries of the per-peer arrays: comm size, remote size on an inter-communicator, or the
@@ -505,7 +555,7 @@ if ($properties=~/VECTOR/) {
     $comm_size="determine_comm_size(comm, $size_kind, &comm_size, &comm_rsize);";
 
     if ($properties=~/COUNTMATCH/) {
-        $s_count="event->collective.sr_bytes[0]=1;__msl_record_long(tid,((long long)count*(long long)s_type_size));" if $properties=~/SCALAR_SEND/;
+        $s_count="event->collective.sr_bytes[0]=1;__msl_record_long(tid,level,((long long)count*(long long)s_type_size));" if $properties=~/SCALAR_SEND/;
         $s_count="event->collective.sr_bytes[0]=comm_size;
         { 
             long long s_bytes[comm_size]; 
@@ -515,19 +565,19 @@ if ($properties=~/VECTOR/) {
                 ts_bytes+=s_bytes[i]; 
 #endif
             }
-            __msl_record_longs(tid,s_bytes,comm_size);
+            __msl_record_longs(tid,level,s_bytes,comm_size);
         }" if $properties=~/VECTOR_SEND/;
         undef $r_count;
     } else {
         if ($properties=~/ROOT_SEND/) {
-	        $s_count="if (amiroot) { event->collective.sr_bytes[0]=1;__msl_record_long(tid,((long long)scount*(long long)s_type_size));} else event->collective.sr_bytes[0]=0;" if $properties=~/SCALAR_SEND/;
+	        $s_count="if (amiroot) { event->collective.sr_bytes[0]=1;__msl_record_long(tid,level,((long long)scount*(long long)s_type_size));} else event->collective.sr_bytes[0]=0;" if $properties=~/SCALAR_SEND/;
 	} else {
-	        $s_count="event->collective.sr_bytes[0]=1;__msl_record_long(tid,((long long)scount*(long long)s_type_size));" if $properties=~/SCALAR_SEND/;
+	        $s_count="event->collective.sr_bytes[0]=1;__msl_record_long(tid,level,((long long)scount*(long long)s_type_size));" if $properties=~/SCALAR_SEND/;
 	}
         if ($properties=~/ROOT_RECV/) {
-	        $r_count="if (amiroot) { event->collective.sr_bytes[1]=1;__msl_record_long(tid,((long long)rcount*(long long)r_type_size));} else event->collective.sr_bytes[1]=0;" if $properties=~/SCALAR_RECV/;
+	        $r_count="if (amiroot) { event->collective.sr_bytes[1]=1;__msl_record_long(tid,level,((long long)rcount*(long long)r_type_size));} else event->collective.sr_bytes[1]=0;" if $properties=~/SCALAR_RECV/;
 	} else {
-	        $r_count="event->collective.sr_bytes[1]=1;__msl_record_long(tid,((long long)rcount*(long long)r_type_size));" if $properties=~/SCALAR_RECV/;
+	        $r_count="event->collective.sr_bytes[1]=1;__msl_record_long(tid,level,((long long)rcount*(long long)r_type_size));" if $properties=~/SCALAR_RECV/;
 	}
         my $s_type_size_v;
         my $r_type_size_v;
@@ -545,7 +595,7 @@ if ($properties=~/VECTOR/) {
                     ts_bytes+=s_bytes[i]; 
 #endif
                 } 
-                __msl_record_longs(tid,s_bytes,comm_size);
+                __msl_record_longs(tid,level,s_bytes,comm_size);
             }
         } else event->collective.sr_bytes[0]=0;
         " if $properties=~/VECTOR_SEND/;
@@ -560,7 +610,7 @@ if ($properties=~/VECTOR/) {
                 ts_bytes+=s_bytes[i]; 
 #endif
             } 
-            __msl_record_longs(tid,s_bytes,comm_size);
+            __msl_record_longs(tid,level,s_bytes,comm_size);
         }" if $properties=~/VECTOR_SEND/;
 
         }
@@ -576,7 +626,7 @@ if ($properties=~/VECTOR/) {
                     tr_bytes+=r_bytes[i]; 
 #endif
                 } 
-                __msl_record_longs(tid,r_bytes,comm_rsize);
+                __msl_record_longs(tid,level,r_bytes,comm_rsize);
             }
         } else event->collective.sr_bytes[1]=0;" if $properties=~/VECTOR_RECV/;
         } else {
@@ -590,7 +640,7 @@ if ($properties=~/VECTOR/) {
                 tr_bytes+=r_bytes[i]; 
 #endif
             } 
-            __msl_record_longs(tid,r_bytes,comm_rsize);
+            __msl_record_longs(tid,level,r_bytes,comm_rsize);
         }" if $properties=~/VECTOR_RECV/;
         }
     }
@@ -598,27 +648,27 @@ if ($properties=~/VECTOR/) {
 } else {
     if ($properties=~/COUNTMATCH/) {
         if ($properties=~/SCALAR_SEND/ && $properties=~/SCALAR_RECV/) { 
-            $s_count="event->collective.sr_bytes[0]=1; __msl_record_long(tid,((long long)count*(long long)s_type_size));";
-            $r_count="event->collective.sr_bytes[1]=1; __msl_record_long(tid,((long long)count*(long long)s_type_size));";
+            $s_count="event->collective.sr_bytes[0]=1; __msl_record_long(tid,level,((long long)count*(long long)s_type_size));";
+            $r_count="event->collective.sr_bytes[1]=1; __msl_record_long(tid,level,((long long)count*(long long)s_type_size));";
         } 
         if ($properties=~/ROOT_SEND/) {
-           $s_count="if (amiroot) { event->collective.sr_bytes[0]=1;__msl_record_long(tid,((long long)count*(long long)s_type_size));} else event->collective.sr_bytes[0]=0;" ;
-           $r_count="if (!amiroot) { event->collective.sr_bytes[1]=1;__msl_record_long(tid,((long long)count*(long long)r_type_size));} else event->collective.sr_bytes[1]=0;" if $properties=~/SCALAR_SEND/;
+           $s_count="if (amiroot) { event->collective.sr_bytes[0]=1;__msl_record_long(tid,level,((long long)count*(long long)s_type_size));} else event->collective.sr_bytes[0]=0;" ;
+           $r_count="if (!amiroot) { event->collective.sr_bytes[1]=1;__msl_record_long(tid,level,((long long)count*(long long)r_type_size));} else event->collective.sr_bytes[1]=0;" if $properties=~/SCALAR_SEND/;
         }
         if ($properties=~/ROOT_RECV/) {
-           $s_count="if (!amiroot) { event->collective.sr_bytes[0]=1;__msl_record_long(tid,((long long)count*(long long)s_type_size));} else event->collective.sr_bytes[0]=0;" if $properties=~/SCALAR_SEND/;
-           $r_count="if (amiroot) { event->collective.sr_bytes[1]=1;__msl_record_long(tid,((long long)count*(long long)r_type_size));} else event->collective.sr_bytes[1]=0;" if $properties=~/SCALAR_RECV/;
+           $s_count="if (!amiroot) { event->collective.sr_bytes[0]=1;__msl_record_long(tid,level,((long long)count*(long long)s_type_size));} else event->collective.sr_bytes[0]=0;" if $properties=~/SCALAR_SEND/;
+           $r_count="if (amiroot) { event->collective.sr_bytes[1]=1;__msl_record_long(tid,level,((long long)count*(long long)r_type_size));} else event->collective.sr_bytes[1]=0;" if $properties=~/SCALAR_RECV/;
         }
     } else {
         if ($properties=~/ROOT_SEND/) {
-            $s_count="if (amiroot) { event->collective.sr_bytes[0]=1;__msl_record_long(tid,((long long)scount*(long long)s_type_size));} else event->collective.sr_bytes[0]=0;" if $properties=~/SCALAR_SEND/;
+            $s_count="if (amiroot) { event->collective.sr_bytes[0]=1;__msl_record_long(tid,level,((long long)scount*(long long)s_type_size));} else event->collective.sr_bytes[0]=0;" if $properties=~/SCALAR_SEND/;
         } else {
-            $s_count="event->collective.sr_bytes[0]=1;__msl_record_long(tid,((long long)scount*(long long)s_type_size));" if $properties=~/SCALAR_SEND/;
+            $s_count="event->collective.sr_bytes[0]=1;__msl_record_long(tid,level,((long long)scount*(long long)s_type_size));" if $properties=~/SCALAR_SEND/;
         }
         if ($properties=~/ROOT_RECV/) {
-            $r_count="if (amiroot) { event->collective.sr_bytes[1]=1;__msl_record_long(tid,((long long)rcount*(long long)r_type_size));} else event->collective.sr_bytes[1]=0;" if $properties=~/SCALAR_RECV/;
+            $r_count="if (amiroot) { event->collective.sr_bytes[1]=1;__msl_record_long(tid,level,((long long)rcount*(long long)r_type_size));} else event->collective.sr_bytes[1]=0;" if $properties=~/SCALAR_RECV/;
         } else {
-            $r_count="event->collective.sr_bytes[1]=1;__msl_record_long(tid,((long long)rcount*(long long)r_type_size));" if $properties=~/SCALAR_RECV/;
+            $r_count="event->collective.sr_bytes[1]=1;__msl_record_long(tid,level,((long long)rcount*(long long)r_type_size));" if $properties=~/SCALAR_RECV/;
        }
     }
 }
@@ -655,7 +705,7 @@ my $c_call="$funcname($funcpars)";
 my $funcid_through="$line[0]_THROUGH";
 my $funcid="$line[0]";
 my $global_mpi_time;
-$global_mpi_time="global_mpi_time+=tsc_mpi_exit-tsc_mpi_entry;" if !($properties=~/COLT/);
+$global_mpi_time="global_mpi_time+=tsc_mpi_exit-tsc_mpi_entry;" if !($properties=~/MPI_INTERNAL/);
 
 if ($properties=~/CREATE_ALLOC/) {
 my $size;
@@ -708,6 +758,7 @@ make_class_p2p($line,"mpi_fio");
 }
 }
 
+
 sub make_class_gpu {
 my $line=shift;
 my @line=@$line;
@@ -739,7 +790,7 @@ my $num_extra_params="0";
 my $record_params;
 if ($num_params>0) {
   if ($num_params==1) {
-    $record_params="__msl_record_long(tid,(long long)$funcpars);";
+    $record_params="__msl_record_long(tid,level,(long long)$funcpars);";
   } else {
     $record_params="{
 long long params[$num_params];
@@ -750,7 +801,7 @@ long long params[$num_params];
       params[$i]=(long long) $funcpars[$i];";
     }
     $record_params="$record_params
-__msl_record_longs(tid,params,$num_params);
+__msl_record_longs(tid,level,params,$num_params);
 };
 ";
   }
@@ -758,7 +809,7 @@ __msl_record_longs(tid,params,$num_params);
 my $record_out_params;
 if ($num_out_params>0) {
   if ($num_out_params==1) {
-    $record_out_params="__msl_record_long(tid,(long long)$funcoutpars);";
+    $record_out_params="__msl_record_long(tid,level,(long long)$funcoutpars);";
   } else {
     $record_out_params="{
 long long params[$num_out_params];
@@ -768,7 +819,7 @@ long long params[$num_out_params];
       params[$i]=(long long) $funcoutpars[$i];";
     }
     $record_out_params="$record_out_params
-__msl_record_longs(tid,params,$num_out_params);
+__msl_record_longs(tid,level,params,$num_out_params);
 };
 ";
   }
@@ -784,7 +835,7 @@ long long extra_params[numWaitEvents];
       extra_params[$i]=(long long) phWaitEvents[$i];";
     }
     $record_extra_params="$record_extra_params
-__msl_record_longs(tid,extra_params,$num_extra_params);
+__msl_record_longs(tid,level,extra_params,$num_extra_params);
 }
 ";
 }
@@ -838,10 +889,30 @@ $class=1 if $properties =~/MPI1/;
 $class=2 if $properties =~/MPI2/;
 $class=3 if $properties =~/MPI3/;
 $class=4 if $properties =~/MPI4/;
+$class=5 if $properties =~/MPI5/;
 return ($class>$mpilevel);
 }
 
+# MPI_VERSION / MPI_SUBVERSION guard derived from the PEAT_PROP_MPIx tag, so a wrapper is
+# only compiled when the mpi.h being built against actually declares the function
+sub mpi_version_guard {
+my $properties=shift;
+return "#if MPI_VERSION >= 5\n" if $properties =~/PEAT_PROP_MPI5\b/;
+return "#if (MPI_VERSION > 4) || (MPI_VERSION == 4 && MPI_SUBVERSION >= 1)\n" if $properties =~/PEAT_PROP_MPI41\b/;
+return "#if MPI_VERSION >= 4\n" if $properties =~/PEAT_PROP_MPI4\b/;
+return "";
+}
+
 sub make_c_func {
+my $lineref=shift;
+my $guard=mpi_version_guard($$lineref[6]);
+print $guard if $guard ne "";
+make_c_func_body($lineref);
+print "#endif /* MPI version guard */\n" if $guard ne "";
+return;
+}
+
+sub make_c_func_body {
 my $lineref=shift;
 
 # divide functions into 'classes' 
@@ -855,7 +926,7 @@ my $lineref=shift;
 # simple local (CLASS_LOCAL just register occurence)
 my $properties=$$lineref[6];
 return if $properties=~/BUILTIN/;
-return if $parse_colt==0 && $properties =~/COLT/;
+return if $parse_mpi_internal==0 && $properties =~/MPI_INTERNAL/;
 return if $properties =~/SKIP/;
 return if check_mpi_v($properties);
 $funccount++;
@@ -968,6 +1039,7 @@ close (IN);
 return $linecount;
 }
 
+
 ####################################################################################
 sub parse_command_line {
    my $i;my $arg;
@@ -977,7 +1049,7 @@ sub parse_command_line {
          case "-i" {$mpifuncs=$ARGV[$i+1]; $i++}
          case "-o" {$mpilayer=$ARGV[$i+1]; $i++}
          case "-m" {$mpilevel=$ARGV[$i+1]; $i++}
-         case "-t" {$parse_colt=1 if $ARGV[$i+1] eq "on"; $i++}
+         case "-t" {$parse_mpi_internal=1 if $ARGV[$i+1] eq "on"; $i++}
          case "-c" {$parse_gpu=1 if $ARGV[$i+1] eq "on"; $i++}
          case "-e" {$print_extended_stuff=1 if $ARGV[$i+1] eq "on"; $i++}
          case "-p" {$use_pragma_weak=1 if $ARGV[$i+1] eq "on";$i++}
@@ -991,14 +1063,12 @@ sub parse_command_line {
 ####################################################################################
 ########################### main program starts here ###############################
 
-my $linecount;
+my $linecount=0;
 parse_command_line;
 `cp $mpilayer.in $mpilayer`;
 open(OUT,">>$mpilayer") or die ("Cannot open $mpilayer for writing");
 select(OUT);
-
 $linecount=parse_file($mpifuncs);
-
 select(stdout);
 `cat $mpilayer.in.end >> $mpilayer`;
 

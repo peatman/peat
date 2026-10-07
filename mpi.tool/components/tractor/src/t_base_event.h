@@ -180,113 +180,79 @@ struct t_base_event {
     int t_max_threads;
     int t_max_tid_num;
     int t_tid_counter;
-    pid_t *tid2t_tid;
-    int owns_tid2t_tid; // false when tid2t_tid points to a buffer owned by another t_base_event instance
+    static pid_t *tid2t_tid;
     pid_t t_pid;
 
     void set_tsc_adjust(int tid);
 
-    msl_adv_chain **events_start_chain, **events_chain;
-    msl_base_chain **extras_start_chain, **extras_chain;
-    msl_base_chain **c_extras_start_chain, **c_extras_chain;
+    /* Nesting. A traced call issued from inside another traced call of the same thread (the MPI progress
+       engine runs the schedules of outstanding nonblocking collectives while a blocking call spins it) is
+       recorded one level deeper. Every (thread, level) pair has its own event and extras storage, so
+       records within one level never overlap and the slot order equals the extras order again. A record
+       stores the number of its children (records of the next level created while it was open). */
+    int t_max_nesting_levels;      /* storage depth, PEAT_TRACTOR_MAX_NESTING_LEVELS; deeper calls abort */
+    int t_achieved_nesting_levels; /* deepest level used so far + 1, written to the com file for the readers */
+    int *nesting_level;            /* [tid] current depth of the thread */
+
+    msl_adv_chain ***events_start_chain, ***events_chain;   /* [tid][level] */
+    msl_base_chain ***extras_start_chain, ***extras_chain; /* [tid][level] */
     int extras;
-    int *event_index;
-    int *extras_index;
-    int *c_extras_index;
+    int **event_index;  /* [tid][level] index within the current chain block */
+    int **extras_index; /* [tid][level] */
     int get_tid(pid_t tid_in);
     int compress_events;
 
-    msl_extra_info **extras_array;
-    msl_extra_info **c_extras_array;
-    msl_event **events_array;
-
-    void ***addrs_array;
-    long long *uniq_index;
+    msl_extra_info ***extras_array; /* [tid][level] current block */
+    msl_event ***events_array;      /* [tid][level] current block */
+    void ****addrs_array;           /* [tid][level] */
+    long long **uniq_index;         /* [tid][level] records ever created at that level (monotonic) */
 
     int num_addrs;
     unsigned long long calls_limit, num_allocated;
 #ifdef _HWCOUNTERS_ENABLED_
-    long long **hwc_array;
+    long long ***hwc_array; /* [tid][level] */
     int num_hwcs;
     HW_counter hwc;
 #endif
 
 #ifdef _MEMPROFILE_STORE_
     int t_memory_event_size;
-    t_memory_event **mems_array;
+    t_memory_event ***mems_array; /* [tid][level] */
 #endif
     int use_realtime_dump;
 
     msl_event fake_event;
     void *fake_addrs[16];
-    msl_event **last_returned_event;
+    msl_event ***last_returned_event; /* [tid][level] */
 
-    int reuse_event(int tid, msl_event **event, msl_extras_counters *counters, short func_id);
-    void allocate_event(int tid, int skip_dump, msl_event **event, msl_extras_counters *counters);
-    int reuse_event(int tid, msl_event **event, short func_id);
-    void allocate_event(int tid, msl_event **event, short func_id);
-    int discard_event(int tid, msl_event **event);
-    void check_chain(pid_t tid);
+    /* nesting bookkeeping for the generated wrappers */
+    int enter_call(int tid);                          /* returns the level of the call, increments the depth */
+    void leave_call(int tid);                         /* decrements the depth */
+    long long child_base(int tid, int level);         /* uniq_index of the next level: children = growth since entry */
+    int current_level(int tid) { return nesting_level ? nesting_level[tid] : 0; }
+    void uncount_event(int tid, int level) { uniq_index[tid][level]--; } /* second record of a pair (sendrecv) */
+
+    int reuse_event(int tid, int level, msl_event **event, msl_extras_counters *counters, short func_id);
+    void allocate_event(int tid, int level, int skip_dump, msl_event **event, msl_extras_counters *counters);
+    int reuse_event(int tid, msl_event **event, short func_id);     /* fabric layer: level 0, no counters */
+    void allocate_event(int tid, msl_event **event, short func_id); /* fabric layer: level 0, no counters */
+    int discard_event(int tid, int level, msl_event **event, long long children_base);
+    void check_chain(pid_t tid, int level);
     void fini();
-    void init(int max_threads);
-    void init_events_storage(int tid);
+    void init(int max_threads, int max_nesting_levels);
+    void init_events_storage(int tid);            /* level 0 of a new thread */
+    void init_level_storage(int tid, int level);  /* lazily, when a level is first used */
     void end();
-    virtual void dump_extras(pid_t tid, msl_base_chain **chain, int is_colt) = 0;
-    virtual void dump_events(pid_t tid, msl_adv_chain **chain) = 0;
+    virtual void dump_extras(pid_t tid, int level, msl_base_chain **chain) = 0;
+    virtual void dump_events(pid_t tid, int level, msl_adv_chain **chain) = 0;
     t_base_event();
     ~t_base_event();
 
-#undef __current_extras__
-#undef __extras_index__
-#undef __extras_current__
-#undef __extras_start__
-
-#undef __record_ints__
-#undef __record_int__
-#undef __record_longs__
-#undef __record_low_longs__
-#undef __record_long__
-#undef __is_colt__
-
-#define __current_extras__ extras_array[tid]
-#define __extras_index__ extras_index[tid]
-#define __extras_current__ extras_chain[tid]
-#define __extras_start__ extras_start_chain[tid]
-
-#define __record_ints__ record_ints
-#define __record_int__ record_int
-#define __record_longs__ record_longs
-#define __record_low_longs__ record_low_longs
-#define __record_long__ record_long
-#define __is_colt__ 0
-
-#include "records.h"
-
-#undef __current_extras__
-#undef __extras_index__
-#undef __extras_current__
-#undef __extras_start__
-
-#undef __record_ints__
-#undef __record_int__
-#undef __record_longs__
-#undef __record_low_longs__
-#undef __record_long__
-#undef __is_colt__
-
-#define __current_extras__ c_extras_array[tid]
-#define __extras_index__ c_extras_index[tid]
-#define __extras_current__ c_extras_chain[tid]
-#define __extras_start__ c_extras_start_chain[tid]
-
-#define __record_ints__ record_ints_colt
-#define __record_int__ record_int_colt
-#define __record_longs__ record_longs_colt
-#define __record_low_longs__ record_low_longs_colt
-#define __record_long__ record_long_colt
-#define __is_colt__ 1
-
-#include "records.h"
+    int record_ints(const int tid, const int level, const int *values, const int num);
+    int record_int(const int tid, const int level, const int value);
+    int record_longs(const int tid, const int level, const long long *values, const int num);
+    int record_low_longs(const int tid, const int level, const long long *values, const int num);
+    int record_long(const int tid, const int level, const long long value);
 };
 
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)

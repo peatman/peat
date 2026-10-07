@@ -197,9 +197,7 @@ void PTP::parse(const String_Split &line, PEAT_Rank rank)
                 }
                 break;
             }
-        } else {
-            extract(init_nsec[rank], line.at(1));
-        }
+        } 
     } break;
     case PEAT_RT_MPM_Rank_Time_Stamp: {
         Times_Sync times;
@@ -490,7 +488,7 @@ void PTP::set_boundary_adjustments(void)
 PEAT_Clock PTP::get_real_time(const PEAT_Clock tsc_in, const PEAT_Rank rank_in)
 {
 #ifdef _NOPTPSYNC_
-    return tsc_in + init_nsec[rank_in];
+    return tsc_in;
 #endif
     PEAT_Clock tsc = tsc_in;
     PEAT_Rank rank = rank_in; // SMP_to_master_src.at(rank_in);

@@ -23,13 +23,15 @@ $prototype {
 #ifndef _TRACTOR_PASSTHROUGH_
     int i,temp_index=0;
     $declare
+    int level=-1;              /* nesting level of this call, -1 if not traced */
+    long long children_base=0; /* records of the next level existing at entry */
     long long tsc_entry,tsc_exit,tsc_mpi_entry,tsc_mpi_exit,local_tool_overhead;
     const PEAT_MPI_Func_ID_Through fidc=$funcid_through;
     pid_t tid_in;
     int tid;
     msl_extras_counters counters;
     msl_event *t_event;
-    bool l_skip_parse=skip_parse;
+    bool l_skip_parse=gpu_skip_parse;
 
 #ifdef _HWCOUNTERS_ENABLED_
     int num_hwcs=gt_info(num_hwcs);
@@ -44,7 +46,9 @@ $prototype {
         tsc_entry = peat_get_time_tid(&tid_in);
         counting_permit+=2*counting_permission_pcontrol[$funcid_through];
         tid=__msl_get_tid(tid_in);
-        first_progress_entry[tid]=last_progress_exit[tid]=0;
+        level=__msl_enter_call(tid);
+        children_base=__msl_child_base(tid,level);
+        __msl_allocate_event(tid,level,0,&t_event,&counters);
 #ifdef _HWCOUNTERS_ENABLED_
         gt_info(hwc).get_all_counters(l_hwcs);
 #endif
@@ -65,16 +69,15 @@ $prototype {
     $call t_$c_call;
 #endif
 #ifndef _TRACTOR_PASSTHROUGH_
+    if (level>=0) __msl_leave_call(tid); /* also when the record was discarded */
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
         tsc_mpi_exit = peat_get_time();
-        __msl_allocate_event(tid,0,&t_event,&counters);
-        $record_out_params
         stack_unwind(gt_info(max_ret_level),counters.addrs,gt_info(ret_levels));
-        t_event->func_id[0] = $funcid;
-        t_event->func_id[1] = $funcid_through;
-        t_event->tscs[0]=tsc_entry;
-        t_event->tscs[1]=tsc_mpi_entry-tsc_entry;
-        t_event->tscs[2]=tsc_mpi_exit-tsc_entry;
+        t_event->func_id = $funcid_through;
+        t_event->num_children += (short)(__msl_child_base(tid,level) - children_base);
+        $record_out_params
+        t_event->tscs[0] = tsc_entry;
+        t_event->tscs[1] = tsc_mpi_entry;
 #ifdef _HWCOUNTERS_ENABLED_
         memcpy(counters.hwcs,l_hwcs,num_hwcs*sizeof(l_hwcs[0]));
         gt_info(hwc).get_all_counters(&counters.hwcs[num_hwcs]);
@@ -85,8 +88,9 @@ $prototype {
 #endif
         // counting_permit-=2*counting_permission_pcontrol[$funcid_through];
         tsc_exit = peat_get_time();
-        t_event->tscs[3]=tsc_exit-tsc_entry;
-        __msl_check_chain(tid);
+        t_event->tscs[2] = tsc_mpi_exit;
+        t_event->tscs[3] = tsc_exit;
+        __msl_check_chain(tid,level);
         local_tool_overhead=tsc_mpi_entry-tsc_entry+tsc_exit-tsc_mpi_exit;
         global_gpu_time+=tsc_mpi_exit-tsc_mpi_entry;
         global_tool_overhead += local_tool_overhead;

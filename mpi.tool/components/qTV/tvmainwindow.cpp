@@ -23,7 +23,7 @@
 #include "legenddialog.h"
 #include "textviewer.h"
 #include "tracedialog.h"
-#include "traceinfo.h"
+#include "trace_info.h"
 #include <QMessageBox>
 #include <QPalette>
 

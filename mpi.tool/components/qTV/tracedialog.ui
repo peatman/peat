@@ -9,8 +9,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>394</width>
-    <height>387</height>
+    <width>490</width>
+    <height>570</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -21,20 +21,20 @@
   </property>
   <property name="minimumSize">
    <size>
-    <width>356</width>
-    <height>310</height>
+    <width>460</width>
+    <height>570</height>
    </size>
   </property>
   <property name="maximumSize">
    <size>
-    <width>400</width>
-    <height>400</height>
+    <width>800</width>
+    <height>800</height>
    </size>
   </property>
   <property name="baseSize">
    <size>
-    <width>356</width>
-    <height>310</height>
+    <width>490</width>
+    <height>630</height>
    </size>
   </property>
   <property name="windowTitle">
@@ -59,7 +59,7 @@
   <widget class="QSpinBox" name="spinBoxObjects">
    <property name="geometry">
     <rect>
-     <x>220</x>
+     <x>240</x>
      <y>10</y>
      <width>51</width>
      <height>21</height>
@@ -83,8 +83,8 @@
     <rect>
      <x>10</x>
      <y>31</y>
-     <width>205</width>
-     <height>310</height>
+     <width>220</width>
+     <height>491</height>
     </rect>
    </property>
    <property name="inputMethodHints">
@@ -110,10 +110,10 @@
   <widget class="QDialogButtonBox" name="buttonBox">
    <property name="geometry">
     <rect>
-     <x>220</x>
-     <y>300</y>
-     <width>171</width>
-     <height>41</height>
+     <x>240</x>
+     <y>480</y>
+     <width>235</width>
+     <height>100</height>
     </rect>
    </property>
    <property name="orientation">
@@ -127,8 +127,8 @@
    <property name="geometry">
     <rect>
      <x>10</x>
-     <y>350</y>
-     <width>381</width>
+     <y>530</y>
+     <width>470</width>
      <height>16</height>
     </rect>
    </property>
@@ -140,8 +140,8 @@
    <property name="geometry">
     <rect>
      <x>10</x>
-     <y>370</y>
-     <width>381</width>
+     <y>550</y>
+     <width>470</width>
      <height>16</height>
     </rect>
    </property>
@@ -155,7 +155,7 @@
   <widget class="QGroupBox" name="groupBox">
    <property name="geometry">
     <rect>
-     <x>220</x>
+     <x>240</x>
      <y>30</y>
      <width>171</width>
      <height>61</height>
@@ -202,8 +202,8 @@
     <rect>
      <x>10</x>
      <y>31</y>
-     <width>205</width>
-     <height>310</height>
+     <width>220</width>
+     <height>491</height>
     </rect>
    </property>
    <property name="selectionMode">
@@ -226,7 +226,7 @@
   <widget class="QSpinBox" name="spinBoxRenderThreads">
    <property name="geometry">
     <rect>
-     <x>340</x>
+     <x>360</x>
      <y>10</y>
      <width>50</width>
      <height>22</height>
@@ -247,7 +247,7 @@
   <widget class="QSpinBox" name="spinBoxLoadThreads">
    <property name="geometry">
     <rect>
-     <x>280</x>
+     <x>300</x>
      <y>10</y>
      <width>50</width>
      <height>22</height>
@@ -257,10 +257,10 @@
   <widget class="QTabWidget" name="tabWidget">
    <property name="geometry">
     <rect>
-     <x>220</x>
+     <x>240</x>
      <y>90</y>
-     <width>170</width>
-     <height>200</height>
+     <width>235</width>
+     <height>371</height>
     </rect>
    </property>
    <property name="currentIndex">
@@ -275,8 +275,8 @@
       <rect>
        <x>0</x>
        <y>0</y>
-       <width>160</width>
-       <height>70</height>
+       <width>225</width>
+       <height>150</height>
       </rect>
      </property>
      <property name="selectionMode">
@@ -319,9 +319,9 @@
      <property name="geometry">
       <rect>
        <x>0</x>
-       <y>90</y>
-       <width>160</width>
-       <height>70</height>
+       <y>160</y>
+       <width>225</width>
+       <height>150</height>
       </rect>
      </property>
      <property name="selectionMode">
@@ -370,8 +370,8 @@
       <rect>
        <x>0</x>
        <y>1</y>
-       <width>170</width>
-       <height>90</height>
+       <width>230</width>
+       <height>330</height>
       </rect>
      </property>
      <property name="selectionMode">
@@ -428,8 +428,8 @@
       <rect>
        <x>0</x>
        <y>1</y>
-       <width>170</width>
-       <height>60</height>
+       <width>230</width>
+       <height>330</height>
       </rect>
      </property>
      <property name="selectionMode">

@@ -16,18 +16,18 @@
  * along with PEAT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef __TRACEINFO_H__
-#define __TRACEINFO_H__
+#ifndef __TRACE_INFO_H__
+#define __TRACE_INFO_H__
 #include "../common/common_types.h"
 #include "../common/func_id.h"
 #include "../common/ptp.h"
 #include <QFileInfo>
 #include <QString>
 
-class TraceInfo
+class Trace_Info
 {
   public:
-    TraceInfo();
+    Trace_Info();
     bool parse_trace_info_file(QFileInfo &tracefile);
     void update_src_dirs();
     static QString make_absolute_path(const QString &file_path, const QString &relative_dir);
@@ -37,7 +37,7 @@ class TraceInfo
     qint32 num_addrs;
     qint32 num_tscs;
     qint32 num_hwcs;
-    QString path, trace_files, mpi_files, hwc_files, bind_files, fab_files, com_ext, app_ext;
+    QString path, trace_files, mpi_files, hwc_files, bind_files, com_ext, app_ext;
     std::vector<PEAT_UID> messages_in_rank;
     std::vector<PEAT_UID> events_in_rank;
     std::vector<PEAT_MPI_Time> mpi_times;
@@ -47,4 +47,4 @@ class TraceInfo
     QString trace_info_file;
 };
 
-#endif // __TRACEINFO_H__
+#endif // __TRACE_INFO_H__

@@ -52,6 +52,7 @@
 #include "globals.h"
 // #include "messagesdialog.h"
 #include "elements.h"
+#include "functionstabwidget.h"
 #include "messagestabwidget.h"
 class TV : public QWidget
 {
@@ -213,8 +214,8 @@ class TV : public QWidget
 
     QPoint cursor_point;
     PEAT_Rank filter_rank;
-    QTableWidget *functions_view;
-    QTableWidget *info_view;
+    FunctionsTabWidget *functions_view;
+    QTreeWidget *info_view;
     MessagesTabWidget *messages_view;
     // QTableWidget *messages_view;
     QTreeWidget *addresses_view;
