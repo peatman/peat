@@ -37,7 +37,7 @@
 #include <mpi.h>
 #endif
 
-PET_OMPT_Event::PET_OMPT_Event(PET_Core *p) : PET_Local_Event(p), pair_event(NULL), t0(NULL), is_all_estimated(false), kind(-1), endpoint(-1), parallel_data(-1), task_data(-1)
+PET_OMPT_Event::PET_OMPT_Event(PET_Core *p) : PET_Local_Event(p), pair_event(NULL), t0(NULL), is_all_estimated(false), kind(-1), endpoint(-1), parallel_data(-1), task_data(-1), addr_id(-1)
 {
 }
 
@@ -49,9 +49,10 @@ PEAT_Bool PET_OMPT_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_s
 {
     PEAT_Bool r = PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
     extract(kind, mpi_string.at(hdr.payload + 1));
-    extract(endpoint, mpi_string.at(hdr.payload + 1));
-    extract(task_data, mpi_string.at(hdr.payload + 1));
-    extract(parallel_data, mpi_string.at(hdr.payload + 1));
+    extract(endpoint, mpi_string.at(hdr.payload + 2));
+    extract(task_data, mpi_string.at(hdr.payload + 3));
+    extract(parallel_data, mpi_string.at(hdr.payload + 4));
+    extract(addr_id, mpi_string.at(hdr.payload + 5));
     return r;
 }
 

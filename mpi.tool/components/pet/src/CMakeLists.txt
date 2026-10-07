@@ -33,7 +33,7 @@ add_executable(pet
   requests.cpp stat.cpp te_timeline.cpp tempdebug.cpp timeline.cpp events.cpp
   ${PET_EVENTS_DIR}/base.cpp ${PET_EVENTS_DIR}/coll.cpp ${PET_EVENTS_DIR}/collective.cpp
   ${PET_EVENTS_DIR}/comm.cpp ${PET_EVENTS_DIR}/completion.cpp ${PET_EVENTS_DIR}/local.cpp
-  ${PET_EVENTS_DIR}/localbuf.cpp ${PET_EVENTS_DIR}/start.cpp ${PET_EVENTS_DIR}/tar.cpp
+  ${PET_EVENTS_DIR}/localbuf.cpp ${PET_EVENTS_DIR}/osc.cpp ${PET_EVENTS_DIR}/start.cpp ${PET_EVENTS_DIR}/tar.cpp
   ${PET_EVENTS_DIR}/tor.cpp ${PET_EVENTS_DIR}/gpu.cpp ${PET_EVENTS_DIR}/ompt.cpp
   ${PET_COMMON_DIR}/file_io.cpp ${PET_COMMON_DIR}/func_id.cpp ${PET_COMMON_DIR}/utils.cpp
   ${PET_COMMON_DIR}/common_types.cpp ${PET_COMMON_DIR}/communicators.cpp ${PET_COMMON_DIR}/transport.cpp

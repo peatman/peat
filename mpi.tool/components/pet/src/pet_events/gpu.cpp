@@ -47,7 +47,7 @@ PET_GPU_Event::~PET_GPU_Event()
 
 PEAT_Bool PET_GPU_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
-    size_t num_params = 0, num_out_params = 0;
+    size_t num_params = 0, num_out_params = 0, num_extra_params = 0;
     rank = r_rank;
     node = get_core()->get_ptp()->get_tgt_node(rank);
     PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
@@ -55,11 +55,16 @@ PEAT_Bool PET_GPU_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_st
     params.resize(num_params);
     extract(num_out_params, mpi_string.at(hdr.payload + 2));
     out_params.resize(num_out_params);
+    extract(num_extra_params, mpi_string.at(hdr.payload + 3));
+    extra_params.resize(num_extra_params);
     for (size_t p = 0; p < num_params; p++) {
-        extract(params[p], mpi_string.at(hdr.payload + 3 + p), 16);
+        extract(params[p], mpi_string.at(hdr.payload + 4 + p), 16);
     }
     for (size_t p = 0; p < num_out_params; p++) {
-        extract(out_params[p], mpi_string.at(hdr.payload + 3 + num_params + p), 16);
+        extract(out_params[p], mpi_string.at(hdr.payload + 4 + num_params + p), 16);
+    }
+    for (size_t p = 0; p < num_extra_params; p++) {
+        extract(extra_params[p], mpi_string.at(hdr.payload + 4 + num_params + num_out_params + p), 16);
     }
     return true;
 }
@@ -68,14 +73,19 @@ PET_Event *PET_GPU_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *
 {
     size_t num_params = params.size();
     size_t num_out_params = out_params.size();
+    size_t num_extra_params = extra_params.size();
     PET_Local_Event::write_event(gz_MPI, gz_HWC, gz_bind, "", hwc_eol);
     gz_MPI->printf(rank, ":%zu", num_params);
     gz_MPI->printf(rank, ":%zu", num_out_params);
+    gz_MPI->printf(rank, ":%zu", num_extra_params);
     for (size_t p = 0; p < num_params; p++) {
         gz_MPI->printf(rank, ":%llx", params[p]);
     }
     for (size_t p = 0; p < num_out_params; p++) {
         gz_MPI->printf(rank, ":%llx", out_params[p]);
+    }
+    for (size_t p = 0; p < num_extra_params; p++) {
+        gz_MPI->printf(rank, ":%llx", extra_params[p]);
     }
     gz_MPI->printf(rank, ":%s", mpi_eol);
     is_written = true;

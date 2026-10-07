@@ -39,7 +39,7 @@ CXXFLAGS=-O2 -std=c++20 -g  -I. -I../../common $(ZLIBINCLUDE) -fopenmp $(CONTROL
 
 EXECUTABLE=pet
 PET_MAIN_FILES = collstorage pet_bind pet_core pet_node pet_rank pet_thread requests stat te_timeline tempdebug timeline events
-PET_EVENT_FILES = base coll collective comm completion local localbuf start tar tor gpu ompt
+PET_EVENT_FILES = base coll collective comm completion local localbuf osc start tar tor gpu ompt
 COMMON_FILES = file_io func_id utils common_types communicators transport model_id ptp func_split
 
 HEADERS=$(addsuffix .h, $(PET_MAIN_FILES)) $(addprefix ../../common/, $(addsuffix .h, $(COMMON_FILES)))

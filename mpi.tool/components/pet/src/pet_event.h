@@ -51,6 +51,7 @@ enum PET_Event_Type {
     PET_EVENT_TYPE_COMPLETION,
     PET_EVENT_TYPE_GPU,
     PET_EVENT_TYPE_OMPT,
+    PET_EVENT_TYPE_OSC,
     PET_EVENT_TYPE_MAX
 };
 #if 0
@@ -261,7 +262,7 @@ struct PET_Event : public PET_Time_Event {
     };
     PEAT_Bool is_colt() const
     {
-        return (global_func_id.check_property(func_id, PEAT_PROP_COLT));
+        return (global_func_id.check_property(func_id, PEAT_PROP_MPI_INTERNAL));
     }
 
     virtual PEAT_Bool set_blank(PET_Event *evt) { return true; };
@@ -356,7 +357,7 @@ struct PET_Event : public PET_Time_Event {
     }
     PEAT_Bool is_mpic() const
     {
-        return global_func_id.check_property(func_id, PEAT_PROP_COLT);
+        return global_func_id.check_property(func_id, PEAT_PROP_MPI_INTERNAL);
     }
     PEAT_Bool is_send() const
     {
@@ -411,6 +412,7 @@ struct PET_Local_Event : public PET_Event {
 struct PET_GPU_Event : public PET_Local_Event {
     std::vector<PEAT_ULNum> params;
     std::vector<PEAT_ULNum> out_params;
+    std::vector<PEAT_ULNum> extra_params;
 
   public:
     PET_GPU_Event(PET_Core *p);
@@ -428,6 +430,21 @@ struct PET_Local_Buf_Event : public PET_Local_Event {
     PET_Local_Buf_Event(PET_Core *p) : PET_Local_Event(p), inbuf_size(0), outbuf_size(0) {}
     virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
     virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol = "\n", const char *hwc_eol = "\n");
+};
+struct PET_OSC_Event : public PET_Local_Event {
+    PEAT_MPI_Comm comm;
+    PEAT_Rank peer;
+    PEAT_MPI_Request request;
+    PEAT_MPI_Window window;
+    PEAT_LNum size, t_bytes;
+
+  public:
+    virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_OSC; }
+    PET_OSC_Event(PET_Core *p) : PET_Local_Event(p), comm(0), peer(-1), request(0), window(0), size(0), t_bytes(0) {}
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
+    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol = "\n", const char *hwc_eol = "\n");
+    virtual PEAT_Message_Size get_tx_bytes() const { return check_tx() ? t_bytes : -1; }
+    virtual PEAT_Message_Size get_rx_bytes() const { return check_rx() ? t_bytes : -1; }
 };
 struct PET_ToR_Event : public PET_Local_Event {
     PEAT_MPI_Comm comm;
@@ -1311,6 +1328,7 @@ struct PET_OMPT_Event : public PET_Local_Event {
     PEAT_Bool is_all_estimated;
     PEAT_Signed_Num kind, endpoint;
     PEAT_UID parallel_data, task_data;
+    PEAT_UID addr_id;
 
   public:
     PET_OMPT_Event(PET_Core *p);

@@ -449,7 +449,7 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
     if (func_id >= MPI_START_FILE_GROUP && func_id < MPI_END_FILE_GROUP) {
         event = new PET_Local_Event(this);
     } else if (func_id >= MPI_START_OSC_GROUP && func_id < MPI_END_OSC_GROUP) {
-        event = new PET_Local_Event(this);
+        event = new PET_OSC_Event(this);
     } else if (func_id >= MPI_START_BUFFERED_LOCAL_GROUP && func_id < MPI_END_BUFFERED_LOCAL_GROUP) {
         event = new PET_Local_Buf_Event(this);
     } else if ((func_id >= MPI_START_COMM_COLLECTIVE_GROUP &&
