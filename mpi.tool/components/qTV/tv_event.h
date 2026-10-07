@@ -42,6 +42,7 @@ enum TV_Event_Type {
     TV_EVENT_TYPE_GPU_LOCAL,
     TV_EVENT_TYPE_GPU_TRANSFER,
     TV_EVENT_TYPE_GPU_EXECUTION,
+    TV_EVENT_TYPE_OSC,
     TV_EVENT_TYPE_MAX
 };
 #if 0
@@ -164,6 +165,20 @@ struct TV_Local_Buf_Event : public TV_Local_Event {
     virtual TV_Event_Type get_event_type() const { return TV_EVENT_TYPE_LOCAL_BUF; }
     TV_Local_Buf_Event() : TV_Local_Event(), buf_size(-1), buf_count(-1) {}
     virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr);
+};
+struct TV_OSC_Event : public TV_Local_Event {
+    PEAT_MPI_Comm comm;
+    PEAT_Rank peer_rank;
+    PEAT_MPI_Request request;
+    PEAT_MPI_Window window;
+    PEAT_LNum size, t_bytes;
+
+  public:
+    virtual TV_Event_Type get_event_type() const { return TV_EVENT_TYPE_OSC; }
+    TV_OSC_Event() : TV_Local_Event(), comm(0), peer_rank(-1), request(0), window(0), size(0), t_bytes(0) {}
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr);
+    virtual PEAT_Message_Size get_tx_bytes() const { return check_tx() ? t_bytes : -1; }
+    virtual PEAT_Message_Size get_rx_bytes() const { return check_rx() ? t_bytes : -1; }
 };
 struct TV_ToR_Event : public TV_Local_Event {
     PEAT_LNum t_bytes;

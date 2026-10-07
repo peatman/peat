@@ -77,7 +77,7 @@ PEAT_Bool TV_Local_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_s
     }*/
     TV_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs, hdr);
     if (func_id == MPI_PCONTROL_ID) {
-        extract(p_control_id, mpi_string.at(hdr.payload), 10, false);
+        extract(p_control_id, mpi_string.at(hdr.payload + 1), 10, false);
     }
     // update_pending();
     return true;
@@ -87,6 +87,17 @@ PEAT_Bool TV_Local_Buf_Event::read_event(PEAT_Rank r_rank, const String_Split &m
     TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs, hdr);
     extract(buf_count, mpi_string.at(hdr.payload + 1));
     extract(buf_size, mpi_string.at(hdr.payload + 2));
+    return true;
+}
+PEAT_Bool TV_OSC_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
+{
+    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs, hdr);
+    extract(comm, mpi_string.at(hdr.payload + 1), 16);
+    extract(peer_rank, mpi_string.at(hdr.payload + 2)); // already rank-resolved
+    extract(request, mpi_string.at(hdr.payload + 3), 16);
+    extract(window, mpi_string.at(hdr.payload + 4), 16);
+    extract(size, mpi_string.at(hdr.payload + 5));
+    extract(t_bytes, mpi_string.at(hdr.payload + 6));
     return true;
 }
 TV_Coll_Event::~TV_Coll_Event()

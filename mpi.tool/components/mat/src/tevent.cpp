@@ -156,9 +156,16 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
     }
     if (func_id >= MPI_START_OSC_GROUP && func_id < MPI_END_OSC_GROUP) {
         func_class = PEAT_PROP_CLASS_OSC;
+        extract(one_sided_comm.comm, line_mpi.at(b + 1), 16);
+        extract(one_sided_comm.peer, line_mpi.at(b + 2)); // already rank-resolved
+        extract(one_sided_comm.request, line_mpi.at(b + 3), 16);
+        extract(one_sided_comm.window, line_mpi.at(b + 4), 16);
+        extract(one_sided_comm.size, line_mpi.at(b + 5));
+        extract(one_sided_comm.bytes, line_mpi.at(b + 6));
     }
 
     if (((func_id >= MPI_REQUEST_START) && (func_id < MPI_REQUEST_END)) ||
+        ((func_id >= MPI_MISC_REQUEST_START) && (func_id < MPI_MISC_REQUEST_END)) ||
         ((func_id >= MPI_P2P_COLL_REQUEST_START) && (func_id < MPI_P2P_COLL_REQUEST_END))) {
 
         Requests.flag = false;
