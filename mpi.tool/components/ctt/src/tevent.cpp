@@ -108,8 +108,8 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
 
     if (func_id >= MPI_START_BUFFERED_LOCAL_GROUP && func_id < MPI_END_BUFFERED_LOCAL_GROUP) {
         func_class = PEAT_PROP_CLASS_BUF_LOCAL;
-        extract(buf.inbuf_size, line_mpi.at(b + 1), 16);
-        extract(buf.outbuf_size, line_mpi.at(b + 2), 16);
+        extract(buf.inbuf_size, line_mpi.at(b + 1)); // writer emits these as decimal (tractor.cpp: "%lld:%lld")
+        extract(buf.outbuf_size, line_mpi.at(b + 2));
     }
     if (((func_id >= MPI_START_COMM_COLLECTIVE_GROUP) && (func_id < MPI_END_COMM_COLLECTIVE_GROUP)) || (func_id == MPI_COMM_FREE_ID)) {
         func_class = PEAT_PROP_CLASS_COMM;
@@ -123,7 +123,9 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
     }
     if (((func_id >= MPI_P2P_TRANSFER_START) && (func_id < MPI_P2P_TRANSFER_END)) ||
         ((func_id >= MPI_P2P_PERSISTENT_INIT_START) && (func_id < MPI_P2P_PERSISTENT_INIT_END)) ||
-        ((func_id >= MPI_PROBE_START) && (func_id < MPI_PROBE_END))) {
+        ((func_id >= MPI_PROBE_START) && (func_id < MPI_PROBE_END)) ||
+        ((func_id >= MPI_P2P_COLL_TRANSFER_START) && (func_id < MPI_P2P_COLL_TRANSFER_END)) ||
+        ((func_id >= MPI_P2P_COLL_PROBE_START) && (func_id < MPI_P2P_COLL_PROBE_END))) {
         extract(P2P.comm, line_mpi.at(b + 1), 16);
         extract(P2P.peer, line_mpi.at(b + 2)); // COMMWORLD based No need to translate
         extract(P2P.request, line_mpi.at(b + 3), 16);
@@ -135,7 +137,8 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
             pet_core->add_persistent_request(this);
         }*/
         func_class = PEAT_PROP_CLASS_P2P;
-        if ((func_id >= MPI_PROBE_START) && (func_id < MPI_PROBE_END)) {
+        if (((func_id >= MPI_PROBE_START) && (func_id < MPI_PROBE_END)) ||
+            ((func_id >= MPI_P2P_COLL_PROBE_START) && (func_id < MPI_P2P_COLL_PROBE_END))) {
             func_class = PEAT_PROP_CLASS_PROBE;
         }
     }
@@ -143,7 +146,8 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
         func_class = PEAT_PROP_CLASS_OSC;
     }
 
-    if (func_id >= MPI_REQUEST_START && func_id < MPI_REQUEST_END) {
+    if ((func_id >= MPI_REQUEST_START && func_id < MPI_REQUEST_END) ||
+        ((func_id >= MPI_P2P_COLL_REQUEST_START) && (func_id < MPI_P2P_COLL_REQUEST_END))) {
 
         Requests.flag = false;
 

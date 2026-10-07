@@ -16,20 +16,20 @@
  * along with PEAT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "traceinfo.h"
+#include "trace_info.h"
 #include "../common/utils.h"
 #include <QDir>
 
-TraceInfo::TraceInfo() {}
+Trace_Info::Trace_Info() {}
 
-QString TraceInfo::make_absolute_path(const QString &file_path, const QString &relative_dir)
+QString Trace_Info::make_absolute_path(const QString &file_path, const QString &relative_dir)
 {
     QFileInfo file_info(file_path);
     QDir base_dir = file_info.absoluteDir();
     return QDir::cleanPath(base_dir.absoluteFilePath(relative_dir));
 }
 
-bool TraceInfo::parse_trace_info_file(QFileInfo &tracefile)
+bool Trace_Info::parse_trace_info_file(QFileInfo &tracefile)
 {
     QFileInfo user_file_info(tracefile);
     if (!user_file_info.exists()) {
@@ -181,7 +181,7 @@ bool TraceInfo::parse_trace_info_file(QFileInfo &tracefile)
 
     return true;
 }
-bool TraceInfo::has_fab_files() const
+bool Trace_Info::has_fab_files() const
 {
     // fab files are always raw (see Elements::parse_trace_info_file), so - unlike mpi/hwc - they
     // live in `path`, not next to trace.info. fab_files isn't always recorded into trace.info
@@ -196,7 +196,7 @@ bool TraceInfo::has_fab_files() const
         return false;
     }
 }
-void TraceInfo::update_src_dirs()
+void Trace_Info::update_src_dirs()
 {
     std::string filename = trace_info_file.toStdString();
     filename += ".user";

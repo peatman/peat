@@ -72,7 +72,7 @@ $prototype {
     if (level>=0) __msl_leave_call(tid); /* also when the record was discarded */
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
         tsc_mpi_exit = peat_get_time();
-        stack_unwind$colt(gt_info(max_ret_level),counters[0].addrs,gt_info(ret_levels));
+        stack_unwind$mpi_internal(gt_info(max_ret_level),counters[0].addrs,gt_info(ret_levels));
 
         event[0]->func_id = $funcid_through;
         event[0]->num_children += (short)(__msl_child_base(tid,level) - children_base);

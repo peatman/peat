@@ -30,7 +30,7 @@
 #include <mutex>
 
 #include "globals.h"
-#include "traceinfo.h"
+#include "trace_info.h"
 #include "tv_event.h"
 #define QTV_TR_VECTOR
 
@@ -259,7 +259,7 @@ class Elements
     void get_messages_in_region(QTableWidget *initiation, QTableWidget *completion, QTableWidget *p2p, QTreeWidget *collective, QTableWidget *gpu, const PEAT_Clock start, const PEAT_Clock stop, const PEAT_Num height) const;
     void get_user_addresses_in_region(QTreeWidget *tw, const PEAT_Clock start, const PEAT_Clock stop, const PEAT_Num height) const;
     TV_Event *get_event(int x, int y, int width) const;
-    TraceInfo &get_trace_info()
+    Trace_Info &get_trace_info()
     {
         return trace_info;
     }
@@ -366,7 +366,7 @@ class Elements
 #endif
 
     bool find_collective(Collective &entry);
-    TraceInfo trace_info;
+    Trace_Info trace_info;
     QFileInfo trace_info_file;
     PEAT_Clock model_time_stop;
     PEAT_Clock model_time_start;

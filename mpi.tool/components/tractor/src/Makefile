@@ -32,7 +32,7 @@ SUFFIX=
 PTPD=on
 MEMPROFILE=off
 TARGET=impi
-PARSE_COLT=off
+PARSE_MPI_INTERNAL=off
 PARSE_GPU=off
 OVERALLSTATONLY=off
 VIRT2PHYS=off
@@ -51,9 +51,18 @@ TRACTOR_BUILD_DATE:="$(shell date)"
 #compiler options
 OPT=-O3 #-Zp4
 FPIC=-fpic
-INCLUDE=-I. -I../../common -I$(HWLOC_PATH)/include -I$(VERBSPATH)/include -I$(PSM2PATH)/include -I../../contrib/psm3/include -I$(UCXPATH)/include -I$(OFIPATH)/include
-LIBS=-lz  -L$(HWLOC_PATH)/lib -lhwloc 
+INCLUDE=-I. -I../../common -I$(VERBSPATH)/include -I$(PSM2PATH)/include -I../../contrib/psm3/include -I$(UCXPATH)/include -I$(OFIPATH)/include
+LIBS=-lz -lhwloc
 PTPD_LIBS=-lz
+# HWLOC_PATH is optional: when unset, -I$(HWLOC_PATH)/include and -L$(HWLOC_PATH)/lib
+# collapse to -I/include and -L/lib - on merged-usr systems /lib is /usr/lib, so the
+# stray -L/lib (ahead of $(MPICXX)'s own -L<mpi>/lib) can make the linker resolve -lmpi
+# against whatever other MPI's libmpi.so happens to live in /usr/lib instead of the
+# intended one - only add these flags when HWLOC_PATH is actually set.
+ifneq "$(HWLOC_PATH)" ""
+INCLUDE+=-I$(HWLOC_PATH)/include
+LIBS+=-L$(HWLOC_PATH)/lib
+endif
 
 FABRIC=off
 
@@ -217,13 +226,11 @@ endif
 CONTROLS+=-D_MPI_MESSAGE_DEFINED_ -D_USE_PROTORYPES_WITH_CONST_ -D_NO_C_VR
 # MAXMPI is the default from the top of the file unless a TARGET block above/below overrides it
 
-ifeq "$(PARSE_COLT)" "on" 
-CONTROLS+=-D_TRACTOR_PARSE_COLT_ #-D_TRACTOR_PASSTHROUGH_ #-D_TRACTOR_STORE_UNIQ_INDEX_
+ifeq "$(PARSE_MPI_INTERNAL)" "on" 
+CONTROLS+=-D_PARSE_MPI_INTERNAL_ #-D_TRACTOR_PASSTHROUGH_ #-D_TRACTOR_STORE_UNIQ_INDEX_
 PCT=on
-# kept out of EXTRANAMELIB (see LIBSUFFIX/FABLIBSUFFIX below): the fab shims'
-# ABI doesn't depend on PARSE_COLT at all
 CT_SUFFIX=.eng
-CONTROLS+=-D_USE_ENG_MPI_
+cpp_input+=-D_PARSE_MPI_INTERNAL_
 endif
 
 ifeq "$(TARGET)" "mvapich4"
@@ -327,7 +334,7 @@ endif
 
 LIBSUFFIX=$(SUFFIX)$(DBG).$(TARGET)$(EXTRANAMELIB)$(CT_SUFFIX)
 # fab shims are TARGET-independent (see FABRIC=on block above) and never get
-# CT_SUFFIX either, since PARSE_COLT doesn't affect the fab wrapper functions
+# CT_SUFFIX either, since PARSE_MPI_INTERNAL doesn't affect the fab wrapper functions
 FABLIBSUFFIX=$(SUFFIX)$(DBG)$(EXTRANAMELIB)
 BINSUFFIX=$(SUFFIX)$(DBG).$(TARGET)
 MTBL=tractor$(LIBSUFFIX)

@@ -306,15 +306,14 @@ typedef enum TMPIfunc_id {
     MPI_INTERCOMM_CREATE_ID,
     MPI_INTERCOMM_MERGE_ID,
     MPI_GRAPH_CREATE_ID,
-    // added 2026-09-29 (MPI-2.0 .. MPI-5.0 coverage)
     MPI_COMM_CREATE_FROM_GROUP_ID,
     MPI_COMM_IDUP_WITH_INFO_ID,
     MPI_INTERCOMM_CREATE_FROM_GROUPS_ID,
     MPI_END_COMM_COLLECTIVE_GROUP, // End communicators collective function group
 
     MPI_COMM_FREE_ID,
-    MPIC_COMM_CREATE_ID,
-    MPIC_COMM_FREE_ID,
+    MPID_COMM_CREATE_ID,
+    MPID_COMM_FREE_ID,
     MPI_END_COLLECTIVE_GROUP, // End whole collective function group
 
     MPI_START_OSC_GROUP = 599, // Start one sided communication function group

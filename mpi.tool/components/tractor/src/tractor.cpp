@@ -2503,7 +2503,7 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
 
             if (func_base >= MPI_START_COMM_COLLECTIVE_GROUP &&
                     func_base < MPI_END_COMM_COLLECTIVE_GROUP ||
-                func_base == MPI_COMM_FREE_ID || func_base == MPIC_COMM_FREE_ID || func_base == MPIC_COMM_CREATE_ID) {
+                func_base == MPI_COMM_FREE_ID || func_base == MPID_COMM_FREE_ID || func_base == MPID_COMM_CREATE_ID) {
                 t_gzprintf(fps_mpi, ":%x:%x:%x:%x:%llx",
                            get_global_comm_id(rec.comms.comm, tsc_mpi_entry),       // 4
                            get_global_comm_id(rec.comms.newcomm, tsc_mpi_entry),    // 5

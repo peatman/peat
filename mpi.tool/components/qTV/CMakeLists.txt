@@ -45,7 +45,7 @@ set(SOURCES
 		elements.cpp
 		tdebug.cpp
 		tv_event.cpp
-		traceinfo.cpp
+		trace_info.cpp
 		globals.cpp
 		cutoffdialog.cpp
 		cutoffdialog.ui
@@ -74,7 +74,7 @@ set(HEADERS
         globals.h
         tv_event.h
         elements.h
-        traceinfo.h
+        trace_info.h
         cutoffdialog.h
 	colorlistwidget.h 
         textviewer.h

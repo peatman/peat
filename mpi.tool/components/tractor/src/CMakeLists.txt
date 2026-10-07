@@ -232,7 +232,7 @@ if(NOT _timer_lower MATCHES "^(tsc|nano)$")
 endif()
 
 set(BUILD_TRACTOR_ENGINEERING_VERSION "auto" CACHE STRING
-  "collective-timeline (\"colt\"/PARSE_COLT) engineering build, needs a patched MPI: auto|off|on.")
+  "mpi-internal (\"MPI_INTERNAL\"/PARSE_MPI_INTERNAL) engineering build, needs a patched MPI: auto|off|on.")
 set_property(CACHE BUILD_TRACTOR_ENGINEERING_VERSION PROPERTY STRINGS auto off on)
 string(TOLOWER "${BUILD_TRACTOR_ENGINEERING_VERSION}" _eng_lower)
 if(_eng_lower STREQUAL "auto")
@@ -422,7 +422,7 @@ if(NOT TRACTOR_TARGET STREQUAL "openmpi")
 endif()
 
 if(_eng_lower STREQUAL "on")
-  list(APPEND TRACTOR_CONTROLS _TRACTOR_PARSE_COLT_ _USE_ENG_MPI_)
+  list(APPEND TRACTOR_CONTROLS _PARSE_MPI_INTERNAL_ )
   set(_pct on)
 else()
   set(_pct off)

@@ -61,10 +61,10 @@ static int __msl_record_requests(const int tid, const int level, const MPI_Reque
 #endif
 
 #define get_rank_from_req(x, y) (y)
-// #define get_rank_from_req_colt(x,y) mpi_internal_request_translate_rank(x,y)
-#define get_rank_from_req_colt(x, y) mpi_internal_comm_translate_rank(x, y)
-#define get_rank_from_req_colt_v(x, y) mpi_internal_comm_translate_rank_verbose(x, y)
-// #define get_rank_from_req_colt(x,y) (y)
+// #define get_rank_from_req_mpi_internal(x,y) mpi_internal_request_translate_rank(x,y)
+#define get_rank_from_req_mpi_internal(x, y) mpi_internal_comm_translate_rank(x, y)
+#define get_rank_from_req_mpi_internal_v(x, y) mpi_internal_comm_translate_rank_verbose(x, y)
+// #define get_rank_from_req_mpi_internal(x,y) (y)
 #define is_empty(status) (status->MPI_TAG == MPI_ANY_TAG || status->MPI_SOURCE == MPI_ANY_SOURCE)
 
 inline int is_all_empty(int inum, MPI_Status *status)
@@ -145,7 +145,7 @@ static inline void determine_comm_size(MPI_Comm comm, int kind, int *send_size, 
     *recv_size = *send_size;
 }
 
-#ifdef _TRACTOR_PARSE_COLT_
+#ifdef _PARSE_MPI_INTERNAL_
 
 struct MPID_Comm;
 struct MPID_Request;
@@ -267,7 +267,7 @@ void T_MPID_Request_release(MPID_Request *request)
         __msl_leave_call(tid);
     if (__builtin_expect((counting_permission[MPID_REQUEST_RELEASE_ID_THROUGH] > 0 && !l_skip_parse), 1)) {
         tsc_mpi_exit = peat_get_time();
-        stack_unwind_colt(gt_info(max_ret_level), counters.addrs, gt_info(ret_levels));
+        stack_unwind_mpi_internal(gt_info(max_ret_level), counters.addrs, gt_info(ret_levels));
         event->func_id = MPID_REQUEST_RELEASE_ID_THROUGH;
         event->num_children += (short)(__msl_child_base(tid, level) - children_base);
         event->requests.input_request_num = 1;
@@ -302,109 +302,6 @@ void T_MPID_Request_release(MPID_Request *request)
 
     __DEBUG_EPILOG_MPI_LAYER__
     return;
-}
-#endif
-
-#if 0
-
-int T_MPID_Request_complete(MPID_Request *request) {
-    __DEBUG_PROLOG_MPI_LAYER__
-#ifndef _TRACTOR_PASSTHROUGH_
-    int rv, i,temp_index=0;
-    long long tsc_entry,tsc_exit,tsc_mpi_entry,tsc_mpi_exit,local_tool_overhead;
-#ifdef USE_NANO_TIMER
-    long long nsec_entry;
-#endif
-    pid_t tid_in;
-    int tid,flag=0;
-    msl_extras_counters counters;
-    msl_event *event;
-    bool l_skip_parse=mpi_skip_parse;
-    MPI_Status status;
-    MPI_Request mpi_req;
-    
-    if(__builtin_expect((counting_permission[MPID_REQUEST_COMPLETE_ID_THROUGH]>0 && !l_skip_parse),1)) {
-        tsc_entry = rdtscta(&tid_in);
-#ifdef USE_NANO_TIMER
-        nsec_entry=peat_get_nano_sec();
-#endif
-        tsc_entry = (rdtsca() + tsc_entry*3)/4;
-        tid=__msl_get_tid(tid_in);
-        __msl_allocate_event(tid,1,&event,&counters);
-        first_progress_entry_colt [tid] = last_progress_exit_colt [tid] = 0;
-        num_colts[tid]++;
-        mpi_req=__msl_record_drequest_colt(tid,(const MPID_Request *) request);
-
-#ifdef _HWCOUNTERS_ENABLED_
-        gt_info(hwc).get_all_counters(&counters.hwcs[0]);
-#endif
-#ifdef _MEMPROFILE_STORE_
-        gt_info(mprof).get_mem_status(&counters.mems[0]);
-#endif
-        in_mpi_call[tid]=1;
-        tsc_mpi_entry=rdtsca();
-        // PMPI_Request_get_status(mpi_req,&flag,&status);
-    }//if(__builtin_expect((counting_permission[MPID_REQUEST_COMPLETE_ID_THROUGH]>0 && !l_skip_parse),1))
-#else
-    int rv;
-
-#endif
-#ifdef _TRACTOR_PCALL_
-    rv=PT_MPID_Request_complete(request);
-#endif
-#ifndef _TRACTOR_PASSTHROUGH_
-    if(__builtin_expect((counting_permission[MPID_REQUEST_COMPLETE_ID_THROUGH]>0 && !l_skip_parse),1)) {
-        tsc_mpi_exit = rdtsca();
-        in_mpi_call[tid]=0;
-        stack_unwind_colt(gt_info(max_ret_level),counters.addrs,gt_info(ret_levels));
-        event->func_id[0] = MPID_REQUEST_COMPLETE_ID;
-        event->func_id[1] = MPID_REQUEST_COMPLETE_ID_THROUGH;
-        event->requests.input_request_num=1;
-        event->requests.request_addr=(PEAT_Addr)request;
-        
-        
-        event->requests.num_colts=0;
-#ifdef USE_NANO_TIMER
-        event->tscs[0]=nsec_entry;
-#else
-        event->tscs[0]=tsc_entry;
-#endif
-        event->tscs[1]=tsc_mpi_entry;
-#ifdef _HWCOUNTERS_ENABLED_
-        gt_info(hwc).get_all_counters(&counters.hwcs[gt_info(num_hwcs)]);
-#endif
-#ifdef _MEMPROFILE_STORE_
-        gt_info(mprof).get_mem_status(&counters.mems[1]);
-#endif
-
-        event->requests.flag=1;
-        
-/*        
-    if (event->requests.flag) { 
-        long long TSC[4];
-            TSC[0]=0;
-            TSC[1]=status.MPI_TAG;
-            TSC[2]=get_rank_from_req_colt(request,status.MPI_SOURCE);
-            TSC[3]=MPI_STATUS_GET_COUNT_R(status);
-        __msl_record_longs_colt (tid,TSC,4);
-    }
-*/
-        tsc_exit = rdtsca();
-        event->tscs[2] = tsc_mpi_exit;
-        event->tscs[3] = tsc_exit;
-        local_tool_overhead=tsc_mpi_entry-tsc_entry+tsc_exit-tsc_mpi_exit;
-        global_mpi_time+=tsc_mpi_exit-tsc_mpi_entry;
-        global_tool_overhead += local_tool_overhead;
-#ifdef _TRACTOR_COLLECT_STAT_
-        overall_durations[MPID_REQUEST_COMPLETE_ID_THROUGH]+=tsc_mpi_exit-tsc_mpi_entry;
-        overall_entries[MPID_REQUEST_COMPLETE_ID_THROUGH]++;
-        overall_tool_overhead[MPID_REQUEST_COMPLETE_ID_THROUGH] += local_tool_overhead;
-#endif
-}//if(__builtin_expect((counting_permission[MPID_REQUEST_COMPLETE_ID_THROUGH]>0 && !l_skip_parse),1))
-#endif
-    
-    __DEBUG_EPILOG_MPI_LAYER__
-    return rv;
 }
 #endif
 
@@ -476,25 +373,25 @@ int Pompi_coll_p2p_free(MPI_Request *request);
 
 int mpi_internal_type_size(MPI_Datatype datatype, MPI_Aint * size); // mpich5 does have separate internal datatypes
 
-int T_Type_size_colt(MPI_Datatype datatype, MPI_Aint *size)
+int T_Type_size_mpi_internal(MPI_Datatype datatype, MPI_Aint *size)
 {
-    debug_printf("T_Type_size_colt (5) called with %x %p\n", (int) datatype, size);
+    debug_printf("T_Type_size_mpi_internal (5) called with %x %p\n", (int) datatype, size);
 
     return mpi_internal_type_size(datatype, size);
 }
 #else //mpich based but not  mpich 5
-int T_Type_size_colt(MPI_Datatype datatype, MPI_Aint *size)
+int T_Type_size_mpi_internal(MPI_Datatype datatype, MPI_Aint *size)
 {
-    debug_printf("T_Type_size_colt (4) called with %x %p\n", (int) datatype, size);
+    debug_printf("T_Type_size_mpi_internal (4) called with %x %p\n", (int) datatype, size);
 
     return PMPI_Type_size(datatype, (int *) size);
 }
 
 #endif
 #else // openmpi
-int T_Type_size_colt(MPI_Datatype datatype, MPI_Aint *size)
+int T_Type_size_mpi_internal(MPI_Datatype datatype, MPI_Aint *size)
 {
-    debug_printf("T_Type_size_colt (4) called with %x %p\n", (int) datatype, size);
+    debug_printf("T_Type_size_mpi_internal (4) called with %x %p\n", (int) datatype, size);
 
     return PMPI_Type_size(datatype, (int *) size);
 }

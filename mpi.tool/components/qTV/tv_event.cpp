@@ -250,12 +250,12 @@ PEAT_Bool TV_Completion_Event::read_event(PEAT_Rank r_rank, const String_Split &
     for (int i = 0; i < triggered_request_num; i++) {
         TV_Request req;
         int index;
-        extract(index, mpi_string.at(hdr.payload + 6 + input_request_num + i * 4 + 0));
-        extract(req.tag, mpi_string.at(hdr.payload + 6 + input_request_num + i * 4 + 1));
+        extract(index, mpi_string.at(hdr.payload + 5 + k + input_request_num + i * 4 + 0));
+        extract(req.tag, mpi_string.at(hdr.payload + 5 + k + input_request_num + i * 4 + 1));
         PEAT_Rank src;
-        extract(src, mpi_string.at(hdr.payload + 6 + input_request_num + i * 4 + 2));
+        extract(src, mpi_string.at(hdr.payload + 5 + k + input_request_num + i * 4 + 2));
         req.src = src;
-        extract(req.t_bytes, mpi_string.at(hdr.payload + 6 + input_request_num + i * 4 + 3));
+        extract(req.t_bytes, mpi_string.at(hdr.payload + 5 + k + input_request_num + i * 4 + 3));
         req.index = index;
         // if (input_requests.at(index) == get_core()->get_comm()->get_MPI_REQUEST_NULL()) continue;
         req.request = input_requests.at(index);

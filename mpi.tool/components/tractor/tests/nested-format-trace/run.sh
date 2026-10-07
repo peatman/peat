@@ -7,8 +7,8 @@ export libfabric_eng='-eng'
 . env.sh
 set -x
 
-LD_PRELOAD=../../lib/intel/libtractor.mpich5.eng.so 
-LD_PRELOAD="$LD_PRELOAD:../../lib/intel/libtractor_fab_ofi.so"
+LD_PRELOAD=../../../../lib/intel/libtractor.mpich5.eng.so 
+LD_PRELOAD="$LD_PRELOAD:../../../../lib/intel/libtractor_fab_ofi.so"
 
 
 export PEAT_TRACTOR_PRINT_FUNC_NAMES=1

@@ -29,12 +29,8 @@
 
 #define _MVAPICH_
 #define _MPICH_ 3
-/* This table is the union of every MPI variant's functions (readers pick entries by name/id found
-   in the trace, not by which variant this binary was built against), so every variant guarded in
-   mpi_func.inc must be enabled here, not just the MPICH family. Without this, traces from a variant
-   whose functions are missing fail: model_id.cpp's find_estimator_function_id() reports
-   "unsupported function name", and any reader that requires a real (non-NONE) func_id can throw. */
 #define _OPENMPI_ 5
+#define _PARSE_MPI_INTERNAL_
 
 #include "func_id_def.h"
 

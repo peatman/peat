@@ -2045,7 +2045,7 @@ PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, 
         evt_time.func.in += tsc_predictor.at(rank);
         // nested format: every record start is relative to the previous record at any level;
         // legacy format: colt records are relative to their host, which keeps the predictor
-        if (hdr.nested || !global_func_id.check_property(func_id, PEAT_PROP_COLT)) {
+        if (hdr.nested || !global_func_id.check_property(func_id, PEAT_PROP_MPI_INTERNAL)) {
             tsc_predictor[rank] = evt_time.func.in;
         }
         evt_time.mpi.in += evt_time.func.in;

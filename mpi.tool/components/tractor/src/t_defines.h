@@ -208,11 +208,11 @@ int t_addr_in_fortran_lib(const void *addr); /* tractor.cpp: any of libmpi_mpifh
     }                                                                                                                                \
 }
 */
-#define stack_unwind_colt(lev_num, store_addr, levels) stack_unwind0(lev_num, store_addr, levels)
+#define stack_unwind_mpi_internal(lev_num, store_addr, levels) stack_unwind0(lev_num, store_addr, levels)
 
 #else
 #define stack_unwind(lev_num, store_addr, levels)
-#define stack_unwind_colt(lev_num, store_addr, levels)
+#define stack_unwind_mpi_internal(lev_num, store_addr, levels)
 #endif
 
 struct msl_extra_info {

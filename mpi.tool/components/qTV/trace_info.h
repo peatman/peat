@@ -16,18 +16,18 @@
  * along with PEAT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef __TRACEINFO_H__
-#define __TRACEINFO_H__
+#ifndef __TRACE_INFO_H__
+#define __TRACE_INFO_H__
 #include "../common/common_types.h"
 #include "../common/func_id.h"
 #include "../common/ptp.h"
 #include <QFileInfo>
 #include <QString>
 
-class TraceInfo
+class Trace_Info
 {
   public:
-    TraceInfo();
+    Trace_Info();
     bool parse_trace_info_file(QFileInfo &tracefile);
     bool has_fab_files() const;
     void update_src_dirs();
@@ -48,4 +48,4 @@ class TraceInfo
     QString trace_info_file;
 };
 
-#endif // __TRACEINFO_H__
+#endif // __TRACE_INFO_H__

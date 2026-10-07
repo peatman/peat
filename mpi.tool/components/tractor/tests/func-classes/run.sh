@@ -14,7 +14,7 @@ export libfabric_eng='-eng'
 . env.sh
 set -x
 #TRACTOR=0
-libdir=$(realpath ../../lib/intel)
+libdir=$(realpath ../../../../lib/intel)
 if [ "${TRACTOR:-1}" != "0" ] ; then
 LD_PRELOAD=$libdir/libtractor.mpich5.eng.so
 LD_PRELOAD="$LD_PRELOAD:$libdir/libtractor_fab_ofi.so"
