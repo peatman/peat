@@ -144,6 +144,7 @@
     <ClCompile Include="..\pet\src\pet_events\collective.cpp" />
     <ClCompile Include="..\pet\src\pet_events\completion.cpp" />
     <ClCompile Include="..\pet\src\pet_events\start.cpp" />
+    <ClCompile Include="..\pet\src\pet_events\osc.cpp" />
     <ClCompile Include="..\pet\src\main.cpp" />
     <ClCompile Include="..\pet\src\pet_core.cpp" />
     <ClCompile Include="..\common\transport.cpp" />
