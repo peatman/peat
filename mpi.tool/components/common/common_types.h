@@ -789,10 +789,9 @@ struct PEAT_Record_Header {
     int level;                    // nesting depth, 0 for a top-level record
     int payload;                  // index of the first payload field on the .mpi line (function name)
     int hwc_payload;              // index of the first payload field on the .hwc line (first tsc): nested lines carry the ids only
-    PEAT_Bool nested;             // record is in the nested format
-    PEAT_Record_Header() : thread_id(0), num_children(-1), level(0), payload(3), hwc_payload(3), nested(false) {}
-    void parse(const String_Split &line, int id_columns, PEAT_Bool nested_format);     // from the .mpi line
-    void parse_hwc(const String_Split &line, int id_columns, PEAT_Bool nested_format); // from the .hwc line alone (no thread/num_children in the nested format)
+    PEAT_Record_Header() : thread_id(0), num_children(-1), level(0), payload(3), hwc_payload(3) {}
+    void parse(const String_Split &line, int id_columns);     // from the .mpi line
+    void parse_hwc(const String_Split &line, int id_columns); // from the .hwc line alone (no thread/num_children in the nested format)
     PEAT_Bool same_ids(const PEAT_Record_Header &other) const { return ids == other.ids && thread_id == other.thread_id; }
     PEAT_Bool same_ids(const String_Split &line) const; // compares the id columns of another line (the .hwc twin)
     std::string to_string() const;                     // the .mpi header as written: "id_0:...:tid[:num_children]"
@@ -801,7 +800,7 @@ struct PEAT_Record_Header {
 /* the .mpi header as written to a trace: "id_0:...:tid[:num_children]" (num_children < 0: legacy format) */
 std::string peat_record_header_string(const std::vector<PEAT_UID> &ids, PEAT_Thread thread_id, PEAT_Signed_Num num_children);
 /* the .hwc header as written to a trace: nested format "id_0:...:id_{n-1}", legacy "primary:secondary:tid" */
-std::string peat_record_hwc_header_string(const std::vector<PEAT_UID> &ids, PEAT_Thread thread_id, PEAT_Bool nested);
+std::string peat_record_hwc_header_string(const std::vector<PEAT_UID> &ids, PEAT_Thread thread_id);
 
 struct Address_File_Storage {
     PEAT_Num num_addrs;
@@ -814,7 +813,6 @@ struct Address_File_Storage {
     std::map<PEAT_Rank, PEAT_UID> last_fab_event_idx;
     std::map<PEAT_Rank, PEAT_Thread> last_thread_idx;
     std::map<PEAT_Rank, int> id_columns;          // id columns in the .mpi/.hwc records (nested format; 2 for legacy traces)
-    std::map<PEAT_Rank, PEAT_Bool> nested_format; // records carry num_children in the header (6-field PEAT_RT_Number_Of_Events)
     File_Storage_GZ *UR_File;
     const Model_ID *m_id;
 
@@ -845,18 +843,13 @@ struct Address_File_Storage {
                 cols = it->second;
         return cols;
     }
-    PEAT_Bool is_nested_format(const PEAT_Rank rank) const
-    {
-        std::map<PEAT_Rank, PEAT_Bool>::const_iterator it = nested_format.find(rank);
-        return it == nested_format.end() ? false : it->second;
-    }
     void parse_record_header(PEAT_Record_Header &header, const String_Split &line, const PEAT_Rank rank) const
     {
-        header.parse(line, get_id_columns(rank), is_nested_format(rank));
+        header.parse(line, get_id_columns(rank));
     }
     void parse_record_hwc_header(PEAT_Record_Header &header, const String_Split &line, const PEAT_Rank rank) const
     {
-        header.parse_hwc(line, get_id_columns(rank), is_nested_format(rank));
+        header.parse_hwc(line, get_id_columns(rank));
     }
     // Address_File_Storage &operator = (const Address_File_Storage &rhs);
     void put_records(const User_Region_Store &user_regions);

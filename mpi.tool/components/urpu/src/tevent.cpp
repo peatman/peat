@@ -26,13 +26,7 @@
 
 Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_hwc, const PEAT_Num num_tscs, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file) : rank(r), num_children(0), level(0)
 {
-    // no need to check line.size() due line.at() throw an exception
-    //  First read the record header (ids, thread, nesting); the .hwc line carries the same header as the .mpi line
-    PEAT_Record_Header hdr;
-    user_region_file->parse_record_hwc_header(hdr, line_hwc, rank);
-    uniq_id = hdr.ids[0];
-    level = hdr.level;
-    const int b = hdr.hwc_payload + num_tscs; // addresses follow the tsc block
+    const int b = 2 + num_tscs; // addresses follow the tsc block
     for (int i = 0; i < (int)num_addrs; i++) {
         PEAT_UID addr_id;
         extract(addr_id, line_hwc.at(b + i));

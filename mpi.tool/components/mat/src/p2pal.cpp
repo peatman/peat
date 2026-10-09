@@ -224,11 +224,7 @@ void P2PAL::print_P2PF(const MAT_Record &left, const MAT_Record &right)
                     right.ph[0].ids[0], right.ph[1].ids[0], right.ph[2].ids[0]);
             peat_throw_error("Sizes mismatch\n");
         }
-        if (left.ph[0].func_id == right.ph[0].func_id && 
-            right.ph[0].func_id != MPI_SENDRECV_ID && 
-            right.ph[0].func_id != MPI_SENDRECV_REPLACE_ID &&
-            right.ph[0].func_id != MPIC_SENDRECV_ID && 
-            right.ph[0].func_id != MPIC_SENDRECV_REPLACE_ID) {
+        if (left.ph[0].func_id == right.ph[0].func_id && !global_func_id.check_property(right.ph[0].func_id, PEAT_PROP_DATA_TXRX)) {
             peat_throw_error("Same functions used for send and receive\n");
         }
     }
@@ -325,12 +321,14 @@ bool P2PAL::find_request(PEAT_Num queue_type, PEAT_Rank rank, PEAT_MPI_Request r
 {
     std::map<PEAT_Rank, std::set<PEAT_MPI_Request>> *queue;
     switch (queue_type) {
+#ifdef PEAT_MPI
     case qt_pers_thrown:
         queue = &thrown_away_pers_requests;
         break;
     case qt_thrown:
         queue = &thrown_away_requests;
         break;
+#endif
     default: {
 #if 1
         {
@@ -447,7 +445,8 @@ int P2PAL::update_waiting_queue(PEAT_Rank rank, const PEAT_MPI_Tag tag, const PE
             waiting_events_f[rank].erase(event_it);
             found |= 2;
             MAT_Record *dummy;
-            find_request(qt_normal, rank, request, &dummy, true);
+            bool req_found = find_request(qt_normal, rank, request, &dummy, true);
+            assert(req_found);
         }
 #else
         for (; event_it != waiting_events[rank].end(); ++event_it) {
@@ -639,8 +638,10 @@ bool P2PAL::add_pers_req_start(const PEAT_Rank rank, MAT_Record *record)
     } else if (global_func_id.check_property(record->ph[0].func_id, PEAT_PROP_DATA_TX)) {
         matching_queues[qt_send][rank][key].push_back(record);
         if (!request_queues[qt_normal][rank][record->request].empty()) {
-            MAT_Record *r = request_queues[qt_normal][rank].at(record->request).front();
+            MAT_Record* r = request_queues[qt_normal][rank].at(record->request).front();
             assert(record->is_send);
+            assert(r->peer_assigned);
+            request_queues[qt_normal][rank].at(record->request).pop_front();
             request_queues[qt_hanged][rank][record->request].push_back(r);
         }
         request_queues[qt_normal][rank][record->request].push_back(record);
@@ -650,7 +651,7 @@ bool P2PAL::add_pers_req_start(const PEAT_Rank rank, MAT_Record *record)
     }
     return true;
 }
-PEAT_Bool P2PAL::remove_pers_req(const PEAT_Rank rank, const PEAT_MPI_Request request, MAT_Record **req_it)
+PEAT_Bool P2PAL::remove_pers_request(const PEAT_Rank rank, const PEAT_MPI_Request request, MAT_Record **req_it)
 {
     bool req_found = false;
     req_found = find_request(qt_pers, rank, request, req_it, true);
@@ -663,7 +664,7 @@ PEAT_Bool P2PAL::remove_pers_req(const PEAT_Rank rank, const PEAT_MPI_Request re
     }
     return false; // didn't find request, move to ordinary queues
 }
-PEAT_Bool P2PAL::remove_req(const PEAT_Rank rank, const PEAT_MPI_Request request)
+PEAT_Bool P2PAL::remove_request(const PEAT_Rank rank, const PEAT_MPI_Request request)
 {
     MAT_Record *req_it;
     bool req_found = false;
@@ -752,6 +753,7 @@ void P2PAL::parse_P2PTx(PEAT_Rank rank, const Tractor_Event &event, bool print_o
     } else {
         if (print_out)
             print_P2PL(event);
+#ifdef PEAT_MPI
         if (event.P2P.request > 0) {
             if (global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) {
                 if (thrown_away_pers_requests[rank].find(event.P2P.request) != thrown_away_pers_requests[rank].end()) {
@@ -767,23 +769,35 @@ void P2PAL::parse_P2PTx(PEAT_Rank rank, const Tractor_Event &event, bool print_o
                 std::cerr << "Invalid request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << std::endl;
             }
         }
+#endif
     }
 }
 void P2PAL::parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, bool increase_MPI)
 {
     assert(ptp);
     assert(com_store);
-    const PEAT_MPI_Comm comm = !global_func_id.check_property(event.func_id, PEAT_PROP_COMM) ? 2 : event.P2P.comm;
+    PEAT_MPI_Comm comm = !global_func_id.check_property(event.func_id, PEAT_PROP_COMM) ? 2 : event.P2P.comm;
     if (increase_MPI)
         ptp->add_rank_MPI(rank, event.tsc_time.func.out - event.tsc_time.func.in);
+    PEAT_MPI_Tag tag = event.P2P.tag;
+    PEAT_Rank peer = event.P2P.peer;
+	PEAT_Message_Size bytes = event.P2P.transfered_bytes;
+    if (global_func_id.check_property(event.func_id, PEAT_PROP_MESSAGE)) {
+        /* restore matching information from message*/
+		PEAT_MPI_Translation_Message message = matching_messages.at(rank).at(event.P2P.message);
+		tag = message.tag;
+		peer = message.peer;    
+		comm = message.comm;
+		bytes = message.bytes;
+    }
     if (event.P2P.peer != com_store->get_MPI_PROC_NULL()) {
         MAT_Record *record = new (MAT_Record);
         record->pc_level = event.PControl.ctl;
         record->comm = comm;
         record->rank = rank;
-        record->peer_rank = event.P2P.peer;
-        record->tag = event.P2P.tag;
-        record->size = event.P2P.transfered_bytes;
+        record->peer_rank = peer;
+        record->tag = tag;
+        record->size = bytes;
         record->is_send = false;
         if (event.P2P.request) {
             record->request = event.P2P.request;
@@ -829,7 +843,6 @@ void P2PAL::parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, bool increas
                     lP->peer_assigned = rP->peer_assigned = true;
                     if (lP->request > 0) {
                         std::list<MAT_Record *>::iterator it;
-                        ;
                         if (find_event(qt_normal, send_rank, lP, it)) {
                             request_queues[qt_normal][send_rank][lP->request].erase(it);
                         } else {
@@ -853,6 +866,7 @@ void P2PAL::parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, bool increas
         }
     } else {
         print_P2PL(event);
+#ifdef PEAT_MPI
         if (event.P2P.request > 0) {
             if (global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) {
                 if (thrown_away_pers_requests[rank].find(event.P2P.request) != thrown_away_pers_requests[rank].end()) {
@@ -868,6 +882,7 @@ void P2PAL::parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, bool increas
                 std::cerr << "Invalid request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << std::endl;
             }
         }
+#endif
     }
 }
 
@@ -904,6 +919,10 @@ void P2PAL::parse_P2PPb(PEAT_Rank rank, const Tractor_Event &event)
     assert(ptp);
     assert(com_store);
     ptp->add_rank_MPI(rank, event.tsc_time.func.out - event.tsc_time.func.in);
+    /* Add message matching scheme*/
+    if (global_func_id.check_property(event.func_id, PEAT_PROP_MESSAGE)) {
+        matching_messages[event.rank][event.P2P.message] = PEAT_MPI_Translation_Message(event.P2P.tag, event.P2P.peer, event.P2P.comm, event.P2P.transfered_bytes);
+	}   
 #if 0
     const PEAT_MPI_Comm comm = !global_func_id.check_property(event.func_id, PEAT_PROP_COMM) ? 2 : event.P2P.comm;
     PEAT_MPI_Status flag = event.P2P.flag;

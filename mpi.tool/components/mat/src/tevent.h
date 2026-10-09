@@ -30,12 +30,21 @@
 #endif
 
 struct PEAT_MPI_R4Status {
-    PEAT_Signed_Num index = 0;
-    PEAT_MPI_Tag tag = 0;
-    PEAT_Rank src = 0;
-    PEAT_Message_Size bytes = 0;
+    PEAT_Signed_Num index;
+    PEAT_MPI_Tag tag;
+    PEAT_Rank src;
+    PEAT_Message_Size bytes;
     PEAT_MPI_R4Status() : index(0), tag(0), src(0), bytes(0) {}
 };
+struct PEAT_MPI_Translation_Message {
+    PEAT_MPI_Tag tag;
+    PEAT_Rank peer;
+    PEAT_MPI_Comm comm;
+    PEAT_Message_Size bytes;
+    PEAT_MPI_Translation_Message() : tag(0), peer(0), comm(0), bytes(0) {}
+    PEAT_MPI_Translation_Message(PEAT_MPI_Tag t, PEAT_Rank p, PEAT_MPI_Comm c, PEAT_Message_Size b) : tag(t), peer(p), comm(c), bytes(b) {}
+};
+
 struct PEAT_MPI_Memory_Buffer {
     PEAT_Addr addr = NULL;
     PEAT_Message_Size size = 0;
@@ -79,16 +88,15 @@ struct Tractor_Event : public Phase {
     PEAT_Rank rank;
     PEAT_Signed_Num num_children; // directly nested records (former num_colts); the id path is Phase::ids
     int level;                    // nesting depth (0: top-level record)
-    PEAT_Bool nested;             // record came in the nested format (ids and num_children in the header)
-    std::string header_str() const { return peat_record_header_string(ids, thread_id, nested ? num_children : -1); }
-    std::string hwc_header_str() const { return peat_record_hwc_header_string(ids, thread_id, nested); }
+    std::string header_str() const { return peat_record_header_string(ids, thread_id, num_children); }
+    std::string hwc_header_str() const { return peat_record_hwc_header_string(ids, thread_id); }
     std::vector<PEAT_ULNum> params, out_params, extra_params;
     std::vector<PEAT_MPI_Request> requests;
     std::vector<PEAT_MPI_R4Status> statuses;
     std::vector<PEAT_UID> addrs;
     std::vector<PEAT_MPI_Memory_Buffer> buffers;
 
-    Tractor_Event() : func_class(PEAT_PROPERTY_NONE), rank(-1), num_children(0), level(0), nested(false) {}
+    Tractor_Event() : func_class(PEAT_PROPERTY_NONE), rank(-1), num_children(0), level(0) {}
     Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, const String_Split &line_hwc, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file, const Communicators *com_store);
     void get_extra_txrx(const String_Split &line, const Communicators *com_store);
     ~Tractor_Event()
@@ -220,7 +228,6 @@ struct Tractor_Event : public Phase {
                sizeof(rank) +
                sizeof(num_children) +
                sizeof(level) +
-               sizeof(nested) +
                usize +
                /*
                sizeof(P2P) +
@@ -263,9 +270,6 @@ struct Tractor_Event : public Phase {
         ptr_it += ssize;
         ssize = sizeof(level);
         memcpy(ptr + ptr_it, &level, ssize);
-        ptr_it += ssize;
-        ssize = sizeof(nested);
-        memcpy(ptr + ptr_it, &nested, ssize);
         ptr_it += ssize;
 
         switch (func_class) {
@@ -339,9 +343,6 @@ struct Tractor_Event : public Phase {
         ptr_it += ssize;
         ssize = sizeof(level);
         memcpy(&level, ptr + ptr_it, ssize);
-        ptr_it += ssize;
-        ssize = sizeof(nested);
-        memcpy(&nested, ptr + ptr_it, ssize);
         ptr_it += ssize;
 
         switch (func_class) {

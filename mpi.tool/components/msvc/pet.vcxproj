@@ -162,6 +162,7 @@
       <InterproceduralOptimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NoIPO</InterproceduralOptimization>
       <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">__INTEL_COMPILER=1910;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <ClCompile Include="mat\src\collectives.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\common\common_plain_types.h" />

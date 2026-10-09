@@ -68,6 +68,8 @@ class Mat
     std::map<PEAT_Num, std::map<PEAT_Property, Mat_Time>> timings;
     Mat(Global_Parameters &file_names, Model_ID &model_id_storage);
     ~Mat();
+    Mat(const Mat &) = delete;
+    Mat &operator=(const Mat &) = delete;
     void write_trace_info(const std::string &name);
     bool parse_single_event(const int rank);
 #ifdef PEAT_MPI

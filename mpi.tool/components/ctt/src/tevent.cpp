@@ -48,9 +48,7 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
     ids = hdr.ids;
     thread_id = hdr.thread_id;
     level = hdr.level;
-    nested = hdr.nested;
-    if (nested)
-        num_children = hdr.num_children;
+    num_children = hdr.num_children;
     const int b = hdr.payload;     // first payload field on the .mpi line
     const int h = hdr.hwc_payload; // first tsc on the .hwc line
     const int k = nested ? 0 : 1;  // legacy records keep num_colts among the class fields

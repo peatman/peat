@@ -160,7 +160,6 @@ struct PET_Event : public PET_Time_Event {
     {
         return flat_events.empty() ? nested_events : flat_events;
     }
-    PEAT_Bool nested_format() const;                     // the rank's trace is in the nested record format
     PET_Event *get_prev_child_event(PET_Event *event);   // predecessor of a nested record of this call
     std::string header_str() const;                      // record header for the .mpi output line
     std::string hwc_header_str() const;                  // record header for the .hwc output line

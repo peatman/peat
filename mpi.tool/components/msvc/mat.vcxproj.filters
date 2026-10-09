@@ -65,6 +65,9 @@
     <ClInclude Include="..\mat\src\comm.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\mat\src\request_store.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\mat\src\collectives.cpp">
@@ -116,6 +119,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\mat\src\comm.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\mat\src\request_store.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

@@ -106,7 +106,6 @@ class PET_Core
     void register_parallel_region(PET_Event *event) { nodes.at(event->node).ranks.at(event->rank).register_parallel_region(event); }
     PEAT_Thread get_max_thread_id(const PEAT_Rank rank) const { return user_region_file->last_thread_idx.at(rank); }
     const PET_Bind_Store &get_bind_store() const { return bind_store; }
-    PEAT_Bool is_nested_format(const PEAT_Rank rank) const { return user_region_file->is_nested_format(rank); }
     int get_id_columns(const PEAT_Rank rank) const { return user_region_file->get_id_columns(rank); }
     PEAT_Addr get_addr_by_id(const PEAT_Rank rank, const PEAT_UID addr) const { return user_region_file->get_addr_by_id(rank, addr)->addr; }
 

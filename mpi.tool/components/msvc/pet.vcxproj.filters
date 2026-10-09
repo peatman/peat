@@ -103,6 +103,9 @@
     <ClCompile Include="..\pet\src\pet_events\ompt.cpp">
       <Filter>Sources\PET_Events</Filter>
     </ClCompile>
+    <ClCompile Include="..\pet\src\pet_bind.cpp" />
+    <ClCompile Include="..\pet\src\pet_events\osc.cpp" />
+    <ClCompile Include="mat\src\collectives.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\pet\src\pet_core.h">
@@ -186,6 +189,7 @@
     <ClInclude Include="..\pet\src\timeline.h">
       <Filter>Headers</Filter>
     </ClInclude>
+    <ClInclude Include="..\pet\src\pet_bind.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Headers">

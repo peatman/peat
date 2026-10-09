@@ -104,8 +104,6 @@ PET_Event *PET_Start_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ
 {
     PET_Local_Event::write_event(gz_MPI, gz_HWC, gz_bind, "", hwc_eol);
     gz_MPI->printf(rank, ":%d:%d:%d", input_request_num, triggered_request_num, flag);
-    if (!nested_format())
-        gz_MPI->printf(rank, ":%d", static_cast<int>(t_events.size())); // legacy num_colts
     gz_MPI->printf(rank, ":%llx", addr);
     for (int i = 0; i < input_request_num; i++) {
         gz_MPI->printf(rank, ":%llx", input_requests[i]);
@@ -377,12 +375,11 @@ PEAT_Bool PET_Start_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_
     extract(input_request_num, mpi_string.at(hdr.payload + 1));
     extract(triggered_request_num, mpi_string.at(hdr.payload + 2));
     extract(flag, mpi_string.at(hdr.payload + 3));
-    const int k = hdr.nested ? 0 : 1; // legacy records keep num_colts here
-    extract(addr, mpi_string.at(hdr.payload + 4 + k), 16);
+    extract(addr, mpi_string.at(hdr.payload + 4), 16);
     input_requests.resize(input_request_num);
     for (int i = 0; i < input_request_num; i++) {
         PEAT_MPI_Request req;
-        extract(req, mpi_string.at(hdr.payload + 5 + k + i), 16);
+        extract(req, mpi_string.at(hdr.payload + 5 + i), 16);
         input_requests[i] = req;
     }
     for (int i = 0; i < input_request_num; i++) {

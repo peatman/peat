@@ -55,7 +55,7 @@ class Request : public Outputs
 
     bool parse_collective_completion_phase(const PEAT_Rank rank, const Phase &phase, const PEAT_MPI_Request request, const int pc_level, bool is_remote);
 
-    void parse_P2P_start_phase(const PEAT_Rank rank, const Phase &phase, const PEAT_MPI_Request request, const int pc_level, bool is_remote);
+    void parse_pers_start_phase(const PEAT_Rank rank, const Phase &phase, const PEAT_MPI_Request request, const int pc_level, bool is_remote);
     PEAT_Bool remove_pers_req(const PEAT_Rank rank, const PEAT_MPI_Request request, Phase &ph);
     void print_req_out(const Tractor_Event &event);
     void print_req_bind(PEAT_Rank rank, PEAT_MPI_Request req, const Phase &phase, const Phase &bind, bool is_remote);

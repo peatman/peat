@@ -25,14 +25,14 @@
 #include <string>
 #include <vector>
 struct Phase {
-    Phase() : func_id(TMPI_FUNC_ID_NONE), ids(2, -1), thread_id(-1) {}
+    Phase() : func_id(TMPI_FUNC_ID_NONE), thread_id(-1) {}
     ~Phase()
     {
         addrs.clear();
     }
     PEAT_MPI_Func_ID func_id;
     PEAT_Event_IDs ids; // id path as written in the trace: ids[0] is the top-level id (2 entries in the legacy format)
-    PEAT_UID thread_id;
+    PEAT_Thread thread_id;
     // std::vector<PEAT_Addr> addrs;
     std::vector<PEAT_UID> addrs;
     PEAT_Time tsc_u_time, tsc_time;

@@ -84,7 +84,7 @@ struct MPI_PControl_Stat {
 
 struct Stat {
     Stat() : rank_start(LLONG_MAX), rank_end(0), rank_mpi_init_start(-1), rank_mpi_init_end(-1), rank_mpi_finalize_start(-1), rank_mpi_finalize_end(-1),
-             num_events(0), cpu_len(0), fabric_len(0), changed_UR_num(0), covered_UR_length(0), uncovered_UR_length(0), pcontrol_removed_user_code_length(0), progress_len_total(0) {}
+             num_events(0), cpu_len(0), fabric_len(0), changed_UR_num(0), covered_UR_length(0), uncovered_UR_length(0), progress_len_total(0), pcontrol_removed_user_code_length(0) {}
     PEAT_Clock rank_start;
     PEAT_Clock rank_end;
     PEAT_Clock rank_mpi_init_start;

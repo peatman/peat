@@ -47,23 +47,17 @@ PEAT_Bool PET_Collective_Event::read_event(PEAT_Rank r_rank, const String_Split 
     PEAT_Num srb[2];
     extract(srb[0], mpi_string.at(hdr.payload + 4));
     extract(srb[1], mpi_string.at(hdr.payload + 5));
-    if (!hdr.nested) { // legacy: number of collective transfers followed by
-        int num_colts;
-        extract(num_colts, mpi_string.at(hdr.payload + 6));
-        t_events.resize(num_colts, NULL);
-    }
-    const int k = hdr.nested ? 0 : 1; // legacy records keep num_colts before the byte counts
 
     ranks = get_core()->get_comm()->get_ranks_map_from_comm(comm);
     PEAT_Message_Size size_msg_collective = -1;
     if (srb[0] > 0) {
         if (srb[0] == 1) {
-            extract(size_msg_collective, mpi_string.at(hdr.payload + 6 + k));
+            extract(size_msg_collective, mpi_string.at(hdr.payload + 6 ));
             tx_bytes.set_scalar(size_msg_collective);
         } else {
             int i = 0;
             for (std::map<PEAT_Rank, PEAT_Rank>::const_iterator it = ranks.begin(); it != ranks.end(); ++it) {
-                extract(size_msg_collective, mpi_string.at(hdr.payload + 6 + k + i));
+                extract(size_msg_collective, mpi_string.at(hdr.payload + 6 + i));
                 tx_bytes.set_vector(size_msg_collective, it->first);
                 ++i;
             }
@@ -71,12 +65,12 @@ PEAT_Bool PET_Collective_Event::read_event(PEAT_Rank r_rank, const String_Split 
     }
     if (srb[1] > 0) {
         if (srb[1] == 1) {
-            extract(size_msg_collective, mpi_string.at(hdr.payload + 6 + k + tx_bytes.size()));
+            extract(size_msg_collective, mpi_string.at(hdr.payload + 6 + tx_bytes.size()));
             rx_bytes.set_scalar(size_msg_collective);
         } else {
             int i = 0;
             for (std::map<PEAT_Rank, PEAT_Rank>::const_iterator it = ranks.begin(); it != ranks.end(); ++it) {
-                extract(size_msg_collective, mpi_string.at(hdr.payload + 6 + k + tx_bytes.size() + i));
+                extract(size_msg_collective, mpi_string.at(hdr.payload + 6 + tx_bytes.size() + i));
                 rx_bytes.set_vector(size_msg_collective, it->first);
                 ++i;
             }
@@ -111,8 +105,6 @@ PET_Event *PET_Collective_Event::write_event(File_Storage_GZ *gz_MPI, File_Stora
     PET_Local_Event::write_event(gz_MPI, gz_HWC, gz_bind, "", hwc_eol);
     gz_MPI->printf(rank, ":%x:%d:%llx:%d:%d",
                    comm, root, request, tx_bytes.size(), rx_bytes.size());
-    if (!nested_format())
-        gz_MPI->printf(rank, ":%d", host_event ? 0 : nested_count_total()); // legacy num_colts
     for (int i = 0; i < (int)tx_bytes.size(); i++) {
         gz_MPI->printf(rank, ":%lld", tx_bytes.get(i));
     }

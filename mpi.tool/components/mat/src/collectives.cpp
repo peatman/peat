@@ -183,7 +183,7 @@ void Collectives::print_collective_bind(const MAT_Collective &record)
             // r_col.comp_funcs[rank] = global_func_id.name_by_idx(record.func_id); // ???
             // if (prop.permanent_request > 0) r_col.comp_funcs[rank] = global_func_id.name_by_idx(prop.completion.func_id);
             if (prop.permanent_request > 0)
-                r_col.comp_func = global_func_id.name_by_idx(prop.completion.func_id); // TODO remove
+                r_col.comp_func = global_func_id.name_by_idx(prop.ph[2].func_id); // TODO remove
             char local_uids[128];
             snprintf(local_uids, sizeof(local_uids), " %d,%s", rank, peat_ids_string(prop.ids).c_str());
             uids = uids + local_uids;
@@ -308,14 +308,14 @@ void Collectives::parse_collective(const PEAT_Rank rank, const Tractor_Event &ev
         ptp->add_rank_MPI(rank, event.tsc_time.func.out - event.tsc_time.func.in);
     }
     if (global_func_id.check_property(mpifunc, PEAT_PROP_DATA_COLLECTIVE) || event.func_class == PEAT_PROP_CLASS_COLLECTIVE) { // since some FIO operation are also parsed here we need to check if it's really collective operation
-        collective_key collective_key(comm, event.func_id);
+        collective_key key(comm, event.func_id);
         collective_list::iterator matched_record;
         bool matched_collective_exists = false;
-
-        if (!coll_queues.empty()) {
-            if (coll_queues.count(collective_key)) {
+		std::map<collective_key, collective_list_struct>& queues = global_func_id.check_property(mpifunc, PEAT_PROP_PERSISTENT_REQUEST_INIT) ? pers_coll_queues : coll_queues;
+        if (!queues.empty()) {
+            if (queues.count(key)) {
                 // cerr << "Collective key " << collective_key << " mpifunc " << mpifunc << " comm " << comm << " count " << collective_queues.count(collective_key) << endl;
-                matched_collective_exists = match_collective(coll_queues.at(collective_key), matched_record, rank);
+                matched_collective_exists = match_collective(queues.at(key), matched_record, rank);
 #if 0 // def _DEBUG
                 collective_list::iterator matched_record_debug;
                 bool matched_collective_exists_debug = match_collective_old(coll_queues.at(collective_key), matched_record_debug, rank);
@@ -374,8 +374,8 @@ void Collectives::parse_collective(const PEAT_Rank rank, const Tractor_Event &ev
             if (expected_ranks.empty()) {
                 if (check_completion(matched_record)) {
                     print_collective_bind(coll_get_record(matched_record));
-                    // coll_queues.at(collective_key).erase(matched_record);
-                    erase_collective(collective_key, matched_record);
+                    // queues.at(key).erase(matched_record);
+                    erase_collective(key, matched_record);
                 }
             }
         } else {
@@ -424,12 +424,12 @@ void Collectives::parse_collective(const PEAT_Rank rank, const Tractor_Event &ev
             collective_entry.pc_level = event.PControl.ctl;
 
             if (!expected_ranks.empty()) {
-                coll_queues[collective_key].collectives.push_back(collective_entry);
+                queues[key].collectives.push_back(collective_entry);
             } else {
                 if (check_completion(collective_entry)) {
                     print_collective_bind(collective_entry);
                 } else {
-                    coll_queues[collective_key].collectives.push_back(collective_entry);
+                    queues[key].collectives.push_back(collective_entry);
                 }
             }
         }
@@ -506,12 +506,14 @@ bool Collectives::erase_collective(collective_key &c_key, collective_list::itera
     return true;
 }
 
-bool Collectives::find_request(PEAT_Rank rank, PEAT_MPI_Request request, collective_list::iterator &coll)
+bool Collectives::find_request(PEAT_Rank rank, PEAT_MPI_Request request, bool is_persistent, collective_list::iterator& coll)
 {
-    for (std::map<collective_key, collective_list_struct>::iterator queue = coll_queues.begin(); queue != coll_queues.end(); ++queue) {
+    std::map<collective_key, collective_list_struct>& queues=is_persistent? pers_coll_queues: coll_queues;
+
+    for (std::map<collective_key, collective_list_struct>::iterator queue = queues.begin(); queue != queues.end(); ++queue) {
         for (collective_list::iterator it = queue->second.collectives.begin(); it != queue->second.collectives.end(); ++it) {
             if (coll_get_value(it, coll_events_list).count(rank) > 0) {
-                Collective_Event &coll_event = coll_get_value(it, coll_events_list).at(rank);
+                Collective_Event& coll_event = coll_get_value(it, coll_events_list).at(rank);
                 if (coll_event.request == request) {
                     coll = it;
                     return true;
@@ -521,9 +523,26 @@ bool Collectives::find_request(PEAT_Rank rank, PEAT_MPI_Request request, collect
     }
     return false;
 }
+bool Collectives::remove_pers_request(PEAT_Rank rank, PEAT_MPI_Request request, Phase& ph) 
+{
+    for (std::map<collective_key, collective_list_struct>::iterator queue = pers_coll_queues.begin(); queue != pers_coll_queues.end(); ++queue) {
+        for (collective_list::iterator it = queue->second.collectives.begin(); it != queue->second.collectives.end(); ++it) {
+            if (coll_get_value(it, coll_events_list).count(rank) > 0) {
+                Collective_Event& coll_event = coll_get_value(it, coll_events_list).at(rank);
+                if (coll_event.request == request) {
+                    ph = coll_event.ph[0];
+                    coll_get_value(it, coll_events_list).erase(rank);
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
 bool Collectives::update_request(PEAT_Rank rank, PEAT_MPI_Request request, const Phase &phase, collective_list::iterator &coll)
 {
-    coll_get_value(coll, coll_events_list).at(rank).completion = phase;
+    coll_get_value(coll, coll_events_list).at(rank).ph[2] = phase;
     coll_get_value(coll, coll_events_list).at(rank).request = 0;
     if (check_completion(coll) && coll_get_value(coll, expected_ranks).empty()) {
         print_collective_bind(coll_get_record(coll));

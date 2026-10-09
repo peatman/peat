@@ -134,22 +134,14 @@ void PET_Event::notify_before_destroy(PET_Event *event)
     }
 }
 
-/* ---- record headers of the output trace ---- */
-PEAT_Bool PET_Event::nested_format() const
-{
-    return get_core()->is_nested_format(rank);
-}
-
 std::string PET_Event::header_str() const
 {
-    if (!nested_format()) // legacy: primary:secondary:tid (num_colts stays among the class fields)
-        return peat_record_header_string(ids, thread_id, -1);
     return peat_record_header_string(ids, thread_id, header_second_line ? 0 : static_cast<PEAT_Signed_Num>(nested_events.size()));
 }
 
 std::string PET_Event::hwc_header_str() const
 {
-    return peat_record_hwc_header_string(ids, thread_id, nested_format());
+    return peat_record_hwc_header_string(ids, thread_id);
 }
 
 /* a top-level call writes its nested records right after its own record in trace order
@@ -344,8 +336,7 @@ PEAT_Bool PET_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string
     extract(e_time.mpi.in, hwc_string.at(b + 1), 10);
     extract(e_time.mpi.out, hwc_string.at(b + 2), 10);
     extract(e_time.func.out, hwc_string.at(b + 3), 10);
-    if (hdr.nested) // nested format: field 2 is the tool epilog (exit - mpi exit), field 3 the duration
-        e_time.mpi.out = e_time.func.out - e_time.mpi.out;
+    e_time.mpi.out = e_time.func.out - e_time.mpi.out;
     /* clutch for ompt */
     if (e_time.mpi.in < 0) {
         e_time.mpi.in = 0;

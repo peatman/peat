@@ -53,26 +53,12 @@ bool Mat::parse_single_event(const int rank)
     Tractor_Event t_event(rank, line_mpi, line_hwc, model_id.num_hwcs, model_id.num_addrs, user_region_store, com_store);
     PEAT_MPI_Func_ID mpifunc = t_event.func_id;
     // nested records (progress engine calls issued inside another traced call) do not count as user-level events
-    const bool nested_record = t_event.nested ? t_event.level > 0 : global_func_id.check_property(mpifunc, PEAT_PROP_MPI_INTERNAL);
+    const bool nested_record = t_event.level > 0;
     PEAT_Clock mpi_time = 0, uc_time = 0, t_time = 0, occ_inc = 0;
     if (!globals.matching_only) { // tsc_time is all sentinel (-1) without hwc data, so these are meaningless
         if (!second_line) {
             t_event.tsc_time.func.in += tsc_predictor.at(rank);
-            if (t_event.nested) // nested format: every record start is relative to the previous record at any level
-                tsc_predictor[rank] = t_event.tsc_time.func.in;
-            if (!nested_record) {
-                tsc_predictor[rank] = t_event.tsc_time.func.in;
-                mpi_time = t_event.tsc_time.mpi.out - t_event.tsc_time.mpi.in;
-                if (t_event.func_id != MPI_INIT_ID && t_event.func_id != MPI_INIT_THREAD_ID && !is_omp(t_event.func_class)) {
-                    uc_time = t_event.tsc_time.func.in - tsc_corrector[rank];
-                } else {
-                    t_time = 0;
-                }
-                if (t_event.thread_id == 0) {
-                    tsc_corrector[rank] = t_event.tsc_time.func.in + t_event.tsc_time.func.out;
-                }
-                occ_inc = 1;
-            }
+            tsc_predictor[rank] = t_event.tsc_time.func.in;
             if (t_event.func_id != MPI_INIT_ID && t_event.func_id != MPI_INIT_THREAD_ID && t_event.func_id != MPI_FINALIZE_ID && t_event.thread_id == 0) {
                 if (is_omp(t_event.func_class)) { // temporal clutch until fixed in tractor
                     if (t_event.func_id == OMPT_SYNC_REGION_ID || t_event.func_id == OMPT_SYNC_REGION_WAIT_ID) {
@@ -108,6 +94,14 @@ bool Mat::parse_single_event(const int rank)
     }
 /* this section is not working as designed if --matching-only is enabled so some imbalance may occur */
     PEAT_Clock tsc_t = t_event.tsc_time.func.in;
+    if (tsc_t < 0) {
+        if (timeline.empty()) {
+            tsc_t = 0;
+        } else {
+            std::map<PEAT_Clock, PEAT_Rank> ::const_reverse_iterator rit = timeline.crbegin();
+            tsc_t = rit->first + 1;
+        }
+    }
     while (timeline.count(tsc_t) > 0)
         tsc_t++;
     timeline[tsc_t] = rank;

@@ -34,6 +34,7 @@
     <ClCompile Include="..\mat\src\mat.cpp" />
     <ClCompile Include="..\mat\src\p2pal.cpp" />
     <ClCompile Include="..\mat\src\requests.cpp" />
+    <ClCompile Include="..\mat\src\request_store.cpp" />
     <ClCompile Include="..\mat\src\tempdebug.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Disabled</Optimization>
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Release.MPI|x64'">Disabled</Optimization>
@@ -62,6 +63,7 @@
     <ClInclude Include="..\mat\src\p2pal.h" />
     <ClInclude Include="..\mat\src\records.h" />
     <ClInclude Include="..\mat\src\requests.h" />
+    <ClInclude Include="..\mat\src\request_store.h" />
     <ClInclude Include="..\mat\src\tevent.h" />
   </ItemGroup>
   <ItemGroup>

@@ -41,7 +41,7 @@ struct Collective_Event { // tsc_u_time is for debugging purposes only!
     std::vector<PEAT_UID> addrs;
     PEAT_Time tsc_time, tsc_u_time;
     PEAT_MPI_Request request, permanent_request;
-    Phase completion;
+    Phase ph[3];
 };
 
 struct Collective_Entry {
@@ -191,7 +191,9 @@ class Collectives : public Outputs
     std::map<int, std::map<PEAT_Collective_Record, PEAT_Collective_Clocks>> printed_collective;
     std::map<PEAT_Rank, std::map<PEAT_MPI_Request, MAT_Record>> fio_requests;
 
-    bool find_request(PEAT_Rank rank, PEAT_MPI_Request request, collective_list::iterator &coll);
+    bool add_pers_request(PEAT_Rank rank, PEAT_MPI_Request request);
+    bool remove_pers_request(PEAT_Rank rank, PEAT_MPI_Request request, Phase& ph);
+    bool find_request(PEAT_Rank rank, PEAT_MPI_Request request, bool is_persistent, collective_list::iterator& coll);
     bool update_request(PEAT_Rank rank, PEAT_MPI_Request request, const Phase &phase, collective_list::iterator &coll);
 
     bool find_request(PEAT_Rank rank, PEAT_MPI_Request request, MAT_Record *ret_it, PEAT_Bool erase);
@@ -216,6 +218,7 @@ class Collectives : public Outputs
     bool check_completion(const MAT_Collective &record);
     bool check_completion(collective_list::iterator &record);
     std::map<collective_key, collective_list_struct> coll_queues;
+    std::map<collective_key, collective_list_struct> pers_coll_queues;
     std::map<PEAT_MPI_File, PEAT_MPI_Comm> fh_comms;
     PTP *ptp;
     Communicators *com_store;

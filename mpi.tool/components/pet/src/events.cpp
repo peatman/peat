@@ -119,7 +119,6 @@ void PET_Core::attribute_progress_records(PET_Event *host)
 
 PET_Event *PET_Core::find_peer(PET_Event *event, PET_Event *host_evt, PEAT_Bool recv_part)
 {
-    PEAT_Bool r;
     std::list<Coll_Storage>::const_iterator collective;
     const PET_Coll_Event *coll_host = dynamic_cast<const PET_Coll_Event *>(host_evt); // only collective calls have peers to match against
     if (coll_host && get_coll_const(coll_host, collective)) {
@@ -369,7 +368,6 @@ PEAT_Bool PET_Core::insert_entry(PET_Event *event, PEAT_Bool check_place)
 
 HANDLE_EVENT_CODE PET_Core::handle_event(PET_Event *event)
 {
-    PEAT_MPI_Func_ID func_id = event->func_id;
     if (event->bind()) {
         if (event->ready_to_estimate()) {
             if (event->initiate()) {
@@ -421,7 +419,6 @@ void PET_Core::fill_next_event(PET_Event *event)
 
 PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MPI, String_Split &trace_line_HWC, PET_Event *host_evt, PET_Event *container)
 {
-    PEAT_Bool possible_colt_included = false;
     assert(com_store);
     assert(user_region_file);
     PET_Event *event = NULL;
@@ -456,7 +453,6 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
                 func_id < MPI_END_COMM_COLLECTIVE_GROUP) ||
                func_id == MPI_COMM_FREE_ID) {
         event = new PET_Comm_Event(this);
-        possible_colt_included = true;
     } else if ((func_id >= MPI_P2P_TRANSFER_START && func_id < MPI_P2P_TRANSFER_END) ||
                (func_id >= MPI_P2P_PERSISTENT_INIT_START && func_id < MPI_P2P_PERSISTENT_INIT_END) ||
                (func_id >= MPI_PROBE_START && func_id < MPI_PROBE_END) ||
@@ -474,11 +470,9 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
             event = new PET_Start_Event(this);
         } else {
             event = new PET_Completion_Event(this);
-            possible_colt_included = true;
         }
     } else if (func_id >= MPI_START_GENERAL_COLLECTIVE_GROUP && func_id < MPI_END_GENERAL_COLLECTIVE_GROUP) {
         event = new PET_Collective_Event(this);
-        possible_colt_included = true;
     } else if ((func_id >= CL_START_GROUP && func_id < CL_END_GROUP) || (func_id >= ZE_START_GROUP && func_id < ZE_END_GROUP)) {
         event = new PET_GPU_Event(this);
     } else if (func_id >= OMPT_START_GROUP && func_id < OMPT_END_GROUP) {
@@ -503,7 +497,7 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
     // event->assign_cache_pointers();
     // nested format: every record start is relative to the previous record at any level (the predictor follows every record);
     // legacy format: colt records are relative to their host, which keeps the predictor
-    update_time_predictor(tsc_corrector[rank], event, hdr.nested ? NULL : host_evt);
+    update_time_predictor(tsc_corrector[rank], event, NULL );
     event->e_time.func.in = ptp->get_real_time(event->e_time.func.in, rank);
     event->e_time.mpi.in = ptp->get_real_time(event->e_time.mpi.in, rank);
     event->e_time.mpi.out = ptp->get_real_time(event->e_time.mpi.out, rank);
@@ -519,37 +513,21 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
         container->nested_events.push_back(event);
         host_evt->flat_events.push_back(event);
     }
-    if (hdr.nested) { // nested format: the num_children records following this one are its children (pre-order tree)
-        PET_Event *top = host_evt ? host_evt : event;
-        for (PEAT_Signed_Num i = 0; i < hdr.num_children; i++) {
-            String_Split t_trace_line_MPI, t_trace_line_HWC;
-            PET_Event *child_event = get_event(rank, t_trace_line_MPI, t_trace_line_HWC, top, event);
-            if (child_event == NULL)
-                break; // truncated trace
-        }
-        // some records were issued from progress for another, still outstanding nonblocking collective
-        if (host_evt == NULL && event->has_nested())
-            attribute_progress_records(event);
-    } else if (possible_colt_included) { // legacy format: num_colts flat records follow the call
-        PET_Coll_Event *cevent = static_cast<PET_Coll_Event *>(event);
-        int size = (int)cevent->t_events.size();
-        for (int i = 0; i < size; i++) {
-            String_Split t_trace_line_MPI, t_trace_line_HWC;
-            PET_Event *child_event = get_event(rank, t_trace_line_MPI, t_trace_line_HWC, cevent);
-            if (child_event == NULL)
-                break;
-            cevent->put_t_event(child_event);
-        }
-        if (size > 0) {
-            // colt records issued from the progress engine are nested in the record that was spinning it
-            cevent->build_nesting();
-            // ... and some of them were issued for another, still outstanding nonblocking collective
-            attribute_progress_records(cevent);
-        }
+    PET_Event *top = host_evt ? host_evt : event;
+    for (PEAT_Signed_Num i = 0; i < hdr.num_children; i++) {
+        String_Split t_trace_line_MPI, t_trace_line_HWC;
+        PET_Event *child_event = get_event(rank, t_trace_line_MPI, t_trace_line_HWC, top, event);
+        if (child_event == NULL)
+            break; // truncated trace
     }
-
+    // some records were issued from progress for another, still outstanding nonblocking collective
+    if (host_evt == NULL && event->has_nested())
+        attribute_progress_records(event);
+#ifdef _DEBUG
+	// just to display in local variables in debugger
     PET_Node *event_node = get_pet_node(event->node);
-    PET_Rank *event_rank = get_pet_rank(event);
+#endif
+    PET_Rank* event_rank = get_pet_rank(event);
     event->o_time = event->e_time;
     if (host_evt == NULL) {
         PEAT_Clock prev_o_out, prev_e_out = 0;
@@ -668,7 +646,6 @@ void PET_Core::update_active_event_chain(PEAT_Clock sub_t, PET_Event *event)
     if (sub_t == 0)
         return;
 #endif
-    PET_Rank *pet_rank = event->get_rank();
     if (event->thread_id == 0) {
         update_active_event_chain_t0(sub_t, event);
         return;

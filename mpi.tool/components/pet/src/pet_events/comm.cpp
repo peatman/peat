@@ -45,11 +45,6 @@ PEAT_Bool PET_Comm_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_s
     extract(remotecomm, mpi_string.at(hdr.payload + 3), 16);
     extract(intercomm, mpi_string.at(hdr.payload + 4), 16);
     extract(request, mpi_string.at(hdr.payload + 5), 16);
-    if (!hdr.nested) { // legacy: number of collective transfers followed by
-        int num_colts;
-        extract(num_colts, mpi_string.at(hdr.payload + 6));
-        t_events.resize(num_colts, NULL);
-    }
     return true;
 }
 
@@ -57,8 +52,6 @@ PET_Event *PET_Comm_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ 
 {
     PET_Local_Event::write_event(gz_MPI, gz_HWC, gz_bind, "", hwc_eol);
     gz_MPI->printf(rank, ":%x:%x:%x:%x:%x", comm, newcomm, remotecomm, intercomm, request);
-    if (!nested_format())
-        gz_MPI->printf(rank, ":%d", host_event ? 0 : nested_count_total()); // legacy num_colts
     gz_MPI->printf(rank, "%s", mpi_eol);
     std::list<Coll_Storage>::iterator collective;
     if (get_core()->get_coll(this, collective)) {

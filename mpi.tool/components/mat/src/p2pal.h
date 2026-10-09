@@ -75,6 +75,10 @@ class P2PAL : public Outputs
 #endif
           int verbose = false, const std::string &begline = "MSG", const char delim = '|');
     virtual ~P2PAL();
+    // matching_queues/request_queues/waiting_events* own raw MAT_Record* that are explicitly deleted elsewhere;
+    // a shallow copy of this class would duplicate those pointers across two instances and cause double-free.
+    P2PAL(const P2PAL &) = delete;
+    P2PAL &operator=(const P2PAL &) = delete;
 
     void parse_P2PTx(PEAT_Rank rank, const Tractor_Event &event, bool print_out);
     void parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, bool increase_MPI = true);
@@ -122,6 +126,7 @@ class P2PAL : public Outputs
     request_queues_type request_queues[qt_size2]; // persistent - 0 hanged - 1 normal -  2 (hanged and normal for sends only)
     matching_event_type matching_queues[qt_size]; // send - 0 recv - 1
     waiting_event_type waiting_events;            // for recv only
+    std::map<PEAT_Rank, std::map<PEAT_MPI_Message, PEAT_MPI_Translation_Message>> matching_messages;
 #ifdef USE_FAST_CHECK
     waiting_event_type_f waiting_events_f; // for recv only
 #endif
@@ -155,8 +160,8 @@ class P2PAL : public Outputs
     MAT_Record *check_waiting_queue(PEAT_Rank rank, PEAT_MPI_Request request);
     bool match_peer(matching_event_type &queues, std::list<MAT_Record *>::iterator &ret_it, const MAT_Record &input_record) const;
     bool add_pers_req_start(const PEAT_Rank rank, MAT_Record *record);
-    PEAT_Bool remove_pers_req(const PEAT_Rank rank, const PEAT_MPI_Request request, MAT_Record **req_it);
-    PEAT_Bool remove_req(const PEAT_Rank rank, const PEAT_MPI_Request request);
+    PEAT_Bool remove_pers_request(const PEAT_Rank rank, const PEAT_MPI_Request request, MAT_Record **req_it);
+    PEAT_Bool remove_request(const PEAT_Rank rank, const PEAT_MPI_Request request);
     void process_unbound_events();
     PEAT_Signed_Num check_unbound_events();
     bool is_wild_card(const MAT_Record &r) const
@@ -182,9 +187,9 @@ class P2PAL : public Outputs
     void send_P2PTx(PEAT_Rank rank, const Tractor_Event &event);
     void process_remote_event(PEAT_Signed_Num size, PEAT_Rank src);
     PEAT_Num check_completions();
-#endif
     std::map<PEAT_Rank, std::set<PEAT_MPI_Request>> thrown_away_requests;
     std::map<PEAT_Rank, std::set<PEAT_MPI_Request>> thrown_away_pers_requests;
+#endif
 
     friend class Request;
 };
