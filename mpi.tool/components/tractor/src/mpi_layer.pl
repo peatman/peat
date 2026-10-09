@@ -400,7 +400,7 @@ $comm="event->$basic_struct.comm=mpi_internal_get_comm_handle_from_comm(comm);" 
 #$comm="event->$basic_struct.comm=last_coll_comm;" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/;
 $get_datasize="${mpi_internal}T_Type_size(type,&data_size);"if $properties=~/BYTES/;
 $transfer_bytes="event->$basic_struct.transfer_bytes=(count*data_size);"if $properties=~/BYTES/;
-$transfer_bytes="event->$basic_struct.transfer_bytes=((long long)partitions*(long long)count*data_size);" if $properties=~/BYTES/ && $line[3]=~/\bint partitions\b/; # partitioned P2P (MPI_Psend_init/MPI_Precv_init): total bytes over all partitions
+$transfer_bytes="event->$basic_struct.transfer_bytes=((long long)partitions*(long long)count*data_size);" if $properties=~/BYTES/ && $properties=~/PARTITIONS/; 
 $transfer_bytes="event->$basic_struct.transfer_bytes=size;"if $properties=~/SIZE/;
 $event_buf="
         event->$basic_struct.buf.virt_addr=buf;
