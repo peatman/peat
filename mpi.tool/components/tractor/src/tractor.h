@@ -264,8 +264,8 @@ struct tractor : t_base_event {
     int t_check_chain(pid_t tid, int level);
 
     int write_trace(void);
-    PEAT_Rank get_real_rank(MPI_Comm comm, PEAT_Rank rank_in, PEAT_Clock tsc);
-    PEAT_MPI_Comm get_global_comm_id(MPI_Comm comm, PEAT_Clock tsc);
+    PEAT_Rank get_real_rank(MPI_Comm comm, PEAT_Rank rank_in, PEAT_Clock tsc, int is_internal);
+    PEAT_MPI_Comm get_global_comm_id(MPI_Comm comm, PEAT_Clock tsc, int is_internal);
     num_processed_events write_main_files(/*,user_region_store &user_region_store*/);
 
     //    void calculate_us_sd_dev(user_region_store &user_region_store);

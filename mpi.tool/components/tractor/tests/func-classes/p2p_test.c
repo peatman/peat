@@ -275,6 +275,7 @@ static void mpi4_features(int it)
     MPI_Request reqs[2];
     MPI_Status st;
     MPI_Count cnt;
+    int icnt;
     int i, flag;
     const int parts = 4;
 
@@ -283,6 +284,8 @@ static void mpi4_features(int it)
     /* Isendrecv / Isendrecv_replace */
     MPI_Isendrecv(sbuf, N, MPI_INT, right, 90, rbuf, N, MPI_INT, left, 90, MPI_COMM_WORLD, &reqs[0]);
     MPI_Wait(&reqs[0], &st);
+    MPI_Get_count(&st, MPI_INT, &icnt);
+    EXPECT(icnt == N, "Get_count wrong");
     check_int(rbuf, N, left + it, "Isendrecv");
     memcpy(rbuf, sbuf, sizeof(rbuf));
     MPI_Isendrecv_replace(rbuf, N, MPI_INT, right, 91, left, 91, MPI_COMM_WORLD, &reqs[0]);

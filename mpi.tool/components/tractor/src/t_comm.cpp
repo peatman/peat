@@ -170,16 +170,27 @@ size_t t_local_comms::pack_local(char *ptr, size_t total_size, int is_internal)
 {
     __DEBUG_PROLOG_COMM_LAYER__
     size_t ptr_it = 0;
-    for (int i = 3; i < index; i++) {
-        std::list<t_comm>::const_iterator result;
-        bool bFound = find_by_idx(i, is_internal, result);
-        if (bFound) {
-            ptr_it += result->pack(ptr + ptr_it);
-            // debug_printf("Comm=%x(%d) packed, (%ld,%ld),%d(%d)\n",result->comm,result->idx,result->begin_time,result->end_time,total_size,ptr_it);
+    if (is_internal) {
+        for (int i = 0; i < internal_index; i++) {
+            std::list<t_comm>::const_iterator result;
+            bool bFound = find_by_idx(i, 1, result);
+            if (bFound) {
+                ptr_it += result->pack(ptr + ptr_it);
+                // debug_printf("Comm=%x(%d) packed, (%ld,%ld),%d(%d)\n",result->comm,result->idx,result->begin_time,result->end_time,total_size,ptr_it);
+            }
+        }
+    } else {
+        for (int i = 0; i < user_index; i++) {
+            std::list<t_comm>::const_iterator result;
+            bool bFound = find_by_idx(i, 0, result);
+            if (bFound) {
+                ptr_it += result->pack(ptr + ptr_it);
+                // debug_printf("Comm=%x(%d) packed, (%ld,%ld),%d(%d)\n",result->comm,result->idx,result->begin_time,result->end_time,total_size,ptr_it);
+            }
         }
     }
     if (ptr_it != total_size) {
-        debug_printf("Sizes mismatch: %d!=%d.Index=%d\n", ptr_it, total_size, index);
+        debug_printf("Sizes mismatch: %d!=%d. Index=%d\n", ptr_it, total_size, user_index + internal_index);
     }
     assert(ptr_it == total_size);
     __DEBUG_EPILOG_COMM_LAYER__
@@ -249,33 +260,31 @@ bool t_local_comms::has_local_comm_id(const MPI_Comm comm, const PEAT_Clock cur_
     return false;
 }
 
-/* unlike get_local_comm_id, only searches the store matching is_internal: handle recycling means
- * the same value can independently be "open" in both stores at once, so a caller that already
- * knows which pool a comm belongs to (e.g. unpack_global, via the gathered r_comm's is_internal)
- * must not let the other pool's unrelated entry win a false match */
 bool t_local_comms::get_local_comm_id_in_store(const MPI_Comm comm, const PEAT_Clock cur_time, int is_internal, std::list<t_comm>::iterator &result)
 {
     if (comm == 0 || comm == MPI_COMM_NULL || comm == MPI_COMM_SELF || comm == MPI_COMM_WORLD) return false;
     return find_comm_in_map(is_internal ? mpi_internal_comm_store : comm_store, comm, cur_time, result);
 }
 
-bool t_local_comms::get_local_comm_id(const MPI_Comm comm, const PEAT_Clock cur_time, std::list<t_comm>::iterator &result)
+bool t_local_comms::get_local_comm_id(const MPI_Comm comm, const PEAT_Clock cur_time, int is_internal, std::list<t_comm>::iterator &result)
 {
     __DEBUG_PROLOG_COMM_LAYER__
     debug_printf("Obtaining global communicator for %x after TSC time %lld at rank %d (commstore %p)\n", (int) comm, cur_time, t_mpi_rank,(void *) &comm_store);
     debug_printf("Obtaining global communicator for %x after TSC time %lld at rank %d (commstore size is %d)\n", (int) comm, cur_time, t_mpi_rank,comm_store.size());
     if (comm != 0 && comm != MPI_COMM_NULL && comm != MPI_COMM_SELF && comm != MPI_COMM_WORLD) {
-        /* user-visible comms take priority, but internal (tractor-created) comms must resolve too */
-        if (find_comm_in_map(comm_store, comm, cur_time, result)) {
-            __DEBUG_EPILOG_COMM_LAYER__
-            return true;
+        if (is_internal) {
+            if (find_comm_in_map(mpi_internal_comm_store, comm, cur_time, result)) {
+                __DEBUG_EPILOG_COMM_LAYER__
+                return true;
+            }
+        } else {
+            if (find_comm_in_map(comm_store, comm, cur_time, result)) {
+                __DEBUG_EPILOG_COMM_LAYER__
+                return true;
+            }
         }
-        if (find_comm_in_map(mpi_internal_comm_store, comm, cur_time, result)) {
-            __DEBUG_EPILOG_COMM_LAYER__
-            return true;
-        }
-        std::cerr << "Error in communicator t_comm::get_local_comm_id function. Can't find communicator " << std::hex << comm << " after TSC time " << std::dec << cur_time << " at rank " << t_mpi_rank << "\n";
-        debug_printf("Error in communicator t_comm::get_local_comm_id function. Can't find communicator %x after TSC time %lld at rank %d\n", (int) comm, cur_time, t_mpi_rank);
+        std::cerr << "Error in communicator t_comm::get_local_comm_id function. Can't find communicator " << std::hex << comm << " after TSC time " << std::dec << cur_time << " at rank " << t_mpi_rank << ".\n";
+        debug_printf("Error in communicator t_comm::get_local_comm_id function. Can't find communicator %x after TSC time %lld at rank %d internal %d.\n", (int) comm, cur_time, t_mpi_rank, is_internal);
         // print_backtrace();
         // assert(!"Can't find communicator");
     }
@@ -295,7 +304,8 @@ bool t_local_comms::find_by_idx(const int idx, int is_internal, std::list<t_comm
             }
         }
     }
-    debug_printf("Can't find comm with index=%d\n", idx);
+    debug_printf("Can't find comm with index=%d internal = %d\n", idx, is_internal);
+    // print_backtrace();
     __DEBUG_EPILOG_COMM_LAYER__
     return false;
 }
@@ -324,7 +334,7 @@ void t_local_comms::intra_comm_begin(const MPI_Comm newcomm, const PEAT_Clock be
         t_comm comm_elem;
         comm_elem.comm = newcomm;
         comm_elem.begin_time = begin;
-        comm_elem.idx = index;
+        comm_elem.idx = is_internal ? internal_index : user_index;
         comm_elem.kind = T_MPI_INTRA_COMM;
         comm_elem.is_internal = is_internal;
 
@@ -336,29 +346,17 @@ void t_local_comms::intra_comm_begin(const MPI_Comm newcomm, const PEAT_Clock be
         PMPI_Group_translate_ranks(newcomm_group, newcomm_size, comm_world_ranks, comm_world_group, newcomm_ranks);
         comm_elem.l_comm2world_ranks.resize(newcomm_size, -1);
         memcpy(comm_elem.l_comm2world_ranks.data(), newcomm_ranks, newcomm_size * sizeof(PEAT_Rank));
-        // move these two lines inside (don't store empty comms)
-        bool consumed_idx = false;
         newcomm_lock.lock();
         if (is_internal) {
             mpi_internal_comm_store[newcomm].push_back(comm_elem);
         } else {
-            /* this handle may already carry a still-open MPI_INTERNAL_COMM__BOOTSTRAP placeholder,
-             * created from inside MPIR_Comm_commit before this authoritative registration could run;
-             * reuse its idx/begin_time (don't consume a fresh idx, don't lose the earlier begin_time
-             * that made the comm resolvable during its own pre-commit internal traffic) */
-            /*std::list<t_comm> &pending = mpi_internal_comm_store[newcomm];
-            if (!pending.empty() && -1 == pending.back().end_time) {
-                comm_elem.idx = pending.back().idx;
-                comm_elem.begin_time = pending.back().begin_time;
-                pending.pop_back();
-                consumed_idx = true;
-            }*/
             comm_store[newcomm].push_back(comm_elem);
         }
         newcomm_lock.unlock();
         debug_printf("New communicator (%x) arrived:size=%d,index=%d at rank %d, starting from %lld, tid=%ld.\n", newcomm, newcomm_size, comm_elem.idx, t_mpi_rank, comm_elem.begin_time, (long) syscall(SYS_gettid));
         PMPI_Group_free(&newcomm_group);
-        if (!consumed_idx) ++index;
+        user_index += 1-is_internal;
+        internal_index += is_internal;
     }
     __DEBUG_EPILOG_COMM_LAYER__
 }
@@ -370,7 +368,7 @@ void t_local_comms::inter_comm_begin(const MPI_Comm newcomm, const PEAT_Clock be
     if (MPI_COMM_NULL != newcomm) {
         comm_elem.comm = newcomm;
         comm_elem.begin_time = begin;
-        comm_elem.idx = index;
+        comm_elem.idx = is_internal ? internal_index : user_index;
         comm_elem.kind = T_MPI_INTER_COMM;
         comm_elem.is_internal = is_internal;
         PEAT_Rank newcomm_l_size;
@@ -389,27 +387,18 @@ void t_local_comms::inter_comm_begin(const MPI_Comm newcomm, const PEAT_Clock be
         comm_elem.r_comm2world_ranks.resize(newcomm_r_size, -1);
         memcpy(comm_elem.l_comm2world_ranks.data(), newcomm_l_ranks, newcomm_l_size * sizeof(PEAT_Rank));
         memcpy(comm_elem.r_comm2world_ranks.data(), newcomm_r_ranks, newcomm_r_size * sizeof(PEAT_Rank));
-        // move these two lines inside (don't store empty comms)
-        bool consumed_idx = false;
         newcomm_lock.lock();
         if (is_internal) {
             mpi_internal_comm_store[newcomm].push_back(comm_elem);
         } else {
-            /* see intra_comm_begin: reuse any still-open BOOTSTRAP placeholder's idx/begin_time */
-            /* std::list<t_comm> &pending = mpi_internal_comm_store[newcomm];
-            if (!pending.empty() && -1 == pending.back().end_time) {
-                comm_elem.idx = pending.back().idx;
-                comm_elem.begin_time = pending.back().begin_time;
-                pending.pop_back();
-                consumed_idx = true;
-            } */
             comm_store[newcomm].push_back(comm_elem);
         }
         newcomm_lock.unlock();
         debug_printf("New Inter communicator (%x) arrived:size=%d,%d ,index=%d at rank %d, starting from %lld.\n", newcomm, newcomm_l_size, newcomm_r_size, comm_elem.idx, t_mpi_rank, comm_elem.begin_time);
         PMPI_Group_free(&newcomm_l_group);
         PMPI_Group_free(&newcomm_r_group);
-        if (!consumed_idx) ++index;
+        user_index += 1-is_internal;
+        internal_index += is_internal;
     }
     __DEBUG_EPILOG_COMM_LAYER__
 }
@@ -431,11 +420,6 @@ void t_local_comms::comm_end(const MPI_Comm comm, const PEAT_Clock end, int is_i
     __DEBUG_EPILOG_COMM_LAYER__
 }
 
-void t_local_comms::track_internal_comm(const MPI_Comm comm, const PEAT_Clock begin) {
-    std::list<t_comm>::iterator result;
-    if (get_local_comm_id(comm, begin, result)) return; //user space comm exists
-}
-
 #define PRINT_PARAMETERS(width, string) int(width + strlen(string)) / 2, string, int(width - strlen(string)) / 2, ""
 #define SEPARATOR(width)                   \
     gzprintf(file, "%d:", PEAT_RT_Remark); \
@@ -444,29 +428,16 @@ void t_local_comms::track_internal_comm(const MPI_Comm comm, const PEAT_Clock be
     }                                      \
     gzprintf(file, "\n")
 
-void t_local_comms::print_comms_report(gzFile file, const PEAT_Record_Type line_prefix) const
+/* print one data row per t_comm entry across every (MPI_Comm -> list<t_comm>) store */
+static int print_comms_rows(gzFile file, const PEAT_Record_Type line_prefix, const int name_id_len, const int field_len, const int field_len2,
+                             const std::map<MPI_Comm, std::list<t_comm>> &store, int start_idx)
 {
-    __DEBUG_PROLOG_COMM_LAYER__
-    const int name_id_len = 4;
-    const int field_len = 14;
-    const int field_len2 = 24;
-    const int separator_length = 2 * name_id_len + 1 + field_len + 1 + 3 * field_len2 + 3;
-    SEPARATOR(separator_length);
-    gzprintf(file, "%d", PEAT_RT_Remark);
-    gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(name_id_len, "ID"));
-    gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(field_len, "Communicator"));
-    gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(field_len2, "Begin time"));
-    gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(field_len2, "End time"));
-    gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(name_id_len, "Size (local)"));
-    gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(name_id_len, "Size (Remote)"));
-    gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(field_len2, "Ranks (MPI_COMM_WORLD)"));
-    gzprintf(file, "\n");
-    SEPARATOR(separator_length);
-    for (std::map<MPI_Comm, std::list<t_comm>>::const_iterator it_comm_uniq = comm_store.begin(); it_comm_uniq != comm_store.end(); ++it_comm_uniq) {
-        for (std::list<t_comm>::const_iterator it = it_comm_uniq->second.begin(); it != it_comm_uniq->second.end(); ++it) {
+    int printed_records = 0;
+    for (std::map<MPI_Comm, std::list<t_comm>>::const_iterator it_comm_uniq = store.begin(); it_comm_uniq != store.end(); ++it_comm_uniq) {
+        for (std::list<t_comm>::const_iterator it = it_comm_uniq->second.begin(); it != it_comm_uniq->second.end(); ++it,++printed_records) {
             const t_comm &com = *it;
             gzprintf(file, "%d", line_prefix);
-            gzprintf(file, ":%*x", name_id_len, com.idx);
+            gzprintf(file, ":%*x", name_id_len, com.idx + start_idx);
             gzprintf(file, ":%*x", field_len, com.comm);
             gzprintf(file, ":%*lld", field_len2, com.begin_time);
             gzprintf(file, ":%*lld", field_len2, com.end_time);
@@ -489,6 +460,30 @@ void t_local_comms::print_comms_report(gzFile file, const PEAT_Record_Type line_
             gzprintf(file, "\n");
         }
     }
+    return printed_records;
+}
+
+void t_local_comms::print_comms_report(gzFile file, const PEAT_Record_Type line_prefix) const
+{
+    __DEBUG_PROLOG_COMM_LAYER__
+    const int name_id_len = 4;
+    const int field_len = 14;
+    const int field_len2 = 24;
+    const int separator_length = 2 * name_id_len + 1 + field_len + 1 + 3 * field_len2 + 3;
+    SEPARATOR(separator_length);
+    gzprintf(file, "%d", PEAT_RT_Remark);
+    gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(name_id_len, "ID"));
+    gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(field_len, "Communicator"));
+    gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(field_len2, "Begin time"));
+    gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(field_len2, "End time"));
+    gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(name_id_len, "Size (local)"));
+    gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(name_id_len, "Size (Remote)"));
+    gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(field_len2, "Ranks (MPI_COMM_WORLD)"));
+    gzprintf(file, "\n");
+    SEPARATOR(separator_length);
+    int start_idx=print_comms_rows(file, line_prefix, name_id_len, field_len, field_len2, comm_store, 3);
+    SEPARATOR(separator_length);
+    print_comms_rows(file, line_prefix, name_id_len, field_len, field_len2, mpi_internal_comm_store, start_idx + 3);
     SEPARATOR(separator_length);
     __DEBUG_EPILOG_COMM_LAYER__
 }

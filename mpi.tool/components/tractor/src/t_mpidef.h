@@ -60,10 +60,14 @@ static int __msl_record_requests(const int tid, const int level, const MPI_Reque
 #define ptractor_status status
 #endif
 
-#define get_rank_from_req(x, y) (y)
+#define get_rank_from_comm(x, y) (y)
 // #define get_rank_from_req_mpi_internal(x,y) mpi_internal_request_translate_rank(x,y)
-#define get_rank_from_req_mpi_internal(x, y) mpi_internal_comm_translate_rank(x, y)
-#define get_rank_from_req_mpi_internal_v(x, y) mpi_internal_comm_translate_rank_verbose(x, y)
+// #define mpi_internal_get_rank_from_comm(x, y) mpi_internal_comm_translate_rank(x, y)
+// #define mpi_internal_get_rank_from_comm_v(x, y) mpi_internal_comm_translate_rank_verbose(x, y)
+
+#define mpi_internal_get_rank_from_comm(x, y) (y)
+#define mpi_internal_get_rank_from_comm_v(x, y) (y)
+
 // #define get_rank_from_req_mpi_internal(x,y) (y)
 #define is_empty(status) (status->MPI_TAG == MPI_ANY_TAG || status->MPI_SOURCE == MPI_ANY_SOURCE)
 
@@ -246,7 +250,7 @@ void T_MPID_Request_release(MPID_Request *request)
         children_base = __msl_child_base(tid, level);
         __msl_allocate_event(tid, level, 1, &event, &counters);
         mpi_req = __msl_record_drequest(tid, level, (const MPID_Request *)request);
-
+        if (mpi_req != 0) PMPI_Request_get_status(mpi_req, &flag, &status);
 #ifdef _HWCOUNTERS_ENABLED_
         gt_info(hwc).get_all_counters(&counters.hwcs[0]);
 #endif
@@ -267,11 +271,10 @@ void T_MPID_Request_release(MPID_Request *request)
         __msl_leave_call(tid);
     if (__builtin_expect((counting_permission[MPID_REQUEST_RELEASE_ID_THROUGH] > 0 && !l_skip_parse), 1)) {
         tsc_mpi_exit = peat_get_time();
-        stack_unwind_mpi_internal(gt_info(max_ret_level), counters.addrs, gt_info(ret_levels));
+        mpi_internal_stack_unwind(gt_info(max_ret_level), counters.addrs, gt_info(ret_levels));
         event->func_id = MPID_REQUEST_RELEASE_ID_THROUGH;
         event->num_children += (short)(__msl_child_base(tid, level) - children_base);
         event->requests.input_request_num = 1;
-        // event->requests.triggered_request_num=1;
         event->requests.request_addr = (PEAT_Addr)request;
 
         event->tscs[0] = tsc_entry;
@@ -283,7 +286,16 @@ void T_MPID_Request_release(MPID_Request *request)
         gt_info(mprof).get_mem_status(&counters.mems[1]);
 #endif
 
-        event->requests.flag = 1;
+        event->requests.flag = flag;
+        if (event->requests.flag) { 
+            event->requests.triggered_request_num=1;
+            long long TSC[4];
+            TSC[0]=0;
+            TSC[1]=status.MPI_TAG;
+            TSC[2]=get_rank_from_comm(local_comm,status.MPI_SOURCE);
+            TSC[3]=MPI_STATUS_GET_COUNT_R(status);
+           __msl_record_longs(tid,level,TSC,4);
+        }
 
         tsc_exit = peat_get_time();
         event->tscs[2] = tsc_mpi_exit;
@@ -373,14 +385,14 @@ int Pompi_coll_p2p_free(MPI_Request *request);
 
 int mpi_internal_type_size(MPI_Datatype datatype, MPI_Aint * size); // mpich5 does have separate internal datatypes
 
-int T_Type_size_mpi_internal(MPI_Datatype datatype, MPI_Aint *size)
+int mpi_internal_T_Type_size(MPI_Datatype datatype, MPI_Aint *size)
 {
     debug_printf("T_Type_size_mpi_internal (5) called with %x %p\n", (int) datatype, size);
 
     return mpi_internal_type_size(datatype, size);
 }
 #else //mpich based but not  mpich 5
-int T_Type_size_mpi_internal(MPI_Datatype datatype, MPI_Aint *size)
+int mpi_internal_T_Type_size(MPI_Datatype datatype, MPI_Aint *size)
 {
     debug_printf("T_Type_size_mpi_internal (4) called with %x %p\n", (int) datatype, size);
 
@@ -389,15 +401,11 @@ int T_Type_size_mpi_internal(MPI_Datatype datatype, MPI_Aint *size)
 
 #endif
 #else // openmpi
-int T_Type_size_mpi_internal(MPI_Datatype datatype, MPI_Aint *size)
+int mpi_internal_T_Type_size(MPI_Datatype datatype, MPI_Aint *size)
 {
     debug_printf("T_Type_size_mpi_internal (4) called with %x %p\n", (int) datatype, size);
 
     return PMPI_Type_size(datatype, (int *) size);
 }
 #endif
-void track_internal_comm(const MPI_Comm comm,const PEAT_Clock tsc_entry) {
-    gt_info(local_comms)->track_internal_comm(comm, tsc_entry);
-}
-
 #endif //__T_MPIDEF_H__

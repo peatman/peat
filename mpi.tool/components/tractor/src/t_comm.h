@@ -138,7 +138,7 @@ struct r_comm {
     }
 };
 struct t_local_comms {
-    t_local_comms() : index(3), comm_world_group(MPI_GROUP_EMPTY), comm_world_size(0), comm_world_ranks(NULL)
+    t_local_comms() : user_index(0), internal_index(0), comm_world_group(MPI_GROUP_EMPTY), comm_world_size(0), comm_world_ranks(NULL)
     {
         __DEBUG_PROLOG_COMM_LAYER__
         __DEBUG_EPILOG_COMM_LAYER__
@@ -168,11 +168,10 @@ struct t_local_comms {
         __DEBUG_EPILOG_COMM_LAYER__
     }
     void comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, int is_internal);
-    void track_internal_comm(const MPI_Comm comm, const PEAT_Clock begin);
     void intra_comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, int is_internal);
     void inter_comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, int is_internal);
     void comm_end(const MPI_Comm comm, const PEAT_Clock end, int is_internal);
-    bool get_local_comm_id(const MPI_Comm comm, const PEAT_Clock cur_time, std::list<t_comm>::iterator &result);
+    bool get_local_comm_id(const MPI_Comm comm, const PEAT_Clock cur_time, int is_internal, std::list<t_comm>::iterator &result);
     bool get_local_comm_id_in_store(const MPI_Comm comm, const PEAT_Clock cur_time, int is_internal, std::list<t_comm>::iterator &result);
     bool has_local_comm_id(const MPI_Comm comm, const PEAT_Clock cur_time);
     bool find_by_idx(const int idx, int is_internal, std::list<t_comm>::const_iterator &result);
@@ -183,12 +182,12 @@ struct t_local_comms {
     size_t pack_local(char *ptr, size_t total_size, int is_internal);
     size_t unpack_global(char *ptr, size_t total_size);
     // PEAT_MPI_Comm get_global_comm_id(const MPI_Comm comm, const PEAT_Clock cur_time) const;
-    PEAT_MPI_Comm get_global_comm_id(const MPI_Comm comm, const PEAT_Clock tsc)
+    PEAT_MPI_Comm get_global_comm_id(const MPI_Comm comm, const PEAT_Clock tsc, int is_internal)
     {
         __DEBUG_PROLOG_COMM_LAYER__
         std::list<t_comm>::iterator result;
         if (comm==0) return 0;
-        bool bFound = get_local_comm_id(comm, tsc, result);
+        bool bFound = get_local_comm_id(comm, tsc, is_internal, result);
         if (bFound) {
             if (result->gid >= 0) {
                __DEBUG_EPILOG_COMM_LAYER__
@@ -203,7 +202,7 @@ struct t_local_comms {
       __DEBUG_EPILOG_COMM_LAYER__
       return (PEAT_MPI_Comm) comm;
     }
-    int index;
+    int user_index,internal_index;
     int comm_world_size;
     int *comm_world_ranks;
     MPI_Group comm_world_group; // MPI_GROUP_EMPTY

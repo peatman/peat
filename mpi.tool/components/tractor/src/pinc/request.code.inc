@@ -74,7 +74,7 @@ $prototype {
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
         tsc_mpi_exit = peat_get_time();
         $reused if (event==NULL) __msl_allocate_event(tid,level,1,&event,&counters);
-        if (!reused) stack_unwind$mpi_internal(gt_info(max_ret_level),counters.addrs,gt_info(ret_levels));
+        if (!reused) ${mpi_internal}stack_unwind(gt_info(max_ret_level),counters.addrs,gt_info(ret_levels));
         if (!reused) $record_input_request
         event->func_id = $funcid_through;
         event->num_children += (short)(__msl_child_base(tid,level) - children_base);
