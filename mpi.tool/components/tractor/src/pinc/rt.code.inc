@@ -53,6 +53,7 @@ $prototype {
         __msl_allocate_event(tid,level,1,&event,&counters); //unconditional allocate
         $get_datasize
         $if_ignore_status
+        $pre_event_message
         counting_permit+=2*counting_permission_pcontrol[$funcid_through];
 #ifdef _HWCOUNTERS_ENABLED_
         gt_info(hwc).get_all_counters(l_hwcs);
@@ -80,15 +81,14 @@ $prototype {
         $transfer_bytes
         $comm
         $tag_peer
-        $message
         $handle
         $offset
         $event_flag
         $event_request
-        $event_message
         $event_status_begin
         $event_status
         $event_status_end
+        $post_event_message
         $internal_comm_tracking
 #ifdef _TRACTOR_EXTRA_FIELDS_
         $event_buf

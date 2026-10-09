@@ -356,8 +356,8 @@ my $event_status;
 my $if_ignore_status;
 my $declare_ignore_status;
 my $tag_peer;
-my $message;
-my $event_message;
+my $pre_event_message;
+my $post_event_message;
 my $comm;
 my $transfer_bytes;
 my $get_datasize;
@@ -383,13 +383,14 @@ $tag_peer="$tag_peer event->$basic_struct.peer=peer_rank;" if $properties=~/PEER
 my $mpi_internal_mpid_comm = ($properties=~/MPI_INTERNAL/ && $properties!~/CLASS_PROBE/);
 $tag_peer="$tag_peer event->$basic_struct.peer=mpi_internal_get_rank_from_comm(comm,peer_rank);" if $properties=~/PEER/ && $mpi_internal_mpid_comm;
 
-$message="event->$basic_struct.message=*message;" if $properties=~/MESSAGE/ && $properties=~/CLASS_P2P/;
 $handle="event->$basic_struct.window=win;" if $properties=~/HWINDOW/ && $properties=~/CLASS_OSC/;
 $handle="event->$basic_struct.window=*win;" if $properties=~/PHWINDOW/ && $properties=~/CLASS_OSC/;
 $handle="event->$basic_struct.fh=fh;" if $properties=~/FILE_HANDLE/ && $properties=~/CLASS_FIO/;
 $handle="event->$basic_struct.fh=*fh;" if $properties=~/FILE_POINTER_HANDLE/ && $properties=~/CLASS_FIO/;
 $offset="event->$basic_struct.offset=offset;" if $properties=~/OFFSET/ && $properties=~/CLASS_FIO/;
-$event_message="event->$basic_struct.message=*message;" if $properties=~/MESSAGE/ && $properties=~/CLASS_PROBE/;
+$pre_event_message="event->$basic_struct.message=*message;" if $properties=~/MESSAGE/ && $properties=~/CLASS_P2P/;
+$post_event_message="event->$basic_struct.message=*message;" if $properties=~/MESSAGE/ && $properties=~/CLASS_PROBE/;
+
 $comm="event->$basic_struct.comm=comm;" if $properties=~/COMM/;
 #$comm="event->$basic_struct.comm=(long long) comm;" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/ ;
 #$comm="event->$basic_struct.comm=MPI_COMM_WORLD;" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/;
