@@ -44,7 +44,7 @@ P2PAL::P2PAL(File_Storage_GZ *f, int s, int pos,
     gpu = NULL;
 }
 
-void P2PAL::Initialize(PTP *p, Communicators *c, Request_Store *rs, Request *r, GPU *g, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
+void P2PAL::initialize(PTP *p, Communicators *c, Request_Store *rs, Request *r, GPU *g, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
 {
     assert(c);
     assert(p);
@@ -55,7 +55,7 @@ void P2PAL::Initialize(PTP *p, Communicators *c, Request_Store *rs, Request *r, 
     request_func_store = r;
     gpu = g;
     messages_bound.resize(ptp->get_rank_num());
-    Outputs::Initialize(MPI, HWC, bind);
+    Outputs::initialize(MPI, HWC, bind);
 }
 
 P2PAL::~P2PAL()
@@ -456,13 +456,7 @@ void P2PAL::parse_P2PTx(PEAT_Rank rank, const Tractor_Event &event, bool print_o
         if (event.P2P.request) {
             record->request = event.P2P.request;
         }
-        Phase ph_tx;
-        ph_tx.func_id = event.func_id;
-        ph_tx.thread_id = event.thread_id;
-        ph_tx.tsc_time = event.tsc_time;
-        ph_tx.tsc_u_time = event.tsc_u_time;
-        ph_tx.addrs = event.addrs;
-        ph_tx.ids = event.ids;
+        Phase ph_tx(event);
         record->ph[0] = record->ph[1] = record->ph[2] = ph_tx;
         if (print_out)
             print_P2PL(event);
@@ -556,13 +550,7 @@ void P2PAL::parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, bool increas
         if (event.P2P.request) {
             record->request = event.P2P.request;
         }
-        Phase ph_rx;
-        ph_rx.func_id = event.func_id;
-        ph_rx.thread_id = event.thread_id;
-        ph_rx.tsc_time = event.tsc_time;
-        ph_rx.tsc_u_time = event.tsc_u_time;
-        ph_rx.addrs = event.addrs;
-        ph_rx.ids = event.ids;
+        Phase ph_rx(event);
         record->ph[0] = record->ph[1] = record->ph[2] = ph_rx;
         print_P2PL(event);
         if(global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) { // add persistent request to queue and finish

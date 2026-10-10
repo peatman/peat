@@ -45,7 +45,7 @@ class Mat
     Collectives *coll_func_store;
     P2PAL *p2p_func_store;
     GPU *gpu_func_store;
-    Comm *com_func_store;
+    Comm *comm_func_store;
     Request *request_func_store;
     Request_Store* req_store;
     File_Storage_GZ *input_MPI;

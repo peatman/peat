@@ -42,14 +42,14 @@ Collectives::Collectives(int pos
 #endif
 }
 
-void Collectives::Initialize(PTP *p, Communicators *c, Request_Store *r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
+void Collectives::initialize(PTP *p, Communicators *c, Request_Store *r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
 {
     assert(c);
     assert(p);
     comm_store = c;
     ptp = p;
     req_store = r;
-    Outputs::Initialize(MPI, HWC, bind);
+    Outputs::initialize(MPI, HWC, bind);
 }
 
 Collectives::~Collectives()
@@ -689,7 +689,7 @@ PEAT_Signed_Num Collectives::check_unbound_events()
 }
 #endif
 
-Phase& MAT_Collectives_Record :: get_ph(int idx) { return coll_event->ph[idx]; }
+Phase* MAT_Collectives_Record :: get_ph(int idx) { return &coll_event->ph[idx]; }
 MAT_Collectives_Record::MAT_Collectives_Record(const MAT_Collectives_Record& s):MAT_Record(s) {
     coll_event = new Collective_Event(*s.coll_event);
 }

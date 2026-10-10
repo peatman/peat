@@ -39,23 +39,47 @@ Comm::Comm(
 	req_store = NULL;
 }
 
-void Comm::Initialize(PTP *p, Communicators *c, Request_Store *r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
+void Comm::initialize(PTP *p, Communicators *c, Request_Store *rs, Request* r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
 {
 	comm_store = c;
 	ptp = p;
-	req_store = r;
-	Outputs::Initialize(MPI, HWC, bind);
-}
-
-Comm::~Comm()
-{
-	ptp = 0;
-	comm_store = 0;
+	req_store = rs;
+	request_func_store = r;
+	Outputs::initialize(MPI, HWC, bind);
 }
 
 void Comm::parse_comm(const PEAT_Rank rank, Tractor_Event &event)
 {
+    if(event.Comms.request > 0) {
+        MAT_Request_Store_Record req;
+        MAT_Comm_Record* record = new (MAT_Comm_Record);
+        record->pc_level = event.PControl.ctl;
+        record->comm = event.Comms.comm;
+        record->new_comm = event.Comms.newcomm;
+        record->remote_comm = event.Comms.remote_comm;
+        record->inter_comm = event.Comms.inter_comm;
+        record->rank = rank;
+        record->request = event.Comms.request;
+        record->ph = Phase(event);
+        req.request_type = REQUEST_TYPE_USER_COMM;
+        req.record = record;
+        req_store->add_request(rank, event.Comms.request, &req);
+    }
     print_comm_out(event);
+}
+bool Comm::update_request(const PEAT_Rank rank, PEAT_MPI_Request request, const Phase& phase, bool is_remote)
+{
+    MAT_Comm_Record* record = NULL;
+    MAT_Request_Store_Record ret_it;
+    if(request > 0) {
+        if(req_store->find_request(rank, request, REQUEST_TYPE_USER_COMM, &ret_it, true)) { //find and delete the request from the store, as it's being completed
+            record = static_cast<MAT_Comm_Record*>(ret_it.record);
+            request_func_store->print_req_bind(rank, request, record->ph, phase, is_remote);
+            delete ret_it.record;
+            return true;
+        }
+    }
+    return false;
 }
 
 void Comm::print_comm_out(const Tractor_Event &event)

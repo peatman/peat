@@ -27,6 +27,7 @@
 #include "ptp.h"
 #include "tevent.h"
 #include "request_store.h"
+#include "requests.h"
 
 class Comm : public Outputs
 {
@@ -38,16 +39,17 @@ class Comm : public Outputs
         #endif
         */
          int v = false);
-    ~Comm();
 
-    void Initialize(PTP *p, Communicators *c, Request_Store *r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
+    void initialize(PTP *p, Communicators *c, Request_Store *rs, Request* r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
 
     void parse_comm(const PEAT_Rank rank, Tractor_Event &event);
     void print_comm_out(const Tractor_Event &event);
+    bool update_request(const PEAT_Rank rank, PEAT_MPI_Request request, const Phase& phase, bool is_remote);
 
     PTP *ptp;
     Communicators *comm_store;
     Request_Store* req_store;
+    Request* request_func_store;
     int verbose;
 };
 

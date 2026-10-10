@@ -465,7 +465,7 @@ struct Outputs {
     File_Storage_GZ *output_HWC;
     File_Storage_GZ *output_bind;
     Outputs() : output_MPI(NULL), output_HWC(NULL), output_bind(NULL) {}
-    void Initialize(File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
+    void initialize(File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
     {
         output_MPI = MPI;
         output_HWC = HWC;

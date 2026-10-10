@@ -24,6 +24,8 @@
 #include <sstream>
 #include <stdexcept>
 
+Phase::Phase(Tractor_Event& t) : func_id(t.func_id), thread_id(t.thread_id), tsc_time(t.tsc_time), tsc_u_time(t.tsc_u_time), addrs(t.addrs), ids(t.ids) {}
+
 void Tractor_Event::get_extra_txrx(const String_Split &line, const Communicators *comm_store)
 {
 
@@ -247,3 +249,4 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
         func_class = PEAT_PROP_CLASS_OMPT;
     }
 }
+ 

@@ -37,13 +37,13 @@ GPU::GPU(
 {
 }
 
-void GPU::Initialize(PTP *p, Communicators *c, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
+void GPU::initialize(PTP *p, Communicators *c, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
 {
     assert(c);
     assert(p);
     comm_store = c;
     ptp = p;
-    Outputs::Initialize(MPI, HWC, bind);
+    Outputs::initialize(MPI, HWC, bind);
 }
 
 GPU::~GPU()

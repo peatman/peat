@@ -129,7 +129,7 @@ class GPU : public Outputs
     // cur_transfer/cur_exec cache raw pointers into the transfers/executions maps; copying would alias/invalidate them.
     GPU(const GPU &) = delete;
     GPU &operator=(const GPU &) = delete;
-    void Initialize(PTP *p, Communicators *c, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
+    void initialize(PTP *p, Communicators *c, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
     void parse_GPU(const PEAT_Rank rank, const Tractor_Event &event);
 
     bool find_handle(PEAT_Rank rank, PEAT_MPI_Request request);

@@ -34,10 +34,11 @@
 enum Request_Store_Record_Type {
     REQUEST_TYPE_NULL, // error signal
     REQUEST_TYPE_ANY_PERSISTENT, // for searching purposes only, not for storing
-    REQUEST_TYPE_ANY_NORMAL, // for searching purposes only, not for storing
+    REQUEST_TYPE_ANY_NOT_PERSISTENT, // for searching purposes only, not for storing
     REQUEST_TYPE_PERSISTENT, // User persistent requests (from XXX_init functions)
     REQUEST_TYPE_USER_P2P, // User normal requests (from pt2pt MPI_Ixxx of MPI_START)
     REQUEST_TYPE_USER_COLLECTIVE, // User normal requests (from collective MPI_Ixxx of MPI_START)
+    REQUEST_TYPE_USER_COMM, // User normal requests (from comm MPI_Ixxx )
     REQUEST_TYPE_INTERNAL // MPI internal requests (from MPIC_Ixxx) 
 };
 struct MAT_Request_Store_Record {
