@@ -902,7 +902,7 @@
                          e->u.send.sreq = NULL;
                          if (s->kind == MPIR_SCHED_KIND_GENERALIZED) {
                              MPIR_Comm_release(e->u.send.comm);
-@@ -1108,7 +1111,8 @@
+@@ -1126,7 +1129,8 @@
                          } else {
                              e->status = MPIDU_SCHED_ENTRY_STATUS_COMPLETE;
                          }
@@ -912,7 +912,7 @@
                          e->u.recv.rreq = NULL;
                          if (s->kind == MPIR_SCHED_KIND_GENERALIZED) {
                              MPIR_Comm_release(e->u.recv.comm);
-@@ -1203,3 +1207,28 @@
+@@ -1221,3 +1225,28 @@
          return mpi_errno;
      }
  }
@@ -941,13 +941,3 @@
 +}
 +#undef T_MPID_Request_release
 +#endif
---- a/src/mpid/common/sched/mpidu_sched.h
-+++ b/src/mpid/common/sched/mpidu_sched.h
-@@ -154,4 +154,7 @@
-                      MPI_Aint outcount, MPI_Datatype outtype, MPIR_Sched_t s);
- int MPIDU_Sched_barrier(MPIR_Sched_t s);
- 
-+void T_MPID_Request_release(MPIR_Request *req) MPICH_API_PUBLIC;
-+void PT_MPID_Request_release(MPIR_Request *req) MPICH_API_PUBLIC;
-+
- #endif /* MPIDU_SCHED_H_INCLUDED */
