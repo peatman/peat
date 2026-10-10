@@ -20,104 +20,76 @@
 #include "utils.h"
 #include <assert.h>
 #include <stdexcept>
-
-Request::Request(PTP *p, Communicators *c, P2PAL *pp, Collectives *cl, int s,
 #ifdef PEAT_MPI
-                 std::list<PEAT_Event_Delivery> *ad, const std::vector<PEAT_Rank> &wR, const std::vector<PEAT_Rank> &mRs, const MPI_Comm mat_cc, const PEAT_Rank m_r,
+#error "MPI version is not yet supported. Please use serial one."
 #endif
-                 int v) : skip_locals(s), verbose(v)
+
+Request::Request(int s,
 #ifdef PEAT_MPI
-                          ,
-                          active_deliveries(ad), mat_compute_comm(mat_cc), whole_ranks(wR), my_ranks(mRs), my_rank(m_r)
+				 std::list<PEAT_Event_Delivery> *ad, const std::vector<PEAT_Rank> &wR, const std::vector<PEAT_Rank> &mRs, const MPI_Comm mat_cc, const PEAT_Rank m_r,
+#endif
+				 int v) : skip_locals(s), verbose(v)
+#ifdef PEAT_MPI
+						  ,
+						  active_deliveries(ad), mat_compute_comm(mat_cc), whole_ranks(wR), my_ranks(mRs), my_rank(m_r)
 #endif
 
 {
-    com_store = c;
-    ptp = p;
-    p2p_func_store = pp;
-    coll_func_store = cl;
+	comm_store = NULL;
+	ptp = NULL;
+	req_store = NULL;
+	p2p_func_store = NULL;
+	coll_func_store = NULL;
+}
+
+void Request::Initialize(PTP *p, Communicators *c, Request_Store *r, P2PAL *pp, Collectives *cl, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
+{
+	comm_store = c;
+	ptp = p;
+	req_store = r;
+	p2p_func_store = pp;
+	coll_func_store = cl;
+	Outputs::Initialize(MPI, HWC, bind);
 }
 
 Request::~Request()
 {
     ptp = 0;
     ptp = 0;
-    com_store = 0;
+    comm_store = 0;
 }
 bool Request::discard_P2P_event(const PEAT_Rank rank, const PEAT_MPI_Request request, bool is_remote)
 {
     // cerr << "DBG1 " << event << "\n";
     // pull requests from all available queues: message_queues[SENDQ],message_queues[RECVQ]
-    if (request == com_store->get_MPI_REQUEST_NULL()) {
+    if (request == comm_store->get_MPI_REQUEST_NULL()) {
         std::cerr << "Null request detected. Rank: " << rank << ". Skipped." << std::endl;
         return false;
     }
-    return p2p_func_store->remove_request(rank, request);
+    MAT_Request_Store_Record dummy;
+    return req_store->remove_request(rank, request, REQUEST_TYPE_USER_P2P, &dummy);
 }
 
 bool Request::discard_collective_event(const PEAT_Rank rank, const PEAT_MPI_Request request, bool is_remote)
 {
-    if (request == com_store->get_MPI_REQUEST_NULL()) {
+    if (request == comm_store->get_MPI_REQUEST_NULL()) {
         std::cerr << "Null request detected. Rank: " << rank << ". Skipped." << std::endl;
         return false;
     }
     Collectives::collective_list::iterator coll;
-    bool rFound = coll_func_store->find_request(rank, request, false, coll);
-    if (rFound) {
-        coll_func_store->erase_collective(coll);
-        return true;
-    }
-    return false;
+    MAT_Request_Store_Record dummy;
+    return req_store->remove_request(rank, request, REQUEST_TYPE_USER_COLLECTIVE, &dummy);
 }
-int Request::select_event(PEAT_Rank rank, const PEAT_MPI_Request request, bool is_remote)
+Request_Store_Record_Type  Request::select_event(PEAT_Rank rank, const PEAT_MPI_Request request, bool is_remote)
 {
-    MAT_Record *p2p_event = NULL;
-    if (!is_remote) {
-        // now move events form waiting queue. apllicable only for local requests
-        /* p2p_event = */ p2p_func_store->check_waiting_queue(rank, request);
+    MAT_Request_Store_Record ret_it;
+    if(req_store->find_request(rank, request, REQUEST_TYPE_ANY_NORMAL, &ret_it, false)) {
+        return ret_it.request_type;
     }
-
-    for (PEAT_Num queue_type = qt_hanged; queue_type <= qt_normal; queue_type++) {
-        if (p2p_func_store->find_request(queue_type, rank, request, &p2p_event, false)) {
-            break;
-        }
-    }
-    Collectives::collective_list::iterator coll;
-    MAT_Collective *coll_event = NULL;
-    MAT_Record t_fio_event;
-    MAT_Record *fio_event = NULL;
-    if (coll_func_store->find_request(rank, request, false, coll)) {
-        coll_event = &(coll_get_record(coll));
-    }
-    if (coll_func_store->find_request(rank, request, &t_fio_event, false)) {
-        fio_event = &t_fio_event;
-    }
-    if (p2p_event && coll_event) {
-        // assert(p2p_event->ph[2].ids[0] == p2p_event->ph[1].ids[0]);
-        if (p2p_event->ph[2].ids[0] < coll_event->coll_events_list.at(rank).ids[0])
-            return 1;
-        if (p2p_event->ph[2].ids[0] > coll_event->coll_events_list.at(rank).ids[0])
-            return 2;
-        assert(0);
-    }
-    if (p2p_event && fio_event) {
-        assert(p2p_event->ph[2].ids[0] == p2p_event->ph[1].ids[0]);
-        if (p2p_event->ph[2].ids[0] < fio_event->ph[1].ids[0])
-            return 1;
-        if (p2p_event->ph[2].ids[0] > fio_event->ph[1].ids[0])
-            return 2;
-        assert(0);
-    }
-    if (p2p_event) {
-        return 1;
-    }
-    if (coll_event || fio_event) {
-        return 2;
-    }
-    return 0;
+    return REQUEST_TYPE_NULL;
 }
 
-bool Request::parse_P2P_completion_phase(const PEAT_Rank rank, const Phase &phase,
+bool Request::parse_P2P_completion_phase(const PEAT_Rank rank, const Request_Store_Record_Type type, const Phase &phase,
                                          PEAT_MPI_Request request,
                                          const PEAT_MPI_Tag tag,
                                          const PEAT_Rank source,
@@ -128,115 +100,69 @@ bool Request::parse_P2P_completion_phase(const PEAT_Rank rank, const Phase &phas
     // cerr << "DBG1 " << event << "\n";
     bool found_one = false;
     // pull requests from all available queues: message_queues[SENDQ],message_queues[RECVQ]
-    if (request == com_store->get_MPI_REQUEST_NULL()) {
+    if (request == comm_store->get_MPI_REQUEST_NULL()) {
         std::cerr << "Null request detected. Rank: " << rank << ". Skipped." << std::endl;
         return found_one;
     }
     bool check_and_clear_req[qt_size2] = {false, false, false};
     bool rFound = false;
-    if (!is_remote) {
-        // now move events form waiting queue. apllicable only for local requests
-        MAT_Record *ret_it;
-        while (int ret = p2p_func_store->update_waiting_queue(rank, tag, source, size, request, phase, &ret_it)) {
-            if (ret & 2) {
-                request = 0;
-                found_one = 1;
-            }
-            if (ret & 1) {
-                ret_it->pc_level = pc_level;
-                print_req_bind(rank, ret_it->rank, ret_it->ph[1], ret_it->ph[2], is_remote);
-                // check_and_clear_req[qt_normal] = true;
-                p2p_func_store->update_request(qt_normal, rank, ret_it->tag, ret_it->peer_rank, ret_it->size, ret_it->request, ret_it->ph[2], ret_it);
-            }
-        }
-    }
     if (request > 0) {
-        for (PEAT_Num queue_type = qt_hanged; queue_type <= qt_normal; queue_type++) {
-            MAT_Record* ret_it;
-            rFound = p2p_func_store->find_request(queue_type, rank, request, &ret_it, queue_type == qt_normal);
-            if (rFound) {
-                ret_it->pc_level = pc_level;
-                print_req_bind(rank, ret_it->rank, ret_it->ph[1], phase, is_remote);
-                check_and_clear_req[queue_type] = true;
-                assert(ret_it->request == request);
-                p2p_func_store->update_request(queue_type, rank, tag, source, size, request, phase, ret_it);
-                found_one = 1;
-                break;
-            }
-        }
+        p2p_func_store->update_request(rank, type, tag, source, size, request, phase,is_remote);
     }
 
-    if (check_and_clear_req[qt_hanged] && check_and_clear_req[qt_normal]) {
-        std::cerr << "P2PAL::parse_p2_p_cn. Hit to multiple queues. Request " << std::hex << request << std::dec << " tag " << tag << " source_rank " << source << std::endl;
-    }
-    if (found_one) {
-        request = 0;
-    }
     return found_one;
 }
 bool Request::parse_collective_completion_phase(const PEAT_Rank rank, const Phase &phase, const PEAT_MPI_Request request, const int pc_level, bool is_remote)
 {
-    if (request == com_store->get_MPI_REQUEST_NULL()) {
+    if (request == comm_store->get_MPI_REQUEST_NULL()) {
         std::cerr << "Null request detected. Rank: " << rank << ". Skipped." << std::endl;
         return false;
     }
-    Collectives::collective_list::iterator coll;
-    bool rFound = coll_func_store->find_request(rank, request, false, coll);
-    if (rFound) {
-        coll_get_value(coll, pc_level) = pc_level;
-        print_req_bind(rank, coll_get_record(coll), phase, is_remote);
-        coll_func_store->update_request(rank, request, phase, coll);
-    } else {
-        MAT_Record fio_record;
-        rFound = coll_func_store->find_request(rank, request, &fio_record, true);
-        if (rFound)
-            print_req_bind(rank, request, fio_record.ph[1], phase, false);
+
+    MAT_Request_Store_Record ret_it;
+    if(req_store->find_request(rank, request, REQUEST_TYPE_USER_COLLECTIVE, &ret_it, false)) {
+        MAT_Collectives_Record* coll = (MAT_Collectives_Record *) ret_it.record;
+        coll_func_store->update_request(rank, request, phase, coll->coll_event);
+        return true;
     }
-    return rFound;
+    return false;
 }
 
 void Request::parse_pers_start_phase(const PEAT_Rank rank, const Phase &phase, const PEAT_MPI_Request request, const int pc_level, bool is_remote)
 {
-    MAT_Record *req_it;
+    MAT_Request_Store_Record ret_it;
 
-    if (p2p_func_store->find_request(qt_pers, rank, request, &req_it, false)) {
-        MAT_Record *record = new MAT_Record(*req_it);
-        record->ph[1] = phase;
-        record->pc_level = pc_level;
-        p2p_func_store->add_pers_req_start(rank, record);
-        print_req_bind(rank, request, record->ph[0], phase, is_remote);
-    } else {
-        Collectives::collective_list::iterator coll;
-        if (coll_func_store->find_request(rank, request, true, coll)) {
+    if (req_store->find_request(rank, request, REQUEST_TYPE_PERSISTENT, &ret_it, false)) {
+        if (ret_it.record->record_type()==1) {
+            MAT_P2P_Record *record = (MAT_P2P_Record *)ret_it.record;
+            record->ph[1] = phase;
+            record->pc_level = pc_level;
+            p2p_func_store->add_pers_req_start(rank, record);
+            print_req_bind(rank, request, record->ph[0], phase, is_remote);
+        } 
+        if(ret_it.record->record_type() == 2) {
+			//collective request
             peat_throw_error("Persistent collectives are not (yet) supported.\n");
+            assert(0);
         }
-        peat_throw_error("Failed to find persistent request.");
-    }
+    } 
 }
-PEAT_Bool Request::remove_pers_req(const PEAT_Rank rank, const PEAT_MPI_Request request, Phase &ph)
+bool Request::remove_pers_req(const PEAT_Rank rank, const PEAT_MPI_Request request, MAT_Request_Store_Record* ret_it)
 {
-    MAT_Record *req_it;
-    if (p2p_func_store->remove_pers_request(rank, request, &req_it)) {
-        if (req_it) {
-            ph = req_it->ph[0];
-            delete req_it;
-        };
-        return true;
-    } else {
-        Collectives::collective_list::iterator coll;
-        if (coll_func_store->remove_pers_request(rank, request, ph)) {
-            peat_throw_error("Persistent Collectives are not supported yet\n");
-            //return true;
-			return false; //prevents further processing of the event. This is a temporary measure until persistent collectives are implemented.
-        }
-    };
-    return false;
+
+#ifdef PEAT_MPI
+    bool req_found = req_store->find_thrown_away_request(qt_pers_thrown, rank, request, true);
+    if(req_found) {
+        return false;
+    }
+#endif
+    return req_store->remove_request(rank, request, REQUEST_TYPE_PERSISTENT, ret_it);
 }
 void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_remote)
 {
     // cerr << "DBG1 " << event << "\n";
     assert(ptp);
-    assert(com_store);
+    assert(comm_store);
     ptp->add_rank_MPI(rank, event.tsc_time.func.out - event.tsc_time.func.in);
 
     /*    vector<PEAT_MPI_Request> extra_info=event.requests;
@@ -262,58 +188,40 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
     if (event.func_id == MPI_REQUEST_FREE_ID) { // mpi_request_free
 #ifdef PEAT_MPI
         if (!is_remote) {
-            if (!p2p_func_store->flown_away_pers_requests.empty()) {
-                if (p2p_func_store->flown_away_pers_requests.count(rank)) {
-                    std::map<PEAT_MPI_Request, MAT_Request_Record>::iterator req_it = p2p_func_store->flown_away_pers_requests.at(rank).find(event.requests.at(0));
-                    if (req_it != p2p_func_store->flown_away_pers_requests.at(rank).end()) {
+            if (!req_store->flown_away_pers_requests.empty()) {
+                if (req_store->flown_away_pers_requests.count(rank)) {
+                    std::map<PEAT_MPI_Request, MAT_Request_Record>::iterator req_it = req_store->flown_away_pers_requests.at(rank).find(event.requests.at(0));
+                    if (req_it != req_store->flown_away_pers_requests.at(rank).end()) {
                         send_cn(event, req_it->second.peer);
-                        p2p_func_store->flown_away_pers_requests.at(rank).erase(req_it);
+                        req_store->flown_away_pers_requests.at(rank).erase(req_it);
                         return;
                     } /*else {
                         std::cerr << "Invalid persistent request " << std::hex << event.requests.at(0) << std::dec << " detected during p2p persistent free.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << ".Skipped." << std::endl;
                     }*/
                 }
             }
-            if (!p2p_func_store->flown_away_requests.empty()) {
-                if (p2p_func_store->flown_away_requests.count(rank)) {
-                    std::map<PEAT_MPI_Request, std::list<MAT_Request_Record>>::iterator req_it = p2p_func_store->flown_away_requests.at(rank).find(event.requests.at(0));
-                    if (req_it != p2p_func_store->flown_away_requests.at(rank).end()) {
-                        if (!req_it->second.empty()) {
-                            send_cn(event, req_it->second.front().peer);
-                            req_it->second.pop_front();
-                            return;
-                        } /* else {
-                             std::cerr << "Invalid persistent request " << std::hex << event.requests.at(0) << std::dec << " detected during p2p free.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << ".Skipped." << std::endl;
-                         }*/
-                    }
-                }
-            }
-            if (!coll_func_store->flown_away_requests.empty()) {
-                if (coll_func_store->flown_away_requests.count(rank)) {
-                    std::map<PEAT_MPI_Request, MAT_Request_Record>::iterator req_it = coll_func_store->flown_away_requests.at(rank).find(event.requests.at(0));
-                    if (req_it != coll_func_store->flown_away_requests.at(rank).end()) {
+            if (!req_store->flown_away_requests.empty()) {
+                if (req_store->flown_away_requests.count(rank)) {
+                    std::map<PEAT_MPI_Request, MAT_Request_Record>::iterator req_it = req_store->flown_away_requests.at(rank).find(event.requests.at(0));
+                    if (req_it != req_store->flown_away_requests.at(rank).end()) {
                         send_cn(event, req_it->second.peer);
-                        coll_func_store->flown_away_requests.at(rank).erase(req_it);
+                        req_store->flown_away_requests.at(rank).erase(req_it);
                         return;
-                    } /*else {
-                        std::cerr << "Invalid persistent request " << std::hex << event.requests.at(0) << std::dec << " detected during free.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << ".Skipped." << std::endl;
-                    }*/
+                    }
                 }
             }
         }
 #endif
-        Phase ph;
-        PEAT_Bool resp = remove_pers_req(rank, event.requests.at(0), ph);
+        MAT_Request_Store_Record resp;
+        bool found = remove_pers_req(rank, event.requests.at(0), &resp);
         /*
 #ifndef PEAT_MPI
             int my_rank = 0;
 #endif
             fprintf(stderr, "Removing request %llx rank %d event %lld from rank %d in %d rank.(remote=%d)...", event.requests.at(0), rank, event.ids[0], rank, my_rank, is_remote);
         */
-        if (resp) {
-            if (ph.ids[0] >= 0) {
-                print_req_bind(rank, event.requests.at(0), ph, event, is_remote);
-            }
+        if (found) {
+             print_req_bind(rank, event.requests.at(0), resp.record->get_ph(0), event, is_remote);
             // fprintf(stderr, "done.\n");
             return;
         }
@@ -323,23 +231,11 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
 #ifdef PEAT_MPI
         // do the same thing as for MPI_REQUEST_FREE
         if (!is_remote) {
-            if (!p2p_func_store->flown_away_requests.empty()) {
-                if (p2p_func_store->flown_away_requests.count(rank)) {
-                    std::map<PEAT_MPI_Request, std::list<MAT_Request_Record>>::iterator req_it = p2p_func_store->flown_away_requests.at(rank).find(event.requests.at(0));
-                    if (req_it != p2p_func_store->flown_away_requests.at(rank).end()) {
-                        if (!req_it->second.empty()) {
-                            send_cn(event, req_it->second.front().peer);
-                            req_it->second.pop_front();
-                        }
-                        return;
-                    }
-                }
-            }
-            if (!coll_func_store->flown_away_requests.empty()) {
-                if (coll_func_store->flown_away_requests.count(rank)) {
-                    std::map<PEAT_MPI_Request, MAT_Request_Record>::iterator req_it = coll_func_store->flown_away_requests.at(rank).find(event.requests.at(0));
+            if (!req_store->flown_away_requests.empty()) {
+                if (req_store->flown_away_requests.count(rank)) {
+                    std::map<PEAT_MPI_Request, MAT_Request_Record>::iterator req_it = req_store->flown_away_requests.at(rank).find(event.requests.at(0));
                     send_cn(event, req_it->second.peer);
-                    coll_func_store->flown_away_requests.at(rank).erase(req_it);
+                    req_store->flown_away_requests.at(rank).erase(req_it);
                     return;
                 }
             }
@@ -362,8 +258,8 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
         event.Requests.triggered_request_num = 1;
 		event.statuses.resize(1);
         event.statuses[0].bytes = -1;;
-        event.statuses[0].tag = com_store->get_MPI_ANY_TAG();
-        event.statuses[0].src = com_store->get_MPI_ANY_SOURCE();
+        event.statuses[0].tag = comm_store->get_MPI_ANY_TAG();
+        event.statuses[0].src = comm_store->get_MPI_ANY_SOURCE();
         event.statuses[0].index = 0;
 
 #ifdef PEAT_MPI
@@ -399,10 +295,10 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
 #ifdef PEAT_MPI
         if (!is_remote) {
             for (std::vector<PEAT_MPI_Request>::iterator it = event.requests.begin(); it != event.requests.end(); ++it) {
-                if (!p2p_func_store->flown_away_pers_requests.empty()) {
-                    if (p2p_func_store->flown_away_pers_requests.count(rank)) {
-                        std::map<PEAT_MPI_Request, MAT_Request_Record>::iterator req_it = p2p_func_store->flown_away_pers_requests.at(rank).find(*it);
-                        if (req_it != p2p_func_store->flown_away_pers_requests.at(rank).end()) {
+                if (!req_store->flown_away_pers_requests.empty()) {
+                    if (req_store->flown_away_pers_requests.count(rank)) {
+                        std::map<PEAT_MPI_Request, MAT_Request_Record>::iterator req_it = req_store->flown_away_pers_requests.at(rank).find(*it);
+                        if (req_it != req_store->flown_away_pers_requests.at(rank).end()) {
                             Tractor_Event tmp_evt = event;
                             tmp_evt.statuses.clear();
                             tmp_evt.requests.clear();
@@ -410,25 +306,38 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
                             tmp_evt.buffers.clear();
                             tmp_evt.Requests.triggered_request_num = tmp_evt.Requests.input_request_num = 1;
                             tmp_evt.requests.push_back(*it);
-                            p2p_func_store->flown_away_requests[rank][*it].push_back(req_it->second);
+                            req_store->flown_away_requests[rank][*it] = req_it->second;
                             send_cn(tmp_evt, req_it->second.peer);
-                            *it = com_store->get_MPI_REQUEST_NULL(); // make it invalid
+                            *it = comm_store->get_MPI_REQUEST_NULL(); // make it invalid
                         }
                     }
                 }
             }
         }
         for (std::vector<PEAT_MPI_Request>::const_iterator it = event.requests.begin(); it != event.requests.end(); ++it) {
-            if (*it != com_store->get_MPI_REQUEST_NULL() && p2p_func_store->thrown_away_pers_requests[rank].find(*it) == p2p_func_store->thrown_away_pers_requests[rank].end()) { // only handle active requests
+            if (*it != comm_store->get_MPI_REQUEST_NULL() && req_store->thrown_away_pers_requests[rank].find(*it) == req_store->thrown_away_pers_requests[rank].end()) { // only handle active requests
                 parse_pers_start_phase(rank, ph_cn, *it, event.PControl.ctl, is_remote);
             } else {
-                if (*it != com_store->get_MPI_REQUEST_NULL()) { // only handle active requests
+                if (*it != comm_store->get_MPI_REQUEST_NULL()) { // only handle active requests
                     std::cerr << "Invalid persistent request " << std::hex << *it << std::dec << " detected.Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << ".Skipped." << std::endl;
-                    p2p_func_store->thrown_away_requests[rank].insert(*it); // for lkater mpi_test/wait
+                    req_store->thrown_away_requests[rank].insert(*it); // for later mpi_test/wait
                 }
             }
         }
 #endif
+        for (std::vector<PEAT_MPI_Request>::const_iterator it = event.requests.begin(); it != event.requests.end(); ++it) {
+
+            MAT_Request_Store_Record ret_it;
+            if (req_store->find_request(rank, *it, REQUEST_TYPE_PERSISTENT, &ret_it, false)) {
+                if(ret_it.record->record_type()==1) {
+                    parse_P2P_start_phase(rank, ph_cn, *it, &ret_it, event.PControl.ctl, is_remote);
+                }
+                if(ret_it.record->record_type() == 2) {
+                    parse_collective_start_phase(rank, ph_cn, *it, &ret_it, event.PControl.ctl, is_remote);
+                }
+
+			}
+        }
         return;
     }
     // special cases handled above. Now ordinal ones (wait/test)
@@ -439,21 +348,21 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
         const PEAT_MPI_Tag tag = event.statuses.at(i).tag;
         const PEAT_Rank source = event.statuses.at(i).src;
         const PEAT_Message_Size size = event.statuses.at(i).bytes;
-        if (request == com_store->get_MPI_REQUEST_NULL()) {
+        if (request == comm_store->get_MPI_REQUEST_NULL()) {
             std::cerr << "Null request detected. Rank: " << rank << ". Skipped." << std::endl;
             continue;
         }
 #ifdef PEAT_MPI
-        std::set<PEAT_MPI_Request>::iterator thrown_it = p2p_func_store->thrown_away_requests[rank].find(request);
-        if (thrown_it != p2p_func_store->thrown_away_requests[rank].end()) {
+        std::set<PEAT_MPI_Request>::iterator thrown_it = req_store->thrown_away_requests[rank].find(request);
+        if (thrown_it != req_store->thrown_away_requests[rank].end()) {
             std::cerr << "Invalid request " << std::hex << request << std::dec << " detected. Rank: " << rank << ". primary_id: " << event.ids[0] << " ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << std::endl;
-            p2p_func_store->thrown_away_requests[rank].erase(thrown_it);
+            req_store->thrown_away_requests[rank].erase(thrown_it);
             continue;
         }
 #endif
 #if 0
-        if (tag == com_store->get_MPI_ANY_TAG() && source == com_store->get_MPI_ANY_SOURCE()) {
-            MAT_Record *req_it;
+        if (tag == comm_store->get_MPI_ANY_TAG() && source == comm_store->get_MPI_ANY_SOURCE()) {
+            MAT_P2P_Record *req_it;
             if (p2p_func_store->find_request(qt_pers, rank, request, &req_it, false)) { // check should never hit?
                 continue; //happens when TEST or WAIT for inactive persistent request. skip
             }
@@ -461,32 +370,10 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
 #endif
 #ifdef PEAT_MPI
         if (!is_remote) {
-            if ((!p2p_func_store->flown_away_requests.empty()) && request != com_store->get_MPI_REQUEST_NULL()) {
-                if (p2p_func_store->flown_away_requests.count(rank)) {
-                    std::map<PEAT_MPI_Request, std::list<MAT_Request_Record>>::iterator it = p2p_func_store->flown_away_requests.at(rank).find(request);
-                    if (it != p2p_func_store->flown_away_requests.at(rank).end()) {
-                        if (!it->second.empty()) {
-                            Tractor_Event tmp_evt = event;
-                            tmp_evt.statuses.clear();
-                            tmp_evt.requests.clear();
-                            tmp_evt.addrs.clear();
-                            tmp_evt.buffers.clear();
-                            tmp_evt.Requests.triggered_request_num = tmp_evt.Requests.input_request_num = 1;
-                            tmp_evt.requests.push_back(request);
-                            PEAT_MPI_R4Status s = event.statuses.at(i);
-                            s.index = 0;
-                            tmp_evt.statuses.push_back(s);
-                            send_cn(tmp_evt, it->second.front().peer);
-                            it->second.pop_front();
-                            request = com_store->get_MPI_REQUEST_NULL();
-                        }
-                    }
-                }
-            }
-            if ((!coll_func_store->flown_away_requests.empty()) && request != com_store->get_MPI_REQUEST_NULL()) {
-                if (coll_func_store->flown_away_requests.count(rank)) {
-                    std::map<PEAT_MPI_Request, MAT_Request_Record>::iterator it = coll_func_store->flown_away_requests.at(rank).find(request);
-                    if (it != coll_func_store->flown_away_requests.at(rank).end()) {
+            if ((!req_store->flown_away_requests.empty()) && request != comm_store->get_MPI_REQUEST_NULL()) {
+                if (req_store->flown_away_requests.count(rank)) {
+                    std::map<PEAT_MPI_Request, MAT_Request_Record>::iterator it = req_store->flown_away_requests.at(rank).find(request);
+                    if(it != req_store->flown_away_requests.at(rank).end()) {
                         Tractor_Event tmp_evt = event;
                         tmp_evt.statuses.clear();
                         tmp_evt.requests.clear();
@@ -498,23 +385,28 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_
                         s.index = 0;
                         tmp_evt.statuses.push_back(s);
                         send_cn(tmp_evt, it->second.peer);
-                        coll_func_store->flown_away_requests.at(rank).erase(it);
-                        request = com_store->get_MPI_REQUEST_NULL();
+                        request = comm_store->get_MPI_REQUEST_NULL();
                     }
                 }
             }
         }
 #endif
-        if (request != com_store->get_MPI_REQUEST_NULL()) {
+        if(event.ids[0] == 129 && rank == 1 && request == 0xac000007) {
+            int id = event.ids[0];
+        }
+        if (request != comm_store->get_MPI_REQUEST_NULL()) {
             switch (select_event(rank, request, is_remote)) {
-            case 1:
-                parse_P2P_completion_phase(rank, ph_cn, request, tag, source, size, event.PControl.ctl, is_remote);
+            case REQUEST_TYPE_USER_P2P:
+                parse_P2P_completion_phase(rank, REQUEST_TYPE_USER_P2P, ph_cn, request, tag, source, size, event.PControl.ctl, is_remote);
                 break;
-            case 2:
+            case REQUEST_TYPE_INTERNAL:
+                parse_P2P_completion_phase(rank, REQUEST_TYPE_INTERNAL, ph_cn, request, tag, source, size, event.PControl.ctl, is_remote);
+                break;
+            case REQUEST_TYPE_USER_COLLECTIVE:
                 parse_collective_completion_phase(rank, ph_cn, request, event.PControl.ctl, is_remote);
                 break;
             default:
-                if (!(tag == com_store->get_MPI_ANY_TAG() && source == com_store->get_MPI_ANY_SOURCE()) && request != 0 ) {
+                if (!(tag == comm_store->get_MPI_ANY_TAG() && source == comm_store->get_MPI_ANY_SOURCE()) && request != 0 ) {
 #ifndef PEAT_MPI
                     PEAT_Rank my_rank = 0;
 #endif
@@ -668,6 +560,34 @@ void Request::print_req_out(const Tractor_Event &event)
     }
     output_HWC->printf(event.rank, "\n");
 #endif
+}
+
+void Request::parse_P2P_start_phase(const PEAT_Rank rank, const Phase& phase, const PEAT_MPI_Request request, MAT_Request_Store_Record* ret_it, const int pc_level,  bool is_remote)
+{
+    MAT_P2P_Record* req_it=static_cast<MAT_P2P_Record*> (ret_it->record);
+
+    MAT_P2P_Record* record = new MAT_P2P_Record(*req_it);
+    record->ph[1] = phase;
+    record->pc_level = pc_level;
+    MAT_Request_Store_Record req;
+	req.record = record;
+	req.request_type = REQUEST_TYPE_USER_P2P;
+    req_store->add_request(rank, request, &req);
+    print_req_bind(rank, request, req_it->get_ph(0), phase, is_remote);
+}
+
+void Request::parse_collective_start_phase(const PEAT_Rank rank, const Phase& phase, const PEAT_MPI_Request request, MAT_Request_Store_Record* ret_it, const int pc_level, bool is_remote)
+{
+    MAT_Collectives_Record* req_it = static_cast<MAT_Collectives_Record*> (ret_it->record);
+
+    MAT_Collectives_Record* record = new MAT_Collectives_Record(*req_it);
+    record->coll_event->ph[1] = phase;
+    record->pc_level = pc_level;
+    MAT_Request_Store_Record req;
+    req.record = record;
+    req.request_type = REQUEST_TYPE_USER_COLLECTIVE;
+    req_store->add_request(rank, request, &req);
+    print_req_bind(rank, request, req_it->get_ph(0), phase, is_remote);
 }
 
 #ifdef PEAT_MPI

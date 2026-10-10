@@ -26,11 +26,12 @@
 #include "file_io.h"
 #include "ptp.h"
 #include "tevent.h"
+#include "request_store.h"
 
 class Comm : public Outputs
 {
   public:
-    Comm(PTP *p, Communicators *c,
+    Comm(
          /*
         #ifdef PEAT_MPI
                 const std::vector<PEAT_Rank>& wR, const std::vector<PEAT_Rank>& mRs, const MPI_Comm mat_cc, const PEAT_Rank m_r,
@@ -39,12 +40,14 @@ class Comm : public Outputs
          int v = false);
     ~Comm();
 
+    void Initialize(PTP *p, Communicators *c, Request_Store *r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
+
     void parse_comm(const PEAT_Rank rank, Tractor_Event &event);
     void print_comm_out(const Tractor_Event &event);
 
     PTP *ptp;
-    Communicators *com_store;
-
+    Communicators *comm_store;
+    Request_Store* req_store;
     int verbose;
 };
 

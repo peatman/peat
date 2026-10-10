@@ -24,14 +24,14 @@
 #include <sstream>
 #include <stdexcept>
 
-void Tractor_Event::get_extra_txrx(const String_Split &line, const Communicators *com_store)
+void Tractor_Event::get_extra_txrx(const String_Split &line, const Communicators *comm_store)
 {
 
     /*
     const int block_main_event_info_length = 5;
     const int block_tsc_start = block_main_event_info_length;
-    const int block_hw_start = block_tsc_start + com_store->frames.at(rank).size_tsc_block;
-    const int block_auxiliary_start = block_hw_start + com_store->frames.at(rank).size_hw_block;
+    const int block_hw_start = block_tsc_start + comm_store->frames.at(rank).size_tsc_block;
+    const int block_auxiliary_start = block_hw_start + comm_store->frames.at(rank).size_hw_block;
     PEAT_Signed_Num aux_fields_num = 0; extract(aux_fields_num, line.at(block_auxiliary_start));
     assert(aux_fields_num == 3);
     extract(P2P.peer, line.at(block_auxiliary_start + 1), 16);
@@ -39,7 +39,7 @@ void Tractor_Event::get_extra_txrx(const String_Split &line, const Communicators
     extract(P2P.bytes, line.at(block_auxiliary_start+3), 16);
     */
 }
-Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, const String_Split &line_hwc, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file, const Communicators *com_store) : rank(r), num_children(0), level(0)
+Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, const String_Split &line_hwc, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file, const Communicators *comm_store) : rank(r), num_children(0), level(0)
 {
     // no need to check line.size() due line.at() throw an exception
     //  First read the record header (ids, thread, nesting)

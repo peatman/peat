@@ -22,7 +22,7 @@
 #include <assert.h>
 #include <sstream>
 
-Collectives::Collectives(PTP *p, Communicators *c, int pos
+Collectives::Collectives(int pos
 #ifdef PEAT_MPI
                          ,
                          std::list<PEAT_Event_Delivery> *ad, const std::vector<PEAT_Rank> &wR, const std::vector<PEAT_Rank> &mRs, const MPI_Comm mat_cc, const PEAT_Num mat_ccs, const PEAT_Rank m_r
@@ -34,19 +34,28 @@ Collectives::Collectives(PTP *p, Communicators *c, int pos
 #endif
 
 {
-    assert(c);
-    assert(p);
-    com_store = c;
-    ptp = p;
+    comm_store = NULL;
+    ptp = NULL;
+    req_store = NULL;
 #ifdef PEAT_MPI
     collective_handlers.resize(wR.size());
 #endif
 }
 
+void Collectives::Initialize(PTP *p, Communicators *c, Request_Store *r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
+{
+    assert(c);
+    assert(p);
+    comm_store = c;
+    ptp = p;
+    req_store = r;
+    Outputs::Initialize(MPI, HWC, bind);
+}
+
 Collectives::~Collectives()
 {
     ptp = 0;
-    com_store = 0;
+    comm_store = 0;
 }
 void Collectives::print_collective_out(const Tractor_Event &event)
 {
@@ -171,7 +180,7 @@ void Collectives::print_collective_bind(const MAT_Collective &record)
     if (!record.coll_events_list.empty() && output_HWC && output_HWC->get_number_of_files() > 0) { // no timing data to compute stats/imbalance from when hwc files aren't read
         // col_file->write_line(header);
         // col_file->put_records(record);
-        PEAT_Collective_Record r_col;
+        MAT_Collective_Record r_col;
         r_col.func_id = record.func_id;
         r_col.send_bytes = record.send_bytes;
         r_col.recv_bytes = record.recv_bytes;
@@ -192,7 +201,7 @@ void Collectives::print_collective_bind(const MAT_Collective &record)
         r_col.size = record.size;
         r_col.comm = record.comm;
         int pc_level = record.pc_level;
-        PEAT_Collective_Clocks r_col_clk = printed_collective[pc_level][r_col];
+        MAT_Collective_Clocks r_col_clk = printed_collective[pc_level][r_col];
         PEAT_Clock max_in = 0;
         for (std::map<PEAT_Rank, Collective_Event>::const_iterator it = record.coll_events_list.begin(); it != record.coll_events_list.end(); ++it) {
             // PEAT_Rank rank = it->first;
@@ -271,7 +280,7 @@ bool Collectives::empty() const
 void Collectives::parse_collective(const PEAT_Rank rank, const Tractor_Event &event, bool is_remote)
 {
     assert(ptp);
-    assert(com_store);
+    assert(comm_store);
     PEAT_MPI_Comm comm;
     const PEAT_MPI_Func_ID mpifunc = event.func_id;
     if (mpifunc == MPI_FILE_OPEN_ID) {
@@ -303,7 +312,7 @@ void Collectives::parse_collective(const PEAT_Rank rank, const Tractor_Event &ev
     if (!is_remote)
         print_collective_out(event);
 
-    // const PEAT_Rank root = event.Collective.root;// com_store->get_rank_from_comm(comm, rank, event.Collective.root, event.tsc_time.func.in); //must be signed
+    // const PEAT_Rank root = event.Collective.root;// comm_store->get_rank_from_comm(comm, rank, event.Collective.root, event.tsc_time.func.in); //must be signed
     if (!(mpifunc == MPI_INIT_ID || mpifunc == MPI_INIT_THREAD_ID || mpifunc == MPI_FINALIZE_ID)) {
         ptp->add_rank_MPI(rank, event.tsc_time.func.out - event.tsc_time.func.in);
     }
@@ -381,7 +390,7 @@ void Collectives::parse_collective(const PEAT_Rank rank, const Tractor_Event &ev
         } else {
             // add_new_collective://push collective into collective queue
             std::map<PEAT_Rank, Collective_Event> properties_list;
-            Collective_Ranks expected_ranks = com_store->get_ranks_set_from_comm(comm);
+            Collective_Ranks expected_ranks = comm_store->get_ranks_set_from_comm(comm);
             Collective_Ranks init_ranks = expected_ranks;
             long ranks = (long)expected_ranks.size();
             expected_ranks.erase(rank); // delete self from waiting ranks
@@ -435,7 +444,7 @@ void Collectives::parse_collective(const PEAT_Rank rank, const Tractor_Event &ev
         }
     } else {
         if (event.MPIFIO.request) {
-            MAT_Record record;
+            MAT_P2P_Record record;
             record.pc_level = event.PControl.ctl;
             record.comm = comm;
             record.rank = rank;
@@ -480,11 +489,6 @@ bool Collectives::erase_collective(collective_list::iterator &record)
         if (first_it->second == record)
             first_it->second = coll_queues[c_key].collectives.end(); // corect it later
     }
-    /*
-    for (std::map<PEAT_Rank, collective_list::iterator>::iterator first_it = coll_queues[c_key].first.begin(); first_it != coll_queues[c_key].first.end(); ++first_it) {
-        first_it->second = coll_queues[c_key].collectives.begin();
-    }
-    */
 #endif
     coll_queues[c_key].collectives.erase(record);
     if (coll_queues.at(c_key).collectives.empty())
@@ -505,48 +509,24 @@ bool Collectives::erase_collective(collective_key &c_key, collective_list::itera
         coll_queues.erase(c_key);
     return true;
 }
-
-bool Collectives::find_request(PEAT_Rank rank, PEAT_MPI_Request request, bool is_persistent, collective_list::iterator& coll)
+bool Collectives::find_collective(const PEAT_Rank rank, Collective_Event* event, collective_list::iterator *record)
 {
-    std::map<collective_key, collective_list_struct>& queues=is_persistent? pers_coll_queues: coll_queues;
-
-    for (std::map<collective_key, collective_list_struct>::iterator queue = queues.begin(); queue != queues.end(); ++queue) {
-        for (collective_list::iterator it = queue->second.collectives.begin(); it != queue->second.collectives.end(); ++it) {
-            if (coll_get_value(it, coll_events_list).count(rank) > 0) {
-                Collective_Event& coll_event = coll_get_value(it, coll_events_list).at(rank);
-                if (coll_event.request == request) {
-                    coll = it;
-                    return true;
-                }
-            }
-        }
+    collective_key c_key(event->comm, event->ph[1].func_id);
+    if (coll_queues.count(c_key)) {
+        return match_collective(coll_queues.at(c_key), *record, rank);
     }
     return false;
 }
-bool Collectives::remove_pers_request(PEAT_Rank rank, PEAT_MPI_Request request, Phase& ph) 
+bool Collectives::update_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase &phase, Collective_Event *event)
 {
-    for (std::map<collective_key, collective_list_struct>::iterator queue = pers_coll_queues.begin(); queue != pers_coll_queues.end(); ++queue) {
-        for (collective_list::iterator it = queue->second.collectives.begin(); it != queue->second.collectives.end(); ++it) {
-            if (coll_get_value(it, coll_events_list).count(rank) > 0) {
-                Collective_Event& coll_event = coll_get_value(it, coll_events_list).at(rank);
-                if (coll_event.request == request) {
-                    ph = coll_event.ph[0];
-                    coll_get_value(it, coll_events_list).erase(rank);
-                    return true;
-                }
-            }
+    collective_list::iterator coll;
+    if(find_collective(rank,event, &coll)) {
+        coll_get_value(coll, coll_events_list).at(rank).ph[2] = phase;
+        coll_get_value(coll, coll_events_list).at(rank).request = 0;
+        if(check_completion(coll) && coll_get_value(coll, expected_ranks).empty()) {
+            print_collective_bind(coll_get_record(coll));
+            erase_collective(coll);
         }
-    }
-    return false;
-}
-
-bool Collectives::update_request(PEAT_Rank rank, PEAT_MPI_Request request, const Phase &phase, collective_list::iterator &coll)
-{
-    coll_get_value(coll, coll_events_list).at(rank).ph[2] = phase;
-    coll_get_value(coll, coll_events_list).at(rank).request = 0;
-    if (check_completion(coll) && coll_get_value(coll, expected_ranks).empty()) {
-        print_collective_bind(coll_get_record(coll));
-        erase_collective(coll);
     }
     return true;
 }
@@ -595,7 +575,7 @@ void Collectives::send_collective(PEAT_Rank rank, const Tractor_Event &event)
         }
     }
 
-    if (global_func_id.check_property(mpifunc, PEAT_PROP_DATA_COLLECTIVE) || event.func_class == PEAT_PROP_CLASS_COLLECTIVE) { // since some FIO operation are also parsed here we need to check if it's really collective operation
+    if (global_func_id.check_property(mpifunc, PEAT_PROP_DATA_COLLECTIVE) || event.func_class == PEAT_PROP_CLASS_COLLECTIVE || event.func_class = PEAT_PROP_REQUEST) { // since some FIO operation are also parsed here we need to check if it's really collective operation
 
         PEAT_Event_Delivery delivery;
         PEAT_Signed_Num size = (PEAT_Signed_Num)event.pack_size();
@@ -615,7 +595,7 @@ void Collectives::send_collective(PEAT_Rank rank, const Tractor_Event &event)
         PEAT_MPI_Request request = event.func_class == PEAT_PROP_CLASS_FIO ? event.MPIFIO.request : event.Collective.request;
         if (request > 0) {
             record.request = request;
-            flown_away_requests[rank][request] = record;
+            req_store->flown_away_requests[rank][request] = record;
         }
         print_collective_out(event);
         delivery.buffer = (char *)peat_malloc_aligned(size, 64);
@@ -681,7 +661,7 @@ void Collectives::print_sizes() const
     printf(":k%zd %zd\n", keys, num);
 }
 
-bool Collectives::find_request(PEAT_Rank rank, PEAT_MPI_Request request, MAT_Record *ret_it, PEAT_Bool erase)
+bool Collectives::find_request(PEAT_Rank rank, PEAT_MPI_Request request, MAT_P2P_Record *ret_it, PEAT_Bool erase)
 {
     if (!fio_requests[rank].empty()) {
         if (fio_requests[rank].count(request) > 0) {
@@ -708,6 +688,16 @@ PEAT_Signed_Num Collectives::check_unbound_events()
     return total_unbound;
 }
 #endif
+
+Phase& MAT_Collectives_Record :: get_ph(int idx) { return coll_event->ph[idx]; }
+MAT_Collectives_Record::MAT_Collectives_Record(const MAT_Collectives_Record& s):MAT_Record(s) {
+    coll_event = new Collective_Event(*s.coll_event);
+}
+
+MAT_Collectives_Record::~MAT_Collectives_Record() {
+    delete coll_event;
+}
+
 PEAT_Num Collectives::collective_queue_size() const
 {
     PEAT_Num num = 0;

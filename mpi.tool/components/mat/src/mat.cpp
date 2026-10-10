@@ -50,7 +50,7 @@ bool Mat::parse_single_event(const int rank)
     if (line_mpi.size() < 2) {
         return false;
     }
-    Tractor_Event t_event(rank, line_mpi, line_hwc, model_id.num_hwcs, model_id.num_addrs, user_region_store, com_store);
+    Tractor_Event t_event(rank, line_mpi, line_hwc, model_id.num_hwcs, model_id.num_addrs, user_region_store, comm_store);
     PEAT_MPI_Func_ID mpifunc = t_event.func_id;
     // nested records (progress engine calls issued inside another traced call) do not count as user-level events
     const bool nested_record = t_event.level > 0;
@@ -368,15 +368,15 @@ Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : globals(glob), m
     file_name = glob.input_path + DIR_DELIMITER + glob.trace_files + glob.ptpd_ext;
     std::map<PEAT_Rank, std::string> file_input_ptp_names;
     file_input_ptp_names[0] = file_name;
-    com_store = new Communicators(globals);
-    com_store->initialize(file_input_com_names, file_input_app_names, &model_id_storage);
+    comm_store = new Communicators(globals);
+    comm_store->initialize(file_input_com_names, file_input_app_names, &model_id_storage);
 
-    PEAT_Rank trace_comm_size = com_store->get_app_rank_count();
+    PEAT_Rank trace_comm_size = comm_store->get_app_rank_count();
     tsc_corrector.resize(trace_comm_size, 0);
     tsc_predictor.resize(trace_comm_size, 0);
     rank_events_processed.resize(trace_comm_size, 0);
 
-    for (std::map<PEAT_Rank, PEAT_Clock>::iterator it = com_store->frame_tsc_start.begin(); it != com_store->frame_tsc_start.end(); ++it) {
+    for (std::map<PEAT_Rank, PEAT_Clock>::iterator it = comm_store->frame_tsc_start.begin(); it != comm_store->frame_tsc_start.end(); ++it) {
         tsc_corrector.at(it->first) = it->second;
     }
     ptp = new PTP(globals); // No need to set FREQ first
@@ -401,45 +401,47 @@ Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : globals(glob), m
     completed_ranks.resize(trace_comm_size);
     my_ranks = globals.my_ranks;
 #endif
-    com_func_store = new Comm(ptp, com_store
-                              /*
-                              #ifdef PEAT_MPI
-                                     , whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
-                             #endif
-                             */
-    );
-    gpu_func_store = new GPU(ptp, com_store
-                             /*
-                             #ifdef PEAT_MPI
-                                     , whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
-                             #endif
-                             */
-    );
+	req_store = new Request_Store(ptp, globals.verbose);
 
-    p2p_func_store = new P2PAL(ptp, com_store, input_MPI, gpu_func_store, globals.skip_processing, globals.print_location
+	com_func_store = new Comm(
+							  /*
+							  #ifdef PEAT_MPI
+									 whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
+							 #endif
+							 */
+	);
+	gpu_func_store = new GPU(
+							 /*
+							 #ifdef PEAT_MPI
+									 whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
+							 #endif
+							 */
+	);
+
+	p2p_func_store = new P2PAL(input_MPI, globals.skip_processing, globals.print_location
 #ifdef PEAT_MPI
-                               ,
-                               &active_deliveries, whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
+							   ,
+							   &active_deliveries, whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
 #endif
-    );
-    coll_func_store = new Collectives(ptp, com_store, globals.print_location
+	);
+	coll_func_store = new Collectives(globals.print_location
 #ifdef PEAT_MPI
-                                      ,
-                                      &active_deliveries, whole_ranks, my_ranks, globals.comm_compute, globals.comm_size, globals.comm_rank
+									  ,
+									  &active_deliveries, whole_ranks, my_ranks, globals.comm_compute, globals.comm_size, globals.comm_rank
 #endif
-    );
-    request_func_store = new Request(ptp, com_store, p2p_func_store, coll_func_store, globals.skip_processing
+	);
+	request_func_store = new Request(globals.skip_processing
 #ifdef PEAT_MPI
-                                     ,
-                                     &active_deliveries, whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
+									 ,
+									 &active_deliveries, whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
 #endif
-    );
-    com_func_store->Initialize(output_MPI, output_HWC, output_bind);
-    gpu_func_store->Initialize(output_MPI, output_HWC, output_bind);
-    p2p_func_store->Initialize(output_MPI, output_HWC, output_bind);
-    coll_func_store->Initialize(output_MPI, output_HWC, output_bind);
-    request_func_store->Initialize(output_MPI, output_HWC, output_bind);
-    second_line = false;
+	);
+	com_func_store->Initialize(ptp, comm_store, req_store, output_MPI, output_HWC, output_bind);
+	gpu_func_store->Initialize(ptp, comm_store, output_MPI, output_HWC, output_bind);
+	coll_func_store->Initialize(ptp, comm_store, req_store, output_MPI, output_HWC, output_bind);
+	p2p_func_store->Initialize(ptp, comm_store, req_store, request_func_store, gpu_func_store, output_MPI, output_HWC, output_bind);
+	request_func_store->Initialize(ptp, comm_store, req_store, p2p_func_store, coll_func_store, output_MPI, output_HWC, output_bind);
+	second_line = false;
 }
 Mat::~Mat()
 {
@@ -455,7 +457,7 @@ Mat::~Mat()
     delete request_func_store;
     delete coll_func_store;
     delete p2p_func_store;
-    delete com_store;
+    delete comm_store;
     delete ptp;
 }
 PEAT_Rank Mat::get_soonest_event(PEAT_Clock &tsc)
@@ -474,7 +476,7 @@ void Mat::process()
     const double bytes_step = (double)(input_MPI->get_all_files_size() + input_HWC->get_all_files_size()) * 0.01;
     PEAT_Ratio time_since_last_active = Wtime();
     // timeline.clear();
-    p2p_func_store->resize_queues(com_store->get_comm_world_rank_count());
+    p2p_func_store->resize_queues(comm_store->get_comm_world_rank_count());
     for (std::map<PEAT_Rank, std::string>::const_iterator rank = globals.pe_MPI_files_in_rank.begin(); rank != globals.pe_MPI_files_in_rank.end(); ++rank) {
         parse_single_event(rank->first);
     }
@@ -626,14 +628,14 @@ void Mat::process()
             if (!coll_func_store->printed_collective[tm_it->first].empty()) {
                 printf("%20s: %7d\n", "PC Region", tm_it->first);
                 printf("%15s %10s %10s %10s %10s %14s %14s %14s %20s %14s %10s\n", "Function", "Comm", "Root", "Size", "Rank", "Min", "Max", "Total", "Imbalance", "Calls", "Parameters");
-                for (std::map<PEAT_Collective_Record, PEAT_Collective_Clocks>::iterator cIt = coll_func_store->printed_collective[tm_it->first].begin(); cIt != coll_func_store->printed_collective[tm_it->first].end(); ++cIt) {
-                    PEAT_Collective_Record record = cIt->first;
-                    PEAT_Collective_Clocks clocks = cIt->second;
+                for (std::map<MAT_Collective_Record, MAT_Collective_Clocks>::iterator cIt = coll_func_store->printed_collective[tm_it->first].begin(); cIt != coll_func_store->printed_collective[tm_it->first].end(); ++cIt) {
+                    MAT_Collective_Record record = cIt->first;
+                    MAT_Collective_Clocks clocks = cIt->second;
                     printf("%15s %10x %10d %10d \n", global_func_id.name_by_idx(record.func_id), record.comm, record.root, record.size);
-                    std::map<PEAT_Rank, PEAT_Rank> coll_ranks = com_store->get_ranks_map_from_comm(record.comm);
+                    std::map<PEAT_Rank, PEAT_Rank> coll_ranks = comm_store->get_ranks_map_from_comm(record.comm);
                     for (std::map<PEAT_Rank, PEAT_Rank>::iterator rIt = coll_ranks.begin(); rIt != coll_ranks.end(); ++rIt) {
                         PEAT_Rank o_rank = rIt->first;
-                        PEAT_Collective_Clock clock = clocks.clocks.at(o_rank);
+                        MAT_Collective_Clock clock = clocks.clocks.at(o_rank);
                         char imb_buf[32];
                         snprintf(imb_buf, sizeof(imb_buf), "%lld(%3.2lf)", clock.imb_c, (double)clock.imb_c * 100.0 / (double)clock.total_c);
                         printf("%15s %10s %10s %10s %10d %14lld %14lld %14lld %20s %14lld %10s\n", record.comp_func.c_str(), " ", " ", " ",
@@ -674,14 +676,14 @@ void Mat::process()
     if (!coll_func_store->printed_collective[0].empty()) {
         printf("%20s:\n", "Out of any PC region");
         printf("%15s %10s %10s %10s %10s %14s %14s %14s %20s %14s %10s\n", "Function", "Comm", "Root", "Size", "Rank", "Min", "Max", "Total", "Imbalance", "Calls", "Parameters");
-        for (std::map<PEAT_Collective_Record, PEAT_Collective_Clocks>::iterator cIt = coll_func_store->printed_collective[0].begin(); cIt != coll_func_store->printed_collective[0].end(); ++cIt) {
-            PEAT_Collective_Record record = cIt->first;
-            PEAT_Collective_Clocks clocks = cIt->second;
+        for (std::map<MAT_Collective_Record, MAT_Collective_Clocks>::iterator cIt = coll_func_store->printed_collective[0].begin(); cIt != coll_func_store->printed_collective[0].end(); ++cIt) {
+            MAT_Collective_Record record = cIt->first;
+            MAT_Collective_Clocks clocks = cIt->second;
             printf("%15s %10x %10d %10d \n", global_func_id.name_by_idx(record.func_id), record.comm, record.root, record.size);
-            std::map<PEAT_Rank, PEAT_Rank> coll_ranks = com_store->get_ranks_map_from_comm(record.comm);
+            std::map<PEAT_Rank, PEAT_Rank> coll_ranks = comm_store->get_ranks_map_from_comm(record.comm);
             for (std::map<PEAT_Rank, PEAT_Rank>::iterator rIt = coll_ranks.begin(); rIt != coll_ranks.end(); ++rIt) {
                 PEAT_Rank o_rank = rIt->first;
-                PEAT_Collective_Clock clock = clocks.clocks.at(o_rank);
+                MAT_Collective_Clock clock = clocks.clocks.at(o_rank);
                 char imb_buf[32];
                 snprintf(imb_buf, sizeof(imb_buf), "%lld(%3.2lf)", clock.imb_c, (double) clock.imb_c * 100.0 / (double)clock.total_c);
                 printf("%15s %10s %10s %10s %10d %14lld %14lld %14lld %20s %14lld %10s\n", record.comp_func.c_str(), " ", " ", " ",
@@ -845,9 +847,9 @@ void Mat::write_trace_info(const std::string &name)
             }
             traceinfo_file.printf(0, "\n");
         }
-        if (!com_store->mpi_time.empty()) {
+        if (!comm_store->mpi_time.empty()) {
             traceinfo_file.printf(0, "%d", PEAT_RT_MPI_Time);
-            for (std::map<PEAT_Rank, PEAT_MPI_Time>::const_iterator time_it = com_store->mpi_time.begin(); time_it != com_store->mpi_time.end(); ++time_it) {
+            for (std::map<PEAT_Rank, PEAT_MPI_Time>::const_iterator time_it = comm_store->mpi_time.begin(); time_it != comm_store->mpi_time.end(); ++time_it) {
                 traceinfo_file.printf(0, "|%d|%lld|%s", time_it->first, time_it->second.clocks, time_it->second.percentage.c_str());
             }
             traceinfo_file.printf(0, "\n");

@@ -21,27 +21,36 @@
 #include <assert.h>
 #include <stdexcept>
 
-Comm::Comm(PTP *p, Communicators *c,
-           /*
-          #ifdef PEAT_MPI
-              const std::vector<PEAT_Rank>& wR, const std::vector<PEAT_Rank>& mRs, const MPI_Comm mat_cc, const PEAT_Rank m_r,
-          #endif
-          */
-           int v) : /*
-                    #ifdef PEAT_MPI
-                        whole_ranks(wR), my_ranks(mRs), mat_compute_comm(mat_cc), my_rank(m_r),
-                    #endif
-                    */
-                    verbose(v)
+Comm::Comm(
+		   /*
+		  #ifdef PEAT_MPI
+			  const std::vector<PEAT_Rank>& wR, const std::vector<PEAT_Rank>& mRs, const MPI_Comm mat_cc, const PEAT_Rank m_r,
+		  #endif
+		  */
+		   int v) : /*
+					#ifdef PEAT_MPI
+						whole_ranks(wR), my_ranks(mRs), mat_compute_comm(mat_cc), my_rank(m_r),
+					#endif
+					*/
+					verbose(v)
 {
-    com_store = c;
-    ptp = p;
+	comm_store = NULL;
+	ptp = NULL;
+	req_store = NULL;
+}
+
+void Comm::Initialize(PTP *p, Communicators *c, Request_Store *r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
+{
+	comm_store = c;
+	ptp = p;
+	req_store = r;
+	Outputs::Initialize(MPI, HWC, bind);
 }
 
 Comm::~Comm()
 {
-    ptp = 0;
-    com_store = 0;
+	ptp = 0;
+	comm_store = 0;
 }
 
 void Comm::parse_comm(const PEAT_Rank rank, Tractor_Event &event)

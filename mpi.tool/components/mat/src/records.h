@@ -78,28 +78,38 @@ struct Phase {
     friend std::ostream &operator<<(std::ostream &dbg, const Phase &ph);
 };
 
-struct Record {
-    Record() : rank(0), size(0), tag(0), message(0), comm(0) {}
+struct MAT_Record {
+    MAT_Record() : rank(0),  comm(0), pc_level(0) {}
     PEAT_Rank rank;
+    PEAT_MPI_Comm comm;
+    int pc_level;
+    virtual int record_type() = 0;
+    virtual Phase& get_ph(int idx) = 0;
+};
+
+struct MAT_P2P_Record : public MAT_Record {
+    MAT_P2P_Record() : MAT_Record(), size(0), tag(0), message(0), peer_rank(-1), request(0), peer_assigned(false), is_send(false) {}
     PEAT_Message_Size size;
     PEAT_MPI_Tag tag;
     PEAT_MPI_Message message;
-    PEAT_MPI_Comm comm;
-    Phase ph[3];
-};
-
-struct MAT_Record : public Record {
-    MAT_Record() : peer_rank(-1), request(0), pc_level(0), peer_assigned(false), is_send(false) {}
-    ~MAT_Record()
-    {
-        peer_rank = -1;
-    }
     PEAT_Rank peer_rank;
     PEAT_MPI_Request request;
-    int pc_level;
     bool peer_assigned;
     bool is_send;
+    Phase ph[3];
+    virtual int record_type() {return 1;}
+    virtual Phase& get_ph(int idx) { return ph[idx]; }
 };
+struct Collective_Event;
+struct MAT_Collectives_Record : public MAT_Record {
+    MAT_Collectives_Record() : MAT_Record(), coll_event(NULL) {}
+    MAT_Collectives_Record(const MAT_Collectives_Record& s);
+    ~MAT_Collectives_Record();
+    Collective_Event *coll_event;
+    virtual int record_type() { return 2; };
+    virtual Phase& get_ph(int idx);
+};
+
 struct MAT_Request_Record {
     MAT_Request_Record() : request(0), peer(-1), ids(2, -1), pc_level(0) {}
     PEAT_MPI_Request request;

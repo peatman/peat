@@ -118,7 +118,7 @@ class GPU : public Outputs
     Region_Exec *cur_exec;
 
   public:
-    GPU(PTP *p, Communicators *c,
+    GPU(
         /*
         #ifdef PEAT_MPI
                 const std::vector<PEAT_Rank>& wR, const std::vector<PEAT_Rank>& mRs, const MPI_Comm mat_cc, const PEAT_Num mat_ccs, const PEAT_Rank m_r,
@@ -129,6 +129,7 @@ class GPU : public Outputs
     // cur_transfer/cur_exec cache raw pointers into the transfers/executions maps; copying would alias/invalidate them.
     GPU(const GPU &) = delete;
     GPU &operator=(const GPU &) = delete;
+    void Initialize(PTP *p, Communicators *c, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
     void parse_GPU(const PEAT_Rank rank, const Tractor_Event &event);
 
     bool find_handle(PEAT_Rank rank, PEAT_MPI_Request request);
@@ -141,7 +142,7 @@ class GPU : public Outputs
 
     bool check_completion();
     PTP *ptp;
-    Communicators *com_store;
+    Communicators *comm_store;
     int verbose;
     std::map<PEAT_Rank, std::map<PEAT_Handle, PEAT_Bool>> GPU_contexts;      // for checking purposes only
     std::map<PEAT_Rank, std::map<PEAT_Handle, PEAT_Bool>> GPU_list_contexts; // for checking purposes only

@@ -30,29 +30,43 @@
 
 #define INITIAL_ABF 10
 #define USE_FAST_CHECK
-typedef std::vector<std::map<PEAT_MPI_Request, std::list<MAT_Record*>>> request_queues_type;
+ /* technically it's no required to distinguish P2P from collective or from internal, but it may be useful for debugging purposes */
+enum Request_Store_Record_Type {
+    REQUEST_TYPE_NULL, // error signal
+    REQUEST_TYPE_ANY_PERSISTENT, // for searching purposes only, not for storing
+    REQUEST_TYPE_ANY_NORMAL, // for searching purposes only, not for storing
+    REQUEST_TYPE_PERSISTENT, // User persistent requests (from XXX_init functions)
+    REQUEST_TYPE_USER_P2P, // User normal requests (from pt2pt MPI_Ixxx of MPI_START)
+    REQUEST_TYPE_USER_COLLECTIVE, // User normal requests (from collective MPI_Ixxx of MPI_START)
+    REQUEST_TYPE_INTERNAL // MPI internal requests (from MPIC_Ixxx) 
+};
+struct MAT_Request_Store_Record {
+    Request_Store_Record_Type  request_type;
+	MAT_Record* record;
+};
+typedef std::vector<std::map<PEAT_MPI_Request, std::list<MAT_Request_Store_Record>>> request_queues_type;
 
 class Request_Store
 {
-public:
+private:
     PTP *ptp;
-    std::string q_name_s[qt_size];
-    std::string q_name_s2[qt_size2];
-    Request_Store(PTP* p, int v);
-    ~Request_Store();
-    request_queues_type request_queues[qt_size2]; // persistent - 0 hanged - 1 normal -  2 (hanged and normal for sends only)
+    request_queues_type queues; 
     void resize_queues(size_t size)
     {
-        request_queues[0].resize(size);
-        request_queues[1].resize(size);
-        request_queues[2].resize(size);
+        queues.resize(size);
     }
-    bool find_request(PEAT_Num queue_type, PEAT_Rank rank, PEAT_MPI_Request request, MAT_Record** ret_it, PEAT_Bool erase);
-    PEAT_Bool remove_pers_req(const PEAT_Rank rank, const PEAT_MPI_Request request, MAT_Record** req_it);
-    PEAT_Bool remove_req(const PEAT_Rank rank, const PEAT_MPI_Request request);
+public:
+    Request_Store(PTP* p, int v);
+    bool find_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const Request_Store_Record_Type type, MAT_Request_Store_Record* ret_it, const PEAT_Bool erase);
+    PEAT_Bool add_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const MAT_Request_Store_Record* req_it);
+    PEAT_Bool remove_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const Request_Store_Record_Type type, MAT_Request_Store_Record* req_it);
+#ifdef PEAT_MPI
+    bool find_thrown_away_request(PEAT_Num queue_type, PEAT_Rank rank, PEAT_MPI_Request request, PEAT_Bool erase);
+    std::map<PEAT_Rank, std::map<PEAT_MPI_Request, MAT_Request_Record>> flown_away_requests, flown_away_pers_requests;
     std::map<PEAT_Rank, std::set<PEAT_MPI_Request>> thrown_away_requests;
     std::map<PEAT_Rank, std::set<PEAT_MPI_Request>> thrown_away_pers_requests;
 
+#endif
     friend class Request;
 };
 #endif // __REQUEST_STORE_H__

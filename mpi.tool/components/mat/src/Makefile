@@ -59,7 +59,7 @@ endif
 
 .SUFFIXES: .cpp .o .h
 
-MAIN_FILES = collectives mat p2pal requests tempdebug tevent gpu comm
+MAIN_FILES = collectives mat p2pal requests tempdebug tevent gpu comm request_store
 COMMON_FILES = file_io func_id utils common_types ptp communicators model_id
 
 #HEADERS=$(addsuffix .h, $(MAIN_FILES)) $(addprefix ../../common/, $(addsuffix .h, $(COMMON_FILES)))
