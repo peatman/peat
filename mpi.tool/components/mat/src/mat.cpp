@@ -52,8 +52,6 @@ PEAT_Bool Mat::parse_single_event(const int rank)
     }
     Tractor_Event t_event(rank, line_mpi, line_hwc, model_id.num_hwcs, model_id.num_addrs, user_region_store, comm_store);
     PEAT_MPI_Func_ID mpifunc = t_event.func_id;
-    // nested records (progress engine calls issued inside another traced call) do not count as user-level events
-    const PEAT_Bool nested_record = t_event.level > 0;
     PEAT_Clock mpi_time = 0, uc_time = 0, t_time = 0, occ_inc = 0;
     if (!globals.matching_only) { // tsc_time is all sentinel (-1) without hwc data, so these are meaningless
         if (!second_line) {
@@ -124,7 +122,6 @@ PEAT_Bool Mat::parse_single_event(const int rank)
         coll_func_store->parse_collective(rank, t_event, false);
 #endif
     }
-
     if (t_event.func_class == PEAT_PROP_CLASS_P2P) { // P2P
         if (global_func_id.check_property(mpifunc, PEAT_PROP_DATA_TXRX)) {
             if (second_line) {
@@ -174,7 +171,11 @@ PEAT_Bool Mat::parse_single_event(const int rank)
         p2p_func_store->parse_Local(rank, t_event);
     }
     if (t_event.func_class == PEAT_PROP_CLASS_COMM) {
-        comm_func_store->parse_comm(rank, t_event);
+        if (global_func_id.check_property(mpifunc, PEAT_PROP_DATA_COLLECTIVE)) {
+            coll_func_store->parse_collective(rank, t_event, false);
+        } else {
+            comm_func_store->parse_comm(rank, t_event);
+        }
     }
     if (t_event.func_class == PEAT_PROP_CLASS_OSC) {
         t_event.func_class = PEAT_PROP_CLASS_LOCAL;

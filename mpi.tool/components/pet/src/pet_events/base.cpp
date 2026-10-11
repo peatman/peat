@@ -145,7 +145,7 @@ std::string PET_Event::hwc_header_str() const
 }
 
 /* a top-level call writes its nested records right after its own record in trace order
-   (nested format: pre-order of the tree, legacy format: the order the tracer wrote them) */
+   (nested format: pre-order of the tree */
 void PET_Event::write_nested_records(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
 {
     if (host_event)

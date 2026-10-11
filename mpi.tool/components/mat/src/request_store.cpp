@@ -38,7 +38,8 @@ PEAT_Bool Request_Store::find_request(const PEAT_Rank rank, const PEAT_MPI_Reque
             if (event_it->request_type == type || 
                 (event_it->request_type == REQUEST_TYPE_PERSISTENT && type == REQUEST_TYPE_ANY_PERSISTENT) ||
                 ((event_it->request_type == REQUEST_TYPE_USER_P2P  || event_it->request_type == REQUEST_TYPE_USER_COLLECTIVE || 
-                    event_it->request_type == REQUEST_TYPE_USER_COMM) && type == REQUEST_TYPE_ANY_NOT_PERSISTENT)) {
+                    event_it->request_type == REQUEST_TYPE_USER_COMM || event_it->request_type == REQUEST_TYPE_USER_FIO) && 
+                    type == REQUEST_TYPE_ANY_NOT_PERSISTENT)) {
                 *ret_it = *event_it;
                 if(erase) {
                     req_it->second.erase(event_it);

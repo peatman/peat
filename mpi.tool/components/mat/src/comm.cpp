@@ -57,7 +57,6 @@ void Comm::parse_comm(const PEAT_Rank rank, Tractor_Event &event)
         record->comm = event.Comms.comm;
         record->new_comm = event.Comms.newcomm;
         record->remote_comm = event.Comms.remote_comm;
-        record->inter_comm = event.Comms.inter_comm;
         record->rank = rank;
         record->request = event.Comms.request;
         record->ph = Phase(event);
@@ -85,14 +84,11 @@ PEAT_Bool Comm::update_request(const PEAT_Rank rank, PEAT_MPI_Request request, c
 void Comm::print_comm_out(const Tractor_Event &event)
 {
 #ifdef MAT_PROCESS_HWC_MPI_OUTPUT
-    output_MPI->printf(event.rank, "%s:%s:%x:%x:%x:%x:%llx", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id),
+    output_MPI->printf(event.rank, "%s:%s:%x:%x:%x:%llx", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id),
                        event.Comms.comm,
                        event.Comms.newcomm,
                        event.Comms.remote_comm,
-                       event.Comms.inter_comm,
                        event.Comms.request);
-    if (!event.nested)
-        output_MPI->printf(event.rank, ":%d", event.num_children); // legacy num_colts
     output_MPI->printf(event.rank, "\n");
 #if 0
     output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),

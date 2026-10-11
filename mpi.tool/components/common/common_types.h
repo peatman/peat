@@ -805,7 +805,7 @@ struct Address_File_Storage {
     std::map<PEAT_Rank, PEAT_UID> last_event_idx;
     std::map<PEAT_Rank, PEAT_UID> last_fab_event_idx;
     std::map<PEAT_Rank, PEAT_Thread> last_thread_idx;
-    std::map<PEAT_Rank, int> id_columns;          // id columns in the .mpi/.hwc records (nested format; 2 for legacy traces)
+    std::map<PEAT_Rank, int> id_columns;          // id columns in the .mpi/.hwc records 
     File_Storage_GZ *UR_File;
     const Model_ID *m_id;
 

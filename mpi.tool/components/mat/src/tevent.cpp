@@ -127,8 +127,7 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
         extract(Comms.comm, line_mpi.at(b + 1), 16);
         extract(Comms.newcomm, line_mpi.at(b + 2), 16);
         extract(Comms.remote_comm, line_mpi.at(b + 3), 16);
-        extract(Comms.inter_comm, line_mpi.at(b + 4), 16);
-        extract(Comms.request, line_mpi.at(b + 5), 16);
+        extract(Comms.request, line_mpi.at(b + 4), 16);
     }
     if (
         ((func_id >= MPI_P2P_TRANSFER_START) && (func_id < MPI_P2P_TRANSFER_END)) ||

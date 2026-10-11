@@ -58,7 +58,7 @@ class Requests : public Outputs
 
     void parse_P2P_start_phase(const PEAT_Rank rank, const Phase& phase, const PEAT_MPI_Request request, MAT_Request_Store_Record* ret_it, const int pc_level, PEAT_Bool is_remote);
     void parse_collective_start_phase(const PEAT_Rank rank, const Phase& phase, const PEAT_MPI_Request request, MAT_Request_Store_Record* ret_it, const int pc_level, PEAT_Bool is_remote);
-    PEAT_Bool parse_collective_completion_phase(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase &phase, const int pc_level, PEAT_Bool is_remote);
+    PEAT_Bool parse_collective_completion_phase(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase& phase, const int pc_level, PEAT_Bool is_fio, PEAT_Bool is_remote);
     PEAT_Bool parse_comm_completion_phase(const PEAT_Rank rank, PEAT_MPI_Request request, const Phase& phase, PEAT_Bool is_remote);
 
     PEAT_Bool remove_pers_req(const PEAT_Rank rank, const PEAT_MPI_Request request, MAT_Request_Store_Record* ret_it);

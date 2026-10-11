@@ -120,16 +120,20 @@ PEAT_Bool Requests::parse_comm_completion_phase(const PEAT_Rank rank, const PEAT
     return false;
 }
 
-PEAT_Bool Requests::parse_collective_completion_phase(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase &phase, const int pc_level, PEAT_Bool is_remote)
+PEAT_Bool Requests::parse_collective_completion_phase(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase &phase, const int pc_level, PEAT_Bool is_fio, PEAT_Bool is_remote)
 {
     if (request == comm_store->get_MPI_REQUEST_NULL()) {
         std::cerr << "Null request detected. Rank: " << rank << ". Skipped." << std::endl;
         return false;
     }
     MAT_Request_Store_Record ret_it;
-    if(req_store->find_request(rank, request, REQUEST_TYPE_USER_COLLECTIVE, &ret_it, true)) {
-        MAT_Collectives_Record* coll = (MAT_Collectives_Record *) ret_it.record;
-        coll_func_store->update_request(rank, request, phase, coll->coll_event);
+    if(req_store->find_request(rank, request, is_fio? REQUEST_TYPE_USER_FIO : REQUEST_TYPE_USER_COLLECTIVE, &ret_it, true)) {
+        if(is_fio){
+            print_req_bind(rank, request, ret_it.record->get_ph(1), phase, is_remote);
+        } else {
+            MAT_Collectives_Record* coll = (MAT_Collectives_Record*)ret_it.record;
+            coll_func_store->update_request(rank, request, phase, coll->coll_event);
+        }
         return true;
     }
     return false;
@@ -389,7 +393,10 @@ void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is
                 parse_P2P_completion_phase(rank, REQUEST_TYPE_INTERNAL,  request, tag, source, size, ph_cn, event.PControl.ctl, is_remote);
                 break;
             case REQUEST_TYPE_USER_COLLECTIVE:
-                parse_collective_completion_phase(rank, request, ph_cn,  event.PControl.ctl, is_remote);
+                parse_collective_completion_phase(rank, request, ph_cn, false, event.PControl.ctl, is_remote);
+                break;
+            case REQUEST_TYPE_USER_FIO:
+                parse_collective_completion_phase(rank, request, ph_cn, true, event.PControl.ctl, is_remote);
                 break;
             default:
                 if (!(tag == comm_store->get_MPI_ANY_TAG() && source == comm_store->get_MPI_ANY_SOURCE()) && request != 0 ) {
@@ -512,8 +519,6 @@ void Requests::print_req_out(const Tractor_Event &event)
                        event.Requests.input_request_num,
                        event.Requests.triggered_request_num,
                        event.Requests.flag);
-    if (!event.nested)
-        output_MPI->printf(event.rank, ":%d", event.num_children); // legacy num_colts
     output_MPI->printf(event.rank, ":%llx", event.Requests.buf);
     for (int i = 0; i < event.Requests.input_request_num; i++) {
         output_MPI->printf(event.rank, ":%llx", event.requests[i]);

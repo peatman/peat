@@ -147,7 +147,6 @@ struct Tractor_Event : public Phase {
             PEAT_MPI_Comm comm = 0;
             PEAT_MPI_Comm newcomm = 0;
             PEAT_MPI_Comm remote_comm = 0;
-            PEAT_MPI_Comm inter_comm = 0;
             PEAT_MPI_Request request = 0;
         } Comms;
         // std::vector<Tractor_Event*> t_events;

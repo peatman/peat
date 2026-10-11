@@ -91,9 +91,9 @@ struct MAT_Record {
 
 struct MAT_Comm_Record : public MAT_Record {
 
-    PEAT_MPI_Comm comm, new_comm, remote_comm,inter_comm;
+    PEAT_MPI_Comm comm, new_comm, remote_comm;
 	PEAT_MPI_Request request;
-    MAT_Comm_Record() : MAT_Record(),comm(0),new_comm(0),remote_comm(0),inter_comm(0),request(0) {}
+    MAT_Comm_Record() : MAT_Record(),comm(0),new_comm(0),remote_comm(0),request(0) {}
     int record_type() { return 3; }
 	Phase ph; // doesn't need an array, because only one phase is recorded for comm events
     virtual Phase& get_ph(int idx) { return ph; }

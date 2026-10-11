@@ -193,7 +193,6 @@ class Collectives : public Outputs
 
     // friend std::ostream &operator<<(std::ostream &dbg, const Collectives &rec);
     std::map<int, std::map<MAT_Collective_Record, MAT_Collective_Clocks>> printed_collective;
-    std::map<PEAT_Rank, std::map<PEAT_MPI_Request, MAT_FIO_Record>> fio_requests;
 
     PEAT_Bool add_pers_request(const PEAT_Rank rank, const PEAT_MPI_Request request);
     PEAT_Bool remove_pers_request(const PEAT_Rank rank, const PEAT_MPI_Request request, Phase& ph);
@@ -202,7 +201,6 @@ class Collectives : public Outputs
     PEAT_Bool find_collective(const PEAT_Rank rank, const MAT_Request_Store_Record* rec, collective_list::iterator* record);
     PEAT_Bool add_pers_req_start(const PEAT_Rank rank, MAT_Collectives_Record* record);
 
-    PEAT_Bool find_request(PEAT_Rank rank, PEAT_MPI_Request request, MAT_FIO_Record *ret_it, PEAT_Bool erase);
 
     void process_unbound_events();
 #ifdef PEAT_MPI
@@ -225,7 +223,7 @@ class Collectives : public Outputs
     PEAT_Bool check_completion(const MAT_Collective &record);
     PEAT_Bool check_completion(collective_list::iterator &record);
     std::map<collective_key, collective_list_struct> coll_queues;
-    std::map<PEAT_MPI_File, PEAT_MPI_Comm> fh_comms;
+    std::map<PEAT_Rank, std::map<PEAT_MPI_File, PEAT_MPI_Comm>> fh_comms;
     PTP *ptp;
     Communicators *comm_store;
     Request_Store* req_store;
