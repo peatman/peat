@@ -72,7 +72,7 @@ class Mat
     Mat(const Mat &) = delete;
     Mat &operator=(const Mat &) = delete;
     void write_trace_info(const std::string &name);
-    bool parse_single_event(const int rank);
+    PEAT_Bool parse_single_event(const int rank);
 #ifdef PEAT_MPI
     PEAT_Num handle_incoming_messages();
     std::list<PEAT_Event_Delivery> active_deliveries;
@@ -91,7 +91,7 @@ class Mat
         p2p_func_store->process_unbound_events();
         coll_func_store->process_unbound_events();
     }
-    bool second_line;
+    PEAT_Bool second_line;
 
   private:
     String_Split line_mpi;

@@ -30,7 +30,7 @@ Request_Store::Request_Store(PTP *p,int v)
     resize_queues(ptp->get_rank_num());
 }
 
-bool Request_Store::find_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const Request_Store_Record_Type type, MAT_Request_Store_Record* ret_it, const PEAT_Bool erase)
+PEAT_Bool Request_Store::find_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const Request_Store_Record_Type type, MAT_Request_Store_Record* ret_it, const PEAT_Bool erase)
 {
     if (!queues[rank].empty()) {
         std::map<PEAT_MPI_Request, std::list<MAT_Request_Store_Record>>::iterator req_it = queues[rank].find(request);
@@ -61,7 +61,7 @@ PEAT_Bool Request_Store::remove_request(const PEAT_Rank rank, const PEAT_MPI_Req
 }
 
 #ifdef PEAT_MPI
-bool Request_Store::find_thrown_away_request(PEAT_Num queue_type, PEAT_Rank rank, PEAT_MPI_Request request, PEAT_Bool erase)
+PEAT_Bool Request_Store::find_thrown_away_request(PEAT_Num queue_type, PEAT_Rank rank, PEAT_MPI_Request request, PEAT_Bool erase)
 {
     std::map<PEAT_Rank, std::set<PEAT_MPI_Request>>* queue;
     switch(queue_type) {

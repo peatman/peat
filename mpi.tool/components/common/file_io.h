@@ -67,7 +67,7 @@ class File_Storage_GZ
     void open(const std::map<PEAT_Rank, std::string> &files, const char *mode_str = NULL);
     void open(const PEAT_Rank rank, const char *mode_str = NULL);
     void close(const PEAT_Rank rank);
-    bool check_open(const PEAT_Rank rank)
+    PEAT_Bool check_open(const PEAT_Rank rank)
     {
         if (fptr.at(rank).ptr)
             return true;

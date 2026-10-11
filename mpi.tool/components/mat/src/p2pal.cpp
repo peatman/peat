@@ -297,7 +297,7 @@ void P2PAL::print_Local(const Tractor_Event &event)
 #endif
 }
 
-bool P2PAL::match_peer(matching_event_type &queues, std::list<MAT_P2P_Record *>::iterator &ret_it, const MAT_P2P_Record &input_record) const
+PEAT_Bool P2PAL::match_peer(matching_event_type &queues, std::list<MAT_P2P_Record *>::iterator &ret_it, const MAT_P2P_Record &input_record) const
 {
     const PEAT_MPI_Comm comm = input_record.comm;
     const PEAT_Rank peer_rank = input_record.peer_rank;
@@ -344,7 +344,7 @@ bool P2PAL::match_peer(matching_event_type &queues, std::list<MAT_P2P_Record *>:
 }
 
 
-bool P2PAL::update_request(const PEAT_Rank rank, const Request_Store_Record_Type type, const PEAT_MPI_Tag tag, const PEAT_Rank source, const PEAT_Message_Size size, PEAT_MPI_Request request, const Phase &phase, bool is_remote)
+PEAT_Bool P2PAL::update_request(const PEAT_Rank rank, const Request_Store_Record_Type type, const PEAT_MPI_Tag tag, const PEAT_Rank source, const PEAT_Message_Size size, PEAT_MPI_Request request, const Phase &phase, PEAT_Bool is_remote)
 {
 	MAT_P2P_Record* record = NULL;
     MAT_Request_Store_Record ret_it;
@@ -414,7 +414,7 @@ void P2PAL::write_HNT() const
     std::ostringstream tmp;
     tmp << "FREQ" << ":" << ptp->get_trace_freq(-1) << "\n";
 }
-bool P2PAL::empty() const
+PEAT_Bool P2PAL::empty() const
 {
 #if 0
     for(PEAT_Num i = qt_send; i < qt_size; ++i){
@@ -432,7 +432,7 @@ bool P2PAL::empty() const
 #endif
 }
 
-bool P2PAL::add_pers_req_start(const PEAT_Rank rank, MAT_P2P_Record *record)
+PEAT_Bool P2PAL::add_pers_req_start(const PEAT_Rank rank, MAT_P2P_Record *record)
 {
     if (record->peer_rank == comm_store->get_MPI_PROC_NULL()) {
         return false;
@@ -452,7 +452,7 @@ bool P2PAL::add_pers_req_start(const PEAT_Rank rank, MAT_P2P_Record *record)
 	req_store->add_request(rank, record->request, &tmp);
     return true;
 }
-void P2PAL::parse_P2PTx(PEAT_Rank rank, const Tractor_Event &event, bool print_out)
+void P2PAL::parse_P2PTx(PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool print_out)
 {
     assert(ptp);
     assert(comm_store);
@@ -535,7 +535,7 @@ void P2PAL::parse_P2PTx(PEAT_Rank rank, const Tractor_Event &event, bool print_o
 #endif
     }
 }
-void P2PAL::parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, bool increase_MPI)
+void P2PAL::parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool increase_MPI)
 {
     assert(ptp);
     assert(comm_store);

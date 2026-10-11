@@ -80,10 +80,10 @@ PET_Event::PET_Event(PET_Core *p) : PET_Time_Event(), pet_core(p), pet_node(NULL
                                     ids(2, -1), rank(-1), node(-1), thread_id(-1),
                                     is_user_code_applied(false), estimation_started(false), is_written(false), is_initiated(false),
                                     pending_reason(pr_event_not_estimated), addrs(p->model_id.num_addrs),
-                                    parent_event(NULL), host_event(NULL), force_write(false), header_second_line(false), container_event(NULL), nested_index_being_estimated(-1), progress_owner(NULL),
+                                    parent_event(NULL), host_event(NULL), container_event(NULL), nested_index_being_estimated(-1), progress_owner(NULL), 
                                     parallel_section_begin(NULL), prev_event(NULL), next_event(NULL),
                                     sub_t_applied(false), sub_t_ae(0), sub_t_t(0), sub_t_ae_t(0), sub_t_t_t(0),
-                                    uc_length(0), uco_length(0), finish_calculations(false), remaining_ee_events(0)
+                                    uc_length(0), uco_length(0), finish_calculations(false), remaining_ee_events(0), force_write(false), header_second_line(false)
 {
 }
 
@@ -830,7 +830,7 @@ PEAT_Num PET_Event::handle_progress_messages(PEAT_Clock clk, PEAT_Bool just_chec
 {
     Estimation_Event *evt;
     PEAT_Num num_event_submitted = 0;
-    bool can_handle_progress = !(parent_event ? parent_event->is_estimated() : is_estimated());
+    PEAT_Bool can_handle_progress = !(parent_event ? parent_event->is_estimated() : is_estimated());
     if (can_handle_progress) {
         PEAT_Clock &last_progress_notify = get_rank()->last_progress_notify;
         do {

@@ -121,7 +121,7 @@ PEAT_Bool TE_Timeline::remove_event(TE_Event *evt)
     return deleted;
 }
 
-TE_Event *TE_Timeline::insert(TE_Event *evt, bool isperm)
+TE_Event *TE_Timeline::insert(TE_Event *evt, PEAT_Bool isperm)
 {
     TE_Event inserted_event;
     event_mutex->lock();
@@ -196,7 +196,7 @@ TE_Event *TE_Timeline::insert(TE_Event *evt, bool isperm)
     return &empty_event;
 }
 
-TE_Event *PAR_Timeline::insert(TE_Event *evt, bool isperm)
+TE_Event *PAR_Timeline::insert(TE_Event *evt, PEAT_Bool isperm)
 {
     if (evt->size == 0) {
         evt->num_units = 0;
@@ -215,7 +215,7 @@ TE_Event *PAR_Timeline::insert(TE_Event *evt, bool isperm)
     // evt->is_blocking = true;
     return TE_Timeline::insert(evt, isperm);
 }
-TE_Event *SEQ_Timeline::insert(TE_Event *evt, bool isperm)
+TE_Event *SEQ_Timeline::insert(TE_Event *evt, PEAT_Bool isperm)
 {
     if (evt->size == 0) {
         evt->num_units = 0;
@@ -276,7 +276,7 @@ void SEQ_Timeline::mark_reqs_orphan(TE_Event *evt)
     }
 }
 
-TE_Event *SEQ_Timeline::insert_req_chunk(TE_Event *evt, PEAT_Clock last_start, bool write)
+TE_Event *SEQ_Timeline::insert_req_chunk(TE_Event *evt, PEAT_Clock last_start, PEAT_Bool write)
 {
     TE_Event tmp = *evt;
     tmp.convert_event(evt, last_start);
@@ -301,7 +301,7 @@ TE_Event *SEQ_Timeline::insert_req_chunk(TE_Event *evt, PEAT_Clock last_start, b
 #endif
 }
 
-static bool find_iterator(std::list<TE_Event> &list, PEAT_UID uniq_id, std::list<TE_Event>::iterator &evt_it_out)
+static PEAT_Bool find_iterator(std::list<TE_Event> &list, PEAT_UID uniq_id, std::list<TE_Event>::iterator &evt_it_out)
 {
     for (std::list<TE_Event>::iterator evt_it = list.begin(); evt_it != list.end(); ++evt_it) {
         if ((*evt_it).uniq_id == uniq_id) {
@@ -495,7 +495,7 @@ TE_Event *SEQ_Timeline::update_write(PEAT_Clock clk, PEAT_Bool write)
         pet_throw_error(NULL, NULL, NULL, "Event Stage Finish calculation error.");
     return NULL;
 }
-TE_Event *SEQ_Timeline::re_arrange_chunks(PEAT_Clock clk, bool write)
+TE_Event *SEQ_Timeline::re_arrange_chunks(PEAT_Clock clk, PEAT_Bool write)
 {
     PET_Event *prev_evt_owner = NULL;
     if (!write) {
@@ -573,7 +573,7 @@ TE_Event *SEQ_Timeline::update_read(PEAT_Clock clk, PEAT_Bool write)
     }
     return re_arrange_chunks(clk, write);
 }
-TE_Event *TE_Timeline::update_completed_event(bool isread)
+TE_Event *TE_Timeline::update_completed_event(PEAT_Bool isread)
 {
     if (isread) {
         if (tur_event.finish < 0)
@@ -633,7 +633,7 @@ TE_Event *TE_Timeline::update_completed_event(bool isread)
     }
 }
 
-TE_Event *SEQ_Timeline::update_completed_event(bool isread)
+TE_Event *SEQ_Timeline::update_completed_event(PEAT_Bool isread)
 {
     //  if (isread) tr_event = empty_event; else tw_event = empty_event; // clear cache
     SEQ_Timeline::clear_cache(isread);

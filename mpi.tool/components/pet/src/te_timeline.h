@@ -97,19 +97,19 @@ class TE_Timeline
 
     void set_estimate_read(PEAT_Bool r) { estimate_read = r; }
     PEAT_Bool remove_event(TE_Event *evt);
-    virtual TE_Event *update_completed_event(bool isread);
+    virtual TE_Event *update_completed_event(PEAT_Bool isread);
     PEAT_BW get_bw(TE_Event *evt);
     PEAT_Clock get_lat(TE_Event *evt);
     PEAT_Clock get_multiplexing_lat(TE_Event *evt);
     PEAT_Num get_max_chain_num() { return max_chains; };
 
-    virtual TE_Event *insert(TE_Event *evt, bool isperm);
+    virtual TE_Event *insert(TE_Event *evt, PEAT_Bool isperm);
     // TE_Event *get_event(PEAT_UID uniq_id, PET_Event *owner, TE_Queue queue);
     virtual TE_Event *update_write(PEAT_Clock clk, PEAT_Bool write) = 0;
     virtual TE_Event *update_read(PEAT_Clock clk, PEAT_Bool write) = 0;
     virtual TE_Event *complete(TE_Event *);
     std::map<PEAT_UID, TE_Event> &get_read_requests() { return read_requests; };
-    virtual void clear_cache(bool isread) {}
+    virtual void clear_cache(PEAT_Bool isread) {}
 };
 class SEQ_Timeline : public TE_Timeline
 {
@@ -129,22 +129,22 @@ class SEQ_Timeline : public TE_Timeline
         return unit_length;
     }
 
-    virtual TE_Event *update_completed_event(bool isread);
+    virtual TE_Event *update_completed_event(PEAT_Bool isread);
     virtual TE_Event *update_write(PEAT_Clock clk, PEAT_Bool write);
     virtual TE_Event *update_read(PEAT_Clock clk, PEAT_Bool write);
-    TE_Event *re_arrange_chunks(PEAT_Clock clk, bool write);
+    TE_Event *re_arrange_chunks(PEAT_Clock clk, PEAT_Bool write);
 
     void check_and_correct_write(PEAT_Clock clk);
     void check_and_correct_read(PEAT_Clock clk);
     void mark_reqs_orphan(TE_Event *evt);
-    TE_Event *insert_req_chunk(TE_Event *evt, PEAT_Clock last_start, bool write);
+    TE_Event *insert_req_chunk(TE_Event *evt, PEAT_Clock last_start, PEAT_Bool write);
     /*void clear_tmp_read_requests(PEAT_Clock valid_till) {
         for(std::map <PEAT_UID, TE_Event>::iterator evt_it = temp_read_requests.lower_bound(valid_till); evt_it != temp_read_requests.end();) {
             temp_read_requests.erase(evt_it);
         }
     }*/
-    virtual TE_Event *insert(TE_Event *evt, bool isperm);
-    virtual void clear_cache(bool isread)
+    virtual TE_Event *insert(TE_Event *evt, PEAT_Bool isperm);
+    virtual void clear_cache(PEAT_Bool isread)
     {
         if (isread)
             tr_event = empty_event;
@@ -159,7 +159,7 @@ class PAR_Timeline : public TE_Timeline
     // PAR_Timeline(PEAT_LNum max_c = MAX_MEM_CHAINS) : TE_Timeline(max_buffers, PEAT_MEM_UNIT_LENGTH) {};
     virtual TE_Event *update_write(PEAT_Clock clk, PEAT_Bool write);
     virtual TE_Event *update_read(PEAT_Clock clk, PEAT_Bool write);
-    virtual TE_Event *insert(TE_Event *evt, bool isperm);
+    virtual TE_Event *insert(TE_Event *evt, PEAT_Bool isperm);
 };
 
 #if 0

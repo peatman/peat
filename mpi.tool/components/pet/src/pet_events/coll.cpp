@@ -412,7 +412,7 @@ void PET_Coll_Event::notify_before_destroy(PET_Event *event)
     PET_Event::notify_before_destroy(event); // drops it from nested_events and flat_events
 }
 
-static bool colt_before(const PET_Event *a, const PET_Event *b)
+static PEAT_Bool colt_before(const PET_Event *a, const PET_Event *b)
 {
     // earlier start first; on equal start the longer (containing) record first
     if (a->e_time.func.in != b->e_time.func.in)

@@ -44,27 +44,27 @@ class Requests : public Outputs
     void initialize(PTP *p, Communicators *c, Request_Store *r, P2PAL *pp, Comm* cc, Collectives *cl, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
 
     void parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_remote);
-    bool parse_P2P_completion_phase(PEAT_Rank rank, const Request_Store_Record_Type type, 
+    PEAT_Bool parse_P2P_completion_phase(PEAT_Rank rank, const Request_Store_Record_Type type, 
                                     const PEAT_MPI_Request request,
                                     const PEAT_MPI_Tag tag,
                                     const PEAT_Rank source,
                                     const PEAT_Message_Size size,
                                     const Phase& phase,
                                     const int pc_level,
-                                    bool is_remote);
+                                    PEAT_Bool is_remote);
     Request_Store_Record_Type  select_event(PEAT_Rank rank, const PEAT_MPI_Request request, PEAT_Bool  is_internal, PEAT_Bool is_remote);
-    bool discard_P2P_event(const PEAT_Rank rank, const PEAT_MPI_Request request, bool is_remote);
-    bool discard_collective_event(const PEAT_Rank rank, const PEAT_MPI_Request request, bool is_remote);
+    PEAT_Bool discard_P2P_event(const PEAT_Rank rank, const PEAT_MPI_Request request, PEAT_Bool is_remote);
+    PEAT_Bool discard_collective_event(const PEAT_Rank rank, const PEAT_MPI_Request request, PEAT_Bool is_remote);
 
-    void parse_P2P_start_phase(const PEAT_Rank rank, const Phase& phase, const PEAT_MPI_Request request, MAT_Request_Store_Record* ret_it, const int pc_level, bool is_remote);
-    void parse_collective_start_phase(const PEAT_Rank rank, const Phase& phase, const PEAT_MPI_Request request, MAT_Request_Store_Record* ret_it, const int pc_level, bool is_remote);
-    bool parse_collective_completion_phase(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase &phase, const int pc_level, bool is_remote);
-    bool parse_comm_completion_phase(const PEAT_Rank rank, PEAT_MPI_Request request, const Phase& phase, bool is_remote);
+    void parse_P2P_start_phase(const PEAT_Rank rank, const Phase& phase, const PEAT_MPI_Request request, MAT_Request_Store_Record* ret_it, const int pc_level, PEAT_Bool is_remote);
+    void parse_collective_start_phase(const PEAT_Rank rank, const Phase& phase, const PEAT_MPI_Request request, MAT_Request_Store_Record* ret_it, const int pc_level, PEAT_Bool is_remote);
+    PEAT_Bool parse_collective_completion_phase(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase &phase, const int pc_level, PEAT_Bool is_remote);
+    PEAT_Bool parse_comm_completion_phase(const PEAT_Rank rank, PEAT_MPI_Request request, const Phase& phase, PEAT_Bool is_remote);
 
-    bool remove_pers_req(const PEAT_Rank rank, const PEAT_MPI_Request request, MAT_Request_Store_Record* ret_it);
+    PEAT_Bool remove_pers_req(const PEAT_Rank rank, const PEAT_MPI_Request request, MAT_Request_Store_Record* ret_it);
     void print_req_out(const Tractor_Event &event);
-    void print_req_bind(PEAT_Rank rank, PEAT_MPI_Request req, const Phase &phase, const Phase &bind, bool is_remote);
-    void print_req_bind(PEAT_Rank rank, const Collective_Entry &coll, const Phase &phase, bool is_remote);
+    void print_req_bind(PEAT_Rank rank, PEAT_MPI_Request req, const Phase &phase, const Phase &bind, PEAT_Bool is_remote);
+    void print_req_bind(PEAT_Rank rank, const Collective_Entry &coll, const Phase &phase, PEAT_Bool is_remote);
 
     PTP *ptp;
     Communicators *comm_store;

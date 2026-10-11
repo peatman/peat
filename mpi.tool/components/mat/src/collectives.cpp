@@ -266,7 +266,7 @@ void Collectives::print_collective_bind(const MAT_Collective &record)
 #endif
 }
 
-bool Collectives::match_collective(collective_list::iterator &first, collective_list::iterator &last, collective_list::iterator &record, PEAT_Rank rank) const
+PEAT_Bool Collectives::match_collective(collective_list::iterator &first, collective_list::iterator &last, collective_list::iterator &record, PEAT_Rank rank) const
 {
     collective_list::iterator it = first;
     for (; it != last; ++it) {
@@ -286,7 +286,7 @@ bool Collectives::match_collective(collective_list::iterator &first, collective_
     return false;
 }
 
-bool Collectives::match_collective(collective_list_struct &queue, collective_list::iterator &record, PEAT_Rank rank) const
+PEAT_Bool Collectives::match_collective(collective_list_struct &queue, collective_list::iterator &record, PEAT_Rank rank) const
 {
     if (!queue.collectives.empty()) {
 #ifdef UPDATE_FIRST_ENTRY
@@ -296,7 +296,7 @@ bool Collectives::match_collective(collective_list_struct &queue, collective_lis
         collective_list::iterator last = queue.collectives.end();
         if (first == queue.collectives.end())
             first = queue.collectives.begin();
-        bool ret = match_collective(first, last, record, rank);
+        PEAT_Bool ret = match_collective(first, last, record, rank);
         // if (ret) first = record;
         return ret;
 #else
@@ -306,7 +306,7 @@ bool Collectives::match_collective(collective_list_struct &queue, collective_lis
     return false;
 }
 
-bool Collectives::empty() const
+PEAT_Bool Collectives::empty() const
 {
     if (!coll_queues.empty()) {
         for (std::map<collective_key, collective_list_struct>::const_iterator it = coll_queues.begin(); it != coll_queues.end(); ++it) {
@@ -317,11 +317,11 @@ bool Collectives::empty() const
     }
     return true;
 }
-void Collectives::process_collective(const PEAT_Rank rank, MAT_Collectives_Record* event, int pc_level, bool is_remote)
+void Collectives::process_collective(const PEAT_Rank rank, MAT_Collectives_Record* event, int pc_level, PEAT_Bool is_remote)
 {
     collective_key key(event->coll_event->comm, event->coll_event->ph[1].func_id);
     collective_list::iterator matched_record;
-    bool matched_collective_exists = false;
+    PEAT_Bool matched_collective_exists = false;
     if(event->coll_event->request > 0) {
         MAT_Request_Store_Record tmp;
         tmp.request_type = REQUEST_TYPE_USER_COLLECTIVE;
@@ -334,7 +334,7 @@ void Collectives::process_collective(const PEAT_Rank rank, MAT_Collectives_Recor
             matched_collective_exists = match_collective(coll_queues.at(key), matched_record, rank);
 #if 0 // def _DEBUG
             collective_list::iterator matched_record_debug;
-            bool matched_collective_exists_debug = match_collective_old(coll_queues.at(collective_key), matched_record_debug, rank);
+            PEAT_Bool matched_collective_exists_debug = match_collective_old(coll_queues.at(collective_key), matched_record_debug, rank);
             if(matched_collective_exists_debug != matched_collective_exists) {
                 matched_collective_exists = match_collective(coll_queues.at(collective_key), matched_record, rank);
             };
@@ -343,7 +343,6 @@ void Collectives::process_collective(const PEAT_Rank rank, MAT_Collectives_Recor
         }
     }
     if(matched_collective_exists) {
-    match_existing_collective:
         Collective_Ranks& expected_ranks = coll_get_value(matched_record, expected_ranks);
 #if defined PROCESS_WHOLE_EVENT
         Collective_Ranks& init_ranks = matched_record->init_ranks;
@@ -439,7 +438,7 @@ void Collectives::process_collective(const PEAT_Rank rank, MAT_Collectives_Recor
     }
 }
 
-void Collectives::parse_collective(const PEAT_Rank rank, const Tractor_Event &event, bool is_remote)
+void Collectives::parse_collective(const PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool is_remote)
 {
     assert(ptp);
     assert(comm_store);
@@ -495,7 +494,7 @@ void Collectives::parse_collective(const PEAT_Rank rank, const Tractor_Event &ev
         }
     }
 }
-bool Collectives::add_pers_req_start(const PEAT_Rank rank, MAT_Collectives_Record* record)
+PEAT_Bool Collectives::add_pers_req_start(const PEAT_Rank rank, MAT_Collectives_Record* record)
 {
     /*MAT_Request_Store_Record tmp;
     tmp.request_type = REQUEST_TYPE_USER_COLLECTIVE;
@@ -505,7 +504,7 @@ bool Collectives::add_pers_req_start(const PEAT_Rank rank, MAT_Collectives_Recor
     return true;
 }
 
-bool Collectives::check_completion(const MAT_Collective &record)
+PEAT_Bool Collectives::check_completion(const MAT_Collective &record)
 {
     for (std::map<PEAT_Rank, Collective_Event*>::const_iterator c_it = record.coll_events_list.cbegin(); c_it != record.coll_events_list.cend(); ++c_it) {
         if (c_it->second->request > 0)
@@ -514,7 +513,7 @@ bool Collectives::check_completion(const MAT_Collective &record)
     return true;
 }
 
-bool Collectives::check_completion(collective_list::iterator &record)
+PEAT_Bool Collectives::check_completion(collective_list::iterator &record)
 {
     for (std::map<PEAT_Rank, Collective_Event*>::const_iterator c_it = coll_get_value(record, coll_events_list).cbegin(); c_it != coll_get_value(record, coll_events_list).cend(); ++c_it) {
         if (c_it->second->request > 0)
@@ -522,7 +521,7 @@ bool Collectives::check_completion(collective_list::iterator &record)
     }
     return true;
 }
-bool Collectives::erase_collective(collective_list::iterator &record)
+PEAT_Bool Collectives::erase_collective(collective_list::iterator &record)
 {
     collective_key c_key(coll_get_value(record, comm), coll_get_value(record, func_id));
 //    coll_queues[c_key].collectives.erase(record);
@@ -538,7 +537,7 @@ bool Collectives::erase_collective(collective_list::iterator &record)
         coll_queues.erase(c_key);
     return true;
 }
-bool Collectives::erase_collective(collective_key &c_key, collective_list::iterator &record)
+PEAT_Bool Collectives::erase_collective(collective_key &c_key, collective_list::iterator &record)
 {
 //    coll_queues[c_key].collectives.erase(record);
 #ifdef UPDATE_FIRST_ENTRY
@@ -552,7 +551,7 @@ bool Collectives::erase_collective(collective_key &c_key, collective_list::itera
         coll_queues.erase(c_key);
     return true;
 }
-bool Collectives::find_collective(const PEAT_Rank rank, const MAT_Request_Store_Record *rec, collective_list::iterator* record)
+PEAT_Bool Collectives::find_collective(const PEAT_Rank rank, const MAT_Request_Store_Record *rec, collective_list::iterator* record)
 {
 	MAT_Collectives_Record* event = static_cast<MAT_Collectives_Record*>(rec->record);
     collective_key c_key(event->coll_event->comm, event->get_ph(1).func_id);
@@ -567,7 +566,7 @@ bool Collectives::find_collective(const PEAT_Rank rank, const MAT_Request_Store_
     This 'find' uses inverse logic : instead of finding the collective there this rank is NOT(yet) arrived and registered
     it finds the collective where it ALREADY registered but not yet 'completed'
  */
-bool Collectives::find_collective(const PEAT_Rank rank, Collective_Event* event, collective_list::iterator* record)
+PEAT_Bool Collectives::find_collective(const PEAT_Rank rank, Collective_Event* event, collective_list::iterator* record)
 {
     collective_key c_key(event->comm, event->ph[1].func_id);
     if(coll_queues.count(c_key)) {
@@ -583,7 +582,7 @@ bool Collectives::find_collective(const PEAT_Rank rank, Collective_Event* event,
     return false;
 }
 
-bool Collectives::update_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase &phase, Collective_Event *event)
+PEAT_Bool Collectives::update_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase &phase, Collective_Event *event)
 {
     collective_list::iterator coll;
     if(find_collective(rank,event, &coll)) {
@@ -734,7 +733,7 @@ void Collectives::print_sizes() const
     printf(":k%zd %zd\n", keys, num);
 }
 
-bool Collectives::find_request(PEAT_Rank rank, PEAT_MPI_Request request, MAT_FIO_Record *ret_it, PEAT_Bool erase)
+PEAT_Bool Collectives::find_request(PEAT_Rank rank, PEAT_MPI_Request request, MAT_FIO_Record *ret_it, PEAT_Bool erase)
 {
     if (!fio_requests[rank].empty()) {
         if (fio_requests[rank].count(request) > 0) {

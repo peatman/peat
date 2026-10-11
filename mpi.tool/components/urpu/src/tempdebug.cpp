@@ -70,7 +70,7 @@ void P2PAL::parse_p2_p_tx(PEAT_Rank rank, const Tractor_Event &event)
         }
     }
 }
-void P2PAL::parse_p2_p_rx(PEAT_Rank rank, const Tractor_Event &event, bool increase_mpi)
+void P2PAL::parse_p2_p_rx(PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool increase_mpi)
 {
     assert(fId);  assert(ptp); assert(com_store);
     const PEAT_MPI_Comm comm = !fId->check_property(event.func_id, PEAT_PROP_COMM) ? 2 : event.P2P.comm;
@@ -154,22 +154,22 @@ void  Request::process_remote_request(PEAT_Signed_Num size, PEAT_Rank src) {
                 return;
             }
         }
-        bool found_one_p2_p = parse_p2_p_completion_phase(temp_req_event.rank, temp_req_event, temp_req_event.request, -2, -1, temp_req_event.pc_level, qt_send, qt_send);
-        bool found_one_collective = false;
+        PEAT_Bool found_one_p2_p = parse_p2_p_completion_phase(temp_req_event.rank, temp_req_event, temp_req_event.request, -2, -1, temp_req_event.pc_level, qt_send, qt_send);
+        PEAT_Bool found_one_collective = false;
         if(!found_one_p2_p) {
-            bool found_one_collective = parse_collective_completion_phase(temp_req_event.rank, temp_req_event, temp_req_event.request, temp_req_event.pc_level);
+            PEAT_Bool found_one_collective = parse_collective_completion_phase(temp_req_event.rank, temp_req_event, temp_req_event.request, temp_req_event.pc_level);
             if(!found_one_collective) {
                 std::cerr << "Request " << std::hex << temp_req_event.request << std::dec << " is 'lost'. Rank: " << temp_req_event.rank << ". uniq_id: " << temp_req_event.uniq_id << " Skipped." << std::endl;
-                bool found_one_p2_pr = parse_p2_p_completion_phase(temp_req_event.rank, temp_req_event, temp_req_event.request, -2, -1, temp_req_event.pc_level, qt_send, qt_send);
+                PEAT_Bool found_one_p2_pr = parse_p2_p_completion_phase(temp_req_event.rank, temp_req_event, temp_req_event.request, -2, -1, temp_req_event.pc_level, qt_send, qt_send);
                 if(!found_one_p2_pr) {
-                    bool found_one_collective = parse_collective_completion_phase(temp_req_event.rank, temp_req_event, temp_req_event.request, temp_req_event.pc_level);
+                    PEAT_Bool found_one_collective = parse_collective_completion_phase(temp_req_event.rank, temp_req_event, temp_req_event.request, temp_req_event.pc_level);
                 }
             }
         }
     }
     return;
 }
-bool P2PAL::find_request(PEAT_Num queue_type, PEAT_Rank rank, PEAT_MPI_Request request, std::list<urpu_record>::iterator &ret_it)
+PEAT_Bool P2PAL::find_request(PEAT_Num queue_type, PEAT_Rank rank, PEAT_MPI_Request request, std::list<urpu_record>::iterator &ret_it)
 {
     std::list<urpu_record> &queue = p2pal_queues[queue_type][rank];
     if(!queue.empty()) {
@@ -183,7 +183,7 @@ bool P2PAL::find_request(PEAT_Num queue_type, PEAT_Rank rank, PEAT_MPI_Request r
     return false;
 }
 
-bool P2PAL::update_request(PEAT_Num queue_type, PEAT_Rank rank, const PEAT_MPI_Tag tag, const PEAT_Rank source, PEAT_MPI_Request request, const Phase &phase, std::list<urpu_record>::iterator &req_it)
+PEAT_Bool P2PAL::update_request(PEAT_Num queue_type, PEAT_Rank rank, const PEAT_MPI_Tag tag, const PEAT_Rank source, PEAT_MPI_Request request, const Phase &phase, std::list<urpu_record>::iterator &req_it)
 {
     std::list<urpu_record>::iterator peer_it;
     if(req_it->request == request) {
@@ -326,7 +326,7 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event) {
         return;
     }
     //cerr << "DBG2 " << event << "\n";
-    bool found_one = false;
+    PEAT_Bool found_one = false;
     for(PEAT_Num i = 0; i < event.Requests.triggered_request_num; ++i) {
         //pull requests from all available queues: message_queues[SENDQ],message_queues[RECVQ]
         PEAT_MPI_Request request = event.requests.at(event.statuses.at(i).index);
@@ -388,8 +388,8 @@ void Request::parse_cn(const PEAT_Rank rank, Tractor_Event &event) {
 #endif
 
         if(request != com_store->get_MPI_REQUEST_NULL()) {
-            bool found_one_p2_p = parse_p2_p_completion_phase(rank, ph_cn, request, tag, source, record.pc_level, qn_start, qn_stop);
-            bool found_one_collective = false;
+            PEAT_Bool found_one_p2_p = parse_p2_p_completion_phase(rank, ph_cn, request, tag, source, record.pc_level, qn_start, qn_stop);
+            PEAT_Bool found_one_collective = false;
             if(!found_one_p2_p) {
                 found_one_collective = parse_collective_completion_phase(rank, ph_cn, request, record.pc_level);
                 if(!found_one_collective) {

@@ -87,7 +87,7 @@ struct TE_Event {
 
     {
     }
-    bool operator<(const TE_Event &s)
+    PEAT_Bool operator<(const TE_Event &s)
     {
         if (t_finish < s.t_finish)
             return true;
@@ -113,19 +113,19 @@ struct TE_Event {
     }
     void convert_event(TE_Event *src, PEAT_Clock last_start);
     /*
-    bool operator >(const TE_Event& s) {
+    PEAT_Bool operator >(const TE_Event& s) {
         if (t_finish > s.t_finish) return true;
         return false;
     }
-    bool operator <=(const TE_Event& s) {
+    PEAT_Bool operator <=(const TE_Event& s) {
         if (t_finish <= s.t_finish) return true;
         return false;
     }
-    bool operator >=(const TE_Event& s) {
+    PEAT_Bool operator >=(const TE_Event& s) {
         if (t_finish >= s.t_finish) return true;
         return false;
     }*/
-    bool operator==(const TE_Event &s)
+    PEAT_Bool operator==(const TE_Event &s)
     {
         if (t_finish != s.t_finish)
             return false;
@@ -156,7 +156,7 @@ struct TE_Event {
         // if (tr_env != s.tr_env) return false;
         return true;
     }
-    bool operator!=(const TE_Event &s)
+    PEAT_Bool operator!=(const TE_Event &s)
     {
         return !(*this == s);
     }

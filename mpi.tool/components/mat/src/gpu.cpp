@@ -260,16 +260,16 @@ void GPU::parse_GPU(const PEAT_Rank rank, const Tractor_Event &event)
     return;
 }
 
-bool GPU::check_completion()
+PEAT_Bool GPU::check_completion()
 {
     return true;
 }
 
-bool GPU::find_handle(PEAT_Rank rank, PEAT_MPI_Request request)
+PEAT_Bool GPU::find_handle(PEAT_Rank rank, PEAT_MPI_Request request)
 {
     return false;
 }
-bool GPU::update_handle(PEAT_Rank rank, PEAT_MPI_Request request, const Phase &phase)
+PEAT_Bool GPU::update_handle(PEAT_Rank rank, PEAT_MPI_Request request, const Phase &phase)
 {
     return false;
 }

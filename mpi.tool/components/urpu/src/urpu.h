@@ -50,7 +50,7 @@ class urpu
     User_Region_Store uc_store;
     urpu(Global_Parameters &file_names, Model_ID &model_id_storage);
     ~urpu();
-    bool parse_single_event(const int rank);
+    PEAT_Bool parse_single_event(const int rank);
     void process();
 };
 

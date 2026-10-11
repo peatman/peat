@@ -67,7 +67,7 @@ void Comm::parse_comm(const PEAT_Rank rank, Tractor_Event &event)
     }
     print_comm_out(event);
 }
-bool Comm::update_request(const PEAT_Rank rank, PEAT_MPI_Request request, const Phase& phase, bool is_remote)
+PEAT_Bool Comm::update_request(const PEAT_Rank rank, PEAT_MPI_Request request, const Phase& phase, PEAT_Bool is_remote)
 {
     MAT_Comm_Record* record = NULL;
     MAT_Request_Store_Record ret_it;

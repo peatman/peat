@@ -159,7 +159,7 @@ int main(int argc, char **argv)
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0},
     };
-    bool need_determine_fs = false;
+    PEAT_Bool need_determine_fs = false;
     int num = 1;
     do {
         res = getopt_long(argc, argv, "i:w:r:f:v:m:h", long_options, &option_index);

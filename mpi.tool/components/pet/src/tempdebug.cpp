@@ -162,7 +162,7 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
 		std::map<PEAT_Func_ID_Pair, std::map < PEAT_Message_Size, MPI_Event_Stat> > working_set;
 		PEAT_BW ideal_bw = 0;
 		PEAT_Clock general_lat = 20;
-		bool is_smp = true;
+		PEAT_Bool is_smp = true;
 		PEAT_Num numa_ppn = ptp->get_numa_pp( 0, 0);
 		PEAT_Trasport_Environment  env_t=transport->get_env( t, stat_local.cbegin()->first.id, stat_local.cbegin()->first.parent_id, 0, numa_ppn, globals.transport_selector );
 		switch ( t ) {
@@ -713,7 +713,7 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
         if (stat_local.empty())
             continue;
         std::map<PEAT_Func_ID_Pair, std::map<PEAT_Message_Size, MPI_Event_Stat>> working_set;
-        bool is_smp = true;
+        PEAT_Bool is_smp = true;
         PEAT_Num numa_ppn = ptp->get_numa_pp(0, 0);
         PEAT_Trasport_Environment env_t = transport->get_env(t, stat_local.cbegin()->first.id, stat_local.cbegin()->first.parent_id, 0, numa_ppn, globals.transport_selector);
         switch (t) {

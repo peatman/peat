@@ -99,7 +99,7 @@ struct PEAT_Func_ID_Pair {
     PEAT_MPI_Func_ID id, parent_id;
     PEAT_Func_ID_Pair(PEAT_MPI_Func_ID _id, PEAT_MPI_Func_ID _parent_id) : id(_id), parent_id(_parent_id) {};
     PEAT_Func_ID_Pair() : id(TMPI_FUNC_ID_NONE), parent_id(TMPI_FUNC_ID_NONE) {};
-    bool operator<(const PEAT_Func_ID_Pair &r) const
+    PEAT_Bool operator<(const PEAT_Func_ID_Pair &r) const
     {
         if (id < r.id)
             return true;
@@ -118,7 +118,7 @@ struct PEAT_Rank_Pair {
     PEAT_Rank_Pair(PEAT_Rank _from, PEAT_Rank _to, PEAT_Rank _max_rank) : from(_from), to(_to), max_rank(_max_rank) {};
     PEAT_Rank_Pair(PEAT_Rank _max_rank) : from(-1), to(-1), max_rank(_max_rank) {};
     PEAT_Rank_Pair() : from(-1), to(-1), max_rank(-1) {};
-    bool operator<(const PEAT_Rank_Pair &r) const
+    PEAT_Bool operator<(const PEAT_Rank_Pair &r) const
     {
         if (from < r.from)
             return true;
@@ -230,7 +230,7 @@ struct PEAT_Time_Event {
         peat_throw_error("Time Event (in) is negative\n");
         return 0;
     }
-    bool operator>(PEAT_Clock t)
+    PEAT_Bool operator>(PEAT_Clock t)
     {
         if (in > t)
             return true;
@@ -446,7 +446,7 @@ struct PEAT_Collective_Bytes {
         return false;
     }
     PEAT_Bool is_vector;
-    bool operator==(const PEAT_Collective_Bytes s)
+    PEAT_Bool operator==(const PEAT_Collective_Bytes s)
     {
         // light copmpare not always accurate but since it's purely for debug it's OK
         if (is_vector != s.is_vector)
@@ -526,7 +526,7 @@ struct Global_Parameters {
     PEAT_FREQ source_freq;
     PEAT_FREQ target_freq;
     PEAT_Rank target_ppn, target_numa_pp;
-    bool estimate_read;
+    PEAT_Bool estimate_read;
     int progress_engine;
     int use_up;
     int matching_only;
@@ -550,7 +550,7 @@ struct Global_Parameters {
     int gather_transport_stat;
     PEAT_Num onetime_pass_per_rank;
     size_t max_list_size;
-    bool aggregate_funcs;
+    PEAT_Bool aggregate_funcs;
 #ifdef PEAT_MPI
     MPI_Comm comm_compute;
     unsigned long long cycle_events;
@@ -725,7 +725,7 @@ struct User_Region {
         PEAT_Clock instr;
         PEAT_Clock clocks;
         PEAT_Ratio cpi;
-        bool operator<(const struct Elems &r) const
+        PEAT_Bool operator<(const struct Elems &r) const
         {
             if (cpi < r.cpi)
                 return true;
@@ -908,7 +908,7 @@ struct PEAT_Numa_Node {
     PEAT_Node numa_node;
     PEAT_Numa_Node() : node(-1), numa_node(-1) {};
     PEAT_Numa_Node(PEAT_Node n, PEAT_Node n_n) : node(n), numa_node(n_n) {};
-    bool operator<(const PEAT_Numa_Node &r) const
+    PEAT_Bool operator<(const PEAT_Numa_Node &r) const
     {
         if (node < r.node)
             return true;
@@ -926,13 +926,13 @@ struct PEAT_APS_Time {
     PEAT_Float get_active_time() const { return mpi_time - mpi_imb; }
     PEAT_APS_Time(PEAT_Float init = 0.0) : mpi_time(init), mpi_imb(0.0), app_time(init) {};
     PEAT_APS_Time(PEAT_Float a_time, PEAT_Float m_time, PEAT_Float imb) : mpi_time(m_time), mpi_imb(imb), app_time(a_time) {};
-    bool operator<(const PEAT_APS_Time &r) const
+    PEAT_Bool operator<(const PEAT_APS_Time &r) const
     {
         if (get_active_time() < r.get_active_time())
             return true;
         return false;
     }
-    bool operator>(const PEAT_APS_Time &r) const
+    PEAT_Bool operator>(const PEAT_APS_Time &r) const
     {
         if (get_active_time() > r.get_active_time())
             return true;
@@ -1045,7 +1045,7 @@ struct PEAT_List_Member_Iterator {
     // T& operator&() { return m->data; }
     // T& operator->() { return m->data; }
     PEAT_List_Member<T> *operator->() { return m; }
-    bool operator==(PEAT_List_Member_Iterator<T> &s) { return m == s.m; }
+    PEAT_Bool operator==(PEAT_List_Member_Iterator<T> &s) { return m == s.m; }
 };
 
 template <typename T>
@@ -1127,7 +1127,7 @@ struct PEAT_List {
     }
     PEAT_List_Member_Iterator<T> end() const { return PEAT_List_Member_Iterator<T>(); }
     size_t size() const { return l_size; }
-    bool empty() const { return l_size == 0; }
+    PEAT_Bool empty() const { return l_size == 0; }
     void lock() { mutex.lock(); }
     void lock_shared() { mutex.lock_shared(); }
     void unlock() { mutex.unlock(); }
@@ -1192,7 +1192,7 @@ struct PEAT_Event_Delivery {
 
 #define PRINT_PARAMETERS(width, string) int((width + strlen(string) + 1) / 2), string, int(width - strlen(string)) / 2, ""
 
-static bool is_mpi(PEAT_Property func_class)
+static PEAT_Bool is_mpi(PEAT_Property func_class)
 {
     switch (func_class) {
     case PEAT_PROP_CLASS_START:
@@ -1209,7 +1209,7 @@ static bool is_mpi(PEAT_Property func_class)
     }
     return false;
 }
-static bool is_omp(PEAT_Property func_class)
+static PEAT_Bool is_omp(PEAT_Property func_class)
 {
     return func_class == PEAT_PROP_CLASS_OMPT;
 }

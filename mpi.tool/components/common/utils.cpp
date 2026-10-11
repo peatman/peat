@@ -215,7 +215,7 @@ void splt_slow(const std::string &str, std::vector<std::string> &v, const char d
     } while (endLine != std::string::npos);
 }
 
-std::map<PEAT_Rank, std::string> get_file_names(const std::string &dir, const std::string &beginName, const std::string &fileExtension, bool throw_exeptions)
+std::map<PEAT_Rank, std::string> get_file_names(const std::string &dir, const std::string &beginName, const std::string &fileExtension, PEAT_Bool throw_exeptions)
 {
 #if !defined(_WIN32) || defined(__MINGW32__)
     DIR *curDir = 0;
@@ -343,7 +343,7 @@ std::map<PEAT_Rank, std::string> get_file_names(const std::string &dir, const st
 #endif
 }
 
-std::map<PEAT_Rank, std::string> get_file_names(const std::string &dir, const std::string &beginName, const std::string &fileExtension, const std::set<PEAT_Rank> &rank_set, bool throw_exeptions)
+std::map<PEAT_Rank, std::string> get_file_names(const std::string &dir, const std::string &beginName, const std::string &fileExtension, const std::set<PEAT_Rank> &rank_set, PEAT_Bool throw_exeptions)
 {
     if (rank_set.empty())
         return get_file_names(dir, beginName, fileExtension, throw_exeptions);

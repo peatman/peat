@@ -301,7 +301,7 @@ void PET_Core::process_exhaust_events()
         }
     }
 }
-bool PET_Core::remove_orphans(PEAT_Rank rank)
+PEAT_Bool PET_Core::remove_orphans(PEAT_Rank rank)
 {
     // scan read rank for orphan events
     PEAT_Node node = ptp->get_tgt_node(rank);
@@ -326,7 +326,7 @@ bool PET_Core::remove_orphans(PEAT_Rank rank)
     nodes.at(node).ranks.at(rank).orphans_processed = true;
     return true;
 }
-bool PET_Core::process_events()
+PEAT_Bool PET_Core::process_events()
 {
     PEAT_Bool enough_events;
     Estimation_Event *min_event;
@@ -809,7 +809,7 @@ void PET_Core::estimate()
 #endif
     PEAT_Ratio start_estimation = Wtime();
     PEAT_Ratio prev_step = start_estimation;
-    bool finished = false;
+    PEAT_Bool finished = false;
 
     PEAT_UID prev_event_num = 0;
     PEAT_UID stall_event_num = event_processed;

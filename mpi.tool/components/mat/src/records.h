@@ -120,8 +120,8 @@ struct MAT_P2P_Record : public MAT_Record {
     PEAT_MPI_Message message;
     PEAT_Rank peer_rank;
     PEAT_MPI_Request request;
-    bool peer_assigned;
-    bool is_send;
+    PEAT_Bool peer_assigned;
+    PEAT_Bool is_send;
     Phase ph[3];
     virtual int record_type() {return 1;}
     virtual Phase& get_ph(int idx) { return ph[idx]; }
@@ -154,7 +154,7 @@ struct PEAT_P2P_Record {
         func_id[1] = TMPI_FUNC_ID_NONE;
         func_id[2] = TMPI_FUNC_ID_NONE;
     };
-    bool operator<(const PEAT_P2P_Record &right) const
+    PEAT_Bool operator<(const PEAT_P2P_Record &right) const
     {
         if (rank < right.rank)
             return true;
@@ -192,7 +192,7 @@ struct PEAT_GPUT_Record {
         func_id[0] = TMPI_FUNC_ID_NONE;
         func_id[1] = TMPI_FUNC_ID_NONE;
     };
-    bool operator<(const PEAT_GPUT_Record &right) const
+    PEAT_Bool operator<(const PEAT_GPUT_Record &right) const
     {
         if (rank < right.rank)
             return true;
@@ -223,7 +223,7 @@ struct PEAT_GPUE_Record {
         func_id[0] = TMPI_FUNC_ID_NONE;
         func_id[1] = TMPI_FUNC_ID_NONE;
     };
-    bool operator<(const PEAT_GPUE_Record &right) const
+    PEAT_Bool operator<(const PEAT_GPUE_Record &right) const
     {
         if (rank < right.rank)
             return true;

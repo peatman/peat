@@ -50,7 +50,7 @@ void Requests::initialize(PTP *p, Communicators *c, Request_Store *r, P2PAL *pp,
 	Outputs::initialize(MPI, HWC, bind);
 }
 
-bool Requests::discard_P2P_event(const PEAT_Rank rank, const PEAT_MPI_Request request, bool is_remote)
+PEAT_Bool Requests::discard_P2P_event(const PEAT_Rank rank, const PEAT_MPI_Request request, PEAT_Bool is_remote)
 {
     // cerr << "DBG1 " << event << "\n";
     // pull requests from all available queues: message_queues[SENDQ],message_queues[RECVQ]
@@ -62,7 +62,7 @@ bool Requests::discard_P2P_event(const PEAT_Rank rank, const PEAT_MPI_Request re
     return req_store->remove_request(rank, request, REQUEST_TYPE_USER_P2P, &dummy);
 }
 
-bool Requests::discard_collective_event(const PEAT_Rank rank, const PEAT_MPI_Request request, bool is_remote)
+PEAT_Bool Requests::discard_collective_event(const PEAT_Rank rank, const PEAT_MPI_Request request, PEAT_Bool is_remote)
 {
     if (request == comm_store->get_MPI_REQUEST_NULL()) {
         std::cerr << "Null request detected. Rank: " << rank << ". Skipped." << std::endl;
@@ -81,14 +81,14 @@ Request_Store_Record_Type  Requests::select_event(PEAT_Rank rank, const PEAT_MPI
     return REQUEST_TYPE_NULL;
 }
 
-bool Requests::parse_P2P_completion_phase(const PEAT_Rank rank, const Request_Store_Record_Type type, 
+PEAT_Bool Requests::parse_P2P_completion_phase(const PEAT_Rank rank, const Request_Store_Record_Type type, 
                                          PEAT_MPI_Request request,
                                          const PEAT_MPI_Tag tag,
                                          const PEAT_Rank source,
                                          const PEAT_Message_Size size,
                                          const Phase& phase,
                                          const int pc_level,
-                                         bool is_remote)
+                                         PEAT_Bool is_remote)
 {
     // cerr << "DBG1 " << event << "\n";
     // pull requests from all available queues: message_queues[SENDQ],message_queues[RECVQ]
@@ -96,8 +96,8 @@ bool Requests::parse_P2P_completion_phase(const PEAT_Rank rank, const Request_St
         std::cerr << "Null request detected. Rank: " << rank << ". Skipped." << std::endl;
         return false;
     }
-    bool check_and_clear_req[qt_size2] = {false, false, false};
-    bool rFound = false;
+    PEAT_Bool check_and_clear_req[qt_size2] = {false, false, false};
+    PEAT_Bool rFound = false;
     if (request > 0) {
         p2p_func_store->update_request(rank, type, tag, source, size, request, phase,is_remote);
         return true;
@@ -105,7 +105,7 @@ bool Requests::parse_P2P_completion_phase(const PEAT_Rank rank, const Request_St
 
     return false;
 }
-bool Requests::parse_comm_completion_phase(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase& phase,bool is_remote)
+PEAT_Bool Requests::parse_comm_completion_phase(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase& phase,PEAT_Bool is_remote)
 {
     // cerr << "DBG1 " << event << "\n";
     // pull requests from all available queues: message_queues[SENDQ],message_queues[RECVQ]
@@ -120,7 +120,7 @@ bool Requests::parse_comm_completion_phase(const PEAT_Rank rank, const PEAT_MPI_
     return false;
 }
 
-bool Requests::parse_collective_completion_phase(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase &phase, const int pc_level, bool is_remote)
+PEAT_Bool Requests::parse_collective_completion_phase(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase &phase, const int pc_level, PEAT_Bool is_remote)
 {
     if (request == comm_store->get_MPI_REQUEST_NULL()) {
         std::cerr << "Null request detected. Rank: " << rank << ". Skipped." << std::endl;
@@ -135,11 +135,11 @@ bool Requests::parse_collective_completion_phase(const PEAT_Rank rank, const PEA
     return false;
 }
 
-bool Requests::remove_pers_req(const PEAT_Rank rank, const PEAT_MPI_Request request, MAT_Request_Store_Record* ret_it)
+PEAT_Bool Requests::remove_pers_req(const PEAT_Rank rank, const PEAT_MPI_Request request, MAT_Request_Store_Record* ret_it)
 {
 
 #ifdef PEAT_MPI
-    bool req_found = req_store->find_thrown_away_request(qt_pers_thrown, rank, request, true);
+    PEAT_Bool req_found = req_store->find_thrown_away_request(qt_pers_thrown, rank, request, true);
     if(req_found) {
         return false;
     }
@@ -195,7 +195,7 @@ void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is
         }
 #endif
         MAT_Request_Store_Record resp;
-        bool found = remove_pers_req(rank, event.requests.at(0), &resp);
+        PEAT_Bool found = remove_pers_req(rank, event.requests.at(0), &resp);
         /*
 #ifndef PEAT_MPI
             int my_rank = 0;
@@ -327,7 +327,7 @@ void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is
         return;
     }
     // special cases handled above. Now ordinal ones (wait/test)
-    // bool found_one = false;
+    // PEAT_Bool found_one = false;
     for (PEAT_Num i = 0; i < event.Requests.triggered_request_num; ++i) {
         // pull requests from all available queues: message_queues[SENDQ],message_queues[RECVQ]
         PEAT_MPI_Request request = event.requests.at(event.statuses.at(i).index);
@@ -397,13 +397,13 @@ void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is
                     PEAT_Rank my_rank = 0;
 #endif
                     std::cerr << "Rank " << my_rank << ". Request " << std::hex << request << std::dec << " is 'lost'. Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << " Skipped." << std::endl;
-                    // bool found_one_p2_p = parse_P2P_completion_phase(rank, ph_cn, request, tag, source, size, record.pc_level, qn_start, qn_stop, is_remote);
+                    // PEAT_Bool found_one_p2_p = parse_P2P_completion_phase(rank, ph_cn, request, tag, source, size, record.pc_level, qn_start, qn_stop, is_remote);
                 }
                 break;
             }
 #if 0
-            bool found_one_p2_p = parse_P2P_completion_phase(rank, ph_cn, request, tag, source, size, event.PControl.ctl, is_remote);
-            bool found_one_collective = false;
+            PEAT_Bool found_one_p2_p = parse_P2P_completion_phase(rank, ph_cn, request, tag, source, size, event.PControl.ctl, is_remote);
+            PEAT_Bool found_one_collective = false;
             if (!found_one_p2_p) {
                 found_one_collective = parse_collective_completion_phase(rank, ph_cn, request, event.PControl.ctl, is_remote);
                 if (!found_one_collective && event.Requests.input_request_num==1) { // there're cases where MPI_{WAIT|TEST}{ALL|ANY|SOME} propagated to ranks they don't belong. it's tended normal just ignore missing requests
@@ -411,7 +411,7 @@ void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is
                     PEAT_Rank my_rank = 0;
 #endif
                     std::cerr << "Rank " << my_rank << ". Request " << std::hex << request << std::dec << " is 'lost'. Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << " Skipped." << std::endl;
-                    // bool found_one_p2_p = parse_P2P_completion_phase(rank, ph_cn, request, tag, source, size, record.pc_level, qn_start, qn_stop, is_remote);
+                    // PEAT_Bool found_one_p2_p = parse_P2P_completion_phase(rank, ph_cn, request, tag, source, size, record.pc_level, qn_start, qn_stop, is_remote);
                 }
             }
             // found_one |= found_one_p2_p | found_one_collective;
@@ -423,7 +423,7 @@ void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is
     }*/
     return;
 }
-void Requests::print_req_bind(PEAT_Rank rank, PEAT_MPI_Request req, const Phase &phase, const Phase &bind, bool is_remote)
+void Requests::print_req_bind(PEAT_Rank rank, PEAT_MPI_Request req, const Phase &phase, const Phase &bind, PEAT_Bool is_remote)
 {
     if (is_remote) {
 #ifdef PEAT_MPI // in case of serial is_remote is always false
@@ -472,7 +472,7 @@ void Requests::print_req_bind(PEAT_Rank rank, PEAT_MPI_Request req, const Phase 
     }
 }
 
-void Requests::print_req_bind(PEAT_Rank rank, const Collective_Entry &coll, const Phase &phase, bool is_remote)
+void Requests::print_req_bind(PEAT_Rank rank, const Collective_Entry &coll, const Phase &phase, PEAT_Bool is_remote)
 {
     if (is_remote) {
 #ifdef PEAT_MPI // in case of serial is_remote is always false
@@ -546,7 +546,7 @@ void Requests::print_req_out(const Tractor_Event &event)
 #endif
 }
 
-void Requests::parse_P2P_start_phase(const PEAT_Rank rank, const Phase& phase, const PEAT_MPI_Request request, MAT_Request_Store_Record* rec, const int pc_level,  bool is_remote)
+void Requests::parse_P2P_start_phase(const PEAT_Rank rank, const Phase& phase, const PEAT_MPI_Request request, MAT_Request_Store_Record* rec, const int pc_level,  PEAT_Bool is_remote)
 {
     MAT_P2P_Record* req=static_cast<MAT_P2P_Record*> (rec->record);
 
@@ -561,7 +561,7 @@ void Requests::parse_P2P_start_phase(const PEAT_Rank rank, const Phase& phase, c
     print_req_bind(rank, request, record->get_ph(0), phase, is_remote);
 }
 
-void Requests::parse_collective_start_phase(const PEAT_Rank rank, const Phase& phase, const PEAT_MPI_Request request, MAT_Request_Store_Record* rec, const int pc_level, bool is_remote)
+void Requests::parse_collective_start_phase(const PEAT_Rank rank, const Phase& phase, const PEAT_MPI_Request request, MAT_Request_Store_Record* rec, const int pc_level, PEAT_Bool is_remote)
 {
     MAT_Collectives_Record* req = static_cast<MAT_Collectives_Record*> (rec->record);
 

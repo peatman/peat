@@ -85,8 +85,8 @@ class PET_Core
 #endif
   public:
     PET_Core(const Global_Parameters &file_names, const Model_ID &model_id_storage);
-    bool process_events();
-    bool remove_orphans(PEAT_Rank rank);
+    PEAT_Bool process_events();
+    PEAT_Bool remove_orphans(PEAT_Rank rank);
 
     void process_exhaust_events();
     TE_Event *update_te_timelines(PEAT_Clock clk);

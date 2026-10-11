@@ -33,7 +33,7 @@ struct CTT_Event {
     std::vector<PEAT_UID> addrs;
     struct p2p_properties {
         PEAT_Message_Size size;
-        bool operator!=(const p2p_properties &s)
+        PEAT_Bool operator!=(const p2p_properties &s)
         {
             return false;
         }
@@ -42,7 +42,7 @@ struct CTT_Event {
     struct coll_properties {
         PEAT_Message_Size aggr_send_size, aggr_recv_size;
         PEAT_MPI_Comm comm_id;
-        bool operator!=(const coll_properties &s)
+        PEAT_Bool operator!=(const coll_properties &s)
         {
             if (comm_id != s.comm_id)
                 return true;
@@ -56,14 +56,14 @@ struct CTT_Event {
     } coll;
     struct req_properties {
         std::vector<PEAT_MPI_Request> reqs;
-        bool operator!=(const req_properties &s)
+        PEAT_Bool operator!=(const req_properties &s)
         {
             if (reqs != s.reqs)
                 return true;
             return false;
         }
     } req;
-    bool operator==(const CTT_Event &s)
+    PEAT_Bool operator==(const CTT_Event &s)
     {
         if (rank != s.rank)
             return false;
@@ -82,7 +82,7 @@ struct CTT_Event {
         duration += time;
         occurences++;
     }
-    bool operator<(const CTT_Event &s)
+    PEAT_Bool operator<(const CTT_Event &s)
     {
         if (duration > s.duration)
             return true; // I need reverse order
@@ -108,9 +108,9 @@ class CTT
     std::map<PEAT_Rank, User_Address_Key> last_key;
     CTT(Global_Parameters &file_names, Model_ID &model_id_storage);
     ~CTT();
-    bool parse_single_event(const int rank, String_Split &line_mpi, String_Split &line_hwc);
+    PEAT_Bool parse_single_event(const int rank, String_Split &line_mpi, String_Split &line_hwc);
     void process();
-    bool second_line;
+    PEAT_Bool second_line;
 
   private:
     PEAT_LNum events_processed;

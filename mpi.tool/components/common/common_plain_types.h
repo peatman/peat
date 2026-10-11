@@ -691,7 +691,7 @@ struct PEAT_Mutex
     {
         std::shared_mutex::lock();
     }
-    bool try_lock()
+    PEAT_Bool try_lock()
     {
         return std::shared_mutex::try_lock();
     }
@@ -720,7 +720,7 @@ struct PEAT_Mutex
     void unlock_shared()
     {
     }
-    bool try_lock()
+    PEAT_Bool try_lock()
     {
         return false;
     }

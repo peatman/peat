@@ -35,7 +35,7 @@
     std::cerr
 Tractor_Event send_line, recv_line;
 
-bool Mat::parse_single_event(const int rank)
+PEAT_Bool Mat::parse_single_event(const int rank)
 {
     line_mpi.clear();
     line_hwc.clear();
@@ -53,7 +53,7 @@ bool Mat::parse_single_event(const int rank)
     Tractor_Event t_event(rank, line_mpi, line_hwc, model_id.num_hwcs, model_id.num_addrs, user_region_store, comm_store);
     PEAT_MPI_Func_ID mpifunc = t_event.func_id;
     // nested records (progress engine calls issued inside another traced call) do not count as user-level events
-    const bool nested_record = t_event.level > 0;
+    const PEAT_Bool nested_record = t_event.level > 0;
     PEAT_Clock mpi_time = 0, uc_time = 0, t_time = 0, occ_inc = 0;
     if (!globals.matching_only) { // tsc_time is all sentinel (-1) without hwc data, so these are meaningless
         if (!second_line) {

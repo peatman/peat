@@ -58,11 +58,11 @@ private:
     }
 public:
     Request_Store(PTP* p, int v);
-    bool find_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const Request_Store_Record_Type type, MAT_Request_Store_Record* ret_it, const PEAT_Bool erase);
+    PEAT_Bool find_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const Request_Store_Record_Type type, MAT_Request_Store_Record* ret_it, const PEAT_Bool erase);
     PEAT_Bool add_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const MAT_Request_Store_Record* rec);
     PEAT_Bool remove_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const Request_Store_Record_Type type, MAT_Request_Store_Record* rec);
 #ifdef PEAT_MPI
-    bool find_thrown_away_request(PEAT_Num queue_type, PEAT_Rank rank, PEAT_MPI_Request request, PEAT_Bool erase);
+    PEAT_Bool find_thrown_away_request(PEAT_Num queue_type, PEAT_Rank rank, PEAT_MPI_Request request, PEAT_Bool erase);
     std::map<PEAT_Rank, std::map<PEAT_MPI_Request, MAT_Request_Record>> flown_away_requests, flown_away_pers_requests; // requests to be handled on another rank
     std::map<PEAT_Rank, std::set<PEAT_MPI_Request>> thrown_away_requests,thrown_away_pers_requests;// requests with MPI_PROC_NULL (weird but it happens)
 

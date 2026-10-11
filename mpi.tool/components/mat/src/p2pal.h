@@ -45,7 +45,7 @@ class P2PAL : public Outputs
         P2P_Event_Key(PEAT_MPI_Tag t, PEAT_Rank p, PEAT_MPI_Message m, PEAT_MPI_Comm c) : tag(t), peer(p), message(m), comm(c) {
                                                                                           };
         P2P_Event_Key(MAT_P2P_Record &r) : tag(r.tag), peer(r.peer_rank), message(r.message), comm(r.comm) {};
-        bool operator<(const P2P_Event_Key &s) const
+        PEAT_Bool operator<(const P2P_Event_Key &s) const
         {
             if (tag < s.tag)
                 return true;
@@ -81,14 +81,14 @@ class P2PAL : public Outputs
 
     void initialize(PTP *p, Communicators *c, Request_Store *rs, Requests *r, GPU *g, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
 
-    void parse_P2PTx(PEAT_Rank rank, const Tractor_Event &event, bool print_out);
-    void parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, bool increase_MPI = true);
+    void parse_P2PTx(PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool print_out);
+    void parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool increase_MPI = true);
     void parse_P2PPb(PEAT_Rank rank, const Tractor_Event &event);
 
     void parse_Local(PEAT_Rank rank, const Tractor_Event &event);
 
     void write_HNT() const;
-    bool empty() const;
+    PEAT_Bool empty() const;
     PEAT_Num queue_size_at_rank(const PEAT_Rank rank, const PEAT_Num qN) const
     {
         return matching_queues[qN].at(rank).size();
@@ -104,7 +104,7 @@ class P2PAL : public Outputs
         return (global_func_id.check_property(func_id, PEAT_PROP_DATA_RX));
     }
     /*
-    bool is_rank_blocked(const PEAT_Rank rank) {
+    PEAT_Bool is_rank_blocked(const PEAT_Rank rank) {
         return (queue_size_at_rank(rank, qt_send) > adaptive_blocking_threshold || queue_size_at_rank(rank, qt_recv) > adaptive_blocking_threshold);
     }
     PEAT_Num increase_abf(void) { return ++adaptive_blocking_threshold; }
@@ -140,12 +140,12 @@ class P2PAL : public Outputs
     void print_P2PF(const MAT_P2P_Record &left, const MAT_P2P_Record &right);
     void add_imbalance(const MAT_P2P_Record &left, const MAT_P2P_Record &right, PEAT_Single_Event_Clock &left_clock, PEAT_Single_Event_Clock &right_clock);
     void print_Local(const Tractor_Event &event);
-    bool update_request(const PEAT_Rank rank, const Request_Store_Record_Type type, const PEAT_MPI_Tag tag, const PEAT_Rank source, const PEAT_Message_Size size, PEAT_MPI_Request request, const Phase &phase, bool is_remote);
-    bool match_peer(matching_event_type &queues, std::list<MAT_P2P_Record *>::iterator &ret_it, const MAT_P2P_Record &input_record) const;
-    bool add_pers_req_start(const PEAT_Rank rank, MAT_P2P_Record *record);
+    PEAT_Bool update_request(const PEAT_Rank rank, const Request_Store_Record_Type type, const PEAT_MPI_Tag tag, const PEAT_Rank source, const PEAT_Message_Size size, PEAT_MPI_Request request, const Phase &phase, PEAT_Bool is_remote);
+    PEAT_Bool match_peer(matching_event_type &queues, std::list<MAT_P2P_Record *>::iterator &ret_it, const MAT_P2P_Record &input_record) const;
+    PEAT_Bool add_pers_req_start(const PEAT_Rank rank, MAT_P2P_Record *record);
     void process_unbound_events();
     PEAT_Signed_Num check_unbound_events();
-    bool is_wild_card(const MAT_P2P_Record &r) const
+    PEAT_Bool is_wild_card(const MAT_P2P_Record &r) const
     {
         return (r.peer_rank == comm_store->get_MPI_ANY_SOURCE() || r.tag == comm_store->get_MPI_ANY_TAG());
     }

@@ -44,7 +44,7 @@ class Comm : public Outputs
 
     void parse_comm(const PEAT_Rank rank, Tractor_Event &event);
     void print_comm_out(const Tractor_Event &event);
-    bool update_request(const PEAT_Rank rank, PEAT_MPI_Request request, const Phase& phase, bool is_remote);
+    PEAT_Bool update_request(const PEAT_Rank rank, PEAT_MPI_Request request, const Phase& phase, PEAT_Bool is_remote);
 
     PTP *ptp;
     Communicators *comm_store;

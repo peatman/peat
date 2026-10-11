@@ -32,7 +32,7 @@
     std::cerr
 Tractor_Event send_line, recv_line;
 
-bool CTT::parse_single_event(const int rank, String_Split &line_mpi, String_Split &line_hwc)
+PEAT_Bool CTT::parse_single_event(const int rank, String_Split &line_mpi, String_Split &line_hwc)
 {
     line_mpi.clear();
     line_hwc.clear();
@@ -175,7 +175,7 @@ CTT::~CTT()
     if (ptp)
         delete ptp;
 }
-bool sort_comp(const CTT_Event &s, const CTT_Event &d)
+PEAT_Bool sort_comp(const CTT_Event &s, const CTT_Event &d)
 {
     if (s.duration >= d.duration)
         return true; // I need reverse order

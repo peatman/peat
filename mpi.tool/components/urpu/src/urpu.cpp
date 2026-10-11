@@ -28,7 +28,7 @@
 #define urpu_dbg(x)           \
     if (globals.verbose > x) \
     std::cerr
-bool urpu::parse_single_event(const int rank)
+PEAT_Bool urpu::parse_single_event(const int rank)
 {
     String_Split line_hwc;
     if (!input_HWC->is_file_good(rank)) {

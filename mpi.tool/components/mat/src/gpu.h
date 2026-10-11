@@ -52,7 +52,7 @@ struct PEAT_GPU_Record {
     {
         func_id = TMPI_FUNC_ID_NONE;
     };
-    bool operator<(const PEAT_GPU_Record &right) const
+    PEAT_Bool operator<(const PEAT_GPU_Record &right) const
     {
         if (size < right.size)
             return true;
@@ -113,7 +113,7 @@ struct Region_Exec {
 
 class GPU : public Outputs
 {
-    bool parse_gpu;
+    PEAT_Bool parse_gpu;
     Memory_Transfer *cur_transfer;
     Region_Exec *cur_exec;
 
@@ -132,15 +132,15 @@ class GPU : public Outputs
     void initialize(PTP *p, Communicators *c, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
     void parse_GPU(const PEAT_Rank rank, const Tractor_Event &event);
 
-    bool find_handle(PEAT_Rank rank, PEAT_MPI_Request request);
-    bool update_handle(PEAT_Rank rank, PEAT_MPI_Request request, const Phase &phase);
+    PEAT_Bool find_handle(PEAT_Rank rank, PEAT_MPI_Request request);
+    PEAT_Bool update_handle(PEAT_Rank rank, PEAT_MPI_Request request, const Phase &phase);
 
   private:
     void print_GPU_out(const Tractor_Event &event);
     void print_GPU_bind(const Tractor_Event &event);
     void create_memory_region(Memory_Region &region, PEAT_Rank rank, Where_Located loc, PEAT_Handle handle, PEAT_Message_Size size, PEAT_Addr addr);
 
-    bool check_completion();
+    PEAT_Bool check_completion();
     PTP *ptp;
     Communicators *comm_store;
     int verbose;

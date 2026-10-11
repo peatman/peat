@@ -47,8 +47,8 @@
 #include "common_plain_types.h"
 // extern int verbose;
 
-std::map<PEAT_Rank, std::string> get_file_names(const std::string &dir, const std::string &beginName, const std::string &fileExtension, bool throw_exeptions);
-std::map<PEAT_Rank, std::string> get_file_names(const std::string &dir, const std::string &beginName, const std::string &fileExtension, const std::set<PEAT_Rank> &rank_set, bool throw_exeptions);
+std::map<PEAT_Rank, std::string> get_file_names(const std::string &dir, const std::string &beginName, const std::string &fileExtension, PEAT_Bool throw_exeptions);
+std::map<PEAT_Rank, std::string> get_file_names(const std::string &dir, const std::string &beginName, const std::string &fileExtension, const std::set<PEAT_Rank> &rank_set, PEAT_Bool throw_exeptions);
 
 #ifndef _SC_PAGESIZE
 #define _SC_PAGESIZE 4096
