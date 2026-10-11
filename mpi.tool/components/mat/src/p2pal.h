@@ -33,7 +33,7 @@
 
 #define INITIAL_ABF 10
 #define USE_FAST_CHECK
-class Request;
+class Requests;
 class P2PAL : public Outputs
 {
   public:
@@ -79,7 +79,7 @@ class P2PAL : public Outputs
     P2PAL(const P2PAL &) = delete;
     P2PAL &operator=(const P2PAL &) = delete;
 
-    void initialize(PTP *p, Communicators *c, Request_Store *rs, Request *r, GPU *g, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
+    void initialize(PTP *p, Communicators *c, Request_Store *rs, Requests *r, GPU *g, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
 
     void parse_P2PTx(PEAT_Rank rank, const Tractor_Event &event, bool print_out);
     void parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, bool increase_MPI = true);
@@ -126,7 +126,7 @@ class P2PAL : public Outputs
     GPU *gpu;
     Communicators* comm_store;
     Request_Store* req_store;
-    Request* request_func_store;
+    Requests* request_func_store;
     int verbose;
     // PEAT_Num adaptive_blocking_threshold;
   public:

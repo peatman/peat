@@ -39,7 +39,7 @@ Comm::Comm(
 	req_store = NULL;
 }
 
-void Comm::initialize(PTP *p, Communicators *c, Request_Store *rs, Request* r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
+void Comm::initialize(PTP *p, Communicators *c, Request_Store *rs, Requests* r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
 {
 	comm_store = c;
 	ptp = p;

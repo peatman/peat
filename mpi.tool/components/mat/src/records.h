@@ -82,10 +82,11 @@ struct Phase {
 
 struct MAT_Record {
     MAT_Record() : rank(0), pc_level(0) {}
+    MAT_Record(const MAT_Record& s) : rank(s.rank), pc_level(s.pc_level) {}
     PEAT_Rank rank;
     int pc_level;
     virtual int record_type() = 0;
-    virtual Phase* get_ph(int idx) = 0;
+    virtual Phase& get_ph(int idx) = 0;
 };
 
 struct MAT_Comm_Record : public MAT_Record {
@@ -95,11 +96,24 @@ struct MAT_Comm_Record : public MAT_Record {
     MAT_Comm_Record() : MAT_Record(),comm(0),new_comm(0),remote_comm(0),inter_comm(0),request(0) {}
     int record_type() { return 3; }
 	Phase ph; // doesn't need an array, because only one phase is recorded for comm events
-    virtual Phase* get_ph(int idx) { return &ph; }
+    virtual Phase& get_ph(int idx) { return ph; }
+};
+
+struct MAT_FIO_Record : public MAT_Record {
+
+    PEAT_MPI_Comm comm;
+    PEAT_MPI_Request request;
+    PEAT_MPI_File  fh;
+    MAT_FIO_Record() : MAT_Record(), comm(0), request(0), fh(0) {}
+    MAT_FIO_Record(const Tractor_Event& s);
+    int record_type() { return 4; }
+    Phase ph; // doesn't need an array, because only one phase is recorded for comm events
+    virtual Phase& get_ph(int idx) { return ph; }
 };
 
 struct MAT_P2P_Record : public MAT_Record {
     MAT_P2P_Record() : MAT_Record(), comm(0), size(0), tag(0), message(0), peer_rank(-1), request(0), peer_assigned(false), is_send(false) {}
+    MAT_P2P_Record(const Tractor_Event& s);
     PEAT_MPI_Comm comm;
     PEAT_Message_Size size;
     PEAT_MPI_Tag tag;
@@ -110,17 +124,17 @@ struct MAT_P2P_Record : public MAT_Record {
     bool is_send;
     Phase ph[3];
     virtual int record_type() {return 1;}
-    virtual Phase* get_ph(int idx) { return &ph[idx]; }
+    virtual Phase& get_ph(int idx) { return ph[idx]; }
 };
 struct Collective_Event;
 struct MAT_Collectives_Record : public MAT_Record {
-    MAT_Collectives_Record() : MAT_Record(), comm(0), coll_event(NULL) {}
+    MAT_Collectives_Record() : MAT_Record(), coll_event(NULL) {}
     MAT_Collectives_Record(const MAT_Collectives_Record& s);
+    MAT_Collectives_Record(const Tractor_Event& s);
     ~MAT_Collectives_Record();
-    PEAT_MPI_Comm comm;
     Collective_Event *coll_event;
     virtual int record_type() { return 2; };
-    virtual Phase* get_ph(int idx);
+    virtual Phase& get_ph(int idx);
 };
 
 struct MAT_Request_Record {

@@ -30,17 +30,16 @@
 #include "tevent.h"
 #include "comm.h"
 class Comm;
-class Request : public Outputs
+class Requests : public Outputs
 {
     int skip_locals;
 
   public:
-    Request(int s,
+    Requests(int s,
 #ifdef PEAT_MPI
             std::list<PEAT_Event_Delivery> *ad, const std::vector<PEAT_Rank> &wR, const std::vector<PEAT_Rank> &mRs, const MPI_Comm mat_cc, const PEAT_Rank m_r,
 #endif
             int v = false);
-    ~Request();
 
     void initialize(PTP *p, Communicators *c, Request_Store *r, P2PAL *pp, Comm* cc, Collectives *cl, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
 
@@ -53,7 +52,7 @@ class Request : public Outputs
                                     const Phase& phase,
                                     const int pc_level,
                                     bool is_remote);
-    Request_Store_Record_Type  select_event(PEAT_Rank rank, const PEAT_MPI_Request request, bool is_remote);
+    Request_Store_Record_Type  select_event(PEAT_Rank rank, const PEAT_MPI_Request request, PEAT_Bool  is_internal, PEAT_Bool is_remote);
     bool discard_P2P_event(const PEAT_Rank rank, const PEAT_MPI_Request request, bool is_remote);
     bool discard_collective_event(const PEAT_Rank rank, const PEAT_MPI_Request request, bool is_remote);
 
@@ -62,7 +61,6 @@ class Request : public Outputs
     bool parse_collective_completion_phase(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase &phase, const int pc_level, bool is_remote);
     bool parse_comm_completion_phase(const PEAT_Rank rank, PEAT_MPI_Request request, const Phase& phase, bool is_remote);
 
-    void parse_pers_start_phase(const PEAT_Rank rank, const Phase &phase, const PEAT_MPI_Request request, const int pc_level, bool is_remote);
     bool remove_pers_req(const PEAT_Rank rank, const PEAT_MPI_Request request, MAT_Request_Store_Record* ret_it);
     void print_req_out(const Tractor_Event &event);
     void print_req_bind(PEAT_Rank rank, PEAT_MPI_Request req, const Phase &phase, const Phase &bind, bool is_remote);

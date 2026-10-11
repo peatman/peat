@@ -40,7 +40,7 @@ class Comm : public Outputs
         */
          int v = false);
 
-    void initialize(PTP *p, Communicators *c, Request_Store *rs, Request* r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
+    void initialize(PTP *p, Communicators *c, Request_Store *rs, Requests* r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
 
     void parse_comm(const PEAT_Rank rank, Tractor_Event &event);
     void print_comm_out(const Tractor_Event &event);
@@ -49,7 +49,7 @@ class Comm : public Outputs
     PTP *ptp;
     Communicators *comm_store;
     Request_Store* req_store;
-    Request* request_func_store;
+    Requests* request_func_store;
     int verbose;
 };
 

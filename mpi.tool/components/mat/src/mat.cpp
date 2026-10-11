@@ -116,6 +116,7 @@ bool Mat::parse_single_event(const int rank)
         }
     }
     t_event.PControl.ctl = p_control_in_use[rank];
+
     if (t_event.func_class == PEAT_PROP_CLASS_COLLECTIVE) { // collective
 #ifdef PEAT_MPI
         coll_func_store->send_collective(rank, t_event);
@@ -430,7 +431,7 @@ Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : globals(glob), m
 									  &active_deliveries, whole_ranks, my_ranks, globals.comm_compute, globals.comm_size, globals.comm_rank
 #endif
 	);
-	request_func_store = new Request(globals.skip_processing
+	request_func_store = new Requests(globals.skip_processing
 #ifdef PEAT_MPI
 									 ,
 									 &active_deliveries, whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
@@ -438,7 +439,7 @@ Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : globals(glob), m
 	);
 	comm_func_store->initialize(ptp, comm_store, req_store, request_func_store, output_MPI, output_HWC, output_bind);
 	gpu_func_store->initialize(ptp, comm_store, output_MPI, output_HWC, output_bind);
-	coll_func_store->initialize(ptp, comm_store, req_store, output_MPI, output_HWC, output_bind);
+	coll_func_store->initialize(ptp, comm_store, req_store, request_func_store, output_MPI, output_HWC, output_bind);
 	p2p_func_store->initialize(ptp, comm_store, req_store, request_func_store, gpu_func_store, output_MPI, output_HWC, output_bind);
 	request_func_store->initialize(ptp, comm_store, req_store, p2p_func_store, comm_func_store,coll_func_store, output_MPI, output_HWC, output_bind);
 	second_line = false;

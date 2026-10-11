@@ -38,7 +38,7 @@ bool Request_Store::find_request(const PEAT_Rank rank, const PEAT_MPI_Request re
             if (event_it->request_type == type || 
                 (event_it->request_type == REQUEST_TYPE_PERSISTENT && type == REQUEST_TYPE_ANY_PERSISTENT) ||
                 ((event_it->request_type == REQUEST_TYPE_USER_P2P  || event_it->request_type == REQUEST_TYPE_USER_COLLECTIVE || 
-                    event_it->request_type == REQUEST_TYPE_INTERNAL || event_it->request_type == REQUEST_TYPE_USER_COMM) && type == REQUEST_TYPE_ANY_NOT_PERSISTENT)) {
+                    event_it->request_type == REQUEST_TYPE_USER_COMM) && type == REQUEST_TYPE_ANY_NOT_PERSISTENT)) {
                 *ret_it = *event_it;
                 if(erase) {
                     req_it->second.erase(event_it);
@@ -49,9 +49,9 @@ bool Request_Store::find_request(const PEAT_Rank rank, const PEAT_MPI_Request re
     }
     return false;
 }
-PEAT_Bool Request_Store::add_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const MAT_Request_Store_Record* req)
+PEAT_Bool Request_Store::add_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const MAT_Request_Store_Record* rec)
 {
-	queues[rank][request].push_back(*req);
+	queues[rank][request].push_back(*rec);
     return true;
 }
 

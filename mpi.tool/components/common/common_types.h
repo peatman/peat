@@ -775,13 +775,6 @@ int peat_ids_parse(const String_Split &line, int pos, int columns, PEAT_Event_ID
 int peat_ids_level(const PEAT_Event_IDs &ids);                                                 // nesting depth, 0 for a top-level record
 inline PEAT_Bool peat_ids_nested(const PEAT_Event_IDs &ids) { return peat_ids_level(ids) > 0; }
 
-/* Header shared by .mpi and .hwc trace records.
-   nested format (tractor with nesting levels): id_0:...:id_{n-1}:tid:num_children:<payload>
-       n is the number of id columns stored in the com file (PEAT_RT_Number_Of_Events), unused ids are -1,
-       records form a pre-order tree per thread: the num_children records following a record are its children.
-   legacy format: primary_id:secondary_id:tid:<payload>
-       a path of depth one: secondary_id is the index of a colt record inside its host (-1 for a top-level record),
-       the number of colt records is kept in the class-specific fields (num_colts). */
 struct PEAT_Record_Header {
     PEAT_Event_IDs ids;           // id path, ids[0] is the top-level (primary) id
     PEAT_Thread thread_id;
