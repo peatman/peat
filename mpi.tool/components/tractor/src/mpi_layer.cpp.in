@@ -553,7 +553,7 @@ int MPI_Comm_create_group_internal(MPI_Comm comm, MPI_Group group, int tag, MPI_
     rv = PMPI_Comm_create_group(comm, group, tag, newcomm);
 #endif
 #define __write_comms__       \
-    event->comms.comm = comm; \
+    event->comms.comm = *newcomm; \
     event->comms.newcomm = *newcomm;
 #include "mpi_layer_comm_begin.epilog.h"
 #undef __write_comms__
