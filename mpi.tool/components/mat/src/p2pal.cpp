@@ -110,14 +110,10 @@ void P2PAL::print_P2PL(const Tractor_Event &event)
 void P2PAL::print_P2PE(const MAT_P2P_Record &event)
 {
     // gzFile Bind = output_bind->get_file_ptr(rec.rank);
-    fprintf(stderr, "%d:%s:%s:%s:%s:%s:%s\n",
+    fprintf(stderr, "%d:%s:%s\n",
             event.rank,
-            global_func_id.name_by_idx(event.ph[0].func_id),
-            peat_ids_string(event.ph[0].ids).c_str(),
-            global_func_id.name_by_idx(event.ph[1].func_id),
-            peat_ids_string(event.ph[1].ids).c_str(),
-            global_func_id.name_by_idx(event.ph[2].func_id),
-            peat_ids_string(event.ph[2].ids).c_str());
+            global_func_id.name_by_idx(event.ph.func_id),
+            peat_ids_string(event.ph.ids).c_str());
 }
 
 #if _DEBUG
@@ -125,10 +121,10 @@ static long long max_dif = 0;
 #endif
 void P2PAL::add_imbalance(const MAT_P2P_Record &left, const MAT_P2P_Record &right, PEAT_Single_Event_Clock &left_clock, PEAT_Single_Event_Clock &right_clock)
 {
-    PEAT_Clock left_in = left.ph[1].tsc_time.func.in;
-    PEAT_Clock left_out = left.ph[2].tsc_time.func.out; 
-    PEAT_Clock right_in = right.ph[1].tsc_time.func.in; 
-    PEAT_Clock right_out = right.ph[2].tsc_time.func.out;   
+    PEAT_Clock left_in = left.ph.tsc_time.func.in;
+    PEAT_Clock left_out = left.ph.tsc_time.func.out; 
+    PEAT_Clock right_in = right.ph.tsc_time.func.in; 
+    PEAT_Clock right_out = right.ph.tsc_time.func.out;   
     if (left_out < right_in) return; // most likely eager send, so no imbalance    
     if (right_out < left_in) return; // technically error but sometime happens can't do anything here
     if (left_in < right_in) {
@@ -142,9 +138,9 @@ void P2PAL::add_imbalance(const MAT_P2P_Record &left, const MAT_P2P_Record &righ
 #define PRINT_STAT
 void P2PAL::print_P2PF(const MAT_P2P_Record &left, const MAT_P2P_Record &right)
 {
-#if _DEBUG
-    if (right.ph[2].tsc_time.func.out < left.ph[1].tsc_time.func.in) {
-        long long diff = left.ph[1].tsc_time.func.in - right.ph[2].tsc_time.func.out;
+#if 0 //_DEBUG
+    if (right.ph.tsc_time.func.out < left.ph.tsc_time.func.in) {
+        long long diff = left.ph.tsc_time.func.in - right.ph.tsc_time.func.out;
         if (max_dif < diff) { // less recording
             std::cerr << "Receive ended earlier than Transmit (tsc diff:" << std::dec << diff << ") {\nSend(host:" << ptp->get_host_name(left.rank) << "): " << left << "\nRecv(host:" << ptp->get_host_name(right.rank) << "): " << right << "\n}" << std::endl;
             max_dif = diff;
@@ -161,8 +157,8 @@ void P2PAL::print_P2PF(const MAT_P2P_Record &left, const MAT_P2P_Record &right)
     // same-rank PEAT_RT_Bind_Completion line (post -> completion), which always precedes this line in the
     // same file, so qTV chases that instead of carrying a second copy of it in every peer line.
     sprintf(&tbuf[4], "%d:%s:%d:%s:%s:%d:%s:%lld\n", PEAT_RT_Bind_Peer,
-            global_func_id.name_by_idx(left.ph[1].func_id), left.rank, peat_ids_string(left.ph[1].ids).c_str(),
-            global_func_id.name_by_idx(right.ph[1].func_id), right.rank, peat_ids_string(right.ph[1].ids).c_str(),
+            global_func_id.name_by_idx(left.ph.func_id), left.rank, peat_ids_string(left.ph.ids).c_str(),
+            global_func_id.name_by_idx(right.ph.func_id), right.rank, peat_ids_string(right.ph.ids).c_str(),
             left.size);
     // assert(left.size == right.size);
     if (print_on_send) {
@@ -189,14 +185,12 @@ void P2PAL::print_P2PF(const MAT_P2P_Record &left, const MAT_P2P_Record &right)
     if (output_HWC && output_HWC->get_number_of_files() > 0) { // no timing data to compute stats/imbalance from when hwc files aren't read
         int pc_level = left.pc_level;
         PEAT_P2P_Record r_left;
-        r_left.func_id[0] = left.ph[0].func_id;
-        r_left.func_id[1] = left.ph[1].func_id;
-        r_left.func_id[2] = left.ph[2].func_id;
+        r_left.func_id = left.ph.func_id;
         r_left.bytes = left.size;
         r_left.peer = left.peer_rank;
         r_left.rank = left.rank;
         PEAT_Single_Event_Clock &left_clock = printed_p2p[pc_level][r_left];
-        PEAT_Clock duration = left.ph[2].tsc_time.mpi.out - left.ph[1].tsc_time.mpi.in;
+        PEAT_Clock duration = left.ph.tsc_time.mpi.out - left.ph.tsc_time.mpi.in;
         assert(duration > 0);
         left_clock.total_c += duration;
         left_clock.occ++;
@@ -207,15 +201,13 @@ void P2PAL::print_P2PF(const MAT_P2P_Record &left, const MAT_P2P_Record &right)
         // printed_p2p[pc_level][r_left] = left_clock;
         pc_level = right.pc_level;
         PEAT_P2P_Record r_right;
-        r_right.func_id[0] = right.ph[0].func_id;
-        r_right.func_id[1] = right.ph[1].func_id;
-        r_right.func_id[2] = right.ph[2].func_id;
+        r_right.func_id = right.ph.func_id;
         r_right.bytes = right.size;
         r_right.peer = right.peer_rank;
         r_right.rank = right.rank;
 
         PEAT_Single_Event_Clock &right_clock = printed_p2p[pc_level][r_right];
-        duration = right.ph[2].tsc_time.mpi.out - right.ph[1].tsc_time.mpi.in;
+        duration = right.ph.tsc_time.mpi.out - right.ph.tsc_time.mpi.in;
         assert(duration > 0);
         right_clock.total_c += duration;
         right_clock.occ++;
@@ -229,42 +221,35 @@ void P2PAL::print_P2PF(const MAT_P2P_Record &left, const MAT_P2P_Record &right)
 
     {
         if (left.comm != right.comm) {
-            fprintf(stderr, "p2p. Ranks:%d,%d ids:%lld,%lld,%lld (%lld) => (%lld) %lld,%lld,%lld\n", left.rank, right.rank,
-                    left.ph[0].ids[0], left.ph[1].ids[0], left.ph[2].ids[0],
-                    left.size, right.size,
-                    right.ph[0].ids[0], right.ph[1].ids[0], right.ph[2].ids[0]);
+            fprintf(stderr, "p2p. Ranks:%d,%d ids:%lld (%lld) => (%lld),%lld\n", left.rank, right.rank,
+                left.ph.ids[0],
+                left.size, right.size,
+                right.ph.ids[0]);
             peat_throw_error("Communicators mismatch\n");
         }
         if (left.tag != right.tag) {
-            fprintf(stderr, "p2p. Ranks:%d,%d ids:%lld,%lld,%lld (%lld) => (%lld) %lld,%lld,%lld\n", left.rank, right.rank,
-                    left.ph[0].ids[0], left.ph[1].ids[0], left.ph[2].ids[0],
+            fprintf(stderr, "p2p. Ranks:%d,%d ids:%lld (%lld) => (%lld) %lld\n", left.rank, right.rank,
+                    left.ph.ids[0],
                     left.size, right.size,
-                    right.ph[0].ids[0], right.ph[1].ids[0], right.ph[2].ids[0]);
+                    right.ph.ids[0]);
             peat_throw_error("Tags mismatch\n");
         }
         if (left.size != right.size) {
-            fprintf(stderr, "p2p. Ranks:%d,%d ids:%lld,%lld,%lld (%lld) => (%lld) %lld,%lld,%lld\n", left.rank, right.rank,
-                    left.ph[0].ids[0], left.ph[1].ids[0], left.ph[2].ids[0],
+            fprintf(stderr, "p2p. Ranks:%d,%d ids:%lld (%lld) => (%lld) %lld\n", left.rank, right.rank,
+                    left.ph.ids[0],
                     left.size, right.size,
-                    right.ph[0].ids[0], right.ph[1].ids[0], right.ph[2].ids[0]);
+                    right.ph.ids[0]);
             peat_warning("Sizes mismatch\n");
         }
-        if (left.ph[0].func_id == right.ph[0].func_id && !global_func_id.check_property(right.ph[0].func_id, PEAT_PROP_DATA_TXRX)) {
+        if (left.ph.func_id == right.ph.func_id && !global_func_id.check_property(right.ph.func_id, PEAT_PROP_DATA_TXRX)) {
             peat_throw_error("Same functions used for send and receive\n");
         }
     }
 #endif
-    /*
-        fprintf(stderr, "p2p. Ranks:%d,%d ids:%lld,%lld,%lld (%lld) => (%lld) %lld,%lld,%lld\n", left.rank, right.rank,
-            left.ph[0].ids[0], left.ph[1].ids[0], left.ph[2].ids[0],z
-            left.size, right.size,
-            right.ph[0].ids[0], right.ph[1].ids[0], right.ph[2].ids[0]);
-    */
 }
 
 void P2PAL::print_Local(const Tractor_Event &event)
 {
-    // cerr << "Local. Rank:" << local_record.rank << ". uniq_id:" << local_record.ph[0].uniq_id << endl;
     if (skip_locals)
         return;
 #ifdef MAT_PROCESS_HWC_MPI_OUTPUT
@@ -377,8 +362,7 @@ PEAT_Bool P2PAL::update_request(const PEAT_Rank rank, const Request_Store_Record
             if (size >= 0)
                 record->size = size;
         }
-        record->ph[2] = phase;
-        request_func_store->print_req_bind(rank, request, record->ph[1], record->ph[2], is_remote);
+        request_func_store->print_req_bind(rank, request, record->ph, phase, is_remote);
 
         PEAT_Num queue_type = record->is_send ? qt_send : qt_recv;
         PEAT_Num peer_queue_type = record->is_send ? qt_recv : qt_send;
@@ -438,9 +422,9 @@ PEAT_Bool P2PAL::add_pers_req_start(const PEAT_Rank rank, MAT_P2P_Record *record
         return false;
     }
     P2P_Event_Key key(*record);
-    if (global_func_id.check_property(record->ph[0].func_id, PEAT_PROP_DATA_RX)) {
+    if (global_func_id.check_property(record->ph.func_id, PEAT_PROP_DATA_RX)) {
         matching_queues[qt_recv][rank][key].push_back(record);
-    } else if (global_func_id.check_property(record->ph[0].func_id, PEAT_PROP_DATA_TX)) {
+    } else if (global_func_id.check_property(record->ph.func_id, PEAT_PROP_DATA_TX)) {
         matching_queues[qt_send][rank][key].push_back(record);
     } else {
         std::cerr << "Weird persistent request." << std::endl;
@@ -471,8 +455,7 @@ void P2PAL::parse_P2PTx(PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool pr
         if (event.P2P.request) {
             record->request = event.P2P.request;
         }
-        Phase ph_tx(event);
-        record->ph[0] = record->ph[1] = record->ph[2] = ph_tx;
+        record->ph = event;
         if (print_out)
             print_P2PL(event);
         if (global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) { // add persistent request to queue and finish
@@ -565,8 +548,7 @@ void P2PAL::parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool in
         if (event.P2P.request) {
             record->request = event.P2P.request;
         }
-        Phase ph_rx(event);
-        record->ph[0] = record->ph[1] = record->ph[2] = ph_rx;
+        record->ph = event;
         print_P2PL(event);
         if(global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) { // add persistent request to queue and finish
             MAT_Request_Store_Record tmp;
@@ -966,7 +948,7 @@ std::ostream &operator<<(std::ostream &dbg, const MAT_P2P_Record &rec)
         << ",t" << rec.tag
         << ",c" << rec.comm
         << ",oR" << rec.request
-        << "," << rec.ph[0] << "," << rec.ph[1] << "," << rec.ph[2]
+        << "," << rec.ph
         << "}";
     return dbg;
 }

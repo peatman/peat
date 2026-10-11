@@ -73,6 +73,8 @@ endif()
 
 project(mat CXX)
 
+add_compile_definitions(MAT_PROCESS_HWC_MPI_OUTPUT)
+
 find_package(ZLIB REQUIRED)
 
 set(MAT_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../common)

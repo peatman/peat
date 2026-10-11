@@ -43,7 +43,7 @@ struct Collective_Event { // tsc_u_time is for debugging purposes only!
     PEAT_Time tsc_time, tsc_u_time;
     PEAT_MPI_Request request, permanent_request;
     PEAT_MPI_Comm comm;
-    Phase ph[3];
+    Phase ph;
 };
 
 struct Collective_Entry {
@@ -164,6 +164,7 @@ struct MAT_Collective_Clocks {
 };
 /* Collective storage itself */
 class Requests;
+class Comm;
 class Collectives : public Outputs
 { // it still called collectives but it also handles File IO
   public:
@@ -177,7 +178,7 @@ class Collectives : public Outputs
 
     );
     virtual ~Collectives();
-    void initialize(PTP *p, Communicators *c, Request_Store *rs, Requests* r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
+    void initialize(PTP *p, Communicators *cs, Request_Store *rs, Comm *c, Requests* r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
     void parse_collective(const PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool is_remote);
     PEAT_Bool empty() const;
     PEAT_Num collective_queue_size() const;
@@ -228,6 +229,7 @@ class Collectives : public Outputs
     Communicators *comm_store;
     Request_Store* req_store;
     Requests* request_func_store;
+    Comm  *comm_func_store;
 
     // std::vector<PEAT_Num> waiting_collectives;
 

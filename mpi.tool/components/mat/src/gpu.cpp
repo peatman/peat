@@ -53,7 +53,6 @@ GPU::~GPU()
 }
 void GPU::print_GPU_out(const Tractor_Event &event)
 {
-    // cerr << "Local. Rank:" << local_record.rank << ". uniq_id:" << local_record.ph[0].uniq_id << endl;
 #ifdef MAT_PROCESS_HWC_MPI_OUTPUT
     output_MPI->printf(event.rank, "%s:%s", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id));
 #if 0

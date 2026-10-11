@@ -20,6 +20,8 @@
 #ZLIBINCLUDE=-I$(ZLIBHOME)/include
 ZLIBLIB=-lz
 
+DEFINES=-DMAT_PROCESS_HWC_MPI_OUTPUT
+
 INCLUDES=-I../../common -I. $(ZLIBINCLUDE)
 TARGET=serial
 COMMON_FLAGS=-O3 -std=c++20
@@ -51,7 +53,7 @@ endif
 
 ifeq "$(TARGET)" "openmp"
 CXX=g++
-CXXFLAGS=-W -Wall -Wnon-virtual-dtor -Wold-style-cast -Wctor-dtor-privacy -fopenmp $(COMMON_FLAGS) $(INCLUDES)
+CXXFLAGS=-W -Wall -Wnon-virtual-dtor -Wold-style-cast -Wctor-dtor-privacy -fopenmp $(COMMON_FLAGS) $(INCLUDES) $(DEFINES)
 EXECUTABLE=mat.omp
 endif
 

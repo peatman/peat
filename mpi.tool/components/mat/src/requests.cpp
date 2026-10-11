@@ -129,7 +129,7 @@ PEAT_Bool Requests::parse_collective_completion_phase(const PEAT_Rank rank, cons
     MAT_Request_Store_Record ret_it;
     if(req_store->find_request(rank, request, is_fio? REQUEST_TYPE_USER_FIO : REQUEST_TYPE_USER_COLLECTIVE, &ret_it, true)) {
         if(is_fio){
-            print_req_bind(rank, request, ret_it.record->get_ph(1), phase, is_remote);
+            print_req_bind(rank, request, ret_it.record->get_ph(), phase, is_remote);
         } else {
             MAT_Collectives_Record* coll = (MAT_Collectives_Record*)ret_it.record;
             coll_func_store->update_request(rank, request, phase, coll->coll_event);
@@ -207,7 +207,7 @@ void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is
             fprintf(stderr, "Removing request %llx rank %d event %lld from rank %d in %d rank.(remote=%d)...", event.requests.at(0), rank, event.ids[0], rank, my_rank, is_remote);
         */
         if (found) {
-             print_req_bind(rank, event.requests.at(0), resp.record->get_ph(0), event, is_remote);
+             print_req_bind(rank, event.requests.at(0), resp.record->get_ph(), event, is_remote);
              delete resp.record;
             // fprintf(stderr, "done.\n");
             return;
@@ -493,7 +493,7 @@ void Requests::print_req_bind(PEAT_Rank rank, const Collective_Entry &coll, cons
         delivery.func = coll.func_id;
         sprintf(&tbuf[4], "%d:%s:%s:%s:%s\n", PEAT_RT_Bind_Completion,
                 global_func_id.name_by_idx(coll.func_id),
-                peat_ids_string(coll.coll_events_list.at(rank)->ph[1].ids).c_str(),
+                peat_ids_string(coll.coll_events_list.at(rank)->ph.ids).c_str(),
                 global_func_id.name_by_idx(phase.func_id),
                 peat_ids_string(phase.ids).c_str());
         PEAT_Signed_Num size = (PEAT_Signed_Num)strlen(&tbuf[4]) + 5;
@@ -503,7 +503,7 @@ void Requests::print_req_bind(PEAT_Rank rank, const Collective_Entry &coll, cons
     } else {
         output_bind->printf(rank, "%d:%s:%s:%s:%s\n", PEAT_RT_Bind_Completion,
                             global_func_id.name_by_idx(coll.func_id),
-                            peat_ids_string(coll.coll_events_list.at(rank)->ph[1].ids).c_str(),
+                            peat_ids_string(coll.coll_events_list.at(rank)->ph.ids).c_str(),
                             global_func_id.name_by_idx(phase.func_id),
                             peat_ids_string(phase.ids).c_str());
         p2p_func_store->messages_bound[rank]++;
@@ -556,14 +556,14 @@ void Requests::parse_P2P_start_phase(const PEAT_Rank rank, const Phase& phase, c
     MAT_P2P_Record* req=static_cast<MAT_P2P_Record*> (rec->record);
 
     MAT_P2P_Record* record = new MAT_P2P_Record(*req);
-    record->ph[1] = phase;
+    record->ph = phase;
     record->pc_level = pc_level;
     MAT_Request_Store_Record srec;
 	srec.record = record;
 	srec.request_type = REQUEST_TYPE_USER_P2P;
     req_store->add_request(rank, request, &srec);
     p2p_func_store->add_pers_req_start(rank, record);
-    print_req_bind(rank, request, record->get_ph(0), phase, is_remote);
+    print_req_bind(rank, request, record->get_ph(), phase, is_remote);
 }
 
 void Requests::parse_collective_start_phase(const PEAT_Rank rank, const Phase& phase, const PEAT_MPI_Request request, MAT_Request_Store_Record* rec, const int pc_level, PEAT_Bool is_remote)
@@ -571,7 +571,7 @@ void Requests::parse_collective_start_phase(const PEAT_Rank rank, const Phase& p
     MAT_Collectives_Record* req = static_cast<MAT_Collectives_Record*> (rec->record);
 
     MAT_Collectives_Record* record = new MAT_Collectives_Record(*req);
-    record->coll_event->ph[1] = phase;
+    record->coll_event->ph = phase;
     record->pc_level = pc_level;
     /*
     MAT_Request_Store_Record srec;
@@ -579,7 +579,7 @@ void Requests::parse_collective_start_phase(const PEAT_Rank rank, const Phase& p
     srec.request_type = REQUEST_TYPE_USER_COLLECTIVE;
     req_store->add_request(rank, request, &srec);*/
     coll_func_store->add_pers_req_start(rank, record);
-    print_req_bind(rank, request, record->get_ph(0), phase, is_remote);
+    print_req_bind(rank, request, record->get_ph(), phase, is_remote);
 }
 
 #ifdef PEAT_MPI

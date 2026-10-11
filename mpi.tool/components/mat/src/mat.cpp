@@ -440,7 +440,7 @@ Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : globals(glob), m
 	);
 	comm_func_store->initialize(ptp, comm_store, req_store, request_func_store, output_MPI, output_HWC, output_bind);
 	gpu_func_store->initialize(ptp, comm_store, output_MPI, output_HWC, output_bind);
-	coll_func_store->initialize(ptp, comm_store, req_store, request_func_store, output_MPI, output_HWC, output_bind);
+	coll_func_store->initialize(ptp, comm_store, req_store, comm_func_store, request_func_store, output_MPI, output_HWC, output_bind);
 	p2p_func_store->initialize(ptp, comm_store, req_store, request_func_store, gpu_func_store, output_MPI, output_HWC, output_bind);
 	request_func_store->initialize(ptp, comm_store, req_store, p2p_func_store, comm_func_store,coll_func_store, output_MPI, output_HWC, output_bind);
 	second_line = false;
@@ -590,16 +590,14 @@ void Mat::process()
         for (std::map<int, int>::iterator tm_it = pc_levels.begin(); tm_it != pc_levels.end(); ++tm_it) {
             if (!p2p_func_store->printed_p2p[tm_it->first].empty()) {
                 printf("%20s: %7d\n", "PC Region", tm_it->first);
-                printf("%47s %10s %10s<=>%10s %14s %14s %14s %20s %14s\n", "func_ids", "Bytes", "Rank", "Peer", "Min", "Max", "Total", "Imbalance", "Calls");
+                printf("%17s %10s %10s<=>%10s %14s %14s %14s %20s %14s\n", "func_id", "Bytes", "Rank", "Peer", "Min", "Max", "Total", "Imbalance", "Calls");
                 for (std::map<PEAT_P2P_Record, PEAT_Single_Event_Clock>::iterator rIt = p2p_func_store->printed_p2p[tm_it->first].begin(); rIt != p2p_func_store->printed_p2p[tm_it->first].end(); ++rIt) {
                     PEAT_P2P_Record record = rIt->first;
                     PEAT_Single_Event_Clock clock = rIt->second;
                     char imb_buf[32];
                     snprintf(imb_buf, sizeof(imb_buf), "%lld (%3.2lf)", clock.imb_c, (double)clock.imb_c * 100.0 / (double)clock.total_c);
-                    printf("%15s %15s %15s %10lld %10d<=>%10d %14lld %14lld %14lld %20s %14lld\n",
-                           global_func_id.name_by_idx(record.func_id[0]),
-                           global_func_id.name_by_idx(record.func_id[1]),
-                           global_func_id.name_by_idx(record.func_id[2]),
+                    printf("%15s %10lld %10d<=>%10d %14lld %14lld %14lld %20s %14lld\n",
+                           global_func_id.name_by_idx(record.func_id),
                            record.bytes,
                            record.rank, record.peer,
                            clock.min_c, clock.max_c, clock.total_c, imb_buf, clock.occ);
@@ -609,16 +607,14 @@ void Mat::process()
     }
     if (!p2p_func_store->printed_p2p[0].empty()) {
         printf("%20s:\n", "Out of any PC region");
-        printf("%47s %10s %10s<=>%10s %14s %14s %14s %20s %14s\n", "func_ids", "Bytes", "Rank", "Peer", "Min", "Max", "Total", "Imbalance", "Calls");
+        printf("%17s %10s %10s<=>%10s %14s %14s %14s %20s %14s\n", "func_id", "Bytes", "Rank", "Peer", "Min", "Max", "Total", "Imbalance", "Calls");
         for (std::map<PEAT_P2P_Record, PEAT_Single_Event_Clock>::iterator rIt = p2p_func_store->printed_p2p[0].begin(); rIt != p2p_func_store->printed_p2p[0].end(); ++rIt) {
             PEAT_P2P_Record record = rIt->first;
             PEAT_Single_Event_Clock clock = rIt->second;
             char imb_buf[32];
             snprintf(imb_buf, sizeof(imb_buf), "%lld (%3.2lf)", clock.imb_c, (double) clock.imb_c * 100.0 / (double) clock.total_c);
-            printf("%15s %15s %15s %10lld %10d<=>%10d %14lld %14lld %14lld %20s %14lld\n",
-                   global_func_id.name_by_idx(record.func_id[0]),
-                   global_func_id.name_by_idx(record.func_id[1]),
-                   global_func_id.name_by_idx(record.func_id[2]),
+            printf("%15s %10lld %10d<=>%10d %14lld %14lld %14lld %20s %14lld\n",
+                   global_func_id.name_by_idx(record.func_id),
                    record.bytes,
                    record.rank, record.peer,
                    clock.min_c, clock.max_c, clock.total_c, imb_buf, clock.occ);

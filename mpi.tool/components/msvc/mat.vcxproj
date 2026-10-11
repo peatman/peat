@@ -149,7 +149,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions);MAT_PROCESS_HWC_MPI_OUTPUT</PreprocessorDefinitions>
       <SDLCheck>false</SDLCheck>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <AdditionalIncludeDirectories>$(I_MPI_ROOT)\include</AdditionalIncludeDirectories>
@@ -170,7 +170,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>PEAT_MPI;ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>PEAT_MPI;ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions);MAT_PROCESS_HWC_MPI_OUTPUT</PreprocessorDefinitions>
       <SDLCheck>false</SDLCheck>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <AdditionalIncludeDirectories>$(I_MPI_ROOT)\include</AdditionalIncludeDirectories>
@@ -193,7 +193,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions);MAT_PROCESS_HWC_MPI_OUTPUT</PreprocessorDefinitions>
       <SDLCheck>false</SDLCheck>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
@@ -221,7 +221,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>PEAT_MPI;ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>PEAT_MPI;ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions);MAT_PROCESS_HWC_MPI_OUTPUT</PreprocessorDefinitions>
       <SDLCheck>false</SDLCheck>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>

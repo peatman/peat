@@ -20,6 +20,7 @@
 #include "communicators.h"
 #include "utils.h"
 #include "requests.h"
+#include "comm.h"
 #include <assert.h>
 #include <sstream>
 
@@ -34,7 +35,7 @@ MAT_FIO_Record::MAT_FIO_Record(const Tractor_Event& s) : MAT_Record()
 	ph = s;
 }
 
-Phase& MAT_Collectives_Record::get_ph(int idx) { return coll_event->ph[idx]; }
+Phase& MAT_Collectives_Record::get_ph() { return coll_event->ph; }
 MAT_Collectives_Record::MAT_Collectives_Record(const MAT_Collectives_Record& s) :MAT_Record(s)    
 {
     coll_event = new Collective_Event(*s.coll_event);
@@ -68,7 +69,7 @@ Collective_Event::Collective_Event(const Tractor_Event& s) : addrs(s.addrs), tsc
         assert(0);
         break;
     }
-    ph[0] = ph[1] = ph[2] = s;
+    ph = s;
 }
 
 
@@ -92,13 +93,14 @@ Collectives::Collectives(int pos
 #endif
 }
 
-void Collectives::initialize(PTP *p, Communicators *c, Request_Store *rs, Requests* r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
+void Collectives::initialize(PTP *p, Communicators *cs, Request_Store *rs, Comm *c, Requests* r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
 {
     assert(c);
     assert(p);
-    comm_store = c;
+    comm_store = cs;
     ptp = p;
     req_store = rs;
+    comm_func_store = c;
     request_func_store = r;
     Outputs::initialize(MPI, HWC, bind);
 }
@@ -111,10 +113,15 @@ Collectives::~Collectives()
 void Collectives::print_collective_out(const Tractor_Event &event)
 {
 #ifdef MAT_PROCESS_HWC_MPI_OUTPUT
-    if (event.func_class == PEAT_PROP_CLASS_FIO) {
+    switch(event.func_class) {
+    case PEAT_PROP_CLASS_FIO:
         output_MPI->printf(event.rank, "%s:%s:%x:%llx:%llx:%lld:%lld", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id),
-                           event.MPIFIO.comm, event.MPIFIO.fh, event.MPIFIO.request, event.MPIFIO.offset, event.MPIFIO.bytes);
-    } else {
+            event.MPIFIO.comm, event.MPIFIO.fh, event.MPIFIO.request, event.MPIFIO.offset, event.MPIFIO.bytes);
+        break;
+    case PEAT_PROP_CLASS_COMM:
+		comm_func_store->print_comm_out(event);
+        break;
+    case PEAT_PROP_CLASS_COLLECTIVE:
         output_MPI->printf(event.rank, "%s:%s:%x:%d:%llx:%d:%d", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id),
                            event.Collective.comm, event.Collective.root, event.Collective.request, event.Collective.rw_fields0, event.Collective.rw_fields1);
         for (PEAT_Signed_Num j = 0; j < event.Collective.rw_fields0; j++) {
@@ -123,6 +130,7 @@ void Collectives::print_collective_out(const Tractor_Event &event)
         for (PEAT_Signed_Num j = 0; j < event.Collective.rw_fields1; j++) {
             output_MPI->printf(event.rank, ":%lld", event.recv_bytes[j]);
         }
+        break;
     }
 
 #if 0
@@ -158,7 +166,7 @@ void Collectives::print_collective_err(const MAT_Collective &record)
             const PEAT_Rank rank = it->first;
             const Collective_Event *prop = it->second;
             char local_uids[128];
-            snprintf(local_uids, sizeof(local_uids), ":%d:%s", rank, peat_ids_string(prop->ph[1].ids).c_str());
+            snprintf(local_uids, sizeof(local_uids), ":%d:%s", rank, peat_ids_string(prop->ph.ids).c_str());
             uids = uids + local_uids;
         }
         for (Collective_Ranks::const_iterator it = record.expected_ranks.begin(); it != record.expected_ranks.end(); ++it) {
@@ -189,7 +197,7 @@ void Collectives::print_collective_bind(const MAT_Collective &record)
             const PEAT_Rank rank = it->first;
             const Collective_Event *prop = it->second;
             char local_uids[128];
-            snprintf(local_uids, sizeof(local_uids), ":%d:%s", rank, peat_ids_string(prop->ph[1].ids).c_str());
+            snprintf(local_uids, sizeof(local_uids), ":%d:%s", rank, peat_ids_string(prop->ph.ids).c_str());
             uids = uids + local_uids;
         }
         sprintf(header, "%d:%s", PEAT_RT_Bind_Collective, global_func_id.name_by_idx(record.func_id));
@@ -241,9 +249,9 @@ void Collectives::print_collective_bind(const MAT_Collective &record)
             // r_col.comp_funcs[rank] = global_func_id.name_by_idx(record.func_id); // ???
             // if (prop.permanent_request > 0) r_col.comp_funcs[rank] = global_func_id.name_by_idx(prop.completion.func_id);
             if (prop->permanent_request > 0)
-                r_col.comp_func = global_func_id.name_by_idx(prop->ph[2].func_id); // TODO remove
+                r_col.comp_func = global_func_id.name_by_idx(prop->ph.func_id); // TODO remove
             char local_uids[128];
-            snprintf(local_uids, sizeof(local_uids), " %d,%s", rank, peat_ids_string(prop->ph[1].ids).c_str());
+            snprintf(local_uids, sizeof(local_uids), " %d,%s", rank, peat_ids_string(prop->ph.ids).c_str());
             uids = uids + local_uids;
         }
         r_col.root = record.root;
@@ -327,7 +335,7 @@ PEAT_Bool Collectives::empty() const
 }
 void Collectives::process_collective(const PEAT_Rank rank, MAT_Collectives_Record* event, int pc_level, PEAT_Bool is_remote)
 {
-    collective_key key(event->coll_event->comm, event->coll_event->ph[1].func_id);
+    collective_key key(event->coll_event->comm, event->coll_event->ph.func_id);
     collective_list::iterator matched_record;
     PEAT_Bool matched_collective_exists = false;
     if(event->coll_event->request > 0) {
@@ -431,7 +439,7 @@ void Collectives::process_collective(const PEAT_Rank rank, MAT_Collectives_Recor
         collective_entry.coll_events_list = properties_list;
         collective_entry.comm = event->coll_event->comm;
         collective_entry.size = ranks;
-        collective_entry.func_id = event->coll_event->ph[1].func_id;
+        collective_entry.func_id = event->coll_event->ph.func_id;
         collective_entry.pc_level = pc_level;
 
         if(!expected_ranks.empty()) {
@@ -573,7 +581,7 @@ PEAT_Bool Collectives::erase_collective(collective_key &c_key, collective_list::
 PEAT_Bool Collectives::find_collective(const PEAT_Rank rank, const MAT_Request_Store_Record *rec, collective_list::iterator* record)
 {
 	MAT_Collectives_Record* event = static_cast<MAT_Collectives_Record*>(rec->record);
-    collective_key c_key(event->coll_event->comm, event->get_ph(1).func_id);
+    collective_key c_key(event->coll_event->comm, event->get_ph().func_id);
     if(coll_queues.count(c_key)) {
         return match_collective(coll_queues.at(c_key), *record, rank);
     }
@@ -587,7 +595,7 @@ PEAT_Bool Collectives::find_collective(const PEAT_Rank rank, const MAT_Request_S
  */
 PEAT_Bool Collectives::find_collective(const PEAT_Rank rank, Collective_Event* event, collective_list::iterator* record)
 {
-    collective_key c_key(event->comm, event->ph[1].func_id);
+    collective_key c_key(event->comm, event->ph.func_id);
     if(coll_queues.count(c_key)) {
         for(collective_list::iterator it = coll_queues.at(c_key).collectives.begin(); it != coll_queues.at(c_key).collectives.end(); ++it) {
             Collective_Ranks& checked_hash = coll_get_value(it, expected_ranks);
@@ -605,10 +613,9 @@ PEAT_Bool Collectives::update_request(const PEAT_Rank rank, const PEAT_MPI_Reque
 {
     collective_list::iterator coll;
     if(find_collective(rank,event, &coll)) {
-        coll_get_value(coll, coll_events_list).at(rank)->ph[2] = phase;
         assert(coll_get_value(coll, coll_events_list).at(rank)->request == request);
         coll_get_value(coll, coll_events_list).at(rank)->request = 0;
-        request_func_store->print_req_bind(rank, request, coll_get_value(coll, coll_events_list).at(rank)->ph[1], coll_get_value(coll, coll_events_list).at(rank)->ph[2], false);
+        request_func_store->print_req_bind(rank, request, coll_get_value(coll, coll_events_list).at(rank)->ph, phase, false);
         if(coll_get_value(coll, expected_ranks).empty()) {
 
             if(check_completion(coll)) {
