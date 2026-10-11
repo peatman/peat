@@ -299,7 +299,6 @@ struct msl_event {
             MPI_Comm comm;
             MPI_Comm newcomm;
             MPI_Comm remotecomm;
-            MPI_Comm intercomm;
             MPI_Request request;
         } __attribute__((packed)) __attribute__((aligned(4))) comms;
 

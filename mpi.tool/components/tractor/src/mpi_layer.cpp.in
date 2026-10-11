@@ -593,7 +593,7 @@ static int MPI_Intercomm_merge_internal(MPI_Comm intercomm, int high, MPI_Comm *
     rv = PMPI_Intercomm_merge(intercomm, high, newintracomm);
 #endif
 #define __write_comms__                 \
-    event->comms.intercomm = intercomm; \
+    event->comms.comm = intercomm; \
     event->comms.newcomm = *newintracomm;
 #include "mpi_layer_comm_begin.epilog.h" // output comm is intra
 #undef __write_comms__

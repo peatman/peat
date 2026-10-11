@@ -2510,12 +2510,11 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                     func_base < MPI_END_COMM_COLLECTIVE_GROUP ||
                 func_base == MPI_COMM_FREE_ID || func_base == MPID_COMM_FREE_ID || func_base == MPID_COMM_CREATE_ID) {
                 int is_internal = (func_base == MPID_COMM_FREE_ID || func_base == MPID_COMM_CREATE_ID);
-                t_gzprintf(fps_mpi, ":%x:%x:%x:%x:%llx",
+                t_gzprintf(fps_mpi, ":%x:%x:%x:%llx",
                            get_global_comm_id(rec.comms.comm, tsc_mpi_entry, is_internal),       // 4
                            get_global_comm_id(rec.comms.newcomm, tsc_mpi_entry, is_internal),    // 5
                            get_global_comm_id(rec.comms.remotecomm, tsc_mpi_entry, is_internal), // 6
-                           get_global_comm_id(rec.comms.intercomm, tsc_mpi_entry, is_internal),  // 7
-                           MPI_Check_dummy(rec.comms.request)                                    // 8
+                           MPI_Check_dummy(rec.comms.request)                                    // 7
                 );
                 req_comm[MPI_Check_dummy(rec.comms.request)] = T_MPI_Comm(rec.comms.newcomm, tsc_mpi_entry, 0); // save comm for later WAIT or TEST
             }
