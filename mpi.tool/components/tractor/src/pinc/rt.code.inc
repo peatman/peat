@@ -54,6 +54,7 @@ $prototype {
         $get_datasize
         $if_ignore_status
         $pre_event_message
+        $pre_handle
         counting_permit+=2*counting_permission_pcontrol[$funcid_through];
 #ifdef _HWCOUNTERS_ENABLED_
         gt_info(hwc).get_all_counters(l_hwcs);
@@ -81,7 +82,7 @@ $prototype {
         $transfer_bytes
         $comm
         $tag_peer
-        $handle
+        $post_handle
         $offset
         $event_flag
         $event_request
