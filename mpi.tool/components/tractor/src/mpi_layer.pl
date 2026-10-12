@@ -384,8 +384,8 @@ $tag_peer="$tag_peer event->$basic_struct.peer=peer_rank;" if $properties=~/PEER
 my $mpi_internal_mpid_comm = ($properties=~/MPI_INTERNAL/ && $properties!~/CLASS_PROBE/);
 $tag_peer="$tag_peer event->$basic_struct.peer=mpi_internal_get_rank_from_comm(comm,peer_rank);" if $properties=~/PEER/ && $mpi_internal_mpid_comm;
 
-$pre_handle="event->$basic_struct.window=win;" if $properties=~/HWINDOW/ && $properties=~/CLASS_OSC/;
-$pre_handle="event->$basic_struct.window=*win;" if $properties=~/PHWINDOW/ && $properties=~/CLASS_OSC/;
+$pre_handle="event->$basic_struct.window=win;" if $properties=~/WINDOW/ && $properties=~/CLASS_OSC/;
+$pre_handle="event->$basic_struct.window=*win;" if $properties=~/PWINDOW/ && $properties=~/CLASS_OSC/;
 $pre_handle="event->$basic_struct.fh=fh;" if $properties=~/FILE_HANDLE/ && $properties=~/CLASS_FIO/;
 $pre_handle="event->$basic_struct.fh=*fh;" if $properties=~/FILE_POINTER_INPUT/ && $properties=~/CLASS_FIO/;
 $post_handle="event->$basic_struct.fh=*fh;" if $properties=~/FILE_POINTER_OUTPUT/ && $properties=~/CLASS_FIO/;
