@@ -108,9 +108,8 @@ class CTT
     std::map<PEAT_Rank, User_Address_Key> last_key;
     CTT(Global_Parameters &file_names, Model_ID &model_id_storage);
     ~CTT();
-    PEAT_Bool parse_single_event(const int rank, String_Split &line_mpi, String_Split &line_hwc);
+    PEAT_Bool parse_single_event(const int rank, String_Split &line_mpi, String_Split &line_hwc, PEAT_Bool second_line);
     void process();
-    PEAT_Bool second_line;
 
   private:
     PEAT_LNum events_processed;
