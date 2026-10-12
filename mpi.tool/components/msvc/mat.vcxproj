@@ -33,6 +33,7 @@
     <ClCompile Include="..\mat\src\main.cpp" />
     <ClCompile Include="..\mat\src\mat.cpp" />
     <ClCompile Include="..\mat\src\p2pal.cpp" />
+    <ClCompile Include="..\mat\src\osc.cpp" />
     <ClCompile Include="..\mat\src\requests.cpp" />
     <ClCompile Include="..\mat\src\request_store.cpp" />
     <ClCompile Include="..\mat\src\tempdebug.cpp">
@@ -61,6 +62,7 @@
     <ClInclude Include="..\mat\src\gpu.h" />
     <ClInclude Include="..\mat\src\mat.h" />
     <ClInclude Include="..\mat\src\p2pal.h" />
+    <ClInclude Include="..\mat\src\osc.h" />
     <ClInclude Include="..\mat\src\records.h" />
     <ClInclude Include="..\mat\src\requests.h" />
     <ClInclude Include="..\mat\src\request_store.h" />

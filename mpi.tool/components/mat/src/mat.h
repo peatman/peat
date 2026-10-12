@@ -23,6 +23,7 @@
 
 #include "collectives.h"
 #include "comm.h"
+#include "osc.h"
 #include "communicators.h"
 #include "gpu.h"
 #include "model_id.h"
@@ -45,7 +46,8 @@ class Mat
     Collectives *coll_func_store;
     P2PAL *p2p_func_store;
     GPU *gpu_func_store;
-    Comm *comm_func_store;
+    Comm* comm_func_store;
+    OSC* osc_func_store;
     Requests *request_func_store;
     Request_Store* req_store;
     File_Storage_GZ *input_MPI;

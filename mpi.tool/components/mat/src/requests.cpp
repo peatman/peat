@@ -20,6 +20,8 @@
 #include "utils.h"
 #include <assert.h>
 #include <stdexcept>
+#include "comm.h"
+#include "osc.h"
 
 Requests::Requests(int s,
 #ifdef PEAT_MPI
@@ -36,15 +38,18 @@ Requests::Requests(int s,
 	ptp = NULL;
 	req_store = NULL;
 	p2p_func_store = NULL;
+	osc_func_store = NULL;
 	coll_func_store = NULL;
+	comm_func_store = NULL;
 }
 
-void Requests::initialize(PTP *p, Communicators *c, Request_Store *r, P2PAL *pp, Comm* cc, Collectives *cl, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
+void Requests::initialize(PTP *p, Communicators *c, Request_Store *r, P2PAL *pp, Comm* cc, OSC* o, Collectives *cl, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
 {
 	comm_store = c;
 	ptp = p;
 	req_store = r;
 	p2p_func_store = pp;
+	osc_func_store = o;
 	coll_func_store = cl;
     comm_func_store = cc;
 	Outputs::initialize(MPI, HWC, bind);
@@ -115,6 +120,21 @@ PEAT_Bool Requests::parse_comm_completion_phase(const PEAT_Rank rank, const PEAT
     }
     if(request > 0) {
         comm_func_store->update_request(rank, request, phase, is_remote);
+        return true;
+    }
+    return false;
+}
+
+PEAT_Bool Requests::parse_osc_completion_phase(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase& phase, PEAT_Bool is_remote)
+{
+    // cerr << "DBG1 " << event << "\n";
+    // pull requests from all available queues: message_queues[SENDQ],message_queues[RECVQ]
+    if(request == comm_store->get_MPI_REQUEST_NULL()) {
+        std::cerr << "Null request detected. Rank: " << rank << ". Skipped." << std::endl;
+        return false;
+    }
+    if(request > 0) {
+        osc_func_store->update_request(rank, request, phase, is_remote);
         return true;
     }
     return false;
@@ -388,6 +408,9 @@ void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is
                 break;
             case REQUEST_TYPE_USER_COMM:
                 parse_comm_completion_phase(rank, request, ph_cn, is_remote);
+                break;
+            case REQUEST_TYPE_USER_OSC:
+                parse_osc_completion_phase(rank, request, ph_cn, is_remote);
                 break;
             case REQUEST_TYPE_INTERNAL:
                 parse_P2P_completion_phase(rank, REQUEST_TYPE_INTERNAL,  request, tag, source, size, ph_cn, event.PControl.ctl, is_remote);

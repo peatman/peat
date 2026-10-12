@@ -88,7 +88,7 @@ else()
 endif()
 
 add_executable(${MAT_EXE}
-  main.cpp collectives.cpp mat.cpp p2pal.cpp requests.cpp tempdebug.cpp tevent.cpp gpu.cpp comm.cpp request_store.cpp
+  main.cpp collectives.cpp mat.cpp p2pal.cpp requests.cpp osc.cpp tempdebug.cpp tevent.cpp gpu.cpp comm.cpp request_store.cpp
   ${MAT_COMMON_DIR}/file_io.cpp ${MAT_COMMON_DIR}/func_id.cpp ${MAT_COMMON_DIR}/utils.cpp
   ${MAT_COMMON_DIR}/common_types.cpp ${MAT_COMMON_DIR}/ptp.cpp ${MAT_COMMON_DIR}/communicators.cpp
   ${MAT_COMMON_DIR}/model_id.cpp)

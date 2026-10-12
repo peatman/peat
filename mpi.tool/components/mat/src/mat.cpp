@@ -178,7 +178,7 @@ PEAT_Bool Mat::parse_single_event(const int rank)
         }
     }
     if (t_event.func_class == PEAT_PROP_CLASS_OSC) {
-        t_event.func_class = PEAT_PROP_CLASS_LOCAL;
+        osc_func_store->parse_osc(rank, t_event);   
     }
 
     if (t_event.func_class == PEAT_PROP_CLASS_GPU) {
@@ -229,7 +229,7 @@ PEAT_Bool Mat::parse_single_event(const int rank)
         t.occurences += (t_time != 0);
         timings[0][PEAT_PROP_CODE_TRACTOR_OVERHEAD] = t;
     }
-    if (!second_line) {
+    if (!second_line && (t_event.ids.size()<2 || t_event.ids[1] < 0)) { //count only 'user' events
         rank_events_processed[rank]++;
 #pragma omp atomic
         events_processed++;
@@ -405,20 +405,9 @@ Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : globals(glob), m
 #endif
 	req_store = new Request_Store(ptp, globals.verbose);
 
-	comm_func_store = new Comm(
-							  /*
-							  #ifdef PEAT_MPI
-									 whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
-							 #endif
-							 */
-	);
-	gpu_func_store = new GPU(
-							 /*
-							 #ifdef PEAT_MPI
-									 whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
-							 #endif
-							 */
-	);
+    comm_func_store = new Comm();
+    osc_func_store = new OSC();
+    gpu_func_store = new GPU();
 
 	p2p_func_store = new P2PAL(input_MPI, globals.skip_processing, globals.print_location
 #ifdef PEAT_MPI
@@ -438,11 +427,12 @@ Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : globals(glob), m
 									 &active_deliveries, whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
 #endif
 	);
-	comm_func_store->initialize(ptp, comm_store, req_store, request_func_store, output_MPI, output_HWC, output_bind);
-	gpu_func_store->initialize(ptp, comm_store, output_MPI, output_HWC, output_bind);
+    comm_func_store->initialize(ptp, comm_store, req_store, request_func_store, output_MPI, output_HWC, output_bind);
+    osc_func_store->initialize(ptp, comm_store, req_store, request_func_store, output_MPI, output_HWC, output_bind);
+    gpu_func_store->initialize(ptp, comm_store, output_MPI, output_HWC, output_bind);
 	coll_func_store->initialize(ptp, comm_store, req_store, comm_func_store, request_func_store, output_MPI, output_HWC, output_bind);
 	p2p_func_store->initialize(ptp, comm_store, req_store, request_func_store, gpu_func_store, output_MPI, output_HWC, output_bind);
-	request_func_store->initialize(ptp, comm_store, req_store, p2p_func_store, comm_func_store,coll_func_store, output_MPI, output_HWC, output_bind);
+	request_func_store->initialize(ptp, comm_store, req_store, p2p_func_store, comm_func_store, osc_func_store, coll_func_store, output_MPI, output_HWC, output_bind);
 	second_line = false;
 }
 Mat::~Mat()

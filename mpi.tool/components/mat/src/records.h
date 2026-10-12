@@ -111,6 +111,18 @@ struct MAT_FIO_Record : public MAT_Record {
     virtual Phase& get_ph() { return ph; }
 };
 
+struct MAT_OSC_Record : public MAT_Record {
+
+    PEAT_MPI_Comm comm;
+    PEAT_MPI_Request request;
+    PEAT_MPI_File  fh;
+    MAT_OSC_Record() : MAT_Record(), comm(0), request(0), fh(0) {}
+    MAT_OSC_Record(const Tractor_Event& s);
+    int record_type() { return 4; }
+    Phase ph;
+    virtual Phase& get_ph() { return ph; }
+};
+
 struct MAT_P2P_Record : public MAT_Record {
     MAT_P2P_Record() : MAT_Record(), comm(0), size(0), tag(0), message(0), peer_rank(-1), request(0), peer_assigned(false), is_send(false) {}
     MAT_P2P_Record(const Tractor_Event& s);

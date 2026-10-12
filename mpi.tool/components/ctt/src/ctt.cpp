@@ -48,13 +48,13 @@ PEAT_Bool CTT::parse_single_event(const int rank, String_Split &line_mpi, String
     PEAT_Record_Header hdr; // ids, thread and nesting of the record
     user_region_store->parse_record_header(hdr, line_mpi, rank);
     std::string mpi_func = line_mpi.at(hdr.payload);
-    if (!second_line) {
-#pragma omp atomic
-        events_processed++;
-    }
     if (globals.func_set.count(mpi_func) < 1 && (!globals.func_set.empty()))
         return true;
     Tractor_Event t_event(rank, line_mpi, line_hwc, model_id.num_hwcs, model_id.num_addrs, user_region_store, com_store);
+    if(!second_line && (t_event.ids.size()<2 || t_event.ids[1] < 0)) { //count only 'user' events
+#pragma omp atomic
+        events_processed++;
+    }
     PEAT_MPI_Func_ID mpifunc = t_event.func_id;
     CTT_Event f_event;
     if (t_event.func_class == PEAT_PROP_CLASS_COLLECTIVE) { // collective

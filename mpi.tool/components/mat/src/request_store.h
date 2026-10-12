@@ -40,6 +40,7 @@ enum Request_Store_Record_Type {
     REQUEST_TYPE_USER_COLLECTIVE, // User normal requests (from collective MPI_Ixxx of MPI_START)
     REQUEST_TYPE_USER_FIO, // User normal requests (from FIO MPI_FIle_Ixxx)
     REQUEST_TYPE_USER_COMM, // User normal requests (from comm MPI_Ixxx )
+    REQUEST_TYPE_USER_OSC, // User normal requests (from one-sided MPI_Ixxx )
     REQUEST_TYPE_INTERNAL // MPI internal requests (from MPIC_Ixxx) 
 };
 struct MAT_Request_Store_Record {
