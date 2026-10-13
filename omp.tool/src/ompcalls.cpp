@@ -190,18 +190,22 @@ on_implicit_task(ompt_scope_endpoint_t endpoint,
                  unsigned int index,
                  int flags)
 {
-    (void)task_data;
     (void)flags;
 
+    /* actual_parallelism is only valid at scope_begin (0 at scope_end for
+       worker threads), so the serialized flag is carried to the end in
+       the implicit task's own task_data. */
     if (endpoint == ompt_scope_begin) {
+        int serialized = actual_parallelism <= 1;
+        task_data->value = serialized;
         tls_tid = index;
         tls_gtmid = parallel_data ? parallel_data->value : current_gtid();
-        tls_uniq_microtask = __osl_record_event(actual_parallelism <= 1 ? OSL_SERIALIZED_MICROTASK_STARTS
-                                                                        : OSL_MICROTASK_STARTS,
+        tls_uniq_microtask = __osl_record_event(serialized ? OSL_SERIALIZED_MICROTASK_STARTS
+                                                           : OSL_MICROTASK_STARTS,
                                                 current_tid(), current_gtid(), current_gtmid(),
                                                 NULL);
     } else if (endpoint == ompt_scope_end) {
-        __osl_record_event(actual_parallelism <= 1 ? OSL_SERIALIZED_MICROTASK_ENDS : OSL_MICROTASK_ENDS,
+        __osl_record_event(task_data->value ? OSL_SERIALIZED_MICROTASK_ENDS : OSL_MICROTASK_ENDS,
                            current_tid(), current_gtid(), current_gtmid(),
                            NULL, tls_uniq_microtask);
     }
@@ -225,12 +229,14 @@ on_sync_region(ompt_sync_region_t kind,
     long long *slot;
 
     switch (kind) {
-    case ompt_sync_region_barrier_implicit:
+    case ompt_sync_region_barrier_implicit: /* deprecated in 5.1, older runtimes */
+    case ompt_sync_region_barrier_implicit_parallel:
         start_event = OSL_JOIN_BARRIER_STARTS;
         end_event = OSL_JOIN_BARRIER_ENDS;
         slot = &tls_uniq_barrier;
         break;
     case ompt_sync_region_barrier_explicit:
+    case ompt_sync_region_barrier_implicit_workshare: /* legacy: __kmpc_barrier, i.e. plain */
         start_event = OSL_PLAIN_BARRIER_STARTS;
         end_event = OSL_PLAIN_BARRIER_ENDS;
         slot = &tls_uniq_barrier;
@@ -446,15 +452,14 @@ on_control_tool(omp_control_tool_t command, uint64_t modifier, void *arg, const 
 {
     (void)modifier;
     (void)arg;
-    (void)codeptr_ra;
 
     switch (command) {
     case omp_control_tool_start:
-        __osl_start_microtiming();
+        __osl_start_microtiming((void *)codeptr_ra);
         return 0;
     case omp_control_tool_pause:
     case omp_control_tool_end:
-        __osl_stop_microtiming();
+        __osl_stop_microtiming((void *)codeptr_ra);
         return 0;
     default:
         return -1; /* unsupported command */
