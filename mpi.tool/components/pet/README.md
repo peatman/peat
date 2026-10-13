@@ -23,9 +23,8 @@ Used for estimation purposes. Usualy you don't need this utility for performance
 - `Build.sh`/`Makefile` - build scripts producing the `pet` binary.
 
 Note:
-It's not activelly being developed at the moment, some bugs recently found in other components may not be fixed here: it's only maintained in compilable state. 
-Recent finding revealed that its whole paradigm MAY be (not necessary is) broken in case (f.i.) of NonBlocking collectives followed by Blocking collectives: 
-it causes functions to overlap which pet currently doesn't tolerate with. Maybe it will be fixed in the future in case there will be interest in this part from community. 
+It's not activelly being developed at the moment (however it has adopted new 'nested' trace format), some bugs recently found in other components may not be fixed here: it's only maintained in compilable state. 
+At the moment It's definitelly NOT supportiung any type of nonbliocking collectives.  Maybe it will be fixed in the future in case there will be interest in this part from community since it requires significant investments. 
 
 
 PET usage guideline:
