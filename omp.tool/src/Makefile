@@ -23,7 +23,7 @@ MINOR=0
 
 #files
 #objects
-OBJECTS=kmp_stat.o ompcalls.o
+OBJECTS=omp_stat.o ompcalls.o
 COBJECTS=offconv.o
 #build options
 shell=bash

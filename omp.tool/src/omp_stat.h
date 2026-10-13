@@ -16,9 +16,9 @@
  * along with PEAT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef __KMP_STAT_H__
-#define __KMP_STAT_H__
-
+#ifndef __OMP_STAT_H__
+#define __OMP_STAT_H__
+    
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
 extern "C" {
 #endif

@@ -16,7 +16,7 @@
  * along with PEAT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <kmp_stat.h>
+#include <omp_stat.h>
 #include <stdio.h>
 #include <stdlib.h>
 

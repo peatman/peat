@@ -14,5 +14,6 @@ Since gnu compiler still doesn't have ompt implemented in its omp runtime it was
 - `src/` - the tool itself: `ompcalls.cpp` (OMPT callback registration/handlers), `kmp_stat.cpp`/`kmp_stat.h` (per-region OpenMP statistic collection and reporting), `offconv.c` (offload/region name converter utility).
 - `bin/` - helper scripts: `offconv.sh` wraps the offload converter, `omp.stat.pl` post-processes/summarises collected statistics.
 - `examples/omptest/` - a small OpenMP test application (`omptest.c`) with run scripts for GNU and Intel compilers, used to exercise the tool.
+- `tests/all_regions/` - `all_regions.c` uses every construct the tool intercepts; `run.sh [intel|gnu]` builds it, runs it under the tool and checks that every event type shows up in the logs (exit 77 = no OMPT runtime, skipped).
 - `lib/` - build output location for the resulting OMPT statistic library.
 

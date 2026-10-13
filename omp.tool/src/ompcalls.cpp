@@ -104,7 +104,7 @@
 #include "omp-tools.h"
 #include "omp.h"
 
-#include "kmp_stat.h"
+#include "omp_stat.h"
 
 /* ---------------------------------------------------------------------- */
 /* Per OS thread state                                                    */
