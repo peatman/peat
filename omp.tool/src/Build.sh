@@ -1,6 +1,6 @@
 #!/bin/bash
 
-compiler=oneapi:latest
+compiler=oneapi:2026.1.0
 . env.sh
 
 #assuming gcc is installed 

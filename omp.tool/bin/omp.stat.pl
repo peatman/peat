@@ -315,7 +315,6 @@ my @release_par=("OSE",3,1,6,4,7,4,":","AS","AE",
                                    "CLS","TSCC",
                                    "F","E",
                                    "SMS","SME",
-                                   "TMS","TME",
                                    "FC",
                                    "STOD","SPOD",
                                    "TS","TE",
@@ -342,7 +341,7 @@ sub set_freq{
       $proc_freq[$rank]=$line[$par[4]];
    }
    $proc_tsc_interval[$rank]=$proc_freq[$rank]*$interval;
-print ("freq $rank:$proc_freq[$rank]");
+print STDERR "freq $rank:$proc_freq[$rank]\n";
 }
 
 ####################################################################################
@@ -1141,7 +1140,7 @@ sub parse_command_line {
          case "-p" {$print_num=$ARGV[$i+1];$i++;}
          case "-kst" {$print_kst=1;}
          case "-csv" {$print_csv=1;}
-         case "-s" {$separator=$ARGV[$i+1];$i++; if ($separator=='TAB' || $separator=='tab' || $separator=='\\t') {$separator="\t";}}
+         case "-s" {$separator=$ARGV[$i+1];$i++; if ($separator eq 'TAB' || $separator eq 'tab' || $separator eq '\\t') {$separator="\t";}}
          case "-sc" {
                         $scale=$ARGV[$i+1];
                         $i++;
@@ -1191,8 +1190,8 @@ if (!(0+$adv_parsing_content&16+0)) {
 
 #join barriers
 if (!(0+$adv_parsing_content&32+0)) {
-   $par[$events_start+10]="$par[$events_start+10]-NotParsed";
-   $par[$events_start+11]="$par[$events_start+11]-NotParsed";
+   $par[$events_start+12]="$par[$events_start+12]-NotParsed";
+   $par[$events_start+13]="$par[$events_start+13]-NotParsed";
 }
 
 #tasks

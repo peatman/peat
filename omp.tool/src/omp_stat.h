@@ -84,8 +84,8 @@ long long __osl_record_event(int event_type, int tid, int gtid, int gtmid, const
 void __osl_calibrate_counters(int thread_id);
 void __osl_begin_application(int max_threads, int max_cores);
 void __osl_end_application(void);
-void __osl_start_microtiming(void);
-void __osl_stop_microtiming(void);
+void __osl_start_microtiming(void *return_addr);
+void __osl_stop_microtiming(void *return_addr);
 
 static __inline__ long long rdtsc(void)
 {

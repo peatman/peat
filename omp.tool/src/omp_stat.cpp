@@ -24,7 +24,7 @@
 #include <time.h>
 #include <unistd.h>
 // #include "kmp.h"    // KMP_TEST_THEN_INC32
-#include "kmp_stat.h"
+#include "omp_stat.h"
 
 #ifdef USE_PAPI
 #include "papi.h"
