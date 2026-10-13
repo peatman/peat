@@ -190,7 +190,8 @@ on_implicit_task(ompt_scope_endpoint_t endpoint,
                  unsigned int index,
                  int flags)
 {
-    (void)flags;
+    if (flags & ompt_task_initial)
+        return; /* the program's initial task is not a parallel-region microtask */
 
     /* actual_parallelism is only valid at scope_begin (0 at scope_end for
        worker threads), so the serialized flag is carried to the end in
