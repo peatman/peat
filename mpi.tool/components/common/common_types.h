@@ -99,7 +99,7 @@ struct PEAT_Func_ID_Pair {
     PEAT_MPI_Func_ID id, parent_id;
     PEAT_Func_ID_Pair(PEAT_MPI_Func_ID _id, PEAT_MPI_Func_ID _parent_id) : id(_id), parent_id(_parent_id) {};
     PEAT_Func_ID_Pair() : id(TMPI_FUNC_ID_NONE), parent_id(TMPI_FUNC_ID_NONE) {};
-    bool operator<(const PEAT_Func_ID_Pair &r) const
+    PEAT_Bool operator<(const PEAT_Func_ID_Pair &r) const
     {
         if (id < r.id)
             return true;
@@ -118,7 +118,7 @@ struct PEAT_Rank_Pair {
     PEAT_Rank_Pair(PEAT_Rank _from, PEAT_Rank _to, PEAT_Rank _max_rank) : from(_from), to(_to), max_rank(_max_rank) {};
     PEAT_Rank_Pair(PEAT_Rank _max_rank) : from(-1), to(-1), max_rank(_max_rank) {};
     PEAT_Rank_Pair() : from(-1), to(-1), max_rank(-1) {};
-    bool operator<(const PEAT_Rank_Pair &r) const
+    PEAT_Bool operator<(const PEAT_Rank_Pair &r) const
     {
         if (from < r.from)
             return true;
@@ -230,7 +230,7 @@ struct PEAT_Time_Event {
         peat_throw_error("Time Event (in) is negative\n");
         return 0;
     }
-    bool operator>(PEAT_Clock t)
+    PEAT_Bool operator>(PEAT_Clock t)
     {
         if (in > t)
             return true;
@@ -446,7 +446,7 @@ struct PEAT_Collective_Bytes {
         return false;
     }
     PEAT_Bool is_vector;
-    bool operator==(const PEAT_Collective_Bytes s)
+    PEAT_Bool operator==(const PEAT_Collective_Bytes s)
     {
         // light copmpare not always accurate but since it's purely for debug it's OK
         if (is_vector != s.is_vector)
@@ -465,7 +465,7 @@ struct Outputs {
     File_Storage_GZ *output_HWC;
     File_Storage_GZ *output_bind;
     Outputs() : output_MPI(NULL), output_HWC(NULL), output_bind(NULL) {}
-    void Initialize(File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
+    void initialize(File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
     {
         output_MPI = MPI;
         output_HWC = HWC;
@@ -526,7 +526,7 @@ struct Global_Parameters {
     PEAT_FREQ source_freq;
     PEAT_FREQ target_freq;
     PEAT_Rank target_ppn, target_numa_pp;
-    bool estimate_read;
+    PEAT_Bool estimate_read;
     int progress_engine;
     int use_up;
     int matching_only;
@@ -550,7 +550,7 @@ struct Global_Parameters {
     int gather_transport_stat;
     PEAT_Num onetime_pass_per_rank;
     size_t max_list_size;
-    bool aggregate_funcs;
+    PEAT_Bool aggregate_funcs;
 #ifdef PEAT_MPI
     MPI_Comm comm_compute;
     unsigned long long cycle_events;
@@ -725,7 +725,7 @@ struct User_Region {
         PEAT_Clock instr;
         PEAT_Clock clocks;
         PEAT_Ratio cpi;
-        bool operator<(const struct Elems &r) const
+        PEAT_Bool operator<(const struct Elems &r) const
         {
             if (cpi < r.cpi)
                 return true;
@@ -775,13 +775,6 @@ int peat_ids_parse(const String_Split &line, int pos, int columns, PEAT_Event_ID
 int peat_ids_level(const PEAT_Event_IDs &ids);                                                 // nesting depth, 0 for a top-level record
 inline PEAT_Bool peat_ids_nested(const PEAT_Event_IDs &ids) { return peat_ids_level(ids) > 0; }
 
-/* Header shared by .mpi and .hwc trace records.
-   nested format (tractor with nesting levels): id_0:...:id_{n-1}:tid:num_children:<payload>
-       n is the number of id columns stored in the com file (PEAT_RT_Number_Of_Events), unused ids are -1,
-       records form a pre-order tree per thread: the num_children records following a record are its children.
-   legacy format: primary_id:secondary_id:tid:<payload>
-       a path of depth one: secondary_id is the index of a colt record inside its host (-1 for a top-level record),
-       the number of colt records is kept in the class-specific fields (num_colts). */
 struct PEAT_Record_Header {
     PEAT_Event_IDs ids;           // id path, ids[0] is the top-level (primary) id
     PEAT_Thread thread_id;
@@ -789,10 +782,9 @@ struct PEAT_Record_Header {
     int level;                    // nesting depth, 0 for a top-level record
     int payload;                  // index of the first payload field on the .mpi line (function name)
     int hwc_payload;              // index of the first payload field on the .hwc line (first tsc): nested lines carry the ids only
-    PEAT_Bool nested;             // record is in the nested format
-    PEAT_Record_Header() : thread_id(0), num_children(-1), level(0), payload(3), hwc_payload(3), nested(false) {}
-    void parse(const String_Split &line, int id_columns, PEAT_Bool nested_format);     // from the .mpi line
-    void parse_hwc(const String_Split &line, int id_columns, PEAT_Bool nested_format); // from the .hwc line alone (no thread/num_children in the nested format)
+    PEAT_Record_Header() : thread_id(0), num_children(-1), level(0), payload(3), hwc_payload(3) {}
+    void parse(const String_Split &line, int id_columns);     // from the .mpi line
+    void parse_hwc(const String_Split &line, int id_columns); // from the .hwc line alone (no thread/num_children in the nested format)
     PEAT_Bool same_ids(const PEAT_Record_Header &other) const { return ids == other.ids && thread_id == other.thread_id; }
     PEAT_Bool same_ids(const String_Split &line) const; // compares the id columns of another line (the .hwc twin)
     std::string to_string() const;                     // the .mpi header as written: "id_0:...:tid[:num_children]"
@@ -801,7 +793,7 @@ struct PEAT_Record_Header {
 /* the .mpi header as written to a trace: "id_0:...:tid[:num_children]" (num_children < 0: legacy format) */
 std::string peat_record_header_string(const std::vector<PEAT_UID> &ids, PEAT_Thread thread_id, PEAT_Signed_Num num_children);
 /* the .hwc header as written to a trace: nested format "id_0:...:id_{n-1}", legacy "primary:secondary:tid" */
-std::string peat_record_hwc_header_string(const std::vector<PEAT_UID> &ids, PEAT_Thread thread_id, PEAT_Bool nested);
+std::string peat_record_hwc_header_string(const std::vector<PEAT_UID> &ids, PEAT_Thread thread_id);
 
 struct Address_File_Storage {
     PEAT_Num num_addrs;
@@ -813,8 +805,7 @@ struct Address_File_Storage {
     std::map<PEAT_Rank, PEAT_UID> last_event_idx;
     std::map<PEAT_Rank, PEAT_UID> last_fab_event_idx;
     std::map<PEAT_Rank, PEAT_Thread> last_thread_idx;
-    std::map<PEAT_Rank, int> id_columns;          // id columns in the .mpi/.hwc records (nested format; 2 for legacy traces)
-    std::map<PEAT_Rank, PEAT_Bool> nested_format; // records carry num_children in the header (6-field PEAT_RT_Number_Of_Events)
+    std::map<PEAT_Rank, int> id_columns;          // id columns in the .mpi/.hwc records 
     File_Storage_GZ *UR_File;
     const Model_ID *m_id;
 
@@ -845,18 +836,13 @@ struct Address_File_Storage {
                 cols = it->second;
         return cols;
     }
-    PEAT_Bool is_nested_format(const PEAT_Rank rank) const
-    {
-        std::map<PEAT_Rank, PEAT_Bool>::const_iterator it = nested_format.find(rank);
-        return it == nested_format.end() ? false : it->second;
-    }
     void parse_record_header(PEAT_Record_Header &header, const String_Split &line, const PEAT_Rank rank) const
     {
-        header.parse(line, get_id_columns(rank), is_nested_format(rank));
+        header.parse(line, get_id_columns(rank));
     }
     void parse_record_hwc_header(PEAT_Record_Header &header, const String_Split &line, const PEAT_Rank rank) const
     {
-        header.parse_hwc(line, get_id_columns(rank), is_nested_format(rank));
+        header.parse_hwc(line, get_id_columns(rank));
     }
     // Address_File_Storage &operator = (const Address_File_Storage &rhs);
     void put_records(const User_Region_Store &user_regions);
@@ -922,7 +908,7 @@ struct PEAT_Numa_Node {
     PEAT_Node numa_node;
     PEAT_Numa_Node() : node(-1), numa_node(-1) {};
     PEAT_Numa_Node(PEAT_Node n, PEAT_Node n_n) : node(n), numa_node(n_n) {};
-    bool operator<(const PEAT_Numa_Node &r) const
+    PEAT_Bool operator<(const PEAT_Numa_Node &r) const
     {
         if (node < r.node)
             return true;
@@ -940,13 +926,13 @@ struct PEAT_APS_Time {
     PEAT_Float get_active_time() const { return mpi_time - mpi_imb; }
     PEAT_APS_Time(PEAT_Float init = 0.0) : mpi_time(init), mpi_imb(0.0), app_time(init) {};
     PEAT_APS_Time(PEAT_Float a_time, PEAT_Float m_time, PEAT_Float imb) : mpi_time(m_time), mpi_imb(imb), app_time(a_time) {};
-    bool operator<(const PEAT_APS_Time &r) const
+    PEAT_Bool operator<(const PEAT_APS_Time &r) const
     {
         if (get_active_time() < r.get_active_time())
             return true;
         return false;
     }
-    bool operator>(const PEAT_APS_Time &r) const
+    PEAT_Bool operator>(const PEAT_APS_Time &r) const
     {
         if (get_active_time() > r.get_active_time())
             return true;
@@ -1059,7 +1045,7 @@ struct PEAT_List_Member_Iterator {
     // T& operator&() { return m->data; }
     // T& operator->() { return m->data; }
     PEAT_List_Member<T> *operator->() { return m; }
-    bool operator==(PEAT_List_Member_Iterator<T> &s) { return m == s.m; }
+    PEAT_Bool operator==(PEAT_List_Member_Iterator<T> &s) { return m == s.m; }
 };
 
 template <typename T>
@@ -1141,7 +1127,7 @@ struct PEAT_List {
     }
     PEAT_List_Member_Iterator<T> end() const { return PEAT_List_Member_Iterator<T>(); }
     size_t size() const { return l_size; }
-    bool empty() const { return l_size == 0; }
+    PEAT_Bool empty() const { return l_size == 0; }
     void lock() { mutex.lock(); }
     void lock_shared() { mutex.lock_shared(); }
     void unlock() { mutex.unlock(); }
@@ -1206,7 +1192,7 @@ struct PEAT_Event_Delivery {
 
 #define PRINT_PARAMETERS(width, string) int((width + strlen(string) + 1) / 2), string, int(width - strlen(string)) / 2, ""
 
-static bool is_mpi(PEAT_Property func_class)
+static PEAT_Bool is_mpi(PEAT_Property func_class)
 {
     switch (func_class) {
     case PEAT_PROP_CLASS_START:
@@ -1223,7 +1209,7 @@ static bool is_mpi(PEAT_Property func_class)
     }
     return false;
 }
-static bool is_omp(PEAT_Property func_class)
+static PEAT_Bool is_omp(PEAT_Property func_class)
 {
     return func_class == PEAT_PROP_CLASS_OMPT;
 }

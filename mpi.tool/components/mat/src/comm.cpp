@@ -58,8 +58,6 @@ void Comm::print_comm_out(const Tractor_Event &event)
                        event.Comms.remote_comm,
                        event.Comms.inter_comm,
                        event.Comms.request);
-    if (!event.nested)
-        output_MPI->printf(event.rank, ":%d", event.num_children); // legacy num_colts
     output_MPI->printf(event.rank, "\n");
 #if 0
     output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),

@@ -348,11 +348,11 @@ struct TV_Collective_Event : public TV_Coll_Event {
 };
 
 struct TV_Comm_Event : public TV_Coll_Event {
-    PEAT_MPI_Comm newcomm, remotecomm, intercomm;
+    PEAT_MPI_Comm newcomm, remotecomm;
     PEAT_MPI_Request request;
 
   public:
-    TV_Comm_Event() : TV_Coll_Event(), request(0), newcomm(0), intercomm(0), remotecomm(0) {}
+    TV_Comm_Event() : TV_Coll_Event(), request(0), newcomm(0), remotecomm(0) {}
     virtual TV_Event_Type get_event_type() const { return TV_EVENT_TYPE_COMM; }
     virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr);
 };

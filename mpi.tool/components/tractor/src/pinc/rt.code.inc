@@ -53,6 +53,8 @@ $prototype {
         __msl_allocate_event(tid,level,1,&event,&counters); //unconditional allocate
         $get_datasize
         $if_ignore_status
+        $pre_event_message
+        $pre_handle
         counting_permit+=2*counting_permission_pcontrol[$funcid_through];
 #ifdef _HWCOUNTERS_ENABLED_
         gt_info(hwc).get_all_counters(l_hwcs);
@@ -74,21 +76,20 @@ $prototype {
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
         tsc_mpi_exit = peat_get_time();
         $reused if (event==NULL) __msl_allocate_event(tid,level,1,&event,&counters); //conditional allocate (if discared but couldn't be reused)
-        if (!reused) stack_unwind$mpi_internal(gt_info(max_ret_level),counters.addrs,gt_info(ret_levels));
+        if (!reused) ${mpi_internal}stack_unwind(gt_info(max_ret_level),counters.addrs,gt_info(ret_levels));
         event->func_id = $funcid_through;
         event->num_children += (short)(__msl_child_base(tid,level) - children_base);
         $transfer_bytes
         $comm
         $tag_peer
-        $message
-        $handle
+        $post_handle
         $offset
         $event_flag
         $event_request
-        $event_message
         $event_status_begin
         $event_status
         $event_status_end
+        $post_event_message
         $internal_comm_tracking
 #ifdef _TRACTOR_EXTRA_FIELDS_
         $event_buf

@@ -30,9 +30,8 @@
 #define ctt_dbg(x)            \
     if (globals.verbose > x) \
     std::cerr
-Tractor_Event send_line, recv_line;
 
-bool CTT::parse_single_event(const int rank, String_Split &line_mpi, String_Split &line_hwc)
+PEAT_Bool CTT::parse_single_event(const int rank, String_Split &line_mpi, String_Split &line_hwc, PEAT_Bool second_line)
 {
     line_mpi.clear();
     line_hwc.clear();
@@ -48,13 +47,14 @@ bool CTT::parse_single_event(const int rank, String_Split &line_mpi, String_Spli
     PEAT_Record_Header hdr; // ids, thread and nesting of the record
     user_region_store->parse_record_header(hdr, line_mpi, rank);
     std::string mpi_func = line_mpi.at(hdr.payload);
-    if (!second_line) {
-#pragma omp atomic
-        events_processed++;
-    }
     if (globals.func_set.count(mpi_func) < 1 && (!globals.func_set.empty()))
         return true;
     Tractor_Event t_event(rank, line_mpi, line_hwc, model_id.num_hwcs, model_id.num_addrs, user_region_store, com_store);
+    Tractor_Event send_line, recv_line;
+    if(!second_line && (t_event.ids.size()<2 || t_event.ids[1] < 0)) { //count only 'user' events
+#pragma omp atomic
+        events_processed++;
+    }
     PEAT_MPI_Func_ID mpifunc = t_event.func_id;
     CTT_Event f_event;
     if (t_event.func_class == PEAT_PROP_CLASS_COLLECTIVE) { // collective
@@ -69,13 +69,11 @@ bool CTT::parse_single_event(const int rank, String_Split &line_mpi, String_Spli
                 recv_line.tsc_u_time = send_line.tsc_u_time;
                 parse_P2PTx(rank, send_line, f_event);
                 parse_P2PRx(rank, recv_line, f_event);
-                second_line = false;
             } else {
                 send_line = t_event;
-                second_line = true;
                 String_Split line_mpi;
                 String_Split line_hwc;
-                parse_single_event(rank, line_mpi, line_hwc);
+                parse_single_event(rank, line_mpi, line_hwc,true);
             }
         } else {
             if (global_func_id.check_property(mpifunc, PEAT_PROP_DATA_TX)) { // send f.i
@@ -134,7 +132,7 @@ bool CTT::parse_single_event(const int rank, String_Split &line_mpi, String_Spli
     }
     return true;
 }
-CTT::CTT(Global_Parameters &glob, Model_ID &model_id_storage) : second_line(false), globals(glob), model_id(model_id_storage), events_processed(0), input_HWC(NULL), input_MPI(NULL)
+CTT::CTT(Global_Parameters &glob, Model_ID &model_id_storage) :  globals(glob), model_id(model_id_storage), events_processed(0), input_HWC(NULL), input_MPI(NULL)
 {
     // Open *com* files
     std::map<PEAT_Rank, std::string> file_input_com_names = get_file_names(globals.input_path, globals.trace_files, globals.com_ext, globals.rank_set, true);
@@ -175,7 +173,7 @@ CTT::~CTT()
     if (ptp)
         delete ptp;
 }
-bool sort_comp(const CTT_Event &s, const CTT_Event &d)
+PEAT_Bool sort_comp(const CTT_Event &s, const CTT_Event &d)
 {
     if (s.duration >= d.duration)
         return true; // I need reverse order
@@ -185,7 +183,6 @@ bool sort_comp(const CTT_Event &s, const CTT_Event &d)
 void CTT::process()
 {
     int cur_percent = 1;
-    String_Split trace_line_MPI, trace_line_HWC;
     const PEAT_UID total_event_num = user_region_store->get_num_events(my_ranks);
     PEAT_LNum prev_event_num = 0;
     PEAT_Ratio start_estimation = Wtime();
@@ -197,14 +194,14 @@ void CTT::process()
         funcs_out[rank->first] = temp_funcs_out;
         funcs_out[rank->first].clear();
     }
-    int rank_size = ranks.size();
+    int rank_size = (int) ranks.size();
 #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < rank_size; i++) {
         String_Split line_mpi;
         String_Split line_hwc;
         PEAT_Rank rank = ranks.at(i);
         while (input_MPI->is_file_good(rank)) {
-            parse_single_event(rank, line_mpi, line_hwc);
+            parse_single_event(rank, line_mpi, line_hwc, false);
             if (events_processed > total_event_num * cur_percent / 100) {
 #ifdef PEAT_OMP
                 if (omp_get_thread_num() == 0)

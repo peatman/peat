@@ -261,24 +261,14 @@ Address_File_Storage::Address_File_Storage(const Global_Parameters &globals, int
 
 /* ---------------- trace record header / nesting cursor ---------------- */
 
-void PEAT_Record_Header::parse(const String_Split &line, int id_columns, PEAT_Bool nested_format)
+void PEAT_Record_Header::parse(const String_Split &line, int id_columns)
 {
-    nested = nested_format;
-    if (!nested) {
-        ids.resize(2);
-        extract(ids[0], line.at(0));
-        extract(ids[1], line.at(1));
-        extract(thread_id, line.at(2));
-        num_children = -1;
-        level = ids[1] >= 0 ? 1 : 0;
-        payload = hwc_payload = 3;
-        return;
-    }
     if (id_columns < 2)
         id_columns = 2;
     ids.resize(id_columns);
-    for (int i = 0; i < id_columns; i++)
+    for (int i = 0; i < id_columns; i++) {
         extract(ids[i], line.at(i));
+    }
     extract(thread_id, line.at(id_columns));
     extract(num_children, line.at(id_columns + 1));
     payload = id_columns + 2;
@@ -286,18 +276,12 @@ void PEAT_Record_Header::parse(const String_Split &line, int id_columns, PEAT_Bo
     level = peat_ids_level(ids);
 }
 
-void PEAT_Record_Header::parse_hwc(const String_Split &line, int id_columns, PEAT_Bool nested_format)
+void PEAT_Record_Header::parse_hwc(const String_Split &line, int id_columns)
 {
-    if (!nested_format) { // legacy .hwc lines carry the same header as the .mpi lines
-        parse(line, id_columns, nested_format);
-        return;
-    }
-    nested = true;
-    if (id_columns < 2)
-        id_columns = 2;
     ids.resize(id_columns);
-    for (int i = 0; i < id_columns; i++)
+    for (int i = 0; i < id_columns; i++) {
         extract(ids[i], line.at(i));
+    }
     thread_id = 0;      // not on the .hwc line
     num_children = -1; // not on the .hwc line
     payload = id_columns + 2;
@@ -364,21 +348,21 @@ std::string peat_record_header_string(const std::vector<PEAT_UID> &ids, PEAT_Thr
     return out;
 }
 
-std::string peat_record_hwc_header_string(const std::vector<PEAT_UID> &ids, PEAT_Thread thread_id, PEAT_Bool nested)
+std::string peat_record_hwc_header_string(const std::vector<PEAT_UID> &ids, PEAT_Thread thread_id)
 {
-    if (!nested)
-        return peat_record_header_string(ids, thread_id, -1);
-    return peat_ids_string(ids);
+    std::vector<PEAT_UID> t_id;
+    t_id.push_back(ids.at(0));
+    return peat_record_header_string(t_id, thread_id, -1);
 }
 
 std::string PEAT_Record_Header::to_string() const
 {
-    return peat_record_header_string(ids, thread_id, nested ? num_children : -1);
+    return peat_record_header_string(ids, thread_id, num_children );
 }
 
 std::string PEAT_Record_Header::to_hwc_string() const
 {
-    return peat_record_hwc_header_string(ids, thread_id, nested);
+    return peat_record_hwc_header_string(ids, thread_id);
 }
 
 void Address_File_Storage::parse(const String_Split &lines, const PEAT_Rank rank)
@@ -409,18 +393,10 @@ void Address_File_Storage::parse(const String_Split &lines, const PEAT_Rank rank
             if (lines.size() > 3)
                 extract(last_thread_Id, lines.at(3));
             last_thread_idx[rank] = last_thread_Id;
-            if (lines.size() > 5) { // nested format: type:events:max_uniq:max_thread:id_columns:max_fab_uniq
-                int columns = 2;
-                extract(columns, lines.at(4));
-                id_columns[rank] = columns < 2 ? 2 : columns;
-                nested_format[rank] = true;
-                extract(last_event_id, lines.at(5));
-            } else { // legacy format: type:events:max_uniq:max_thread:max_fab_uniq
-                id_columns[rank] = 2;
-                nested_format[rank] = false;
-                if (lines.size() > 4)
-                    extract(last_event_id, lines.at(4));
-            }
+            int columns = 2;
+            extract(columns, lines.at(4));
+            id_columns[rank] = columns < 2 ? 2 : columns;
+            extract(last_event_id, lines.at(5));
             last_fab_event_idx[rank] = last_event_id;
             break;
         }

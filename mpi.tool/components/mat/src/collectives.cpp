@@ -57,8 +57,6 @@ void Collectives::print_collective_out(const Tractor_Event &event)
     } else {
         output_MPI->printf(event.rank, "%s:%s:%x:%d:%llx:%d:%d", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id),
                            event.Collective.comm, event.Collective.root, event.Collective.request, event.Collective.rw_fields0, event.Collective.rw_fields1);
-        if (!event.nested)
-            output_MPI->printf(event.rank, ":%d", event.num_children); // legacy num_colts
         for (PEAT_Signed_Num j = 0; j < event.Collective.rw_fields0; j++) {
             output_MPI->printf(event.rank, ":%lld", event.send_bytes[j]);
         }
@@ -289,7 +287,7 @@ void Collectives::parse_collective(const PEAT_Rank rank, const Tractor_Event &ev
         }
     } else {
         // Temporal stub
-        if (!global_func_id.check_property(mpifunc, PEAT_PROP_FILE_HANDLE) && !global_func_id.check_property(mpifunc, PEAT_PROP_FILE_POINTER_HANDLE)) {
+        if (!global_func_id.check_property(mpifunc, PEAT_PROP_FILE_HANDLE) && !global_func_id.check_property(mpifunc, PEAT_PROP_FILE_POINTER_INPUT)  && !global_func_id.check_property(mpifunc, PEAT_PROP_FILE_POINTER_OUTPUT)) {
             if (mpifunc >= MPI_COMM_CREATE_ID && event.Collective.comm == 0) {
                 comm = 2;
             } else {
@@ -565,7 +563,7 @@ void Collectives::send_collective(PEAT_Rank rank, const Tractor_Event &event)
         }
     } else {
         // Temporal stub
-        if (!global_func_id.check_property(mpifunc, PEAT_PROP_FILE_HANDLE) && !global_func_id.check_property(mpifunc, PEAT_PROP_FILE_POINTER_HANDLE)) {
+        if (!global_func_id.check_property(mpifunc, PEAT_PROP_FILE_HANDLE) && !global_func_id.check_property(mpifunc, PEAT_PROP_FILE_POINTER_INPUT)  && !global_func_id.check_property(mpifunc, PEAT_PROP_FILE_POINTER_OUTPUT)) {
             if (mpifunc >= MPI_COMM_CREATE_ID && event.Collective.comm == 0) {
                 comm = 2;
             } else {

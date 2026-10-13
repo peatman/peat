@@ -86,7 +86,7 @@ my $event_record_input_request;
 my $event_rbuf;
 my $event_sbuf;
 my $event_record_input_request_addr;
-my $mpi_internal="_mpi_internal" if $properties =~/MPI_INTERNAL/; # MPI-internal helper variants (T_Type_size_mpi_internal, get_rank_from_req_mpi_internal, stack_unwind_mpi_internal)
+my $mpi_internal="mpi_internal_" if $properties =~/MPI_INTERNAL/; # MPI-internal helper variants (T_Type_size_mpi_internal, mpi_internal_get_rank_from_req, stack_unwind_mpi_internal)
 my $global_mpi_time;
 
 $global_mpi_time="global_mpi_time+=tsc_mpi_exit-tsc_mpi_entry;" if !($properties=~/MPI_INTERNAL/);
@@ -188,12 +188,12 @@ if ($properties=~/MSTATUSES/) {
     if (*onum!=MPI_UNDEFINED) {
         event->requests.flag=1;
         event->requests.triggered_request_num=*onum;
-        __msl_record_ints(tid,level,indx,(*onum));
+        // __msl_record_ints(tid,level,indx,(*onum));
         long long TSC[inum*4];
         for (i=0;i<*onum;i++) { 
             TSC[i*4+0]=indx[i];
             TSC[i*4+1]=statuses[indx[i]].MPI_TAG;
-            TSC[i*4+2]=get_rank_from_req$mpi_internal(local_comms[indx[i]],statuses[indx[i]].MPI_SOURCE); ;
+            TSC[i*4+2]=${mpi_internal}get_rank_from_comm(local_comms[indx[i]],statuses[indx[i]].MPI_SOURCE); ;
             TSC[i*4+3]=MPI_STATUS_GET_COUNT_R(statuses[indx[i]]);
         }
         __msl_record_longs(tid,level,TSC,(*onum)*4);
@@ -206,7 +206,7 @@ if ($properties=~/MSTATUSES/) {
         for (i=0;i<inum;i++) { 
             TSC[i*4+0]=i;
             TSC[i*4+1]=statuses[i].MPI_TAG;
-            TSC[i*4+2]=get_rank_from_req$mpi_internal(local_comms[i],statuses[i].MPI_SOURCE);
+            TSC[i*4+2]=${mpi_internal}get_rank_from_comm(local_comms[i],statuses[i].MPI_SOURCE);
             TSC[i*4+3]=MPI_STATUS_GET_COUNT_R(statuses[i]);
         }
         __msl_record_longs(tid,level,TSC,inum*4);
@@ -224,7 +224,7 @@ if ($properties=~/MSTATUSES/) {
             long long TSC[4];
             TSC[0]=temp_index;
             TSC[1]=status->MPI_TAG;
-            TSC[2]=get_rank_from_req$mpi_internal($lcomm,status->MPI_SOURCE);
+            TSC[2]=${mpi_internal}get_rank_from_comm($lcomm,status->MPI_SOURCE);
             TSC[3]=MPI_STATUS_GET_COUNT_P(status);
            __msl_record_longs(tid,level,TSC,4);
         }";
@@ -245,7 +245,7 @@ if ($properties=~/MSTATUSES/) {
             if (flag) {
                 TSC[0]=0;
                 TSC[1]=status.MPI_TAG;
-                TSC[2]=get_rank_from_req$mpi_internal(local_comm,status.MPI_SOURCE); ;
+                TSC[2]=${mpi_internal}get_rank_from_comm(local_comm,status.MPI_SOURCE); ;
                 TSC[3]=MPI_STATUS_GET_COUNT_R(status);
             } else {
                 TSC[0]=0;
@@ -284,7 +284,7 @@ my $datasize;
 my $event_buf;
 my $internal_comm_tracking;
 
-my $mpi_internal="_mpi_internal" if $properties =~/MPI_INTERNAL/; # MPI-internal helper variants
+my $mpi_internal="mpi_internal_" if $properties =~/MPI_INTERNAL/; # MPI-internal helper variants
 my $reused="reused=__msl_reuse_event(tid,level,&event,&counters,$funcid_through); if (!reused) " if $properties =~/PEAT_PROP_COMPRESSIBLE/ ;
 my $skip_parse_update="l_skip_parse=(*flag==0) && ((gt_info(compress_events) & 2)!=0); if (l_skip_parse) l_skip_parse=__msl_discard_event(tid, level, &event, children_base);" if $properties =~/PEAT_PROP_COMPRESSIBLE/ ;
 my $global_mpi_time;
@@ -300,12 +300,12 @@ $comm="mpi_internal_get_comm_handle_from_comm(comm)" if $properties=~/COMM/ && $
 my $stag="stag";
 my $dest="dest";
 
-$dest="get_rank_from_req_mpi_internal(comm,dest)" if $properties =~/MPI_INTERNAL/;
+$dest="mpi_internal_get_rank_from_comm(comm,dest)" if $properties =~/MPI_INTERNAL/;
 
 my $sbuf_bottom;
 my $rbuf_bottom;
 if ($funcid=~/REPLACE/) {
-    $datasize="T_Type_size$mpi_internal(type,&s_data_size);r_data_size=s_data_size;s_count=r_count=count;";
+    $datasize="${mpi_internal}T_Type_size(type,&s_data_size);r_data_size=s_data_size;s_count=r_count=count;";
     $event_buf="
         event[1]->p2p_pr_pb.buf.virt_addr=buf;
         event[1]->p2p_pr_pb.buf.size=event[1]->p2p_pr_pb.transfer_bytes;
@@ -314,7 +314,7 @@ if ($funcid=~/REPLACE/) {
     " if $print_extended_stuff;
 
 } else {
-    $datasize="T_Type_size$mpi_internal(stype,&s_data_size);T_Type_size$mpi_internal(rtype,&r_data_size);s_count=scount;r_count=rcount;";
+    $datasize="${mpi_internal}T_Type_size(stype,&s_data_size);${mpi_internal}T_Type_size(rtype,&r_data_size);s_count=scount;r_count=rcount;";
     $event_buf="
         event[1]->p2p_pr_pb.buf.virt_addr=rbuf;
         event[1]->p2p_pr_pb.buf.size=event[1]->p2p_pr_pb.transfer_bytes;
@@ -324,7 +324,7 @@ if ($funcid=~/REPLACE/) {
 }
 my $status_peer="src >=0 ? src : status->MPI_SOURCE";
 
-$status_peer="get_rank_from_req_mpi_internal(comm,$status_peer)" if $properties =~ /MPI_INTERNAL/;
+$status_peer="mpi_internal_get_rank_from_comm(comm,$status_peer)" if $properties =~ /MPI_INTERNAL/;
 # $internal_comm_tracking="track_internal_comm(event[0]->$basic_struct.comm,tsc_mpi_exit);" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/;
 
 # blocking: receive side is described by the returned status
@@ -339,9 +339,9 @@ if ($properties =~/NON_BLOCK/) { # MPI_Isendrecv*: no status yet, record the pos
     $fix_status="";
     $recv_tag="rtag";
     $recv_peer="src";
-    $recv_peer="get_rank_from_req_mpi_internal(comm,src)" if $properties =~ /MPI_INTERNAL/;
+    $recv_peer="mpi_internal_get_rank_from_comm(comm,src)" if $properties =~ /MPI_INTERNAL/;
     $recv_bytes="(r_count*r_data_size)";
-    $event_request="event[0]->p2p_pr_pb.request=*request; event[1]->p2p_pr_pb.request=*request;";
+    $event_request="event[1]->p2p_pr_pb.request=*request;";
 }
 
 my $print_code=`cat pinc/sendrecv.code.inc`;
@@ -353,13 +353,14 @@ my $event_status;
 my $if_ignore_status;
 my $declare_ignore_status;
 my $tag_peer;
-my $message;
-my $event_message;
+my $pre_event_message;
+my $post_event_message;
 my $comm;
 my $transfer_bytes;
 my $get_datasize;
 my $event_flag;
-my $handle;
+my $pre_handle;
+my $post_handle;
 my $offset;
 my $buf_bottom;
 my $rbuf_bottom;
@@ -378,15 +379,18 @@ $tag_peer="$tag_peer event->$basic_struct.peer=peer_rank;" if $properties=~/PEER
 # MPIC_Probe is the one mpi_internal helper that takes the MPI_Comm handle (not MPIR_Comm*), so probe-class mpi_internal
 # functions use comm and ranks as they are, without the MPID->MPI comm / rank translation.
 my $mpi_internal_mpid_comm = ($properties=~/MPI_INTERNAL/ && $properties!~/CLASS_PROBE/);
-$tag_peer="$tag_peer event->$basic_struct.peer=get_rank_from_req_mpi_internal(comm,peer_rank);" if $properties=~/PEER/ && $mpi_internal_mpid_comm;
+$tag_peer="$tag_peer event->$basic_struct.peer=mpi_internal_get_rank_from_comm(comm,peer_rank);" if $properties=~/PEER/ && $mpi_internal_mpid_comm;
 
-$message="event->$basic_struct.message=*message;" if $properties=~/MESSAGE/ && $properties=~/CLASS_P2P/;
-$handle="event->$basic_struct.window=win;" if $properties=~/HWINDOW/ && $properties=~/CLASS_OSC/;
-$handle="event->$basic_struct.window=*win;" if $properties=~/PHWINDOW/ && $properties=~/CLASS_OSC/;
-$handle="event->$basic_struct.fh=fh;" if $properties=~/FILE_HANDLE/ && $properties=~/CLASS_FIO/;
-$handle="event->$basic_struct.fh=*fh;" if $properties=~/FILE_POINTER_HANDLE/ && $properties=~/CLASS_FIO/;
+$pre_handle="event->$basic_struct.window=win;" if $properties=~/WINDOW/ && $properties=~/CLASS_OSC/;
+$pre_handle="event->$basic_struct.window=*win;" if $properties=~/PWINDOW/ && $properties=~/CLASS_OSC/;
+$pre_handle="event->$basic_struct.fh=fh;" if $properties=~/FILE_HANDLE/ && $properties=~/CLASS_FIO/;
+$pre_handle="event->$basic_struct.fh=*fh;" if $properties=~/FILE_POINTER_INPUT/ && $properties=~/CLASS_FIO/;
+$post_handle="event->$basic_struct.fh=*fh;" if $properties=~/FILE_POINTER_OUTPUT/ && $properties=~/CLASS_FIO/;
+
 $offset="event->$basic_struct.offset=offset;" if $properties=~/OFFSET/ && $properties=~/CLASS_FIO/;
-$event_message="event->$basic_struct.message=*message;" if $properties=~/MESSAGE/ && $properties=~/CLASS_PROBE/;
+$pre_event_message="event->$basic_struct.message=*message;" if $properties=~/MESSAGE/ && $properties=~/CLASS_P2P/;
+$post_event_message="event->$basic_struct.message=*message;" if $properties=~/MESSAGE/ && $properties=~/CLASS_PROBE/;
+
 $comm="event->$basic_struct.comm=comm;" if $properties=~/COMM/;
 #$comm="event->$basic_struct.comm=(long long) comm;" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/ ;
 #$comm="event->$basic_struct.comm=MPI_COMM_WORLD;" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/;
@@ -395,9 +399,9 @@ $comm="event->$basic_struct.comm=comm;" if $properties=~/COMM/;
 $comm="event->$basic_struct.comm=mpi_internal_get_comm_handle_from_comm(comm);" if $properties=~/COMM/ && $mpi_internal_mpid_comm;
 
 #$comm="event->$basic_struct.comm=last_coll_comm;" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/;
-$get_datasize="T_Type_size$mpi_internal(type,&data_size);"if $properties=~/BYTES/;
+$get_datasize="${mpi_internal}T_Type_size(type,&data_size);"if $properties=~/BYTES/;
 $transfer_bytes="event->$basic_struct.transfer_bytes=(count*data_size);"if $properties=~/BYTES/;
-$transfer_bytes="event->$basic_struct.transfer_bytes=((long long)partitions*(long long)count*data_size);" if $properties=~/BYTES/ && $line[3]=~/\bint partitions\b/; # partitioned P2P (MPI_Psend_init/MPI_Precv_init): total bytes over all partitions
+$transfer_bytes="event->$basic_struct.transfer_bytes=((long long)partitions*(long long)count*data_size);" if $properties=~/BYTES/ && $properties=~/PARTITIONS/; 
 $transfer_bytes="event->$basic_struct.transfer_bytes=size;"if $properties=~/SIZE/;
 $event_buf="
         event->$basic_struct.buf.virt_addr=buf;
@@ -419,7 +423,7 @@ if ($properties=~/STATUS/) {
     $event_status="event->$basic_struct.transfer_bytes=MPI_STATUS_GET_COUNT_P(status);";
     $event_status="$event_status event->$basic_struct.tag=status->MPI_TAG;" if $properties=~/TAG/;
     if ($mpi_internal_mpid_comm) {
-        $event_status="$event_status event->$basic_struct.peer=get_rank_from_req_mpi_internal(comm,peer_rank>=0 ? peer_rank : status->MPI_SOURCE);" if $properties=~/PEER/;
+        $event_status="$event_status event->$basic_struct.peer=mpi_internal_get_rank_from_comm(comm,peer_rank>=0 ? peer_rank : status->MPI_SOURCE);" if $properties=~/PEER/;
     } else  {
         $event_status="$event_status event->$basic_struct.peer=peer_rank>=0 ? peer_rank : status->MPI_SOURCE;" if $properties=~/PEER/;
     }
@@ -430,12 +434,12 @@ if ($properties=~/STATUS/) {
 #    if (t_mpi_rank==1) {
 #    if (event->$basic_struct.peer<0 ) {
 #        fprintf(stderr,\"Incorrect rank translation: %d->%d on comm %lx\\n\",peer_rank, event->$basic_struct.peer,comm);
-#        event->$basic_struct.peer=get_rank_from_req_mpi_internal_v(comm,peer_rank>=0 ? peer_rank : status->MPI_SOURCE);
+#        event->$basic_struct.peer=mpi_internal_get_rank_from_comm_v(comm,peer_rank>=0 ? peer_rank : status->MPI_SOURCE);
 #        mpi_internal_print_comm_tree(comm,0);
 #        //MPI_Abort(MPI_COMM_WORLD,0);
 #    } else {
 #        fprintf(stderr,\"Correct rank translation: %d->%d on comm %lx\\n\",peer_rank, event->$basic_struct.peer,comm);
-#        event->$basic_struct.peer=get_rank_from_req_mpi_internal_v(comm,peer_rank>=0 ? peer_rank : status->MPI_SOURCE);
+#        event->$basic_struct.peer=mpi_internal_get_rank_from_comm_v(comm,peer_rank>=0 ? peer_rank : status->MPI_SOURCE);
 #        mpi_internal_print_comm_tree(comm,0);
 #    }
 #    }
@@ -1065,12 +1069,18 @@ sub parse_command_line {
 
 my $linecount=0;
 parse_command_line;
-`cp $mpilayer.in $mpilayer`;
-open(OUT,">>$mpilayer") or die ("Cannot open $mpilayer for writing");
+if ($skip_core) {
+   `touch $mpilayer`;
+   open(OUT,">>$mpilayer") or die ("Cannot open $mpilayer for writing");
+} else {
+   `cp $mpilayer.in $mpilayer`;
+   open(OUT,">>$mpilayer") or die ("Cannot open $mpilayer for writing");
+   select(OUT);
+   $linecount=parse_file($mpifuncs);
+}
 select(OUT);
-$linecount=parse_file($mpifuncs);
 select(stdout);
-`cat $mpilayer.in.end >> $mpilayer`;
+`cat $mpilayer.in.end >> $mpilayer` unless $skip_core;
 
 print "Completed. Parsed: $linecount, Generated $funccount.\n"; 
 

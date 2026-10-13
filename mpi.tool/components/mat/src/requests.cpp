@@ -618,8 +618,6 @@ void Request::print_req_out(const Tractor_Event &event)
                        event.Requests.input_request_num,
                        event.Requests.triggered_request_num,
                        event.Requests.flag);
-    if (!event.nested)
-        output_MPI->printf(event.rank, ":%d", event.num_children); // legacy num_colts
     output_MPI->printf(event.rank, ":%llx", event.Requests.buf);
     for (int i = 0; i < event.Requests.input_request_num; i++) {
         output_MPI->printf(event.rank, ":%llx", event.requests[i]);

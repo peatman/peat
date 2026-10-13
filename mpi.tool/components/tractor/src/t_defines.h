@@ -94,15 +94,6 @@ static void debug_printf(const char *format, ...) {};
 #define __DEBUG_EPILOG_MPI_LAYER__
 #endif
 
-#ifdef _TRACTOR_DEBUG_FAB_LAYER_ENTRY_EXIT_
-#define _TRACTOR_DEBUG_ENTRY_EXIT_
-#define __DEBUG_PROLOG_FAB_LAYER__ __DEBUG_PROLOG__
-#define __DEBUG_EPILOG_FAB_LAYER__ __DEBUG_EPILOG__
-#else
-#define __DEBUG_PROLOG_FAB_LAYER__
-#define __DEBUG_EPILOG_FAB_LAYER__
-#endif
-
 #ifdef _TRACTOR_DEBUG_GPU_LAYER_ENTRY_EXIT_
 #define _TRACTOR_DEBUG_ENTRY_EXIT_
 #define __DEBUG_PROLOG_GPU_LAYER__ __DEBUG_PROLOG__
@@ -208,11 +199,11 @@ int t_addr_in_fortran_lib(const void *addr); /* tractor.cpp: any of libmpi_mpifh
     }                                                                                                                                \
 }
 */
-#define stack_unwind_mpi_internal(lev_num, store_addr, levels) stack_unwind0(lev_num, store_addr, levels)
+#define mpi_internal_stack_unwind(lev_num, store_addr, levels) stack_unwind0(lev_num, store_addr, levels)
 
 #else
 #define stack_unwind(lev_num, store_addr, levels)
-#define stack_unwind_mpi_internal(lev_num, store_addr, levels)
+#define mpi_internal_stack_unwind(lev_num, store_addr, levels)
 #endif
 
 struct msl_extra_info {
@@ -299,7 +290,6 @@ struct msl_event {
             MPI_Comm comm;
             MPI_Comm newcomm;
             MPI_Comm remotecomm;
-            MPI_Comm intercomm;
             MPI_Request request;
         } __attribute__((packed)) __attribute__((aligned(4))) comms;
 
@@ -345,11 +335,6 @@ struct msl_event {
         struct {
             int ctl;
         } __attribute__((packed)) __attribute__((aligned(4))) pcontrol;
-        struct { /* 8 + 4 */
-            PEAT_Clock total_clocks_bitween_calls;
-            PEAT_Clock first_call;
-            int num_calls;
-        } __attribute__((packed)) __attribute__((aligned(4))) fab;
         struct {
             int num_arguments;
             int num_out_arguments;
@@ -396,8 +381,6 @@ extern  ompt_finalize_tool_t ompt_finalize_tool;
 #define __msl_allocate_event(tid_in, level, skip_write, event, counters) gt_info(allocate_event(tid_in, level, skip_write, event, counters))
 #define __msl_reuse_event(tid_in, level, event, counters, funcid) gt_info(reuse_event(tid_in, level, event, counters, funcid))
 #define __msl_discard_event(tid_in, level, event, children_base) gt_info(discard_event(tid_in, level, event, children_base))
-#define __msl_fab_allocate_event(tid_in, event, funcid) gt_info(t_fab_prof).allocate_event(tid_in, event, funcid)
-#define __msl_fab_reuse_event(tid_in, event, funcid) gt_info(t_fab_prof).reuse_event(tid_in, event, funcid)
 
 #define __msl_get_tid(tid_in) gt_info(get_tid(tid_in))
 #define __msl_check_chain(tid, level) gt_info(t_check_chain(tid, level))

@@ -45,7 +45,7 @@ static msl_event *record_ompt_event(short func0, short func1, const void *pcode)
     PEAT_Proc core_id;
     msl_extras_counters counters;
     if (gt_info(tractor_initialized) < 1)
-        return;
+        return NULL;
     tsc_entry = peat_get_time_tid_core(&tid_in, &core_id);
     tid = __msl_get_tid(tid_in);
     /* an OMPT record is a point in time: it takes the level of the call it happens in, without opening one */

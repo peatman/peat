@@ -548,6 +548,7 @@ enum PEAT_Property {
     PEAT_PROP_CALL_INTERNAL,
     PEAT_PROP_IGNORE,
     PEAT_PROP_BYTES,
+    PEAT_PROP_PARTITIONS,
     PEAT_PROP_TAG,
     PEAT_PROP_PEER,
     PEAT_PROP_DATA_NONE,
@@ -599,7 +600,8 @@ enum PEAT_Property {
     PEAT_PROP_WINDOW,
     PEAT_PROP_PWINDOW,
     PEAT_PROP_FILE_HANDLE,
-    PEAT_PROP_FILE_POINTER_HANDLE,
+    PEAT_PROP_FILE_POINTER_INPUT,
+    PEAT_PROP_FILE_POINTER_OUTPUT,
     PEAT_PROP_RBUF,
     PEAT_PROP_CBUF,
     PEAT_PROP_BUF,
@@ -690,7 +692,7 @@ struct PEAT_Mutex
     {
         std::shared_mutex::lock();
     }
-    bool try_lock()
+    PEAT_Bool try_lock()
     {
         return std::shared_mutex::try_lock();
     }
@@ -719,7 +721,7 @@ struct PEAT_Mutex
     void unlock_shared()
     {
     }
-    bool try_lock()
+    PEAT_Bool try_lock()
     {
         return false;
     }

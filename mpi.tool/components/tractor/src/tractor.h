@@ -34,10 +34,6 @@
 #endif
 #include "t_base_event.h"
 
-#if defined(_FAB_PROFILE_)
-#include "t_fab.h"
-#endif
-
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -76,7 +72,6 @@ struct t_bin {
 struct num_processed_events {
     long processed_events = 0;
     long max_uniq_idx = 0;
-    long max_fab_uniq_idx = 0;
     long max_thread_id = 0;
     int nesting_levels = 1; /* achieved, number of id columns written */
 };
@@ -100,20 +95,7 @@ struct T_Stat_Record {
     }
 };
 #endif
-/*
 
-#if defined(_FAB_PROFILE_)
-enum t_fab_layer {
-    T_FAB_LAYER_NONE=0,
-    T_FAB_LAYER_VERBS,
-    T_FAB_LAYER_OFI,
-    T_FAB_LAYER_PSM2,
-    T_FAB_LAYER_PSM3,
-    T_FAB_LAYER_UCX,
-    T_FAB_LAYER_MAX
-};
-#endif
-*/
 struct tractor : t_base_event {
     int print_all;
     int tractor_initialized;
@@ -122,10 +104,6 @@ struct tractor : t_base_event {
     int pcontrol;
     int t_write_main_files;
     int t_use_signals;
-#ifdef _FAB_PROFILE_
-    int t_collect_fab;
-    int t_permit_collect_fab;
-#endif
     char mpi_filename[1024];
     char hwc_filename[1024];
     char com_filename[1024];
@@ -215,11 +193,6 @@ struct tractor : t_base_event {
     char ptpd_in_binpath[MAX_PATH];
 #endif
 
-#if defined(_FAB_PROFILE_)
-    t_fab_profiler t_fab_prof;
-    // t_fab_layer fab_layer;
-#endif
-
     char gz_mode[16];
     FILE **fps_events; /* realtime dump: one temporary file per (thread, level), index tid * levels + level */
     FILE **fps_extras;
@@ -264,8 +237,8 @@ struct tractor : t_base_event {
     int t_check_chain(pid_t tid, int level);
 
     int write_trace(void);
-    PEAT_Rank get_real_rank(MPI_Comm comm, PEAT_Rank rank_in, PEAT_Clock tsc);
-    PEAT_MPI_Comm get_global_comm_id(MPI_Comm comm, PEAT_Clock tsc);
+    PEAT_Rank get_real_rank(MPI_Comm comm, PEAT_Rank rank_in, PEAT_Clock tsc, int is_internal);
+    PEAT_MPI_Comm get_global_comm_id(MPI_Comm comm, PEAT_Clock tsc, int is_internal);
     num_processed_events write_main_files(/*,user_region_store &user_region_store*/);
 
     //    void calculate_us_sd_dev(user_region_store &user_region_store);
