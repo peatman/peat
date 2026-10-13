@@ -116,8 +116,11 @@ struct PET_Event : public PET_Time_Event {
     PEAT_LNum remaining_ee_events;
     std::list<PET_Fabric_Event> fabric_events;
     std::list<PET_Fabric_Event> uc_fabric_events;
+    PEAT_Bool treat_as_local;
 
   public:
+    void set_treat_as_local() { treat_as_local = true; }
+
     PET_Event(PET_Core *p);
     virtual PEAT_Bool is_bound() const { return true; }
     PET_Core *get_core() const { return pet_core; }
@@ -455,31 +458,29 @@ struct PET_ToR_Event : public PET_Local_Event {
     PEAT_Event_IDs peer_ids; // id path of the peer record (bind output)
     PEAT_MPI_Func_ID peer_func_id, peer_completion_func_id;
     PEAT_Event_IDs peer_completion_ids; // id path of the record completing the peer (bind output)
-    PET_Event *aux_event, *aux_event_2;
+    PET_Event *peer_event, *comp_event;
     PEAT_Bool block_override;
     PEAT_Bool rs_created;
     TE_Event rts, cts, tx_message, ack;
     TE_Event p_rts, p_cts, rx_message, p_ack;
     TE_Event fake_evt;
-    PEAT_Bool treat_as_local;
     std::list<PET_Event *> blanks;
 
   public:
-    void set_treat_as_local() { treat_as_local = true; }
     PET_ToR_Event(PET_Core *p) : PET_Local_Event(p), comm(0), t_bytes(0), tag(-1), peer_rank(-1), request(0), message(0),
                                  peer_func_id(TMPI_FUNC_ID_NONE), peer_completion_func_id(TMPI_FUNC_ID_NONE),
-                                 aux_event(NULL), aux_event_2(NULL), block_override(false), rs_created(false), treat_as_local(false)
+                                 peer_event(NULL), comp_event(NULL), block_override(false), rs_created(false)
     {
     }
     PET_ToR_Event(const PET_ToR_Event &s) : PET_Local_Event(s.pet_core), comm(s.comm), t_bytes(s.t_bytes), tag(s.tag), peer_rank(s.peer_rank), request(s.request), message(s.message),
                                             peer_ids(s.peer_ids), peer_func_id(s.peer_func_id), peer_completion_func_id(s.peer_completion_func_id),
                                             peer_completion_ids(s.peer_completion_ids),
-                                            aux_event(s.aux_event), aux_event_2(s.aux_event_2),
+                                            peer_event(s.peer_event), comp_event(s.comp_event),
                                             block_override(s.block_override), rs_created(s.rs_created),
                                             rts(s.rts), cts(s.cts), tx_message(s.tx_message), ack(s.ack),
-                                            p_rts(s.p_rts), p_cts(s.p_cts), rx_message(s.rx_message), p_ack(s.p_ack),
-                                            treat_as_local(s.treat_as_local)
+                                            p_rts(s.p_rts), p_cts(s.p_cts), rx_message(s.rx_message), p_ack(s.p_ack)                                            
     {
+        treat_as_local = s.treat_as_local;
         func_id = s.func_id;
         parent_func_id = s.parent_func_id;
         ids = s.ids;
@@ -604,8 +605,8 @@ struct PET_ToR_Event : public PET_Local_Event {
     virtual PEAT_Bool get_bounds();
 
     virtual PEAT_MPI_Comm get_comm() const { return comm; }
-    virtual PEAT_Bool get_tx_paired() const { return aux_event != NULL; };
-    virtual PEAT_Bool get_rx_paired() const { return aux_event != NULL; };
+    virtual PEAT_Bool get_tx_paired() const { return peer_event != NULL; };
+    virtual PEAT_Bool get_rx_paired() const { return peer_event != NULL; };
 
     virtual PEAT_MPI_Tag get_send_tag() const
     {
@@ -640,53 +641,26 @@ struct PET_ToR_Event : public PET_Local_Event {
         return PEAT_ERROR_INVALID_RX_PARAM; //(MPI_ANY_SOURCE)
     }
 
-    virtual void set_recv_tag(PEAT_MPI_Tag t)
-    {
-        if (check_rx()) {
-            if (tag != t && tag >= 0) {
-                char buf[256];
-                sprintf(buf, "Tag Mismatch %d received %d rank %d,ids=%s, parent=%lld\n", tag, t, rank, ids_str().c_str(), aux_event_2->ids[0]);
-                pet_throw_error(pet_core, this, NULL, buf);
-            }
-            tag = t;
-        }
-    }
-    virtual void set_src(PEAT_Rank r)
-    {
-        if (check_rx()) {
-            if (peer_rank != r && peer_rank >= 0) {
-                char buf[256];
-                sprintf(buf, "Rank Mismatch %d received %d rank %d,ids=%s, parent=%lld\n", peer_rank, r, rank, ids_str().c_str(), aux_event_2->ids[0]);
-                pet_throw_error(pet_core, this, NULL, buf);
-            }
-            peer_rank = r;
-        }
-    }
-    virtual void set_t_bytes(PEAT_LNum b)
-    {
-        if (check_rx())
-            t_bytes = b;
-    }
     virtual PET_Event *get_completion() const
     {
-        return aux_event_2;
+        return comp_event;
     }
     virtual PET_Event *get_peer_for_send() const
     {
         if (check_tx())
-            return aux_event;
+            return peer_event;
         return NULL;
     }
     virtual PET_Event *get_peer_for_recv() const
     {
         if (check_rx())
-            return aux_event;
+            return peer_event;
         return NULL;
     }
     virtual void set_peer_for_send(PET_ToR_Event *event)
     {
         if (check_tx()) {
-            aux_event = event;
+            peer_event = event;
             peer_ids = event->ids;
             peer_completion_func_id = event->get_completion() ? event->get_completion()->func_id : event->func_id;
             peer_completion_ids = event->get_completion() ? event->get_completion()->ids : event->ids;
@@ -696,7 +670,7 @@ struct PET_ToR_Event : public PET_Local_Event {
     virtual void set_peer_for_recv(PET_ToR_Event *event)
     {
         if (check_rx()) {
-            aux_event = event;
+            peer_event = event;
             peer_ids = event->ids;
             peer_completion_func_id = event->get_completion() ? event->get_completion()->func_id : event->func_id;
             // not used actually but set anyway
@@ -704,7 +678,7 @@ struct PET_ToR_Event : public PET_Local_Event {
             peer_func_id = event->func_id;
         }
     }
-    virtual void set_completion(PET_Event *event) { aux_event_2 = event; }
+    virtual void set_completion(PET_Event *event) { comp_event = event; }
 
     virtual PEAT_Bool bind();
     virtual PET_Event *query_request(PEAT_MPI_Request req)
@@ -746,7 +720,7 @@ struct PET_ToR_Event : public PET_Local_Event {
             return rx_message;
         return tx_message;
     }
-    PET_Event *get_peer() const { return aux_event; }
+    PET_Event *get_peer() const { return peer_event; }
     virtual PEAT_Bool is_bound() const
     {
         if (treat_as_local)
@@ -756,7 +730,7 @@ struct PET_ToR_Event : public PET_Local_Event {
     virtual PET_Event *get_real_event(PET_Event *evt);
     virtual PEAT_Bool completion_received() const
     {
-        return (!(aux_event_2 == NULL)) || request == 0 || is_persistent_init() || treat_as_local;
+        return (!(comp_event == NULL)) || request == 0 || is_persistent_init() || treat_as_local;
     }
     virtual PEAT_Bool ready_to_bind() const
     {
@@ -835,8 +809,8 @@ struct PET_TaR_Event : public PET_ToR_Event {
     virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol = "\n", const char *hwc_eol = "\n");
     virtual PEAT_Bool estimate(Estimation_Event *event);
     // virtual PEAT_Bool is_estimated();
-    virtual PEAT_Bool get_tx_paired() const { return aux_event != NULL; };
-    virtual PEAT_Bool get_rx_paired() const { return aux_event_2 != NULL; };
+    virtual PEAT_Bool get_tx_paired() const { return peer_event != NULL; };
+    virtual PEAT_Bool get_rx_paired() const { return comp_event != NULL; };
     virtual PEAT_Message_Size get_tx_bytes() const { return t_bytes; };
     virtual PEAT_Message_Size get_rx_bytes() const { return t_bytes_2; };
     virtual PEAT_MPI_Tag get_send_tag() const
@@ -855,6 +829,25 @@ struct PET_TaR_Event : public PET_ToR_Event {
     {
         return peer_rank_2;
     }
+    virtual void set_recv_tag(PEAT_MPI_Tag t)
+    {
+        if(tag_2 != t && tag_2 >= 0) {
+            char buf[256];
+            sprintf(buf, "Tag Mismatch %d received %d rank %d,ids=%s, parent=%lld\n", tag_2, t, rank, ids_str().c_str(), comp_event->ids[0]);
+            pet_throw_error(pet_core, this, NULL, buf);
+        }
+        tag_2 = t;
+    }
+    virtual void set_src(PEAT_Rank r)
+    {
+        if(peer_rank_2 != r && peer_rank_2 >= 0) {
+            char buf[256];
+            sprintf(buf, "Rank Mismatch %d received %d rank %d,ids=%s, parent=%lld\n", peer_rank_2, r, rank, ids_str().c_str(), comp_event->ids[0]);
+            pet_throw_error(pet_core, this, NULL, buf);
+        }
+        peer_rank_2 = r;
+    }
+
     virtual PEAT_Bool is_rdv(PEAT_DIRECTION direction) const;
     virtual PEAT_Bool is_smp(PEAT_DIRECTION direction) const;
     virtual PEAT_Bool bind();
@@ -865,16 +858,16 @@ struct PET_TaR_Event : public PET_ToR_Event {
     }
     virtual PET_Event *get_peer_for_send() const
     {
-        return aux_event;
+        return peer_event;
     }
     virtual PET_Event *get_peer_for_recv() const
     {
-        return aux_event_2;
+        return comp_event;
     }
     virtual void set_completion(PET_Event *event) {}
     virtual void set_peer_for_send(PET_ToR_Event *event)
     {
-        aux_event = event;
+        peer_event = event;
         peer_completion_func_id = event->get_completion() ? event->get_completion()->func_id : event->func_id;
         peer_completion_ids = event->get_completion() ? event->get_completion()->ids : event->ids;
         peer_func_id = event->func_id;
@@ -882,7 +875,7 @@ struct PET_TaR_Event : public PET_ToR_Event {
     }
     virtual void set_peer_for_recv(PET_ToR_Event *event)
     {
-        aux_event_2 = event;
+        comp_event = event;
         peer_completion_func_id_2 = event->get_completion() ? event->get_completion()->func_id : event->func_id;
         peer_completion_ids_2 = event->get_completion() ? event->get_completion()->ids : event->ids;
         peer_func_id_2 = event->func_id;
@@ -903,6 +896,7 @@ struct PET_TaR_Event : public PET_ToR_Event {
     }
     virtual PEAT_Rank get_ranks_num() const { return 3; }
 };
+
 
 struct PET_Coll_Event : public PET_Local_Event {
   protected:
@@ -1102,11 +1096,11 @@ struct PET_Collective_Event : public PET_Coll_Event {
 };
 
 struct PET_Comm_Event : public PET_Coll_Event {
-    PEAT_MPI_Comm newcomm, intercomm, remotecomm;
+    PEAT_MPI_Comm newcomm, remotecomm;
     PEAT_MPI_Request request;
 
   public:
-    PET_Comm_Event(PET_Core *p) : PET_Coll_Event(p), newcomm(0), intercomm(0), remotecomm(0), request(0) {}
+    PET_Comm_Event(PET_Core *p) : PET_Coll_Event(p), newcomm(0), remotecomm(0), request(0) {}
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_COMM; }
     virtual PEAT_MPI_Request get_mpi_request() const { return request; }
     virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);

@@ -564,7 +564,7 @@ PEAT_Bool PET_Completion_Event::read_event(PEAT_Rank r_rank, const String_Split 
         req.src = src;
         extract(req.t_bytes, mpi_string.at(hdr.payload + 5 + input_request_num + i * 4 + 3));
         req.index = index;
-        if (input_requests.at(index) == get_core()->get_comm()->get_MPI_REQUEST_NULL())
+        if (input_requests.at(index) == get_core()->get_comm()->get_MPI_REQUEST_NULL() || input_requests.at(index)==0) // NULL or inactive request
             continue;
         PET_Event *event = get_core()->find_event_by_request(rank, input_requests.at(index));
         if (event == NULL) {
@@ -601,13 +601,14 @@ PEAT_Bool PET_Completion_Event::read_event(PEAT_Rank r_rank, const String_Split 
         // triggered_requests[input_requests.at( index )] = req;
     }
     if (func_id == MPI_REQUEST_FREE_ID || func_id == MPI_CANCEL_ID) {
-        PET_ToR_Event *event = NULL;
+        PET_Event *event = NULL;
 #ifdef _PET_USE_BIND_STORE_
         // single input request, so mat's 1:1 completed_map (built from the same-rank PEAT_RT_Bind_Completion
         // line mat writes for this exact release) is sufficient - no need for PET's own live request lookup.
         const PET_Bind_Key *post_key = get_core()->get_bind_store().find_completed_event(rank, ids);
-        if (post_key)
-            event = static_cast<PET_ToR_Event *>(get_core()->get_pet_rank(post_key->rank)->find_event_by_ids(post_key->ids));
+        if(post_key) {
+            event = get_core()->get_pet_rank(post_key->rank)->find_event_by_ids(post_key->ids);
+        }
 #else
         event = get_core()->find_event_by_request(rank, input_requests.at(0));
         if (event == NULL)
@@ -621,6 +622,7 @@ PEAT_Bool PET_Completion_Event::read_event(PEAT_Rank r_rank, const String_Split 
         }
         get_core()->remove_persistent_request(rank, input_requests.at(0));
     }
+
     if (func_id == MPID_REQUEST_RELEASE_ID || func_id == OMPI_COLL_P2P_FREE_ID) { // OpenMPI's request-release equivalent
         PET_ToR_Event *event = NULL;
 #ifdef _PET_USE_BIND_STORE_

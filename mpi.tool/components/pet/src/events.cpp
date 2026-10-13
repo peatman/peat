@@ -345,7 +345,7 @@ PEAT_Bool PET_Core::remove_entry(PET_Event *event)
             next_evt->prev_event = NULL;
         }
     }
-    pet_thread->active_events.erase(event_it);
+    pet_thread->start_event_it = pet_thread->cached_event_it = pet_thread->active_events.erase(event_it);
 #ifdef PEAT_OMP
 // 	ins_rem_mutexes[event->rank].unlock();
 #endif

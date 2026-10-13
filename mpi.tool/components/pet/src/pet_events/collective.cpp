@@ -56,11 +56,20 @@ PEAT_Bool PET_Collective_Event::read_event(PEAT_Rank r_rank, const String_Split 
             tx_bytes.set_scalar(size_msg_collective);
         } else {
             int i = 0;
-            for (std::map<PEAT_Rank, PEAT_Rank>::const_iterator it = ranks.begin(); it != ranks.end(); ++it) {
+            // this code is technically not valid (for neighbor *Neighbor* type one - extra processing is requered) but prevents crashing 
+#if 0
+            for(std::map<PEAT_Rank, PEAT_Rank>::const_iterator it = ranks.begin(); it != ranks.end(); ++it) {
                 extract(size_msg_collective, mpi_string.at(hdr.payload + 6 + i));
                 tx_bytes.set_vector(size_msg_collective, it->first);
                 ++i;
             }
+        }
+#else
+            for(i = 0; i < srb[0]; i++) {
+                extract(size_msg_collective, mpi_string.at(hdr.payload + 6 + i));
+                tx_bytes.set_vector(size_msg_collective, i);
+            }
+#endif
         }
     }
     if (srb[1] > 0) {
@@ -69,11 +78,19 @@ PEAT_Bool PET_Collective_Event::read_event(PEAT_Rank r_rank, const String_Split 
             rx_bytes.set_scalar(size_msg_collective);
         } else {
             int i = 0;
+            // this code is technically not valid (for neighbor *Neighbor* type one - extra processing is requered) but prevents crashing 
+#if 0
             for (std::map<PEAT_Rank, PEAT_Rank>::const_iterator it = ranks.begin(); it != ranks.end(); ++it) {
                 extract(size_msg_collective, mpi_string.at(hdr.payload + 6 + tx_bytes.size() + i));
                 rx_bytes.set_vector(size_msg_collective, it->first);
                 ++i;
             }
+#else
+            for(i = 0; i < srb[1];i++) {
+                extract(size_msg_collective, mpi_string.at(hdr.payload + 6 + tx_bytes.size() + i));
+                rx_bytes.set_vector(size_msg_collective, i);
+            }
+#endif
         }
     }
     return true;

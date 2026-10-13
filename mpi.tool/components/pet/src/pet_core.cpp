@@ -425,6 +425,7 @@ PEAT_Bool PET_Core::process_events()
                                                 break;
                                             };
                                             pet_throw_error(this, NULL, NULL, "No more events but they are...required. Is the trace valid?\n");
+                                            abort();
                                             break;
                                         }
                                         ++local_reads;

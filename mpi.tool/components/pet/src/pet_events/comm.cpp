@@ -43,15 +43,14 @@ PEAT_Bool PET_Comm_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_s
     extract(comm, mpi_string.at(hdr.payload + 1), 16);
     extract(newcomm, mpi_string.at(hdr.payload + 2), 16);
     extract(remotecomm, mpi_string.at(hdr.payload + 3), 16);
-    extract(intercomm, mpi_string.at(hdr.payload + 4), 16);
-    extract(request, mpi_string.at(hdr.payload + 5), 16);
+    extract(request, mpi_string.at(hdr.payload + 4), 16);
     return true;
 }
 
 PET_Event *PET_Comm_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
 {
     PET_Local_Event::write_event(gz_MPI, gz_HWC, gz_bind, "", hwc_eol);
-    gz_MPI->printf(rank, ":%x:%x:%x:%x:%x", comm, newcomm, remotecomm, intercomm, request);
+    gz_MPI->printf(rank, ":%x:%x:%x:%x", comm, newcomm, remotecomm, request);
     gz_MPI->printf(rank, "%s", mpi_eol);
     std::list<Coll_Storage>::iterator collective;
     if (get_core()->get_coll(this, collective)) {
