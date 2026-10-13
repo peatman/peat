@@ -52,14 +52,27 @@ PEAT_Bool Mat::parse_single_event(const int rank)
     }
     Tractor_Event t_event(rank, line_mpi, line_hwc, model_id.num_hwcs, model_id.num_addrs, user_region_store, comm_store);
     PEAT_MPI_Func_ID mpifunc = t_event.func_id;
+    const bool nested_record = t_event.level > 0;
     PEAT_Clock mpi_time = 0, uc_time = 0, t_time = 0, occ_inc = 0;
     if (!globals.matching_only) { // tsc_time is all sentinel (-1) without hwc data, so these are meaningless
         if (!second_line) {
             t_event.tsc_time.func.in += tsc_predictor.at(rank);
             tsc_predictor[rank] = t_event.tsc_time.func.in;
-            if (t_event.func_id != MPI_INIT_ID && t_event.func_id != MPI_INIT_THREAD_ID && t_event.func_id != MPI_FINALIZE_ID && t_event.thread_id == 0) {
-                if (is_omp(t_event.func_class)) { // temporal clutch until fixed in tractor
-                    if (t_event.func_id == OMPT_SYNC_REGION_ID || t_event.func_id == OMPT_SYNC_REGION_WAIT_ID) {
+            if(!nested_record) {
+                mpi_time = t_event.tsc_time.mpi.out - t_event.tsc_time.mpi.in;
+                if(t_event.func_id != MPI_INIT_ID && t_event.func_id != MPI_INIT_THREAD_ID && !is_omp(t_event.func_class)) {
+                    uc_time = t_event.tsc_time.func.in - tsc_corrector[rank];
+                } else {
+                    t_time = 0;
+                }
+                if(t_event.thread_id == 0) {
+                    tsc_corrector[rank] = t_event.tsc_time.func.in + t_event.tsc_time.func.out;
+                }
+                occ_inc = 1;
+            }
+            if(t_event.func_id != MPI_INIT_ID && t_event.func_id != MPI_INIT_THREAD_ID && t_event.func_id != MPI_FINALIZE_ID && t_event.thread_id == 0) {
+                if(is_omp(t_event.func_class)) { // temporal clutch until fixed in tractor
+                    if(t_event.func_id == OMPT_SYNC_REGION_ID || t_event.func_id == OMPT_SYNC_REGION_WAIT_ID) {
                         t_time = t_event.tsc_time.mpi.in + t_event.tsc_time.func.out - t_event.tsc_time.mpi.out;
                     } else {
                         t_time = t_event.tsc_time.mpi.in;
