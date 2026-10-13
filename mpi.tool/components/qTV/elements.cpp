@@ -2039,15 +2039,12 @@ PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, 
         extract(evt_time.mpi.in, trace_line_HWC.at(hb + 1), 10);
         extract(evt_time.mpi.out, trace_line_HWC.at(hb + 2), 10);
         extract(evt_time.func.out, trace_line_HWC.at(hb + 3), 10);
-        if (hdr.nested) // nested format: field 2 is the tool epilog (exit - mpi exit), field 3 the duration
-            evt_time.mpi.out = evt_time.func.out - evt_time.mpi.out;
+        evt_time.mpi.out = evt_time.func.out - evt_time.mpi.out;
 
         evt_time.func.in += tsc_predictor.at(rank);
         // nested format: every record start is relative to the previous record at any level;
         // legacy format: colt records are relative to their host, which keeps the predictor
-        if (hdr.nested || !global_func_id.check_property(func_id, PEAT_PROP_MPI_INTERNAL)) {
-            tsc_predictor[rank] = evt_time.func.in;
-        }
+        tsc_predictor[rank] = evt_time.func.in;
         evt_time.mpi.in += evt_time.func.in;
         evt_time.mpi.out += evt_time.func.in;
         evt_time.func.out += evt_time.func.in;

@@ -121,27 +121,26 @@ PEAT_Bool TV_Collective_Event::read_event(PEAT_Rank r_rank, const String_Split &
     PEAT_Num srb[2];
     extract(srb[0], mpi_string.at(hdr.payload + 4));
     extract(srb[1], mpi_string.at(hdr.payload + 5));
-    const int k = hdr.nested ? 0 : 1; // legacy records keep num_colts here; nested records carry num_children in the header
 
     PEAT_Message_Size sizeMsgCollective = -1;
     if (srb[0] > 0) {
         if (srb[0] == 1) {
-            extract(sizeMsgCollective, mpi_string.at(hdr.payload + 6 + k));
+            extract(sizeMsgCollective, mpi_string.at(hdr.payload + 6));
             bytes.tx_bytes.set_scalar(sizeMsgCollective);
         } else {
             for (int i = 0; i < srb[0]; i++) {
-                extract(sizeMsgCollective, mpi_string.at(hdr.payload + 6 + k + i));
+                extract(sizeMsgCollective, mpi_string.at(hdr.payload + 6 + i));
                 bytes.tx_bytes.set_vector(sizeMsgCollective, i);
             }
         }
     }
     if (srb[1] > 0) {
         if (srb[1] == 1) {
-            extract(sizeMsgCollective, mpi_string.at(hdr.payload + 6 + k + bytes.tx_bytes.size()));
+            extract(sizeMsgCollective, mpi_string.at(hdr.payload + 6 + bytes.tx_bytes.size()));
             bytes.rx_bytes.set_scalar(sizeMsgCollective);
         } else {
             for (int i = 0; i < srb[0]; i++) {
-                extract(sizeMsgCollective, mpi_string.at(hdr.payload + 6 + k + i + bytes.tx_bytes.size()));
+                extract(sizeMsgCollective, mpi_string.at(hdr.payload + 6 + i + bytes.tx_bytes.size()));
                 bytes.rx_bytes.set_vector(sizeMsgCollective, i);
             }
         }
@@ -155,8 +154,7 @@ PEAT_Bool TV_Comm_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_st
     extract(comm, mpi_string.at(hdr.payload + 1), 16);
     extract(newcomm, mpi_string.at(hdr.payload + 2), 16);
     extract(remotecomm, mpi_string.at(hdr.payload + 3), 16);
-    extract(intercomm, mpi_string.at(hdr.payload + 4), 16);
-    extract(request, mpi_string.at(hdr.payload + 5), 16);
+    extract(request, mpi_string.at(hdr.payload + 4), 16);
     return true;
 }
 
@@ -172,12 +170,11 @@ PEAT_Bool TV_Start_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_s
     extract(input_request_num, mpi_string.at(hdr.payload + 1));
     extract(triggered_request_num, mpi_string.at(hdr.payload + 2));
     extract(flag, mpi_string.at(hdr.payload + 3));
-    const int k = hdr.nested ? 0 : 1; // legacy records keep num_colts here
-    extract(addr, mpi_string.at(hdr.payload + 4 + k), 16);
+    extract(addr, mpi_string.at(hdr.payload + 4), 16);
     input_requests.resize(input_request_num);
     for (int i = 0; i < input_request_num; i++) {
         PEAT_MPI_Request req;
-        extract(req, mpi_string.at(hdr.payload + 5 + k + i), 16);
+        extract(req, mpi_string.at(hdr.payload + 5 + i), 16);
         input_requests[i] = req;
     }
     for (int i = 0; i < input_request_num; i++) {
@@ -239,12 +236,11 @@ PEAT_Bool TV_Completion_Event::read_event(PEAT_Rank r_rank, const String_Split &
     extract(input_request_num, mpi_string.at(hdr.payload + 1));
     extract(triggered_request_num, mpi_string.at(hdr.payload + 2));
     extract(flag, mpi_string.at(hdr.payload + 3));
-    const int k = hdr.nested ? 0 : 1; // legacy records keep num_colts here
-    extract(addr, mpi_string.at(hdr.payload + 4 + k), 16);
+    extract(addr, mpi_string.at(hdr.payload + 4), 16);
     input_requests.resize(input_request_num);
     for (int i = 0; i < input_request_num; i++) {
         PEAT_MPI_Request req;
-        extract(req, mpi_string.at(hdr.payload + 5 + k + i), 16);
+        extract(req, mpi_string.at(hdr.payload + 5 + i), 16);
         input_requests[i] = req;
         if (func_id != MPID_REQUEST_RELEASE_ID) {
             TV_Event *event = NULL; // get_core()->find_event_by_request(rank, req); //TODO fill this
@@ -261,12 +257,12 @@ PEAT_Bool TV_Completion_Event::read_event(PEAT_Rank r_rank, const String_Split &
     for (int i = 0; i < triggered_request_num; i++) {
         TV_Request req;
         int index;
-        extract(index, mpi_string.at(hdr.payload + 5 + k + input_request_num + i * 4 + 0));
-        extract(req.tag, mpi_string.at(hdr.payload + 5 + k + input_request_num + i * 4 + 1));
+        extract(index, mpi_string.at(hdr.payload + 5 + input_request_num + i * 4 + 0));
+        extract(req.tag, mpi_string.at(hdr.payload + 5 + input_request_num + i * 4 + 1));
         PEAT_Rank src;
-        extract(src, mpi_string.at(hdr.payload + 5 + k + input_request_num + i * 4 + 2));
+        extract(src, mpi_string.at(hdr.payload + 5 + input_request_num + i * 4 + 2));
         req.src = src;
-        extract(req.t_bytes, mpi_string.at(hdr.payload + 5 + k + input_request_num + i * 4 + 3));
+        extract(req.t_bytes, mpi_string.at(hdr.payload + 5 + input_request_num + i * 4 + 3));
         req.index = index;
         // if (input_requests.at(index) == get_core()->get_comm()->get_MPI_REQUEST_NULL()) continue;
         req.request = input_requests.at(index);
