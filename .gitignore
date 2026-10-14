@@ -25,3 +25,4 @@ mpi.tool/components/qTV/out
 mpi.tool/components/contrib/zlib/install 
 .clang-format
 *.qtcreator
+public_html

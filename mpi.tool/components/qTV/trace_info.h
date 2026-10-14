@@ -29,7 +29,7 @@ class Trace_Info
   public:
     Trace_Info();
     bool parse_trace_info_file(QFileInfo &tracefile);
-    bool has_fab_files() const;
+    bool has_transport_files() const;
     void update_src_dirs();
     static QString make_absolute_path(const QString &file_path, const QString &relative_dir);
 
@@ -38,7 +38,7 @@ class Trace_Info
     qint32 num_addrs;
     qint32 num_tscs;
     qint32 num_hwcs;
-    QString path, trace_files, mpi_files, hwc_files, bind_files, fab_files, com_ext, app_ext;
+    QString path, trace_files, mpi_files, hwc_files, bind_files, transport_files, com_ext, app_ext;
     std::vector<PEAT_UID> messages_in_rank;
     std::vector<PEAT_UID> events_in_rank;
     std::vector<PEAT_MPI_Time> mpi_times;

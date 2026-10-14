@@ -138,7 +138,7 @@ void Stat::add_mpi_stat(const PEAT_MPI_Func_ID func, const PEAT_Clock in, const 
     }
     num_events++;
     cpu_len += cpu_len_in;
-    fabric_len += (len_in - cpu_len_in);
+    transport_len += (len_in - cpu_len_in);
     if (!max_event_length.count(func)) {
         max_event_length[func] = len_in;
     }
@@ -191,7 +191,7 @@ void Stat::add_pcontrol_user_removed_len(const PEAT_MPI_Func_ID func_id, const P
 std::ostream &operator<<(std::ostream &dbg, const Stat &stat)
 {
     const PEAT_Ratio rank_len = PEAT_Ratio(stat.rank_end - stat.rank_start);
-    const PEAT_Clock mpi_func_len = stat.cpu_len + stat.fabric_len;
+    const PEAT_Clock mpi_func_len = stat.cpu_len + stat.transport_len;
     const PEAT_Clock max_event_length = stat.get_max_event_length();
     const PEAT_Clock min_event_length = stat.get_min_event_length();
     const PEAT_Clock max_msg_length = stat.get_max_msg_length();
@@ -210,7 +210,7 @@ std::ostream &operator<<(std::ostream &dbg, const Stat &stat)
         << std::setprecision(2) << "(" << PEAT_Ratio(stat.covered_UR_length) / rank_len << "+"
         << PEAT_Ratio(stat.uncovered_UR_length) / rank_len << ")"
         << ", mpi_active_len " << stat.cpu_len
-        << ", mpi_passive_len " << stat.fabric_len
+        << ", mpi_passive_len " << stat.transport_len
         << ", mpi_progress_len " << stat.progress_len_total
         << std::setprecision(2) << "(" << PEAT_Ratio(mpi_func_len) / rank_len << ")";
     return dbg;
@@ -231,7 +231,7 @@ void Event_Set_Stat::add_ts_fs_event_stat(const t_stat_type t, PET_Event *event)
     if (ct < PEAT_TRANSPORT_MAX && event->get_ranks_num() > 1) {
         MPI_Event_Stat evt_stat;
         evt_stat.prolog = event->o_event_parts.prolog;
-        evt_stat.fabric = event->o_event_parts.meat;
+        evt_stat.transport = event->o_event_parts.meat;
         evt_stat.centre = event->get_centre_code(Event_Set_Stat::tst_orig);
         evt_stat.epilog = event->o_event_parts.epilog;
         // evt_stat.wait = event->o_event_parts.stat.wait;
@@ -256,7 +256,7 @@ void Event_Set_Stat::add_ts_fs_event_stat(const t_stat_type t, PET_Event *event)
 }
 
 void Event_Set_Stat::add_event_stat(const t_stat_type t, const PEAT_Transports ct, const PEAT_Rank rank, const PEAT_MPI_Func_ID func, const PEAT_MPI_Func_ID parent_func, const PEAT_Rank num_ranks, const PEAT_Message_Size send_size, const PEAT_Message_Size recv_size,
-                                    const PEAT_Clock prolog, const PEAT_Clock fabric, const PEAT_Clock centre, const PEAT_Clock epilog, const PEAT_Clock wait, const PEAT_Clock overlap, PEAT_Bool is_rndv, PEAT_Bool is_not_verified)
+                                    const PEAT_Clock prolog, const PEAT_Clock transport, const PEAT_Clock centre, const PEAT_Clock epilog, const PEAT_Clock wait, const PEAT_Clock overlap, PEAT_Bool is_rndv, PEAT_Bool is_not_verified)
 {
     if (func == TMPI_FUNC_ID_NONE) {
         std::ostringstream tmp;
@@ -268,7 +268,7 @@ void Event_Set_Stat::add_event_stat(const t_stat_type t, const PEAT_Transports c
         MPI_Event_Stat &sendrecv_stat = stat_per_func[t][rank][fid_pair][recv_size];
         ++sendrecv_stat.num_events;
         sendrecv_stat.prolog += prolog;
-        sendrecv_stat.fabric += fabric;
+        sendrecv_stat.transport += transport;
         sendrecv_stat.epilog += epilog;
         sendrecv_stat.wait += wait;
         sendrecv_stat.overlap += overlap;
@@ -278,14 +278,14 @@ void Event_Set_Stat::add_event_stat(const t_stat_type t, const PEAT_Transports c
             sendrecv_stat.total_recv_length += recv_size;
         sendrecv_stat.cpu_min = __min__(sendrecv_stat.cpu_min, prolog + epilog);
         sendrecv_stat.cpu_max = __max__(sendrecv_stat.cpu_max, prolog + epilog);
-        sendrecv_stat.fabric_min = __min__(sendrecv_stat.fabric_min, fabric);
-        sendrecv_stat.fabric_max = __max__(sendrecv_stat.fabric_max, fabric);
+        sendrecv_stat.transport_min = __min__(sendrecv_stat.transport_min, transport);
+        sendrecv_stat.transport_max = __max__(sendrecv_stat.transport_max, transport);
     }
     if (send_size >= 0) {
         MPI_Event_Stat &send_stat = stat_per_func[t][rank][fid_pair][send_size];
         ++send_stat.num_events;
         send_stat.prolog += prolog;
-        send_stat.fabric += fabric;
+        send_stat.transport += transport;
         send_stat.epilog += epilog;
         send_stat.wait += wait;
         send_stat.overlap += overlap;
@@ -293,15 +293,15 @@ void Event_Set_Stat::add_event_stat(const t_stat_type t, const PEAT_Transports c
             send_stat.total_send_length += send_size;
         send_stat.cpu_min = __min__(send_stat.cpu_min, prolog + epilog);
         send_stat.cpu_max = __max__(send_stat.cpu_max, prolog + epilog);
-        send_stat.fabric_min = __min__(send_stat.fabric_min, fabric);
-        send_stat.fabric_max = __max__(send_stat.fabric_max, fabric);
+        send_stat.transport_min = __min__(send_stat.transport_min, transport);
+        send_stat.transport_max = __max__(send_stat.transport_max, transport);
         return;
     }
     if (recv_size >= 0) {
         MPI_Event_Stat &recv_stat = stat_per_func[t][rank][fid_pair][recv_size];
         ++recv_stat.num_events;
         recv_stat.prolog += prolog;
-        recv_stat.fabric += fabric;
+        recv_stat.transport += transport;
         recv_stat.epilog += epilog;
         recv_stat.wait += wait;
         recv_stat.overlap += overlap;
@@ -309,8 +309,8 @@ void Event_Set_Stat::add_event_stat(const t_stat_type t, const PEAT_Transports c
             recv_stat.total_recv_length += recv_size;
         recv_stat.cpu_min = __min__(recv_stat.cpu_min, prolog + epilog);
         recv_stat.cpu_max = __max__(recv_stat.cpu_max, prolog + epilog);
-        recv_stat.fabric_min = __min__(recv_stat.fabric_min, fabric);
-        recv_stat.fabric_max = __max__(recv_stat.fabric_max, fabric);
+        recv_stat.transport_min = __min__(recv_stat.transport_min, transport);
+        recv_stat.transport_max = __max__(recv_stat.transport_max, transport);
     }
 }
 

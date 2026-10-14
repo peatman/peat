@@ -466,8 +466,8 @@ PEAT_Bool PET_Start_Event::estimate(Estimation_Event *event)
 	PEAT_Clock max_finish = 0;
 	PEAT_Clock min_start = LLONG_MAX;
 	PEAT_Bool is_estimation_finished = true;
-	PEAT_Clock fabric = -1;
-	PEAT_Bool no_fabric = false;
+	PEAT_Clock transport = -1;
+	PEAT_Bool no_transport = false;
 	if (check_tx()) {
 		for (std::map<PEAT_MPI_Request, PET_ToR_Event *>::iterator event_it = tor_events.begin(); event_it != tor_events.end(); ++event_it) {
 			PET_ToR_Event* evt = event_it->second;
@@ -482,9 +482,9 @@ PEAT_Bool PET_Start_Event::estimate(Estimation_Event *event)
 				max_finish = __max__(max_finish, finish);
 			} else {
 				finish = evt->get_txrx_finish(false);
-				no_fabric = true;
+				no_transport = true;
 			}
-			if (fabric < evt->event_parts.meat) fabric = evt->event_parts.meat;
+			if (transport < evt->event_parts.meat) transport = evt->event_parts.meat;
 		}
 		for (std::map<PEAT_MPI_Request, PET_Collective_Event *>::iterator event_it = collective_events.begin(); event_it != collective_events.end(); ++event_it) {
 			PET_Collective_Event* evt = event_it->second;
@@ -498,15 +498,15 @@ PEAT_Bool PET_Start_Event::estimate(Estimation_Event *event)
 			if (finish > 0) {
 				max_finish = __max__(max_finish, finish);
 			}
-			if (fabric < evt->event_parts.meat) fabric = evt->event_parts.meat;
+			if (transport < evt->event_parts.meat) transport = evt->event_parts.meat;
 		}
 		// all children should created their own rts anyway
 		if (is_estimation_finished) {
-			if (max_finish > e_time.mpi.in + event_parts.prolog || no_fabric) {
+			if (max_finish > e_time.mpi.in + event_parts.prolog || no_transport) {
 				event_parts.stat.overlap = e_time.mpi.in + event_parts.prolog - min_start;
-				if (!no_fabric) event_parts.meat = fabric;
+				if (!no_transport) event_parts.meat = transport;
 				if (event_parts.meat < 0) {
-					pet_throw_error(pet_core, this, "Negative fabric time.\n");
+					pet_throw_error(pet_core, this, "Negative transport time.\n");
 				}
 				if (event_parts.stat.overlap < 0) event_parts.stat.overlap = 0;
 			} else {
@@ -681,12 +681,12 @@ PEAT_Bool PET_Start_Event::check_rx() const
 PEAT_Bool PET_Start_Event::get_bounds()
 {
     PEAT_Signed_Num pe_type = get_core()->get_pe_type();
-    for (std::list<PET_Fabric_Event>::const_iterator fab_event_it = fabric_events.cbegin(); fab_event_it != fabric_events.cend(); ++fab_event_it) {
-        if ((fab_event_it->is_any_tx() && (check_tx() || pe_type == 2)) || (fab_event_it->is_any_rx() && (check_rx() || pe_type == 2))) {
-            PEAT_Clock d2 = ut_time.mpi.out - fab_event_it->ut_time.mpi.out;
+    for (std::list<PET_Transport_Event>::const_iterator transport_event_it = transport_events.cbegin(); transport_event_it != transport_events.cend(); ++transport_event_it) {
+        if ((transport_event_it->is_any_tx() && (check_tx() || pe_type == 2)) || (transport_event_it->is_any_rx() && (check_rx() || pe_type == 2))) {
+            PEAT_Clock d2 = ut_time.mpi.out - transport_event_it->ut_time.mpi.out;
             assert(d2 >= 0);
             if (t_time.pe.in <= 0) {
-                PEAT_Clock d = fab_event_it->ut_time.mpi.in - ut_time.mpi.in;
+                PEAT_Clock d = transport_event_it->ut_time.mpi.in - ut_time.mpi.in;
                 assert(d >= 0);
                 t_time.pe.in = t_time.func.in + d;
                 e_time.pe.in = e_time.func.in + d;
@@ -717,11 +717,11 @@ PEAT_Bool PET_Start_Event::split_event()
     }
     event_parts.meat = e_time.mpi.duration() - event_parts.prolog - event_parts.epilog;
     o_event_parts = event_parts;
-    o_event_parts.stat.fabric = o_event_parts.meat;
+    o_event_parts.stat.transport = o_event_parts.meat;
     //assert(e_time.mpi.duration() == event_parts.duration());
     //assert(event_parts.meat >= 0);
     if (event_parts.meat < 0) {
-        pet_throw_error(pet_core,"Fabric Time is negative.\n");
+        pet_throw_error(pet_core,"Transport Time is negative.\n");
     }
     if (e_time.mpi.duration() != event_parts.duration()) {
         pet_throw_error(pet_core,"Durations don't match.\n");
@@ -732,8 +732,8 @@ PEAT_Bool PET_Start_Event::split_event()
     PET_Local_Event::split_event();
     int size = (int)p_events.size();
     for (int i = 0; i < size; i++) {
-        p_events.at(i)->fabric_events = fabric_events;
-        p_events.at(i)->uc_fabric_events = uc_fabric_events;
+        p_events.at(i)->transport_events = transport_events;
+        p_events.at(i)->uc_transport_events = uc_transport_events;
         p_events.at(i)->e_time = e_time;
         p_events.at(i)->t_time = t_time;
         p_events.at(i)->o_time = o_time;

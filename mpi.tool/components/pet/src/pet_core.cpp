@@ -54,7 +54,7 @@ PET_Core::PET_Core(const Global_Parameters &glob, const Model_ID &model_id_stora
     func_split = 0;
     input_MPI = 0;
     input_HWC = 0;
-    input_fab = 0;
+    input_transport = 0;
     loop_counter = 0;
     freq = 1000000000; // default value, will be fixed by data file information.
 
@@ -76,7 +76,7 @@ PET_Core::PET_Core(const Global_Parameters &glob, const Model_ID &model_id_stora
     PEAT_Rank trace_comm_size = com_store->get_app_rank_count();
     coll_store.resize(com_store->get_comms_num() + 3); // 0,1,2 - are predefined MPI_COMM_NULL,SELF and WORLD
     tsc_corrector.resize(trace_comm_size, 0);
-    fabric_tsc_corrector.resize(trace_comm_size, 0);
+    transport_tsc_corrector.resize(trace_comm_size, 0);
 #ifdef PEAT_OMP
     read_mutexes = new PEAT_Mutex[trace_comm_size];
     // match_mutexes = new PEAT_Mutex[trace_comm_size];
@@ -86,12 +86,12 @@ PET_Core::PET_Core(const Global_Parameters &glob, const Model_ID &model_id_stora
 #endif
     for (std::map<PEAT_Rank, PEAT_Clock>::iterator it = com_store->frame_tsc_start.begin(); it != com_store->frame_tsc_start.end(); ++it) {
         tsc_corrector.at(it->first) = it->second;
-        fabric_tsc_corrector.at(it->first) = it->second;
+        transport_tsc_corrector.at(it->first) = it->second;
     }
 
     input_MPI = new File_Storage_GZ(globals.pe_MPI_files_in_rank, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, globals.verbose);
     input_HWC = new File_Storage_GZ(globals.pe_HWC_files_in_rank, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, globals.verbose);
-    input_fab = new File_Storage_GZ(globals.pe_fab_files_in_rank, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, globals.verbose);
+    input_transport = new File_Storage_GZ(globals.pe_transport_files_in_rank, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, globals.verbose);
     output_MPI = new File_Storage_GZ(globals.pe_MPI_files_in_rank_out, PEAT_FIO_FLAG_WRITE, "w9", globals.verbose);
     output_HWC = new File_Storage_GZ(globals.pe_HWC_files_in_rank_out, PEAT_FIO_FLAG_WRITE, "w9", globals.verbose);
     output_bind = new File_Storage_GZ(globals.pe_bind_files_in_rank_out, PEAT_FIO_FLAG_WRITE, "w9", globals.verbose);
@@ -141,7 +141,7 @@ PET_Core::~PET_Core()
     delete com_store;   // com_store = 0;
     delete input_MPI;   // input_MPI = 0;
     delete input_HWC;   // input_HWCpor = 0;
-    delete input_fab;   // input_HWCpor = 0;
+    delete input_transport;   // input_HWCpor = 0;
     delete output_MPI;  // output_MPI = 0;
     delete output_HWC;  // output_HWC = 0;
     delete output_bind; // output_bind = 0;
@@ -961,7 +961,7 @@ PEAT_Bool PET_Core::write_event_and_update_stat(PET_Event *event)
                             event->o_event_parts.stat.wait, event->o_event_parts.stat.overlap, is_rndv, is_not_verified);
         if (!get_mo()) {
             stat.add_event_stat(Event_Set_Stat::tst_post, event->get_msg_transport_id(), event->rank, event->func_id, event->parent_func_id, event->get_ranks_num(), event->get_real_tx_bytes(), event->get_real_rx_bytes(),
-                                event->event_parts.prolog, event->event_parts.stat.fabric, event->get_centre_code(Event_Set_Stat::tst_post), event->event_parts.epilog,
+                                event->event_parts.prolog, event->event_parts.stat.transport, event->get_centre_code(Event_Set_Stat::tst_post), event->event_parts.epilog,
                                 event->event_parts.stat.wait, event->event_parts.stat.overlap, is_rndv, is_not_verified);
         }
         if (globals.gather_transport_stat) {
@@ -1024,7 +1024,7 @@ PEAT_Bool PET_Core::write_event_and_update_stat(PET_Event *event)
                                     evt->o_event_parts.stat.wait, evt->o_event_parts.stat.overlap, is_rndv, is_not_verified);
                 if (!get_mo()) {
                     stat.add_event_stat(Event_Set_Stat::tst_post, evt->get_msg_transport_id(), evt->rank, evt->func_id, stat_parent_func, evt->get_ranks_num(), evt->get_real_tx_bytes(), evt->get_real_rx_bytes(),
-                                        evt->event_parts.prolog, evt->event_parts.stat.fabric, evt->get_centre_code(Event_Set_Stat::tst_post), evt->event_parts.epilog,
+                                        evt->event_parts.prolog, evt->event_parts.stat.transport, evt->get_centre_code(Event_Set_Stat::tst_post), evt->event_parts.epilog,
                                         evt->event_parts.stat.wait, evt->event_parts.stat.overlap, is_rndv, is_not_verified);
                 }
                 if (globals.gather_transport_stat) {
@@ -1037,10 +1037,10 @@ PEAT_Bool PET_Core::write_event_and_update_stat(PET_Event *event)
 		//overall stat
 		stat.add_event_stat( Event_Set_Stat::tst_orig, -1, event->func_id, event->get_tx_bytes(), event->get_rx_bytes(),
 			event->o_event_parts.prolog + event->o_event_parts.epilog,
-			event->o_event_parts.stat.fabric, event->o_event_parts.stat.wait, event->o_event_parts.stat.overlap );
+			event->o_event_parts.stat.transport, event->o_event_parts.stat.wait, event->o_event_parts.stat.overlap );
 		stat.add_event_stat( Event_Set_Stat::tst_post, -1, event->func_id, event->get_tx_bytes(), event->get_rx_bytes(),
 			event->event_parts.prolog + event->event_parts.epilog,
-			event->event_parts.stat.fabric, event->event_parts.stat.wait, event->o_event_parts.stat.overlap );
+			event->event_parts.stat.transport, event->event_parts.stat.wait, event->o_event_parts.stat.overlap );
 #endif
         register_parallel_region(event);
     }
@@ -1067,9 +1067,9 @@ PEAT_Ratio PET_Core::print_report(const Event_Set_Stat::t_stat_type type, const 
     PEAT_Clock total_start = LLONG_MAX, total_init_start = LLONG_MAX, total_fin_start = LLONG_MAX;
     PEAT_Clock total_stop = LLONG_MIN, total_init_stop = LLONG_MIN, total_fin_stop = LLONG_MIN;
     PEAT_Clock all_ranks_mpi_len = 0, all_ranks_user_len = 0, all_ranks_user_len_covered = 0, all_ranks_init_len = 0, all_ranks_fin_len = 0;
-    PEAT_Rank worst_covered_rank = -1, min_fabric_len_rank = -1;
+    PEAT_Rank worst_covered_rank = -1, min_transport_len_rank = -1;
     PEAT_Clock worst_covered_rank_covered = 0, worst_covered_rank_non_covered = 0, non_covered_max = 0,
-               min_fabric_len = LLONG_MAX, min_fabric_rank_len = 0;
+               min_transport_len = LLONG_MAX, min_transport_rank_len = 0;
     PEAT_FREQ local_freq = 0; // get_trace_freq();//TODO add option to set it in 1 to show TSC instead second
     if (Event_Set_Stat::tst_post == type) {
         local_freq = get_target_freq();
@@ -1125,7 +1125,7 @@ PEAT_Ratio PET_Core::print_report(const Event_Set_Stat::t_stat_type type, const 
     printf(":%*s%*s", PRINT_PARAMETERS(clock_len_max, "End "));
     printf(":%*s%*s", PRINT_PARAMETERS(clock_len_min, "Min "));
     printf(":%*s%*s", PRINT_PARAMETERS(clock_len_min, "Max "));
-    printf(":%*s%*s", PRINT_PARAMETERS(clock_len_min, "fabric%"));
+    printf(":%*s%*s", PRINT_PARAMETERS(clock_len_min, "transport%"));
     printf(":%*s%*s", PRINT_PARAMETERS(clock_len_min, "cpu% "));
     printf(":%*s%*s", PRINT_PARAMETERS(clock_len_min, "Total "));
     printf(":%*s%*s", PRINT_PARAMETERS(ratio_len, "%"));
@@ -1149,7 +1149,7 @@ PEAT_Ratio PET_Core::print_report(const Event_Set_Stat::t_stat_type type, const 
         total_fin_start = __min__(total_fin_start, st.rank_mpi_finalize_start);
         total_fin_stop = __max__(total_fin_stop, st.rank_mpi_finalize_end);
 
-        all_ranks_mpi_len += (st.cpu_len + st.fabric_len);
+        all_ranks_mpi_len += (st.cpu_len + st.transport_len);
         all_ranks_user_len += st.covered_UR_length + st.uncovered_UR_length;
         all_ranks_user_len_covered += st.covered_UR_length;
         all_ranks_init_len += st.rank_mpi_init_end - st.rank_mpi_init_start;
@@ -1170,16 +1170,16 @@ PEAT_Ratio PET_Core::print_report(const Event_Set_Stat::t_stat_type type, const 
         printf(":%*.2e", clock_len_min, (PEAT_Ratio)st.get_max_msg_length() / (PEAT_Ratio)local_freq);
         //        printf(":%*.2e", clock_len_min, st.getmin_event_length() / local_freq);
         //        printf(":%*.2e", clock_len_min, st.getmax_event_length() / local_freq);
-        if (min_fabric_len > st.fabric_len) {
-            min_fabric_len = st.fabric_len;
-            min_fabric_len_rank = it->first;
-            min_fabric_rank_len = (PEAT_Clock)rank_len;
+        if (min_transport_len > st.transport_len) {
+            min_transport_len = st.transport_len;
+            min_transport_len_rank = it->first;
+            min_transport_rank_len = (PEAT_Clock)rank_len;
         }
-        printf(":%*.2f", clock_len_min, 100 * PEAT_Ratio(st.fabric_len) / rank_len);
+        printf(":%*.2f", clock_len_min, 100 * PEAT_Ratio(st.transport_len) / rank_len);
         printf(":%*.2f", clock_len_min, 100 * PEAT_Ratio(st.cpu_len) / rank_len);
 
-        printf(":%*.2e", clock_len_min, (st.cpu_len + st.fabric_len) / (PEAT_Ratio)local_freq);
-        printf(":%*.2f", ratio_len, 100 * PEAT_Ratio(st.cpu_len + st.fabric_len) / rank_len);
+        printf(":%*.2e", clock_len_min, (st.cpu_len + st.transport_len) / (PEAT_Ratio)local_freq);
+        printf(":%*.2f", ratio_len, 100 * PEAT_Ratio(st.cpu_len + st.transport_len) / rank_len);
 
         PEAT_Ratio add = (st.covered_UR_length + st.uncovered_UR_length) == 0;
 
@@ -1233,7 +1233,7 @@ PEAT_Ratio PET_Core::print_report(const Event_Set_Stat::t_stat_type type, const 
     if (type == Event_Set_Stat::tst_post) {
         PEAT_Ratio rank_non_covered_percent = worst_covered_rank_non_covered ? 100.0 * PEAT_Ratio(worst_covered_rank_non_covered) / PEAT_Ratio(worst_covered_rank_non_covered + worst_covered_rank_covered) : 0;
         printf("Worst covered rank: %d (%.2f%%)\n", worst_covered_rank, rank_non_covered_percent);
-        printf("Minimum fabric time: %lld (%.2f%%) in rank %d\n", min_fabric_len, 100 * PEAT_Ratio(min_fabric_len) / PEAT_Ratio(min_fabric_rank_len), min_fabric_len_rank);
+        printf("Minimum transport time: %lld (%.2f%%) in rank %d\n", min_transport_len, 100 * PEAT_Ratio(min_transport_len) / PEAT_Ratio(min_transport_rank_len), min_transport_len_rank);
     }
     return model_total_length / local_freq;
 }
@@ -1381,7 +1381,7 @@ void PET_Core::write_event_profile(const std::string &name, const Event_Set_Stat
     const std::map<PEAT_Rank, Stat> &stat_local = stat.get_stat(type);
     for (std::map<PEAT_Rank, Stat>::const_iterator stat_it = stat_local.begin(); stat_it != stat_local.end(); ++stat_it) {
         const Stat &st = stat_it->second;
-        PEAT_Clock cur_ranks_mpi_len = st.fabric_len + st.cpu_len, cur_ranks_user_len = st.covered_UR_length + st.uncovered_UR_length;
+        PEAT_Clock cur_ranks_mpi_len = st.transport_len + st.cpu_len, cur_ranks_user_len = st.covered_UR_length + st.uncovered_UR_length;
         all_ranks_mpi_len += cur_ranks_mpi_len;
         all_ranks_user_len += cur_ranks_user_len;
         if (max_ranks_mpi_len + max_ranks_user_len < cur_ranks_mpi_len + cur_ranks_user_len) {
@@ -1405,7 +1405,7 @@ void PET_Core::write_event_profile(const std::string &name, const Event_Set_Stat
     profile_file.printf(0, ":%*s%*s", PRINT_PARAMETERS(2 * len + 1, "Volume (Send/Recv)"));
     profile_file.printf(0, ":%*s%*s", PRINT_PARAMETERS(len, "CPU"));
     profile_file.printf(0, ":%*s%*s", PRINT_PARAMETERS(len1, "%"));
-    profile_file.printf(0, ":%*s%*s", PRINT_PARAMETERS(len, "Fabric"));
+    profile_file.printf(0, ":%*s%*s", PRINT_PARAMETERS(len, "Transport"));
     profile_file.printf(0, ":%*s%*s", PRINT_PARAMETERS(len1, "%"));
     profile_file.printf(0, ":%*s%*s", PRINT_PARAMETERS(len, "Wait"));
     profile_file.printf(0, ":%*s%*s", PRINT_PARAMETERS(len1, "%"));
@@ -1420,7 +1420,7 @@ void PET_Core::write_event_profile(const std::string &name, const Event_Set_Stat
 
     for (std::map<PEAT_Rank, std::map<PEAT_Func_ID_Pair, std::map<PEAT_Message_Size, MPI_Event_Stat>>>::iterator MPI_Event_Stat_it = stat.get_func_stat(type).begin(); MPI_Event_Stat_it != stat.get_func_stat(type).end(); ++MPI_Event_Stat_it) {
         PEAT_Clock cpu_sum = 0,
-                   fabric_sum = 0,
+                   transport_sum = 0,
                    wait_sum = 0,
                    overlap_sum = 0;
         std::map<PEAT_Func_ID_Pair, std::map<PEAT_Message_Size, MPI_Event_Stat>> &mpi_event_stat = MPI_Event_Stat_it->second;
@@ -1442,9 +1442,9 @@ void PET_Core::write_event_profile(const std::string &name, const Event_Set_Stat
                 profile_file.printf(0, ":%*lld", len, event_stat.cpu());
                 cpu_sum += event_stat.prolog + event_stat.epilog;
                 profile_file.printf(0, ":%*.3f", len1, 100 * PEAT_Ratio(event_stat.cpu()) / max_ranks_app_len);
-                profile_file.printf(0, ":%*lld", len, event_stat.fabric);
-                fabric_sum += event_stat.fabric;
-                profile_file.printf(0, ":%*.3f", len1, 100 * PEAT_Ratio(event_stat.fabric) / max_ranks_app_len);
+                profile_file.printf(0, ":%*lld", len, event_stat.transport);
+                transport_sum += event_stat.transport;
+                profile_file.printf(0, ":%*.3f", len1, 100 * PEAT_Ratio(event_stat.transport) / max_ranks_app_len);
                 profile_file.printf(0, ":%*lld", len, event_stat.wait);
                 wait_sum += event_stat.wait;
                 profile_file.printf(0, ":%*.3f", len1, 100 * PEAT_Ratio(event_stat.wait) / max_ranks_app_len);
@@ -1461,8 +1461,8 @@ void PET_Core::write_event_profile(const std::string &name, const Event_Set_Stat
         profile_file.printf(0, ":%*lld", len, cpu_sum);
         profile_file.printf(0, ":%*.2f", len1, 100 * PEAT_Ratio(cpu_sum) / max_ranks_app_len);
         // profile_file.printf(0, ":%*lld", 4 * len + 3, active_sum);
-        profile_file.printf(0, ":%*lld", len, fabric_sum);
-        profile_file.printf(0, ":%*.2f", len1, 100 * PEAT_Ratio(fabric_sum) / max_ranks_app_len);
+        profile_file.printf(0, ":%*lld", len, transport_sum);
+        profile_file.printf(0, ":%*.2f", len1, 100 * PEAT_Ratio(transport_sum) / max_ranks_app_len);
         profile_file.printf(0, ":%*lld", len, wait_sum);
         profile_file.printf(0, ":%*.2f", len1, 100 * PEAT_Ratio(wait_sum) / max_ranks_app_len);
         profile_file.printf(0, ":%*lld", len, overlap_sum);
@@ -1486,7 +1486,7 @@ void PET_Core::write_trace_info(const std::string& name)
 	gzprintf( trace_info_file_ptr, "PEATTRACEINFO\n" );
 	gzprintf( trace_info_file_ptr, "%d|%s|%s|%s|%s|%s|%s|%s|%s\n", PEAT_RT_Paths, globals.input_path.c_str(),
 		globals.trace_files.c_str(),
-		globals.mpi_files.c_str(), globals.hwc_files.c_str(), globals.bind_files.c_str(), globals.fab_files.c_str(), globals.com_ext.c_str(), globals.app_ext.c_str() );
+		globals.mpi_files.c_str(), globals.hwc_files.c_str(), globals.bind_files.c_str(), globals.transport_files.c_str(), globals.com_ext.c_str(), globals.app_ext.c_str() );
 	gzprintf( trace_info_file_ptr, "%d|%lld\n", PEAT_RT_CPU_Freq, get_target_freq());
 	gzprintf( trace_info_file_ptr, "%d|%d|%d|%d\n", PEAT_RT_Var_Block_Info, model_id.num_tscs, model_id.num_hwcs, model_id.num_addrs );
 	if ( collectives_bound >0) traceinfo_file.printf(0, "%d|%lld\n", PEAT_RT_Bind_Collective, collectives_bound);
@@ -1529,7 +1529,7 @@ void PET_Core::write_trace_info(const std::string &name)
         traceinfo_file.printf(0, "PEATTRACEINFO\n");
         traceinfo_file.printf(0, "%d|%s|%s|%s|%s|%s|%s|%s|%s\n", PEAT_RT_Paths, peat_get_relative_path(globals.output_path, globals.input_path).c_str(),
                              globals.trace_files.c_str(),
-                             globals.mpi_files.c_str(), globals.hwc_files.c_str(), globals.bind_files.c_str(), globals.fab_files.c_str(), globals.com_ext.c_str(), globals.app_ext.c_str());
+                             globals.mpi_files.c_str(), globals.hwc_files.c_str(), globals.bind_files.c_str(), globals.transport_files.c_str(), globals.com_ext.c_str(), globals.app_ext.c_str());
         traceinfo_file.printf(0, "%d|%lld\n", PEAT_RT_CPU_Freq, ptp->get_trace_freq(0));
         traceinfo_file.printf(0, "%d|%d|%d|%d\n", PEAT_RT_Var_Block_Info, model_id.num_tscs, model_id.num_hwcs, model_id.num_addrs);
         if (collectives_bound > 0)

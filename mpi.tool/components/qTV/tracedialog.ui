@@ -461,11 +461,11 @@
      </item>
     </widget>
    </widget>
-   <widget class="QWidget" name="Fabric">
+   <widget class="QWidget" name="Transport">
     <attribute name="title">
-     <string>Fabric</string>
+     <string>Transport</string>
     </attribute>
-    <widget class="QCheckBox" name="checkBoxLoadFabEvents">
+    <widget class="QCheckBox" name="checkBoxLoadTransportEvents">
      <property name="geometry">
       <rect>
        <x>0</x>
@@ -475,7 +475,7 @@
       </rect>
      </property>
      <property name="text">
-      <string>Load Fabric Events</string>
+      <string>Load Transport Events</string>
      </property>
      <property name="checked">
       <bool>true</bool>

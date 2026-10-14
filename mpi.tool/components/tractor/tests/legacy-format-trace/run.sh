@@ -8,13 +8,13 @@ export libfabric_eng='-eng'
 set -x
 
 LD_PRELOAD=../../../../lib/intel/libtractor.mpich5.eng.so 
-LD_PRELOAD="$LD_PRELOAD:../../../../lib/intel/libtractor_fab_ofi.so"
+LD_PRELOAD="$LD_PRELOAD:../../../../lib/intel/libtractor_transport_ofi.so"
 
 
 export PEAT_TRACTOR_PRINT_FUNC_NAMES=1
 export PEAT_TRACTOR_STORE_MAP=1
-export PEAT_TRACTOR_COLLECT_FAB=1
-export PEAT_TRACTOR_FAB_LAYER=ofi
+export PEAT_TRACTOR_COLLECT_TRANSPORT=1
+export PEAT_TRACTOR_TRANSPORT_LAYER=ofi
 export PEAT_TRACTOR_WRITE_TRACE=1
 export I_MPI_DEBUG=4
 #export PEAT_TRACTOR_ONE_TIME_ALLOC=100

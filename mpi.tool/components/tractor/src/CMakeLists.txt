@@ -17,8 +17,8 @@
 #
 #
 # CMake build for tractor (mirrors src/Makefile), including the
-# TARGET=fab_layers standalone shim build and the legacy single-fabric
-# FABRIC=PSM2/VERBS/PSM3/UCX/OFI modes. BUILD_TRACTOR_ENGINEERING_VERSION=auto
+# TARGET=transport_layers standalone shim build and the legacy single-layer
+# TRANSPORT=PSM2/VERBS/PSM3/UCX/OFI modes. BUILD_TRACTOR_ENGINEERING_VERSION=auto
 # detects a patched MPI by trying to link against mpi_internal_comm_translate_rank
 # (an MPICH_API_PUBLIC symbol every ../../patches/* patch adds) - see its
 # definition below for the reasoning and caveats.
@@ -68,26 +68,26 @@ message(STATUS "tractor: COMPILER=${TRACTOR_COMPILER} (CXX compiler id: ${CMAKE_
 # 2. MPI vendor + version -> Makefile-style TARGET
 #    -DTRACTOR_TARGET=auto (default) probes CMAKE_CXX_COMPILER to detect the
 #    vendor/version; set it to impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|
-#    cray|fab_layers to skip probing and use that flavor directly ('cray' is
+#    cray|transport_layers to skip probing and use that flavor directly ('cray' is
 #    just an alias that normalizes to mpich4 - same MPICH-family struct layout).
 # ---------------------------------------------------------------------------
 set(TRACTOR_TARGET "auto" CACHE STRING
-  "MPI flavor: auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|fab_layers. \
+  "MPI flavor: auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers. \
 'auto' detects the vendor/version from CMAKE_CXX_COMPILER; any other value is used \
 directly and skips probing.")
-set_property(CACHE TRACTOR_TARGET PROPERTY STRINGS auto impi mpich4 mpich5 mvapich2 mvapich4 openmpi cray fab_layers)
+set_property(CACHE TRACTOR_TARGET PROPERTY STRINGS auto impi mpich4 mpich5 mvapich2 mvapich4 openmpi cray transport_layers)
 string(TOLOWER "${TRACTOR_TARGET}" _tractor_target_lower)
 
 if(_tractor_target_lower STREQUAL "cray")
   set(_tractor_target_lower mpich4) # Cray MPICH builds like stock MPICH 4.x
-  set(TRACTOR_TARGET mpich4 CACHE STRING "MPI flavor: auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|fab_layers" FORCE)
+  set(TRACTOR_TARGET mpich4 CACHE STRING "MPI flavor: auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers" FORCE)
 endif()
 
-if(NOT _tractor_target_lower MATCHES "^(auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|fab_layers)$")
-  message(FATAL_ERROR "tractor: invalid TRACTOR_TARGET='${TRACTOR_TARGET}' (expected auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|fab_layers)")
+if(NOT _tractor_target_lower MATCHES "^(auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|transport_layers)$")
+  message(FATAL_ERROR "tractor: invalid TRACTOR_TARGET='${TRACTOR_TARGET}' (expected auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers)")
 endif()
 
-if(NOT _tractor_target_lower STREQUAL "auto" AND NOT _tractor_target_lower STREQUAL "fab_layers")
+if(NOT _tractor_target_lower STREQUAL "auto" AND NOT _tractor_target_lower STREQUAL "transport_layers")
   # derive an informational vendor name for the status message below - no probing needed
   if(_tractor_target_lower MATCHES "^mpich")
     set(TRACTOR_MPI_VENDOR mpich CACHE STRING "MPI vendor (from explicit TRACTOR_TARGET)" FORCE)
@@ -198,7 +198,7 @@ if(_tractor_target_lower STREQUAL "auto")
 
   set(TRACTOR_MPI_VENDOR  ${_mpi_vendor}  CACHE STRING "detected MPI vendor (mpich|mvapich|openmpi|impi|cray)" FORCE)
   set(TRACTOR_MPI_VERSION "${_mpi_version}" CACHE STRING "detected MPI version" FORCE)
-  set(TRACTOR_TARGET ${_tractor_target} CACHE STRING "MPI flavor: auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|fab_layers" FORCE)
+  set(TRACTOR_TARGET ${_tractor_target} CACHE STRING "MPI flavor: auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers" FORCE)
 endif()
 message(STATUS "tractor: MPI vendor=${TRACTOR_MPI_VENDOR} version=${TRACTOR_MPI_VERSION} -> TARGET=${TRACTOR_TARGET}")
 
@@ -212,11 +212,11 @@ set(BUF  OFF   CACHE BOOL   "extra MPI buffer fields (MPIBUFFERS)")
 set(V2P  OFF   CACHE BOOL   "virtual->physical address resolution (VIRT2PHYS)")
 set(HWC  "off" CACHE STRING "hardware counters tag: off|RDPMC")
 
-set(FABRIC "off" CACHE STRING
-  "fabric-level interception: off|on|PSM2|VERBS|PSM3|UCX|OFI. 'on' and the legacy PSM2/VERBS/PSM3/UCX/OFI \
-values embed one fabric's interception into the core lib; for the standalone psm2+psm3+ucx+ofi shim \
-.so build use -DTRACTOR_TARGET=fab_layers instead")
-set_property(CACHE FABRIC PROPERTY STRINGS off on PSM2 VERBS PSM3 UCX OFI)
+set(TRANSPORT "off" CACHE STRING
+  "transport-API interception: off|on|PSM2|VERBS|PSM3|UCX|OFI. 'on' and the legacy PSM2/VERBS/PSM3/UCX/OFI \
+values embed one layer's interception into the core lib; for the standalone psm2+psm3+ucx+ofi shim \
+.so build use -DTRACTOR_TARGET=transport_layers instead")
+set_property(CACHE TRANSPORT PROPERTY STRINGS off on PSM2 VERBS PSM3 UCX OFI)
 
 set(OMPT       ON  CACHE BOOL "OpenMP interception")
 set(PTPD_BUILD ON  CACHE BOOL "build the ptpd PTP-daemon binary")
@@ -236,8 +236,8 @@ set(BUILD_TRACTOR_ENGINEERING_VERSION "auto" CACHE STRING
 set_property(CACHE BUILD_TRACTOR_ENGINEERING_VERSION PROPERTY STRINGS auto off on)
 string(TOLOWER "${BUILD_TRACTOR_ENGINEERING_VERSION}" _eng_lower)
 if(_eng_lower STREQUAL "auto")
-  if(TRACTOR_TARGET STREQUAL "fab_layers")
-    message(STATUS "tractor: BUILD_TRACTOR_ENGINEERING_VERSION=auto -> 'off' (not applicable to TARGET=fab_layers)")
+  if(TRACTOR_TARGET STREQUAL "transport_layers")
+    message(STATUS "tractor: BUILD_TRACTOR_ENGINEERING_VERSION=auto -> 'off' (not applicable to TARGET=transport_layers)")
     set(_eng_lower off)
   else()
     # every patch under ../../patches (mpich-3.4.3, mpich-4.3.2, mpich-5.0.1, mpich-5.0.2, mvapich-2.3.5,
@@ -261,14 +261,14 @@ endif()
 
 string(TOLOWER "${MEM}" _mem_lower)
 string(TOLOWER "${HWC}" _hwc_lower)
-string(TOUPPER "${FABRIC}" _fabric_upper)
+string(TOUPPER "${TRANSPORT}" _transport_upper)
 
 # ---------------------------------------------------------------------------
 # Third-party dependencies
 # ---------------------------------------------------------------------------
 find_package(ZLIB REQUIRED)
 
-# only used when FABRIC != off or TRACTOR_TARGET=fab_layers - defaults match Build.sh's
+# only used when TRANSPORT != off or TRACTOR_TARGET=transport_layers - defaults match Build.sh's
 if(NOT VERBSPATH)
   if(DEFINED ENV{VERBSPATH})
     set(VERBSPATH "$ENV{VERBSPATH}")
@@ -334,59 +334,59 @@ if(GPU)
   set(TRACTOR_EXTRANAME "${TRACTOR_EXTRANAME}.gpu")
 endif()
 
-# fab_func_layers: extra "-l <layer>[=outfile]" args forwarded to mpi_layer.pl.
+# transport_func_layers: extra "-l <layer>[=outfile]" args forwarded to mpi_layer.pl.
 # TARGET=mvapich2 always forwards verbs/smpi/psm2 into the core mpi_layer.cpp
 # (ibv_*/smpi calls are static-inline, so the patched mvapich2 source calls
-# mv2_proxy_* directly instead of dlsym-interception); TARGET=fab_layers
+# mv2_proxy_* directly instead of dlsym-interception); TARGET=transport_layers
 # overrides this entirely with its own 4 standalone-shim outfiles.
-set(_fab_func_layers)
+set(_transport_func_layers)
 set(_mpi_layer_skip_core off)
-set(_fab_shim_outputs)
-if(TRACTOR_TARGET STREQUAL "fab_layers")
+set(_transport_shim_outputs)
+if(TRACTOR_TARGET STREQUAL "transport_layers")
   set(_mpi_layer_skip_core on)
-  set(_fab_func_layers
-    -l psm2=mpi_layer_fab_psm2.cpp -l psm3=mpi_layer_fab_psm3.cpp
-    -l ucx=mpi_layer_fab_ucx.cpp   -l ofi=mpi_layer_fab_ofi.cpp)
-  set(_fab_shim_outputs
-    ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_fab_psm2.cpp ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_fab_psm3.cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_fab_ucx.cpp  ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_fab_ofi.cpp)
+  set(_transport_func_layers
+    -l psm2=mpi_layer_transport_psm2.cpp -l psm3=mpi_layer_transport_psm3.cpp
+    -l ucx=mpi_layer_transport_ucx.cpp   -l ofi=mpi_layer_transport_ofi.cpp)
+  set(_transport_shim_outputs
+    ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_transport_psm2.cpp ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_transport_psm3.cpp
+    ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_transport_ucx.cpp  ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_transport_ofi.cpp)
 else()
   if(TRACTOR_TARGET STREQUAL "mvapich2")
-    list(APPEND _fab_func_layers -l verbs -l smpi -l psm2)
+    list(APPEND _transport_func_layers -l verbs -l smpi -l psm2)
   endif()
 
-  # FABRIC: 'on' is generic multi-layer core support; PSM2/VERBS/PSM3/UCX/OFI
-  # are the legacy single-fabric-only core-embedded builds
-  if(_fabric_upper STREQUAL "ON")
-    list(APPEND TRACTOR_CONTROLS _FAB_PROFILE_)
-    list(APPEND TRACTOR_SOURCES t_fab.cpp)
-  elseif(_fabric_upper STREQUAL "PSM2")
+  # TRANSPORT: 'on' is generic multi-layer core support; PSM2/VERBS/PSM3/UCX/OFI
+  # are the legacy single-layer-only core-embedded builds
+  if(_transport_upper STREQUAL "ON")
+    list(APPEND TRACTOR_CONTROLS _TRANSPORT_PROFILE_)
+    list(APPEND TRACTOR_SOURCES t_transport.cpp)
+  elseif(_transport_upper STREQUAL "PSM2")
     list(APPEND TRACTOR_CONTROLS _PSM2_PROFILE_)
-    list(APPEND TRACTOR_SOURCES t_fab.cpp)
-    list(APPEND _fab_func_layers -l psm2)
+    list(APPEND TRACTOR_SOURCES t_transport.cpp)
+    list(APPEND _transport_func_layers -l psm2)
     set(TRACTOR_EXTRANAME "${TRACTOR_EXTRANAME}.psm2")
-  elseif(_fabric_upper STREQUAL "VERBS")
+  elseif(_transport_upper STREQUAL "VERBS")
     list(APPEND TRACTOR_CONTROLS _VERBS_PROFILE_)
-    list(APPEND TRACTOR_SOURCES t_fab.cpp)
-    list(APPEND _fab_func_layers -l verbs -l smpi)
+    list(APPEND TRACTOR_SOURCES t_transport.cpp)
+    list(APPEND _transport_func_layers -l verbs -l smpi)
     set(TRACTOR_EXTRANAME "${TRACTOR_EXTRANAME}.verbs")
-  elseif(_fabric_upper STREQUAL "PSM3")
+  elseif(_transport_upper STREQUAL "PSM3")
     list(APPEND TRACTOR_CONTROLS _PSM3_PROFILE_)
-    list(APPEND TRACTOR_SOURCES t_fab.cpp)
-    list(APPEND _fab_func_layers -l psm3)
+    list(APPEND TRACTOR_SOURCES t_transport.cpp)
+    list(APPEND _transport_func_layers -l psm3)
     set(TRACTOR_EXTRANAME "${TRACTOR_EXTRANAME}.psm3")
-  elseif(_fabric_upper STREQUAL "UCX")
+  elseif(_transport_upper STREQUAL "UCX")
     list(APPEND TRACTOR_CONTROLS _UCX_PROFILE_)
-    list(APPEND TRACTOR_SOURCES t_fab.cpp)
-    list(APPEND _fab_func_layers -l ucx)
+    list(APPEND TRACTOR_SOURCES t_transport.cpp)
+    list(APPEND _transport_func_layers -l ucx)
     set(TRACTOR_EXTRANAME "${TRACTOR_EXTRANAME}.ucx")
-  elseif(_fabric_upper STREQUAL "OFI")
+  elseif(_transport_upper STREQUAL "OFI")
     list(APPEND TRACTOR_CONTROLS _OFI_PROFILE_)
-    list(APPEND TRACTOR_SOURCES t_fab.cpp)
-    list(APPEND _fab_func_layers -l ofi)
+    list(APPEND TRACTOR_SOURCES t_transport.cpp)
+    list(APPEND _transport_func_layers -l ofi)
     set(TRACTOR_EXTRANAME "${TRACTOR_EXTRANAME}.ofi")
-  elseif(NOT _fabric_upper STREQUAL "OFF")
-    message(FATAL_ERROR "tractor: invalid FABRIC='${FABRIC}' (expected off|on|PSM2|VERBS|PSM3|UCX|OFI)")
+  elseif(NOT _transport_upper STREQUAL "OFF")
+    message(FATAL_ERROR "tractor: invalid TRANSPORT='${TRANSPORT}' (expected off|on|PSM2|VERBS|PSM3|UCX|OFI)")
   endif()
 endif()
 
@@ -416,7 +416,7 @@ elseif(TRACTOR_TARGET STREQUAL "mvapich4")
   set(_maxmpi 4)
 endif()
 # _STATUS_LO_HI_ picks the MPICH-family status struct layout; OpenMPI uses its
-# own (_ucount) - applies to every other TARGET, including fab_layers
+# own (_ucount) - applies to every other TARGET, including transport_layers
 if(NOT TRACTOR_TARGET STREQUAL "openmpi")
   list(APPEND TRACTOR_CONTROLS _STATUS_LO_HI_)
 endif()
@@ -500,7 +500,7 @@ if(DIAG)
   set(TRACTOR_DBG_SUFFIX "_dbg")
   set(TRACTOR_OPT -O0)
   list(APPEND TRACTOR_CONTROLS
-    _TRACTOR_DIAG_ _TRACTOR_DEBUG_TRACTOR_LAYER_ENTRY_EXIT_ _TRACTOR_DEBUG_FAB_LAYER_ENTRY_EXIT_
+    _TRACTOR_DIAG_ _TRACTOR_DEBUG_TRACTOR_LAYER_ENTRY_EXIT_ _TRACTOR_DEBUG_TRANSPORT_LAYER_ENTRY_EXIT_
     _TRACTOR_DEBUG_MPI_LAYER_ENTRY_EXIT_ _TRACTOR_DEBUG_GPU_LAYER_ENTRY_EXIT_
     _TRACTOR_DEBUG_OMPT_ENTRY_EXIT_ _TRACTOR_DEBUG_COMM_ENTRY_EXIT_)
 else()
@@ -510,8 +510,8 @@ endif()
 
 set(TRACTOR_LIB_SUFFIX "${TRACTOR_DBG_SUFFIX}.${TRACTOR_TARGET}${TRACTOR_EXTRANAME}")
 set(TRACTOR_BIN_SUFFIX "${TRACTOR_DBG_SUFFIX}.${TRACTOR_TARGET}")
-# fab shims are TARGET-independent (one build works for every MPI, see Makefile) - no TARGET in the suffix
-set(FABLIBSUFFIX "${TRACTOR_DBG_SUFFIX}${TRACTOR_EXTRANAME}")
+# transport shims are TARGET-independent (one build works for every MPI, see Makefile) - no TARGET in the suffix
+set(TRANSPORTLIBSUFFIX "${TRACTOR_DBG_SUFFIX}${TRACTOR_EXTRANAME}")
 list(APPEND TRACTOR_CONTROLS
   _TRACTOR_LIB_SUFFIX_="${TRACTOR_LIB_SUFFIX}" _TRACTOR_BIN_SUFFIX_="${TRACTOR_BIN_SUFFIX}"
   _TRACTOR_ZERO_ON_ALLOCATE_)
@@ -572,38 +572,38 @@ add_custom_command(
   VERBATIM)
 
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp ${_fab_shim_outputs}
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp ${_transport_shim_outputs}
   COMMAND ${PERL_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer.pl -p on -e ${_print_extended_stuff} -m ${_maxmpi} -t ${_pct} -c ${_parse_gpu_flag}
-          -s ${_mpi_layer_skip_core} -i mpi_func.inc -o mpi_layer.cpp ${_fab_func_layers}
+          -s ${_mpi_layer_skip_core} -i mpi_func.inc -o mpi_layer.cpp ${_transport_func_layers}
   DEPENDS mpi_layer.cpp.in mpi_layer.cpp.in.end mpi_layer.pl
           ${CMAKE_CURRENT_BINARY_DIR}/mpi_func_ids_through.h
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  COMMENT "tractor: generating mpi_layer.cpp (TARGET=${TRACTOR_TARGET}, FABRIC=${FABRIC})"
+  COMMENT "tractor: generating mpi_layer.cpp (TARGET=${TRACTOR_TARGET}, TRANSPORT=${TRANSPORT})"
   VERBATIM)
 
-add_custom_target(tractor_codegen DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp ${_fab_shim_outputs})
+add_custom_target(tractor_codegen DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp ${_transport_shim_outputs})
 
 # ---------------------------------------------------------------------------
 # Targets
 # ---------------------------------------------------------------------------
-if(TRACTOR_TARGET STREQUAL "fab_layers")
+if(TRACTOR_TARGET STREQUAL "transport_layers")
   # Standalone: only the 4 psm2/psm3/ucx/ofi shim .so's - no core lib/ptpd.
   # Each shim dlsym()'s its real symbols at runtime and never calls real MPI,
   # so (like the Makefile) it's compiled with the MPI compiler (for mpi.h)
   # but *linked* with a plain, non-MPI-wrapped C++ compiler + -ldl, to avoid
   # pulling in an unwanted libmpi dependency.
   set(TRACTOR_PLAIN_CXX "$ENV{CXX}" CACHE STRING
-    "plain (non-MPI-wrapped) C++ compiler used only to LINK the fab_layers shim .so's; defaults to \$ENV{CXX} or CMAKE_CXX_COMPILER")
+    "plain (non-MPI-wrapped) C++ compiler used only to LINK the transport_layers shim .so's; defaults to \$ENV{CXX} or CMAKE_CXX_COMPILER")
   if(NOT TRACTOR_PLAIN_CXX)
     set(TRACTOR_PLAIN_CXX ${CMAKE_CXX_COMPILER})
   endif()
 
-  set(_fab_shim_libs)
+  set(_transport_shim_libs)
 
   foreach(_layer psm2 psm3 ucx ofi)
-    set(_src ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_fab_${_layer}.cpp)
-    set(_obj ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_fab_${_layer}.o)
-    set(_soname libtractor${FABLIBSUFFIX}_fab_${_layer}.so.${TRACTOR_MAJOR}.${TRACTOR_MINOR})
+    set(_src ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_transport_${_layer}.cpp)
+    set(_obj ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_transport_${_layer}.o)
+    set(_soname libtractor${TRANSPORTLIBSUFFIX}_transport_${_layer}.so.${TRACTOR_MAJOR}.${TRACTOR_MINOR})
     set(_so ${CMAKE_CURRENT_BINARY_DIR}/${_soname})
 
     add_custom_command(
@@ -613,37 +613,37 @@ if(TRACTOR_TARGET STREQUAL "fab_layers")
               -I${VERBSPATH}/include -I${PSM2PATH}/include
               -I${CMAKE_CURRENT_SOURCE_DIR}/../../contrib/psm3/include
               -I${UCXPATH}/include -I${OFIPATH}/include
-              ${_tractor_defs} -D_FAB_PROFILE_ ${TRACTOR_CXX_MISC} ${TRACTOR_OPT} -fPIC ${_src}
+              ${_tractor_defs} -D_TRANSPORT_PROFILE_ ${TRACTOR_CXX_MISC} ${TRACTOR_OPT} -fPIC ${_src}
       DEPENDS ${_src}
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-      COMMENT "tractor(fab_layers): compiling ${_layer} shim"
+      COMMENT "tractor(transport_layers): compiling ${_layer} shim"
       VERBATIM)
 
     add_custom_command(
       OUTPUT ${_so}
       COMMAND ${TRACTOR_PLAIN_CXX} -o ${_so} ${TRACTOR_OPT} -shared -fPIC ${_obj} -ldl
       DEPENDS ${_obj}
-      COMMENT "tractor(fab_layers): linking ${_soname}"
+      COMMENT "tractor(transport_layers): linking ${_soname}"
       VERBATIM)
 
-    list(APPEND _fab_shim_libs ${_so})
+    list(APPEND _transport_shim_libs ${_so})
   endforeach()
 
-  add_custom_target(tractor_fab_layers ALL DEPENDS ${_fab_shim_libs})
-  add_dependencies(tractor_fab_layers tractor_codegen)
+  add_custom_target(tractor_transport_layers ALL DEPENDS ${_transport_shim_libs})
+  add_dependencies(tractor_transport_layers tractor_codegen)
 
-  set(_fab_install_dir ${CMAKE_CURRENT_SOURCE_DIR}/../../../lib/${TRACTOR_COMPILER})
-  install(FILES ${_fab_shim_libs} DESTINATION ${_fab_install_dir}
+  set(_transport_install_dir ${CMAKE_CURRENT_SOURCE_DIR}/../../../lib/${TRACTOR_COMPILER})
+  install(FILES ${_transport_shim_libs} DESTINATION ${_transport_install_dir}
           PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
   foreach(_layer psm2 psm3 ucx ofi)
-    set(_base tractor${FABLIBSUFFIX}_fab_${_layer})
+    set(_base tractor${TRANSPORTLIBSUFFIX}_transport_${_layer})
     install(CODE "
       execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
         lib${_base}.so.${TRACTOR_MAJOR}.${TRACTOR_MINOR} lib${_base}.so.${TRACTOR_MAJOR}
-        WORKING_DIRECTORY \"${_fab_install_dir}\")
+        WORKING_DIRECTORY \"${_transport_install_dir}\")
       execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
         lib${_base}.so.${TRACTOR_MAJOR} lib${_base}.so
-        WORKING_DIRECTORY \"${_fab_install_dir}\")
+        WORKING_DIRECTORY \"${_transport_install_dir}\")
     ")
   endforeach()
 else()
@@ -661,7 +661,7 @@ else()
   target_link_options(tractor PRIVATE ${TRACTOR_OMP_FLAG})
   target_include_directories(tractor PRIVATE . ${_common_dir} ${hwloc_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(tractor PRIVATE ${TRACTOR_LIBS} hwloc::hwloc)
-  if(NOT _fabric_upper STREQUAL "OFF")
+  if(NOT _transport_upper STREQUAL "OFF")
     target_include_directories(tractor PRIVATE
       ${VERBSPATH}/include ${PSM2PATH}/include
       ${CMAKE_CURRENT_SOURCE_DIR}/../../contrib/psm3/include ${UCXPATH}/include ${OFIPATH}/include)

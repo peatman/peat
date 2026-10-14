@@ -60,11 +60,11 @@ void TraceDialog::reselect_nodes()
     }
 }
 
-void TraceDialog::set_propertiers(std::vector<PEAT_MPI_Time> &times, std::vector<PEAT_Node_Desc> &nodes, int tmin, int tmax, int load_threads, int render_threads, bool has_fab_files)
+void TraceDialog::set_propertiers(std::vector<PEAT_MPI_Time> &times, std::vector<PEAT_Node_Desc> &nodes, int tmin, int tmax, int load_threads, int render_threads, bool has_transport_files)
 {
-    ui->checkBoxLoadFabEvents->setEnabled(has_fab_files);
-    if (!has_fab_files) {
-        ui->checkBoxLoadFabEvents->setChecked(false);
+    ui->checkBoxLoadTransportEvents->setEnabled(has_transport_files);
+    if (!has_transport_files) {
+        ui->checkBoxLoadTransportEvents->setChecked(false);
     }
     mpi_times = times;
     for (int i = 0; i < mpi_times.size(); i++) {
@@ -161,7 +161,7 @@ void TraceDialog::get_propertiers(std::set<PEAT_Rank> &ranks, int &tmin, int &tm
         ;
     }
 
-    tp.fab_functions = ui->checkBoxLoadFabEvents->isChecked();
+    tp.transport_functions = ui->checkBoxLoadTransportEvents->isChecked();
 }
 
 void TraceDialog::on_radioButtonRanks_clicked()

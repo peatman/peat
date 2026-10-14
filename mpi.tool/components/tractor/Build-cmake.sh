@@ -21,7 +21,7 @@ exit
 
 rm -rf *
 
-cmake -DCMAKE_CXX_COMPILER=$MPICXX  -DTRACTOR_TARGET=fab_layers\
+cmake -DCMAKE_CXX_COMPILER=$MPICXX  -DTRACTOR_TARGET=transport_layers\
     ../src
 
 cmake --build .

@@ -19,7 +19,7 @@
 print <<EOF
 $t_func_pointer
 $prototype {
-    __DEBUG_PROLOG_FAB_LAYER__
+    __DEBUG_PROLOG_TRANSPORT_LAYER__
 #ifndef _TRACTOR_PASSTHROUGH_
     $declare
     int i,temp_index=0;
@@ -28,13 +28,13 @@ $prototype {
     pid_t tid_in;
     int tid;
     msl_event *f_event;
-    bool l_skip_parse=tractor_finished || (gt_info(t_permit_collect_fab)==0);
+    bool l_skip_parse=tractor_finished || (gt_info(t_permit_collect_transport)==0);
     $rtdl // if necessary initialize pointer
-    // init_fab_hooks();
+    // init_transport_hooks();
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
         tsc_entry = peat_get_time_tid(&tid_in);
         tid=__msl_get_tid(tid_in);
-        __msl_fab_allocate_event(tid,&f_event,$funcid_through);
+        __msl_transport_allocate_event(tid,&f_event,$funcid_through);
         tsc_mpi_entry=peat_get_time();
     } // if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1))
 #else
@@ -49,13 +49,13 @@ $prototype {
         f_event->func_id = $funcid_through;
         f_event->tscs[0]=tsc_entry;
         f_event->tscs[1]=tsc_mpi_entry-tsc_entry;
-        f_event->fab.num_calls=1;
-        f_event->fab.total_clocks_bitween_calls=0;
+        f_event->transport.num_calls=1;
+        f_event->transport.total_clocks_bitween_calls=0;
         tsc_exit = peat_get_time();
         f_event->tscs[2]=tsc_exit - tsc_mpi_exit;
         f_event->tscs[3]=tsc_exit - tsc_entry;
-        f_event->fab.num_calls=1;
-        f_event->fab.total_clocks_bitween_calls=0;
+        f_event->transport.num_calls=1;
+        f_event->transport.total_clocks_bitween_calls=0;
         local_tool_overhead=tsc_mpi_entry-tsc_entry+tsc_exit-tsc_mpi_exit;
         global_tool_overhead += local_tool_overhead;
 #ifdef _TRACTOR_COLLECT_STAT_
@@ -65,7 +65,7 @@ $prototype {
 #endif
     } // if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1))
 #endif
-    __DEBUG_EPILOG_FAB_LAYER__
+    __DEBUG_EPILOG_TRANSPORT_LAYER__
     $return
 }
 

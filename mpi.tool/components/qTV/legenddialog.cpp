@@ -45,7 +45,7 @@ LegendDialog::LegendDialog(QWidget *parent)
     event_items.insert("GPU Transfer", TV_BRUSH_EVENT_TYPE_GPU);
     event_items.insert("GPU Other", TV_BRUSH_EVENT_TYPE_OTHER);
     event_items.insert("PE Part", TV_BRUSH_EVENT_TYPE_PE);
-    event_items.insert("Fabric", TV_BRUSH_EVENT_TYPE_FAB);
+    event_items.insert("Transport", TV_BRUSH_EVENT_TYPE_TRANSPORT);
     connect(this, SIGNAL(show_color_dialog(QListWidget *)), this, SLOT(color_dialog(QListWidget *)));
 }
 

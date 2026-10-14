@@ -245,8 +245,8 @@ tractor::tractor(void)
 
     store_map = 0;
 
-#ifdef _FAB_PROFILE_
-    t_permit_collect_fab = 0;
+#ifdef _TRANSPORT_PROFILE_
+    t_permit_collect_transport = 0;
 #endif
 
     onetimealloc = defonetimealloc;
@@ -726,8 +726,8 @@ void tractor::parse_env_vars(void)
     temp = __msl_getenv("PEAT_TRACTOR_ABORT_SLEEP");
     if (temp)
         abort_sleep = atoi(temp);
-#ifdef _FAB_PROFILE_
-        t_collect_fab = is_true(__msl_getenv("PEAT_TRACTOR_COLLECT_FAB"), t_collect_fab);
+#ifdef _TRANSPORT_PROFILE_
+        t_collect_transport = is_true(__msl_getenv("PEAT_TRACTOR_COLLECT_TRANSPORT"), t_collect_transport);
 #endif
 
     if (!t_write_main_files) {
@@ -743,17 +743,17 @@ void tractor::parse_env_vars(void)
     if (temp)
         compress_events = atoi(temp);
 /*
-#if defined(_FAB_PROFILE_)
-    temp = __msl_getenv("PEAT_TRACTOR_FAB_LAYER");
-    fab_layer = T_FAB_LAYER_NONE;
+#if defined(_TRANSPORT_PROFILE_)
+    temp = __msl_getenv("PEAT_TRACTOR_TRANSPORT_LAYER");
+    transport_layer = T_TRANSPORT_LAYER_NONE;
     if (temp) {
-        if (strcasecmp(temp,"VERBS")==0) fab_layer=T_FAB_LAYER_VERBS;
-        else if (strcasecmp(temp,"OFI")==0) fab_layer=T_FAB_LAYER_OFI;
-        else if (strcasecmp(temp,"PSM2")==0) fab_layer=T_FAB_LAYER_PSM2;
-        else if (strcasecmp(temp,"PSM3")==0) fab_layer=T_FAB_LAYER_PSM3;
-        else if (strcasecmp(temp,"UCX")==0) fab_layer=T_FAB_LAYER_UCX;
-        if (fab_layer == T_FAB_LAYER_NONE) {
-            printf(" Unknown Fab Layer specified:%s. No Fab events will be traced\n",temp);
+        if (strcasecmp(temp,"VERBS")==0) transport_layer=T_TRANSPORT_LAYER_VERBS;
+        else if (strcasecmp(temp,"OFI")==0) transport_layer=T_TRANSPORT_LAYER_OFI;
+        else if (strcasecmp(temp,"PSM2")==0) transport_layer=T_TRANSPORT_LAYER_PSM2;
+        else if (strcasecmp(temp,"PSM3")==0) transport_layer=T_TRANSPORT_LAYER_PSM3;
+        else if (strcasecmp(temp,"UCX")==0) transport_layer=T_TRANSPORT_LAYER_UCX;
+        if (transport_layer == T_TRANSPORT_LAYER_NONE) {
+            printf(" Unknown Transport Layer specified:%s. No Transport events will be traced\n",temp);
         }
     }
 #endif
@@ -969,10 +969,10 @@ void tractor::init(void)
     char pid[16];
     msl_event *event;
     debug_printf("Rank %d: Tractor pre_initialization started...\n", t_mpi_rank);
-#if defined(_FAB_PROFILE_)
-    if (t_collect_fab && t_mpi_rank >= 0) {
-        // t_fab_prof.init_hooks();
-        t_fab_prof.calls_limit = calls_limit;
+#if defined(_TRANSPORT_PROFILE_)
+    if (t_collect_transport && t_mpi_rank >= 0) {
+        // t_transport_prof.init_hooks();
+        t_transport_prof.calls_limit = calls_limit;
     }
 #endif
 
@@ -1008,10 +1008,10 @@ void tractor::init(void)
         memset(fps_extras, 0, slots * sizeof(FILE *));
     }
 
-#if defined(_FAB_PROFILE_)
-    if (t_collect_fab && t_mpi_rank >= 0) {
-        t_fab_prof.init(t_max_threads, stat_dir, tmp_dir, stat_template, use_realtime_dump);
-        t_permit_collect_fab = 1;
+#if defined(_TRANSPORT_PROFILE_)
+    if (t_collect_transport && t_mpi_rank >= 0) {
+        t_transport_prof.init(t_max_threads, stat_dir, tmp_dir, stat_template, use_realtime_dump);
+        t_permit_collect_transport = 1;
     }
 #endif
     char tbuf[MAX_PATH];
@@ -1209,8 +1209,8 @@ void tractor::pre_finalize(int abort)
     debug_printf("rank %d: msl_pre_finalize called...\n", t_mpi_rank);
     if (tractor_initialized < 1)
         return;
-#ifdef _FAB_PROFILE_
-    t_permit_collect_fab = 0;
+#ifdef _TRANSPORT_PROFILE_
+    t_permit_collect_transport = 0;
 #endif
     int old_skip_parse =  mpi_skip_parse;
     mpi_skip_parse = 1;
@@ -2906,9 +2906,9 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
     if (fps_hwc)
         gzclose(fps_hwc);
 
-#if defined(_FAB_PROFILE_)
-    if (t_write_main_files && t_collect_fab && t_mpi_rank >= 0)
-        ret.max_fab_uniq_idx = t_fab_prof.write_fab_file(print_names);
+#if defined(_TRANSPORT_PROFILE_)
+    if (t_write_main_files && t_collect_transport && t_mpi_rank >= 0)
+        ret.max_transport_uniq_idx = t_transport_prof.write_transport_file(print_names);
 #endif
     __DEBUG_EPILOG_TRACTOR_LAYER__
     return (ret);
@@ -3106,10 +3106,10 @@ void tractor::write_com_file(const num_processed_events &num_of_events, /*user_r
 
     gzprintf(fps_com, "%d:---=== PEAT TRACTOR V%d.%d. Build Date %s(%s). ===---\n", PEAT_RT_Remark, _TRACTOR_MAJOR_VERSION_, _TRACTOR_MINOR_VERSION_, _TRACTOR_BUILD_DATE_, __DATE__);
     gzprintf(fps_com, "%d:Application begins. Max Threads %d. Return Level %u.\n", PEAT_RT_Remark, t_max_threads, max_ret_level);
-    gzprintf(fps_com, "%d:msl_event=%d : pp=%d,req=%d,coll=%d,comm=%d,bl=%d,osc=%d,fio=%d,l=%d,pc=%d,fab=%d\n", PEAT_RT_Remark, sizeof(msl_event),
+    gzprintf(fps_com, "%d:msl_event=%d : pp=%d,req=%d,coll=%d,comm=%d,bl=%d,osc=%d,fio=%d,l=%d,pc=%d,transport=%d\n", PEAT_RT_Remark, sizeof(msl_event),
              sizeof(msl_event::p2p_pr_pb), sizeof(msl_event::requests), sizeof(msl_event::collective),
              sizeof(msl_event::comms), sizeof(msl_event::buf_local), sizeof(msl_event::one_sided_comm), sizeof(msl_event::mpi_fio),
-             sizeof(msl_event::local), sizeof(msl_event::pcontrol), sizeof(msl_event::fab));
+             sizeof(msl_event::local), sizeof(msl_event::pcontrol), sizeof(msl_event::transport));
 
     gzprintf(fps_com, "%d:These functions handled even outside pcontrols:\n", PEAT_RT_Remark);
     for (int i = 0; i < MPI_MAX_FUNCID_THROUGH; i++) {
@@ -3126,7 +3126,7 @@ void tractor::write_com_file(const num_processed_events &num_of_events, /*user_r
     gzprintf(fps_com, "%d:%lld:%lld:%lld:%lld\n", PEAT_RT_App_Start_Stop_Info, app_start, app_end, app_end - app_start, t_tsc_init);
     gzprintf(fps_com, "%d:%lld:%lld:%lld:%lld\n", PEAT_RT_MPM_Rank_Time_Stamp, app_start, app_start_parallel, app_end_parallel, app_end);
     gzprintf(fps_com, "%d:%d:%lld:%lld\n", PEAT_RT_CPU_Freq, 0, proc_freq[0], proc_freq[1]);
-    gzprintf(fps_com, "%d:%lld:%lld:%lld:%d:%lld\n", PEAT_RT_Number_Of_Events, num_of_events.processed_events, num_of_events.max_uniq_idx, num_of_events.max_thread_id, num_of_events.nesting_levels, num_of_events.max_fab_uniq_idx); /* 4: id columns (nesting levels), 5: fabric events */
+    gzprintf(fps_com, "%d:%lld:%lld:%lld:%d:%lld\n", PEAT_RT_Number_Of_Events, num_of_events.processed_events, num_of_events.max_uniq_idx, num_of_events.max_thread_id, num_of_events.nesting_levels, num_of_events.max_transport_uniq_idx); /* 4: id columns (nesting levels), 5: transport-API events */
     gzprintf(fps_com, "%d:%d\n", PEAT_RT_HWLOC_Proc_Record, core_id);
     if (node_topology.length() > 0)
         gzprintf(fps_com, "%d%s\n", PEAT_RT_HWLOC_Node_Record, node_topology.c_str());
@@ -3352,9 +3352,9 @@ int tractor::t_check_chain(pid_t tid, int level)
 {
     if (use_realtime_dump) {
         check_chain(tid, level);
-#if defined(_FAB_PROFILE_)
-        if (t_collect_fab) {
-            t_fab_prof.check_chain(tid, 0);
+#if defined(_TRANSPORT_PROFILE_)
+        if (t_collect_transport) {
+            t_transport_prof.check_chain(tid, 0);
         }
 #endif
     }

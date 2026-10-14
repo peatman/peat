@@ -42,7 +42,7 @@ enum TV_Event_Type {
     TV_EVENT_TYPE_GPU_LOCAL,
     TV_EVENT_TYPE_GPU_TRANSFER,
     TV_EVENT_TYPE_GPU_EXECUTION,
-    TV_EVENT_TYPE_FAB,
+    TV_EVENT_TYPE_TRANSPORT,
     TV_EVENT_TYPE_OSC,
     TV_EVENT_TYPE_MAX
 };
@@ -147,7 +147,7 @@ struct TV_Event {
     virtual bool is_mpi() const { return true; }
     virtual bool is_omp() const { return false; }
     virtual bool is_gpu() const { return false; }
-    virtual bool is_fab() const { return false; }
+    virtual bool is_transport() const { return false; }
 };
 
 struct TV_Local_Event : public TV_Event {
@@ -427,21 +427,21 @@ struct TV_GPU_Event : public TV_Local_Event {
     virtual bool is_gpu() const { return true; }
 };
 
-// Parsed record from a *.fab[.gz] file written by t_fab_profiler::write_fab_file():
+// Parsed record from a *.transport[.gz] file written by t_transport_profiler::write_transport_file():
 // uid:tid:func_name_or_id:tsc0:tsc1:tsc2:tsc3:total_clocks_bitween_calls:num_calls
-struct TV_Fab_Event : public TV_Event {
+struct TV_Transport_Event : public TV_Event {
     PEAT_Clock total_clocks_bitween_calls;
     PEAT_LNum num_calls;
 
   public:
     virtual int get_event_group() const { return 3; }
-    virtual TV_Event_Type get_event_type() const { return TV_EVENT_TYPE_FAB; }
-    TV_Fab_Event() : TV_Event(), total_clocks_bitween_calls(-1), num_calls(-1) {}
-    PEAT_Bool read_fab_event(PEAT_Rank r, const String_Split &fab_string);
+    virtual TV_Event_Type get_event_type() const { return TV_EVENT_TYPE_TRANSPORT; }
+    TV_Transport_Event() : TV_Event(), total_clocks_bitween_calls(-1), num_calls(-1) {}
+    PEAT_Bool read_transport_event(PEAT_Rank r, const String_Split &transport_string);
     virtual bool is_mpi() const { return false; }
     virtual bool is_omp() const { return false; }
     virtual bool is_gpu() const { return false; }
-    virtual bool is_fab() const { return true; }
+    virtual bool is_transport() const { return true; }
 };
 
 struct TV_Message {

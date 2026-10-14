@@ -84,7 +84,7 @@ struct MPI_PControl_Stat {
 
 struct Stat {
     Stat() : rank_start(LLONG_MAX), rank_end(0), rank_mpi_init_start(-1), rank_mpi_init_end(-1), rank_mpi_finalize_start(-1), rank_mpi_finalize_end(-1),
-             num_events(0), cpu_len(0), fabric_len(0), changed_UR_num(0), covered_UR_length(0), uncovered_UR_length(0), progress_len_total(0), pcontrol_removed_user_code_length(0) {}
+             num_events(0), cpu_len(0), transport_len(0), changed_UR_num(0), covered_UR_length(0), uncovered_UR_length(0), progress_len_total(0), pcontrol_removed_user_code_length(0) {}
     PEAT_Clock rank_start;
     PEAT_Clock rank_end;
     PEAT_Clock rank_mpi_init_start;
@@ -93,7 +93,7 @@ struct Stat {
     PEAT_Clock rank_mpi_finalize_end;
     PEAT_Clock num_events;
     PEAT_Clock cpu_len;
-    PEAT_Clock fabric_len;
+    PEAT_Clock transport_len;
 
     PEAT_Clock changed_UR_num;      // number of user regions changed by ratio from file
     PEAT_Clock covered_UR_length;   // comulative length of all user regions changed by ratio from file
@@ -152,7 +152,7 @@ struct Stat {
                sizeof(rank_mpi_finalize_end) +
                sizeof(num_events) +
                sizeof(cpu_len) +
-               sizeof(fabric_len) +
+               sizeof(transport_len) +
                sizeof(changed_UR_num) +
                sizeof(covered_UR_length) +
                sizeof(uncovered_UR_length) +
@@ -221,8 +221,8 @@ struct Stat {
         ssize = sizeof(cpu_len);
         memcpy(ptr + ptr_it, &cpu_len, ssize);
         ptr_it += ssize;
-        ssize = sizeof(fabric_len);
-        memcpy(ptr + ptr_it, &fabric_len, ssize);
+        ssize = sizeof(transport_len);
+        memcpy(ptr + ptr_it, &transport_len, ssize);
         ptr_it += ssize;
         ssize = sizeof(changed_UR_num);
         memcpy(ptr + ptr_it, &changed_UR_num, ssize);
@@ -325,8 +325,8 @@ struct Stat {
         ssize = sizeof(cpu_len);
         memcpy(&cpu_len, ptr + ptr_it, ssize);
         ptr_it += ssize;
-        ssize = sizeof(fabric_len);
-        memcpy(&fabric_len, ptr + ptr_it, ssize);
+        ssize = sizeof(transport_len);
+        memcpy(&transport_len, ptr + ptr_it, ssize);
         ptr_it += ssize;
         ssize = sizeof(changed_UR_num);
         memcpy(&changed_UR_num, ptr + ptr_it, ssize);
@@ -346,18 +346,18 @@ struct Stat {
     }
 };
 struct MPI_Event_Stat {
-    MPI_Event_Stat() : num_events(0), prolog(0), centre(0), epilog(0), fabric(0), wait(0), overlap(0),
-                       cpu_min(LLONG_MAX), cpu_max(0), fabric_min(LLONG_MAX), fabric_max(0),
+    MPI_Event_Stat() : num_events(0), prolog(0), centre(0), epilog(0), transport(0), wait(0), overlap(0),
+                       cpu_min(LLONG_MAX), cpu_max(0), transport_min(LLONG_MAX), transport_max(0),
                        total_send_length(0), total_recv_length(0), is_rndv(false), is_acked(false) {}
     PEAT_Clock num_events;
     PEAT_Clock prolog, centre, epilog;
-    PEAT_Clock fabric;
+    PEAT_Clock transport;
     PEAT_Clock wait;
     PEAT_Clock overlap;
     PEAT_Clock cpu_min;
     PEAT_Clock cpu_max;
-    PEAT_Clock fabric_min;
-    PEAT_Clock fabric_max;
+    PEAT_Clock transport_min;
+    PEAT_Clock transport_max;
     PEAT_Message_Size total_send_length;
     PEAT_Message_Size total_recv_length;
     PEAT_Bool is_rndv, is_acked;
@@ -365,15 +365,15 @@ struct MPI_Event_Stat {
     {
         return sizeof(num_events) +
                sizeof(prolog) +
-               sizeof(fabric) +
+               sizeof(transport) +
                sizeof(centre) +
                sizeof(epilog) +
                sizeof(wait) +
                sizeof(overlap) +
                sizeof(cpu_min) +
                sizeof(cpu_max) +
-               sizeof(fabric_min) +
-               sizeof(fabric_max) +
+               sizeof(transport_min) +
+               sizeof(transport_max) +
                sizeof(total_send_length) +
                sizeof(total_recv_length) +
                sizeof(is_rndv) +
@@ -388,8 +388,8 @@ struct MPI_Event_Stat {
         ssize = sizeof(prolog);
         memcpy(ptr + ptr_it, &prolog, ssize);
         ptr_it += ssize;
-        ssize = sizeof(fabric);
-        memcpy(ptr + ptr_it, &fabric, ssize);
+        ssize = sizeof(transport);
+        memcpy(ptr + ptr_it, &transport, ssize);
         ptr_it += ssize;
         ssize = sizeof(centre);
         memcpy(ptr + ptr_it, &centre, ssize);
@@ -409,11 +409,11 @@ struct MPI_Event_Stat {
         ssize = sizeof(cpu_max);
         memcpy(ptr + ptr_it, &cpu_max, ssize);
         ptr_it += ssize;
-        ssize = sizeof(fabric_min);
-        memcpy(ptr + ptr_it, &fabric_min, ssize);
+        ssize = sizeof(transport_min);
+        memcpy(ptr + ptr_it, &transport_min, ssize);
         ptr_it += ssize;
-        ssize = sizeof(fabric_max);
-        memcpy(ptr + ptr_it, &fabric_max, ssize);
+        ssize = sizeof(transport_max);
+        memcpy(ptr + ptr_it, &transport_max, ssize);
         ptr_it += ssize;
         ssize = sizeof(total_send_length);
         memcpy(ptr + ptr_it, &total_send_length, ssize);
@@ -438,8 +438,8 @@ struct MPI_Event_Stat {
         ssize = sizeof(prolog);
         memcpy(&prolog, ptr + ptr_it, ssize);
         ptr_it += ssize;
-        ssize = sizeof(fabric);
-        memcpy(&fabric, ptr + ptr_it, ssize);
+        ssize = sizeof(transport);
+        memcpy(&transport, ptr + ptr_it, ssize);
         ptr_it += ssize;
         ssize = sizeof(centre);
         memcpy(&centre, ptr + ptr_it, ssize);
@@ -459,11 +459,11 @@ struct MPI_Event_Stat {
         ssize = sizeof(cpu_max);
         memcpy(&cpu_max, ptr + ptr_it, ssize);
         ptr_it += ssize;
-        ssize = sizeof(fabric_min);
-        memcpy(&fabric_min, ptr + ptr_it, ssize);
+        ssize = sizeof(transport_min);
+        memcpy(&transport_min, ptr + ptr_it, ssize);
         ptr_it += ssize;
-        ssize = sizeof(fabric_max);
-        memcpy(&fabric_max, ptr + ptr_it, ssize);
+        ssize = sizeof(transport_max);
+        memcpy(&transport_max, ptr + ptr_it, ssize);
         ptr_it += ssize;
         ssize = sizeof(total_send_length);
         memcpy(&total_send_length, ptr + ptr_it, ssize);
@@ -505,7 +505,7 @@ struct Event_Set_Stat {
         return stat_per_func[t];
     }
     void add_event_stat(const t_stat_type t, const PEAT_Transports ct, const PEAT_Rank rank, const PEAT_MPI_Func_ID func, const PEAT_MPI_Func_ID parent_func, const PEAT_Rank num_ranks, const PEAT_Message_Size send_size, const PEAT_Message_Size recv_size,
-                        const PEAT_Clock prolog, const PEAT_Clock fabric, const PEAT_Clock centre, const PEAT_Clock epilog, const PEAT_Clock wait, const PEAT_Clock overlap, PEAT_Bool is_rndv, PEAT_Bool is_not_verified);
+                        const PEAT_Clock prolog, const PEAT_Clock transport, const PEAT_Clock centre, const PEAT_Clock epilog, const PEAT_Clock wait, const PEAT_Clock overlap, PEAT_Bool is_rndv, PEAT_Bool is_not_verified);
     void add_ts_fs_event_stat(const t_stat_type t, PET_Event *event);
     void add_mpi_event_stat(const t_stat_type t, const PEAT_Rank rank, const PEAT_MPI_Func_ID func, const PEAT_Clock in, const PEAT_Clock out, const PEAT_Clock len_in, const PEAT_Clock cpu_len_in);
     void add_uc_event_stat(const t_stat_type t, const PEAT_Rank rank, const PEAT_Clock len_in, const PEAT_Bool changed);

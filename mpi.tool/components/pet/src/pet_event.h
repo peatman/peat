@@ -23,7 +23,7 @@
 #include "func_id.h"
 #include "func_split.h"
 #include "pet_defines.h"
-#include "pet_fabric_event.h"
+#include "pet_transport_event.h"
 #include "stat.h"
 #include "te_timeline.h"
 #include "timeline.h"
@@ -33,7 +33,7 @@ enum event_pending_reason {
     pr_none = 0,
     pr_not_on_top = 1,
     pr_event_not_estimated = 2,
-    pr_fabric_not_estimated = 4,
+    pr_transport_not_estimated = 4,
     pr_size
 };
 
@@ -114,8 +114,8 @@ struct PET_Event : public PET_Time_Event {
     PEAT_Clock uc_length, uco_length;
     PEAT_Bool finish_calculations;
     PEAT_LNum remaining_ee_events;
-    std::list<PET_Fabric_Event> fabric_events;
-    std::list<PET_Fabric_Event> uc_fabric_events;
+    std::list<PET_Transport_Event> transport_events;
+    std::list<PET_Transport_Event> uc_transport_events;
     PEAT_Bool treat_as_local;
 
   public:
@@ -216,7 +216,7 @@ struct PET_Event : public PET_Time_Event {
         return ((global_func_id.check_property(func_id, PEAT_PROP_DATA_RX) || global_func_id.check_property(func_id, PEAT_PROP_DATA_TXRX)) && !is_persistent_init());
     }
     virtual PEAT_Clock get_overlap() const { return 0; }
-    virtual PEAT_Clock get_fabric() const { return 0; }
+    virtual PEAT_Clock get_transport() const { return 0; }
     virtual PET_Event *get_estimated_event() { return this; }
     virtual void notify_before_destroy(PET_Event *event);
     PEAT_Clock apply_user_code(PEAT_Ratio r, PET_Event *prev_event)
@@ -509,19 +509,19 @@ struct PET_ToR_Event : public PET_Local_Event {
         }
         return 0;
     }
-    virtual PEAT_Clock get_fabric() const
+    virtual PEAT_Clock get_transport() const
     {
         if (is_non_block() || is_persistent_init())
             return 0;
         if (check_tx() && check_rx()) {
-            return rts.get_fabric() + tx_message.get_fabric() + cts.get_fabric() + ack.get_fabric();
+            return rts.get_transport() + tx_message.get_transport() + cts.get_transport() + ack.get_transport();
         }
 
         if (check_tx()) {
-            return rts.get_fabric() + tx_message.get_fabric();
+            return rts.get_transport() + tx_message.get_transport();
         }
         if (check_rx()) {
-            return cts.get_fabric() + ack.get_fabric();
+            return cts.get_transport() + ack.get_transport();
         }
         return 0;
     }
@@ -579,8 +579,8 @@ struct PET_ToR_Event : public PET_Local_Event {
     PEAT_Bool place_cts(PEAT_Clock clk_start);
     PEAT_Bool place_message(PEAT_Clock clk_start);
     PEAT_Bool place_ack(PEAT_Clock clk_start);
-    PET_Fabric_Event *get_send_event(PEAT_UID index);
-    PET_Fabric_Event *get_recv_event(PEAT_UID index);
+    PET_Transport_Event *get_send_event(PEAT_UID index);
+    PET_Transport_Event *get_recv_event(PEAT_UID index);
     virtual PEAT_Bool is_rdv(PEAT_DIRECTION direction) const;
     virtual PEAT_Bool is_smp(PEAT_DIRECTION direction) const;
     PEAT_Bool is_short(PEAT_Transports t) const;
@@ -986,16 +986,16 @@ struct PET_Coll_Event : public PET_Local_Event {
         }
         return total_overlap;
     }
-    virtual PEAT_Clock get_fabric() const
+    virtual PEAT_Clock get_transport() const
     {
         const std::vector<PET_Event *> &kids = child_iteration_list();
         PEAT_Num size = kids.size();
-        PEAT_Clock total_fabric = 0;
+        PEAT_Clock total_transport = 0;
         for (PEAT_Num i = 0; i < size; i++) {
             if (kids[i])
-                total_fabric += kids[i]->get_fabric();
+                total_transport += kids[i]->get_transport();
         }
-        return total_fabric;
+        return total_transport;
     }
     virtual PEAT_Clock get_centre_code(Event_Set_Stat::t_stat_type t);
     virtual PET_Event *query_request(PEAT_MPI_Request req)
@@ -1269,7 +1269,7 @@ struct PET_Completion_Event : public PET_Start_Event {
     virtual PEAT_Bool check_tx() const;
     virtual PEAT_Bool check_rx() const;
     virtual PEAT_Clock get_overlap() const;
-    virtual PEAT_Clock get_fabric() const;
+    virtual PEAT_Clock get_transport() const;
     virtual void concatenate_event();
     virtual PEAT_Rank get_rank_read_suggestion();
 

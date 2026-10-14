@@ -6,12 +6,12 @@ export COMPILER=gnu #for make
 rm -f Build.${COMPILER}.log
 rm -f Build.${COMPILER}.dir
 
-export FABRIC=on
+export TRANSPORT=on
 
-./Build.sh  mpich:5.0.1g-mt-ofi-eng     fab_layers off   off  off  off off off &
-./Build.sh  mpich:5.0.1g-mt-ofi-eng     fab_layers off   on   off  off off off &
+./Build.sh  mpich:5.0.1g-mt-ofi-eng     transport_layers off   off  off  off off off &
+./Build.sh  mpich:5.0.1g-mt-ofi-eng     transport_layers off   on   off  off off off &
 
-unset FABRIC
+unset TRANSPORT
 
 
 #          mpi_type                         target  mem  diag  GPU  buf v2p  hwc  
@@ -48,7 +48,7 @@ unset FABRIC
 # ./Build.sh mvapich:4.1g-mt-ofi             mvapich4  off   on   on   off off off &
 
 
-export FABRIC=on
+export TRANSPORT=on
 
 ./Build.sh mpich:4.3.2g-mt-ofi-eng         mpich4    off   off  off  off off  off &
 # ./Build.sh mpich:4.3.2g-mt-ofi-eng         mpich4    off   off  on   off off  off &

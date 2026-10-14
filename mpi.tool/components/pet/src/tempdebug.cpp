@@ -137,7 +137,7 @@ PEAT_Message_Size get_effective_size(PEAT_Transports t, PEAT_Message_Size messag
     }
     return message_size;
 }
-struct PEAT_Fabric {
+struct PET_Transport {
     PEAT_Clock time = 0;
     PEAT_Bool is_acked = false;
 };
@@ -193,7 +193,7 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
 		std::map < PEAT_Func_ID_Pair, std::vector < PEAT_BW>> degradation_bw;
 		std::map < PEAT_Func_ID_Pair, PEAT_BW > top_bw;
 		std::map < PEAT_Func_ID_Pair, PEAT_Message_Size > ms_threshold;
-		std::map < PEAT_Func_ID_Pair, std::map< PEAT_Message_Size,PEAT_Fabric>> fabric_times;
+		std::map < PEAT_Func_ID_Pair, std::map< PEAT_Message_Size,PET_Transport>> transport_times;
 #define CUT_THRESHOLD (1.5)
 
 		for ( std::map < PEAT_Func_ID_Pair, std::map<PEAT_Rank, std::map<PEAT_Message_Size, std::map<PEAT_Message_Size, std::list<MPI_Event_Stat> > > > >::const_iterator func_stat_it = stat_local.cbegin(); func_stat_it != stat_local.cend(); ++func_stat_it ) {
@@ -202,7 +202,7 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
 			PEAT_MPI_Func_ID func_id = fid_pair.id;
 			PEAT_MPI_Func_ID parent_func_id = fid_pair.parent_id;
 			if ( !(global_func_id.check_tx(func_id) && global_func_id.check_tx(parent_func_id)) ) continue;
-			//switchover_threshold.clear(); cpu_times.clear(); degradation_thresholds.clear(); fabric_times.clear(); top_bw = 0;
+			//switchover_threshold.clear(); cpu_times.clear(); degradation_thresholds.clear(); transport_times.clear(); top_bw = 0;
 			PEAT_Bool bw_increased = false;
 			for ( std::map < PEAT_Rank, std::map<PEAT_Message_Size, std::map<PEAT_Message_Size, std::list<MPI_Event_Stat> > > >::const_iterator ranks_stat_it = func_stat_it->second.cbegin(); ranks_stat_it != func_stat_it->second.cend(); ++ranks_stat_it ) {
 				for ( std::map < PEAT_Message_Size, std::map<PEAT_Message_Size, std::list<MPI_Event_Stat> > >::const_iterator send_stat_it = ranks_stat_it->second.cbegin(); send_stat_it != ranks_stat_it->second.cend(); ++send_stat_it ) {
@@ -213,15 +213,15 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
 					PEAT_Bool is_rdv = false;
 					for ( std::map < PEAT_Message_Size, std::list<MPI_Event_Stat> >::const_iterator MPI_Event_Stat_it = send_stat_it->second.cbegin(); MPI_Event_Stat_it != send_stat_it->second.cend(); ++MPI_Event_Stat_it ) {
 						for ( std::list<MPI_Event_Stat>::const_iterator event_it = MPI_Event_Stat_it->second.cbegin(); event_it != MPI_Event_Stat_it->second.cend(); ++event_it ) {
-							PEAT_Clock fabric_len = event_it->fabric;
-							if ( fabric_len <= 0 ) {
-								pet_warning( this, NULL, "Send event with zero fabric time.\n");
+							PEAT_Clock transport_len = event_it->transport;
+							if ( transport_len <= 0 ) {
+								pet_warning( this, NULL, "Send event with zero transport time.\n");
 								continue;
 							}
-							if ( sorted_working_set.count(fabric_len) < 1 ) {
-								sorted_working_set[fabric_len] = *event_it;
+							if ( sorted_working_set.count(transport_len) < 1 ) {
+								sorted_working_set[transport_len] = *event_it;
 							} else {
-								sorted_working_set.at(fabric_len).num_events++;
+								sorted_working_set.at(transport_len).num_events++;
 							}
 							size++;
 							is_acked = event_it->is_acked;
@@ -239,20 +239,20 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
 					PEAT_LNum effective_events = 0;
 					for ( std::map <PEAT_Clock, MPI_Event_Stat>::const_iterator event_it = sorted_working_set.cbegin(); event_it != sorted_working_set.cend(); ++event_it ) {
 						const MPI_Event_Stat& evt = event_it->second;
-						//if ( max_val < evt.fabric ) max_val = evt.fabric;
+						//if ( max_val < evt.transport ) max_val = evt.transport;
 						if ( index < start || index >= end ) {
 							index += evt.num_events;
 							continue;
 						}
 						index += evt.num_events;
-						if ( min_val > evt.fabric ) min_val = evt.fabric;
+						if ( min_val > evt.transport ) min_val = evt.transport;
 						effective_events += evt.num_events;
-						assert( evt.fabric == event_it->first );
-						// for ( int i = 0; i < evt.num_events; i++ ) avg_val += evt.fabric;
+						assert( evt.transport == event_it->first );
+						// for ( int i = 0; i < evt.num_events; i++ ) avg_val += evt.transport;
 					}
 					if ( effective_events == 0 ) continue;
-					fabric_times[fid_pair][message_size].time = min_val;
-					fabric_times[fid_pair][message_size].is_acked = is_acked;
+					transport_times[fid_pair][message_size].time = min_val;
+					transport_times[fid_pair][message_size].is_acked = is_acked;
 					PEAT_Message_Size effective_message_size = get_effective_size(t,message_size);
 					PEAT_BW real_bw;
 					PEAT_Clock cur_cpu_time;
@@ -347,14 +347,14 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
 						}
 					}
 				}
-				if ( fabric_times[fid_pair].empty() ) continue;
-				for ( std::map<PEAT_Message_Size, PEAT_Fabric>::const_iterator fab_len_it = fabric_times.at(fid_pair).cbegin(); fab_len_it != fabric_times.at(fid_pair).cend(); ++fab_len_it ) {
+				if ( transport_times[fid_pair].empty() ) continue;
+				for ( std::map<PEAT_Message_Size, PEAT_Transport>::const_iterator transport_len_it = transport_times.at(fid_pair).cbegin(); transport_len_it != transport_times.at(fid_pair).cend(); ++transport_len_it ) {
 					std::map <PEAT_Clock, MPI_Event_Stat> sorted_working_set;
-					PEAT_Message_Size message_size = fab_len_it->first;
+					PEAT_Message_Size message_size = transport_len_it->first;
 					PEAT_Message_Size effective_message_size = get_effective_size(t, message_size);
 					PEAT_BW real_bw = 0;
-					PEAT_Clock fab_val = fab_len_it->second.time;
-					PEAT_Bool is_acked = fab_len_it->second.is_acked;
+					PEAT_Clock transport_val = transport_len_it->second.time;
+					PEAT_Bool is_acked = transport_len_it->second.is_acked;
 					PEAT_Num so_size = switchover_threshold[ fid_pair ].size();
 					PEAT_Num index;
 					for ( index = 0; index < so_size; index++ ) {
@@ -372,8 +372,8 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
 					switch ( func_id ) {
 						case MPI_SSEND_ID:
 						rdv_send_p2:
-							fab_val -= cur_cpu_time;
-							real_bw = ( PEAT_Ratio ) ( effective_message_size + 2 * get_effective_size(t, 0) + is_acked * get_effective_size(t, 0)) / ( PEAT_Ratio ) ( fab_val );
+							transport_val -= cur_cpu_time;
+							real_bw = ( PEAT_Ratio ) ( effective_message_size + 2 * get_effective_size(t, 0) + is_acked * get_effective_size(t, 0)) / ( PEAT_Ratio ) ( transport_val );
 							min_cpu_time =  ( effective_message_size + 2 * get_effective_size(t, 0) + is_acked * get_effective_size(t, 0)) / ideal_bw;
 							break;
 						case MPI_IRSEND_ID:
@@ -382,8 +382,8 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
 						non_block_eager_send_p2:
 						case MPI_RSEND_ID:
 						eager_send_p2:
-							fab_val -= cur_cpu_time;
-							real_bw = ( PEAT_Ratio ) ( effective_message_size ) / ( PEAT_Ratio ) ( fab_val );
+							transport_val -= cur_cpu_time;
+							real_bw = ( PEAT_Ratio ) ( effective_message_size ) / ( PEAT_Ratio ) ( transport_val );
 							min_cpu_time = ( effective_message_size ) / ideal_bw;
 							break;
 						case MPI_ISEND_ID:
@@ -392,8 +392,8 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
 						case MPI_ISSEND_ID:
 							if ( message_size > 64 ) continue;
 						non_block_rdv_send_p2:
-							fab_val -= cur_cpu_time;
-							real_bw = ( PEAT_Ratio ) (get_effective_size(t, 0)) / ( PEAT_Ratio ) ( fab_val );
+							transport_val -= cur_cpu_time;
+							real_bw = ( PEAT_Ratio ) (get_effective_size(t, 0)) / ( PEAT_Ratio ) ( transport_val );
 							min_cpu_time = (get_effective_size(t, 0)) / ideal_bw;
 							break;
 						default:
@@ -448,11 +448,11 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
 					PEAT_Bool is_acked = false, is_rdv = false;
 					for ( std::map < PEAT_Message_Size, std::list<MPI_Event_Stat> >::const_iterator MPI_Event_Stat_it = send_stat_it->second.cbegin(); MPI_Event_Stat_it != send_stat_it->second.cend(); ++MPI_Event_Stat_it ) {
 						for ( std::list<MPI_Event_Stat>::const_iterator event_it = MPI_Event_Stat_it->second.cbegin(); event_it != MPI_Event_Stat_it->second.cend(); ++event_it ) {
-							PEAT_Clock fabric_len = event_it->fabric;
-							if ( sorted_working_set.count( fabric_len ) < 1 ) {
-								sorted_working_set[ fabric_len ] = *event_it;
+							PEAT_Clock transport_len = event_it->transport;
+							if ( sorted_working_set.count( transport_len ) < 1 ) {
+								sorted_working_set[ transport_len ] = *event_it;
 							}
-							sorted_working_set.at( fabric_len ).num_events++;
+							sorted_working_set.at( transport_len ).num_events++;
 							size++;
 							is_acked = event_it->is_acked;
 							is_rdv = event_it->is_rndv;
@@ -474,13 +474,13 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
 								continue;
 							}
 							index += evt.num_events;
-							if ( min_val > evt.fabric ) min_val = evt.fabric;
-							if ( max_val < evt.fabric ) max_val = evt.fabric;
+							if ( min_val > evt.transport ) min_val = evt.transport;
+							if ( max_val < evt.transport ) max_val = evt.transport;
 							effective_events += evt.num_events;
-							if ( effective_events > size / 2 && median_val <= 0 ) median_val = evt.fabric;
-							assert( evt.fabric == event_it->first );
-							//for ( int i = 0; i < evt.num_events; i++ ) avg_val += evt.fabric;
-							avg_val += evt.fabric * evt.num_events;
+							if ( effective_events > size / 2 && median_val <= 0 ) median_val = evt.transport;
+							assert( evt.transport == event_it->first );
+							//for ( int i = 0; i < evt.num_events; i++ ) avg_val += evt.transport;
+							avg_val += evt.transport * evt.num_events;
 						}
 						if ( effective_events == 0 ) continue;
 						avg_val /= effective_events;
@@ -493,7 +493,7 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
 							const MPI_Event_Stat& evt = event_it->second;
 							index += evt.num_events;
 							if ( index < start || index >= end ) continue;
-							for ( int i = 0; i < evt.num_events; i++ ) ustdev_val += ( evt.fabric - avg_val ) * ( evt.fabric - avg_val );
+							for ( int i = 0; i < evt.num_events; i++ ) ustdev_val += ( evt.transport - avg_val ) * ( evt.transport - avg_val );
 						}
 						PEAT_Ratio u_st_dev_val = sqrt( ustdev_val / effective_events );
 						PEAT_Clock ideal_time;
@@ -664,7 +664,7 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
 						if ( global_max_pre_delay > max_pre_delay || global_max_pre_delay == 0 ) global_max_pre_delay = max_pre_delay;
 						if ( global_max_post_delay > max_post_delay || global_max_post_delay == 0 ) global_max_post_delay = max_post_delay;
 						if ( ( message_size >= get_eager_threshold( is_smp, true ) || global_func_id.check_property( func_id, PEAT_PROP_DATA_SYNC ) ) && global_func_id.check_property( func_id, PEAT_PROP_NON_BLOCK ) ) continue; //skip writing
-						gzprintf( prof_file_ptr, " ID=%d Func:%s, Size:%lld, fabric: min=%lld median=%lld avx=%lld max=%lld ustdev=%lf, Ratio:%lf-%lf,%lf, method: %d,%d\n", t, global_func_id.name_by_idx( func_id ), message_size, min_val, avg_val, median_val, max_val, u_st_dev_val, real_bw, used_bw, mult_bw, is_rdv, is_acked );
+						gzprintf( prof_file_ptr, " ID=%d Func:%s, Size:%lld, transport: min=%lld median=%lld avx=%lld max=%lld ustdev=%lf, Ratio:%lf-%lf,%lf, method: %d,%d\n", t, global_func_id.name_by_idx( func_id ), message_size, min_val, avg_val, median_val, max_val, u_st_dev_val, real_bw, used_bw, mult_bw, is_rdv, is_acked );
 						fprintf( stderr, ":%lld:%lf:%lf", message_size, mult_bw, mult_lat );
 						fprintf( stderr, ":%lld:%lld", ( PEAT_LAT ) min_pre_delay, ( PEAT_LAT ) min_post_delay );
 						fprintf( stderr, ":%lld:%lld", ( PEAT_LAT ) avg_pre_delay, ( PEAT_LAT ) avg_post_delay );
@@ -683,9 +683,9 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
 	}
 }
 #else
-struct PET_Fab_Stat {
+struct PET_Transport_Stat {
     PEAT_Message_Size message_size = -1;
-    PEAT_Clock min_val = -1, avg_val = -1, median_val = -1, max_val = -1, fab_val = -1;
+    PEAT_Clock min_val = -1, avg_val = -1, median_val = -1, max_val = -1, transport_val = -1;
     PEAT_Ratio u_st_dev_val = 0.0;
     PEAT_Bool is_rdv = false, is_acked = false;
     PEAT_BW real_bw = 0;
@@ -693,8 +693,8 @@ struct PET_Fab_Stat {
 };
 void PET_Core::write_transport_profile(const std::string &name, const Event_Set_Stat::t_stat_type type)
 {
-    std::map<PEAT_Func_ID_Pair, std::map<PEAT_Message_Size, PET_Fab_Stat>> fab_stat[PEAT_TRANSPORT_MAX];
-    std::map<PEAT_Func_ID_Pair, std::map<PEAT_Message_Size, PET_Fab_Stat>> fab_stat_corrected[PEAT_TRANSPORT_MAX];
+    std::map<PEAT_Func_ID_Pair, std::map<PEAT_Message_Size, PET_Transport_Stat>> transport_stat[PEAT_TRANSPORT_MAX];
+    std::map<PEAT_Func_ID_Pair, std::map<PEAT_Message_Size, PET_Transport_Stat>> transport_stat_corrected[PEAT_TRANSPORT_MAX];
     std::map<PEAT_Func_ID_Pair, PEAT_BW> most_bw[PEAT_TRANSPORT_MAX], most_bw_corrected[PEAT_TRANSPORT_MAX];
     std::map<PEAT_Func_ID_Pair, PEAT_Message_Size> most_bw_size[PEAT_TRANSPORT_MAX];
     std::map<PEAT_Rank, std::string> file_name;
@@ -705,7 +705,7 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
         tmp << "Can't open file (to write) " << name;
         throw std::runtime_error(tmp.str());
     }
-    profile_file.printf(0, "  0: ID:      Func:    Parent:         Size:Complete size:       fab:       min:    median:   average:       max:    ustdev:RDV:ACK: Effective BW:Ratio\n");
+    profile_file.printf(0, "  0: ID:      Func:    Parent:         Size:Complete size: Transport:       min:    median:   average:       max:    ustdev:RDV:ACK: Effective BW:Ratio\n");
     for (PEAT_Transports t = PEAT_TRANSPORT_DDR; t < PEAT_TRANSPORT_MAX; t = t_inc(t)) {
         if (t == PEAT_TRANSPORT_COLLECTIVE)
             continue;
@@ -749,15 +749,15 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
                     PEAT_Bool is_rdv = false;
                     for (std::map<PEAT_Message_Size, std::list<MPI_Event_Stat>>::const_iterator MPI_Event_Stat_it = send_stat_it->second.cbegin(); MPI_Event_Stat_it != send_stat_it->second.cend(); ++MPI_Event_Stat_it) {
                         for (std::list<MPI_Event_Stat>::const_iterator event_it = MPI_Event_Stat_it->second.cbegin(); event_it != MPI_Event_Stat_it->second.cend(); ++event_it) {
-                            PEAT_Clock fabric_len = event_it->fabric;
-                            if (fabric_len <= 0) {
-                                pet_warning(this, NULL, "Send event with zero fabric time.\n");
+                            PEAT_Clock transport_len = event_it->transport;
+                            if (transport_len <= 0) {
+                                pet_warning(this, NULL, "Send event with zero transport time.\n");
                                 continue;
                             }
-                            if (sorted_working_set.count(fabric_len) < 1) {
-                                sorted_working_set[fabric_len] = *event_it;
+                            if (sorted_working_set.count(transport_len) < 1) {
+                                sorted_working_set[transport_len] = *event_it;
                             } else {
-                                sorted_working_set.at(fabric_len).num_events++;
+                                sorted_working_set.at(transport_len).num_events++;
                             }
                             size++;
                             is_acked = event_it->is_acked;
@@ -784,15 +784,15 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
                     }
                     for (std::map<PEAT_Clock, MPI_Event_Stat>::const_iterator event_it = sorted_working_set.cbegin(); event_it != sorted_working_set.cend(); ++event_it) {
                         const MPI_Event_Stat &evt = event_it->second;
-                        if (max_val < evt.fabric)
-                            max_val = evt.fabric;
-                        if (min_val > evt.fabric)
-                            min_val = evt.fabric;
+                        if (max_val < evt.transport)
+                            max_val = evt.transport;
+                        if (min_val > evt.transport)
+                            min_val = evt.transport;
                         effective_events += evt.num_events;
                         if (effective_events > (PEAT_LNum)sorted_working_set.size() / 2 && median_val <= 0)
-                            median_val = evt.fabric;
-                        assert(evt.fabric == event_it->first);
-                        avg_val += evt.fabric * evt.num_events;
+                            median_val = evt.transport;
+                        assert(evt.transport == event_it->first);
+                        avg_val += evt.transport * evt.num_events;
                     }
                     if (effective_events == 0)
                         continue;
@@ -802,7 +802,7 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
                     for (std::map<PEAT_Clock, MPI_Event_Stat>::const_iterator event_it = sorted_working_set.cbegin(); event_it != sorted_working_set.cend(); ++event_it) {
                         const MPI_Event_Stat &evt = event_it->second;
                         for (int i = 0; i < evt.num_events; i++)
-                            ustdev_val += (evt.fabric - avg_val) * (evt.fabric - avg_val);
+                            ustdev_val += (evt.transport - avg_val) * (evt.transport - avg_val);
                     }
                     PEAT_Ratio u_st_dev_val = sqrt(ustdev_val / effective_events);
 
@@ -843,10 +843,10 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
 #define FIELD1_LEN 10
 #define FIELD2_LEN 13
 #define FIELD3_LEN 3
-                    fab_stat[t][fid_pair][message_size].message_size = complete_message_size;
-                    PET_Fab_Stat &current_stat = fab_stat[t][fid_pair][message_size];
+                    transport_stat[t][fid_pair][message_size].message_size = complete_message_size;
+                    PET_Transport_Stat &current_stat = transport_stat[t][fid_pair][message_size];
                     current_stat.min_val = min_val;
-                    current_stat.fab_val = min_val;
+                    current_stat.transport_val = min_val;
                     current_stat.avg_val = avg_val;
                     current_stat.median_val = median_val;
                     current_stat.u_st_dev_val = u_st_dev_val;
@@ -859,7 +859,7 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
                                        FIELD1_LEN, global_func_id.name_by_idx(func_id),
                                        FIELD1_LEN, global_func_id.name_by_idx(parent_func_id),
                                        FIELD2_LEN, message_size, FIELD2_LEN, current_stat.message_size,
-                                       FIELD1_LEN, current_stat.fab_val, FIELD1_LEN, current_stat.min_val, FIELD1_LEN, current_stat.median_val, FIELD1_LEN, current_stat.avg_val, FIELD1_LEN, current_stat.max_val, FIELD1_LEN, current_stat.u_st_dev_val,
+                                       FIELD1_LEN, current_stat.transport_val, FIELD1_LEN, current_stat.min_val, FIELD1_LEN, current_stat.median_val, FIELD1_LEN, current_stat.avg_val, FIELD1_LEN, current_stat.max_val, FIELD1_LEN, current_stat.u_st_dev_val,
                                        FIELD3_LEN, current_stat.is_rdv, FIELD3_LEN, current_stat.is_acked, FIELD2_LEN, current_stat.real_bw, FIELD3_LEN + 2, current_stat.ratio_bw);
                 }
             }
@@ -871,43 +871,43 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
         {1.5, 2},
     };
     for (PEAT_Transports t = PEAT_TRANSPORT_DDR; t < PEAT_TRANSPORT_MAX; t = t_inc(t)) {
-        fab_stat_corrected[t] = fab_stat[t];
+        transport_stat_corrected[t] = transport_stat[t];
         if (t == PEAT_TRANSPORT_COLLECTIVE)
             continue;
-        for (std::map<PEAT_Func_ID_Pair, std::map<PEAT_Message_Size, PET_Fab_Stat>>::iterator funcid_it = fab_stat[t].begin(); funcid_it != fab_stat[t].end(); ++funcid_it) {
+        for (std::map<PEAT_Func_ID_Pair, std::map<PEAT_Message_Size, PET_Transport_Stat>>::iterator funcid_it = transport_stat[t].begin(); funcid_it != transport_stat[t].end(); ++funcid_it) {
             PEAT_Func_ID_Pair fid_pair = funcid_it->first;
-            PEAT_LAT least_fab = LLONG_MAX;
-            PEAT_Message_Size least_fab_size = -1;
-            for (std::map<PEAT_Message_Size, PET_Fab_Stat>::iterator message_size_it = funcid_it->second.begin(); message_size_it != funcid_it->second.end(); ++message_size_it) {
+            PEAT_LAT least_transport = LLONG_MAX;
+            PEAT_Message_Size least_transport_size = -1;
+            for (std::map<PEAT_Message_Size, PET_Transport_Stat>::iterator message_size_it = funcid_it->second.begin(); message_size_it != funcid_it->second.end(); ++message_size_it) {
                 PEAT_Message_Size message_size = message_size_it->first;
                 if (most_bw[t][fid_pair] < message_size_it->second.real_bw) {
                     most_bw[t][fid_pair] = message_size_it->second.real_bw;
                     most_bw_size[t][fid_pair] = message_size;
                 }
-                if (least_fab > message_size_it->second.fab_val) {
-                    least_fab = message_size_it->second.fab_val;
-                    least_fab_size = message_size;
+                if (least_transport > message_size_it->second.transport_val) {
+                    least_transport = message_size_it->second.transport_val;
+                    least_transport_size = message_size;
                 }
             }
-            PET_Fab_Stat &current_stat = fab_stat_corrected[t][fid_pair][least_fab_size];
-            PEAT_Clock least_cpu = (PEAT_Clock)((current_stat.fab_val - current_stat.message_size / most_bw[t][fid_pair]) / cpu_clock_divider[current_stat.is_rdv][current_stat.is_acked]);
+            PET_Transport_Stat &current_stat = transport_stat_corrected[t][fid_pair][least_transport_size];
+            PEAT_Clock least_cpu = (PEAT_Clock)((current_stat.transport_val - current_stat.message_size / most_bw[t][fid_pair]) / cpu_clock_divider[current_stat.is_rdv][current_stat.is_acked]);
 
-            for (std::map<PEAT_Message_Size, PET_Fab_Stat>::iterator message_size_it = funcid_it->second.begin(); message_size_it != funcid_it->second.end(); ++message_size_it) {
+            for (std::map<PEAT_Message_Size, PET_Transport_Stat>::iterator message_size_it = funcid_it->second.begin(); message_size_it != funcid_it->second.end(); ++message_size_it) {
                 PEAT_Message_Size message_size = message_size_it->first;
-                PET_Fab_Stat &current_stat = fab_stat_corrected[t][fid_pair][message_size];
+                PET_Transport_Stat &current_stat = transport_stat_corrected[t][fid_pair][message_size];
 
                 if (message_size < most_bw_size[t][fid_pair])
                     continue;
                 if (message_size > most_bw_size[t][fid_pair]) {
                     current_stat.ratio_bw = current_stat.real_bw / most_bw[t][fid_pair];
                 } else {
-                    PEAT_Clock fab_clock = current_stat.fab_val - least_cpu; //'ideal' fabric_time
-                    current_stat.real_bw = most_bw_corrected[t][fid_pair] = (PEAT_BW)current_stat.message_size / (PEAT_BW)fab_clock;
-                    current_stat.min_val -= fab_clock;
-                    current_stat.avg_val -= fab_clock;
-                    current_stat.median_val -= fab_clock;
-                    current_stat.max_val -= fab_clock;
-                    current_stat.fab_val = fab_clock;
+                    PEAT_Clock transport_clock = current_stat.transport_val - least_cpu; //'ideal' transport_time
+                    current_stat.real_bw = most_bw_corrected[t][fid_pair] = (PEAT_BW)current_stat.message_size / (PEAT_BW)transport_clock;
+                    current_stat.min_val -= transport_clock;
+                    current_stat.avg_val -= transport_clock;
+                    current_stat.median_val -= transport_clock;
+                    current_stat.max_val -= transport_clock;
+                    current_stat.transport_val = transport_clock;
                 }
             }
         }
@@ -917,36 +917,36 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
                 most_bw_all = bw_it->second;
             }
         }
-        for (std::map<PEAT_Func_ID_Pair, std::map<PEAT_Message_Size, PET_Fab_Stat>>::iterator funcid_it = fab_stat[t].begin(); funcid_it != fab_stat[t].end(); ++funcid_it) {
+        for (std::map<PEAT_Func_ID_Pair, std::map<PEAT_Message_Size, PET_Transport_Stat>>::iterator funcid_it = transport_stat[t].begin(); funcid_it != transport_stat[t].end(); ++funcid_it) {
             PEAT_Func_ID_Pair fid_pair = funcid_it->first;
-            for (std::map<PEAT_Message_Size, PET_Fab_Stat>::iterator message_size_it = funcid_it->second.begin(); message_size_it != funcid_it->second.end(); ++message_size_it) {
+            for (std::map<PEAT_Message_Size, PET_Transport_Stat>::iterator message_size_it = funcid_it->second.begin(); message_size_it != funcid_it->second.end(); ++message_size_it) {
                 PEAT_Message_Size message_size = message_size_it->first;
-                PET_Fab_Stat &current_stat = fab_stat_corrected[t][fid_pair][message_size];
+                PET_Transport_Stat &current_stat = transport_stat_corrected[t][fid_pair][message_size];
                 if (message_size == most_bw_size[t][fid_pair])
                     continue;
                 if (message_size < most_bw_size[t][fid_pair]) {
-                    PEAT_Clock fab_clock = (PEAT_Clock)(current_stat.message_size / most_bw_corrected[t][fid_pair]); //'ideal' fabric_time
-                    current_stat.min_val -= fab_clock;
-                    current_stat.avg_val -= fab_clock;
-                    current_stat.median_val -= fab_clock;
-                    current_stat.max_val -= fab_clock;
-                    current_stat.fab_val = fab_clock;
-                    current_stat.real_bw = (PEAT_Ratio)current_stat.message_size / (PEAT_Ratio)current_stat.fab_val;
+                    PEAT_Clock transport_clock = (PEAT_Clock)(current_stat.message_size / most_bw_corrected[t][fid_pair]); //'ideal' transport_time
+                    current_stat.min_val -= transport_clock;
+                    current_stat.avg_val -= transport_clock;
+                    current_stat.median_val -= transport_clock;
+                    current_stat.max_val -= transport_clock;
+                    current_stat.transport_val = transport_clock;
+                    current_stat.real_bw = (PEAT_Ratio)current_stat.message_size / (PEAT_Ratio)current_stat.transport_val;
                 } else {
-                    PEAT_Clock fab_clock = (PEAT_Clock)(current_stat.message_size / (most_bw_corrected[t][fid_pair] * current_stat.ratio_bw)); //'ideal' fabric_time
-                    current_stat.min_val -= fab_clock;
-                    current_stat.avg_val -= fab_clock;
-                    current_stat.median_val -= fab_clock;
-                    current_stat.max_val -= fab_clock;
-                    current_stat.fab_val = fab_clock;
-                    current_stat.real_bw = (PEAT_Ratio)current_stat.message_size / (PEAT_Ratio)current_stat.fab_val;
+                    PEAT_Clock transport_clock = (PEAT_Clock)(current_stat.message_size / (most_bw_corrected[t][fid_pair] * current_stat.ratio_bw)); //'ideal' transport_time
+                    current_stat.min_val -= transport_clock;
+                    current_stat.avg_val -= transport_clock;
+                    current_stat.median_val -= transport_clock;
+                    current_stat.max_val -= transport_clock;
+                    current_stat.transport_val = transport_clock;
+                    current_stat.real_bw = (PEAT_Ratio)current_stat.message_size / (PEAT_Ratio)current_stat.transport_val;
                 }
                 profile_file.printf(0, "%*d:%*d:%*s:%*s:%*lld:%*lld:%*lld:%*lld:%*lld:%*lld:%*lld:%*.2lf:%*d:%*d:%*.2lf:%*.2lf\n",
                                    FIELD3_LEN, PEAT_RT_TRANSPORT_Vars, FIELD3_LEN, t,
                                    FIELD1_LEN, global_func_id.name_by_idx(fid_pair.id),
                                    FIELD1_LEN, global_func_id.name_by_idx(fid_pair.parent_id),
                                    FIELD2_LEN, message_size, FIELD2_LEN, current_stat.message_size,
-                                   FIELD1_LEN, current_stat.fab_val, FIELD1_LEN, current_stat.min_val, FIELD1_LEN, current_stat.median_val, FIELD1_LEN, current_stat.avg_val, FIELD1_LEN, current_stat.max_val, FIELD1_LEN, current_stat.u_st_dev_val,
+                                   FIELD1_LEN, current_stat.transport_val, FIELD1_LEN, current_stat.min_val, FIELD1_LEN, current_stat.median_val, FIELD1_LEN, current_stat.avg_val, FIELD1_LEN, current_stat.max_val, FIELD1_LEN, current_stat.u_st_dev_val,
                                    FIELD3_LEN, current_stat.is_rdv, FIELD3_LEN, current_stat.is_acked, FIELD2_LEN, current_stat.real_bw, FIELD3_LEN + 2, current_stat.ratio_bw);
             }
             // fprintf(stderr, "%d:%d:%lld:%s:%s:%.2lf", PEAT_RT_TRANSPORT_Correction_Vars, t, ptp->get_trace_freq(0), global_func_id.name_by_idx(fid_pair.id), global_func_id.name_by_idx(fid_pair.parent_id), most_bw_corrected);
@@ -956,9 +956,9 @@ void PET_Core::write_transport_profile(const std::string &name, const Event_Set_
             PEAT_Ratio global_median_pre_delay = 0, global_median_post_delay = 0;
             PEAT_Ratio global_max_pre_delay = 0, global_max_post_delay = 0;
 
-            for (std::map<PEAT_Message_Size, PET_Fab_Stat>::iterator message_size_it = funcid_it->second.begin(); message_size_it != funcid_it->second.end(); ++message_size_it) {
+            for (std::map<PEAT_Message_Size, PET_Transport_Stat>::iterator message_size_it = funcid_it->second.begin(); message_size_it != funcid_it->second.end(); ++message_size_it) {
                 PEAT_Message_Size message_size = message_size_it->first;
-                PET_Fab_Stat &current_stat = fab_stat_corrected[t][fid_pair][message_size];
+                PET_Transport_Stat &current_stat = transport_stat_corrected[t][fid_pair][message_size];
                 PEAT_Ratio min_pre_delay = 0, min_post_delay = 0;
                 PEAT_Ratio avg_pre_delay = 0, avg_post_delay = 0;
                 PEAT_Ratio median_pre_delay = 0, median_post_delay = 0;

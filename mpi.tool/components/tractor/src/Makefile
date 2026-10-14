@@ -64,7 +64,7 @@ INCLUDE+=-I$(HWLOC_PATH)/include
 LIBS+=-L$(HWLOC_PATH)/lib
 endif
 
-FABRIC=off
+TRANSPORT=off
 
 PCT=off
 
@@ -82,42 +82,42 @@ CONTROLS+=-DGPUPARSE
 EXTRANAMELIB:=$(EXTRANAMELIB).gpu
 endif
 
-# FABRIC=on enables core-side fab support: profiling struct/T_FAB_LAYER parsing,
-# t_collect_fab event collection, and (for TARGET=mvapich2) verbs/smpi proxy calls,
+# TRANSPORT=on enables core-side transport support: profiling struct/T_TRANSPORT_LAYER parsing,
+# t_collect_transport event collection, and (for TARGET=mvapich2) verbs/smpi proxy calls,
 # which are invoked unconditionally by that patched binary so they stay in core too.
-ifeq "$(FABRIC)" "on"
-CONTROLS+=-D_FAB_PROFILE_ 
-OBJECTS+=t_fab.o
-t_fab_layer_h=t_fab_layer_h.h
-#EXTRANAMELIB:=$(EXTRANAMELIB).fab
+ifeq "$(TRANSPORT)" "on"
+CONTROLS+=-D_TRANSPORT_PROFILE_ 
+OBJECTS+=t_transport.o
+t_transport_layer_h=t_transport_layer_h.h
+#EXTRANAMELIB:=$(EXTRANAMELIB).transport
 endif
 
-# TARGET=fab_layers: standalone build of just the fab .so's.
+# TARGET=transport_layers: standalone build of just the transport .so's.
 # psm2/psm3/ucx/ofi (genuine dlsym/RTLD_NEXT interception) each get generated into
-# their own mpi_layer_fab_<layer>.cpp -> libtractor_fab_<layer>.so; 
+# their own mpi_layer_transport_<layer>.cpp -> libtractor_transport_<layer>.so; 
 # verbs/smpi are NOT here: ibv_* fast-path calls (ibv_post_send, ibv_poll_cq, ...)
 # are static inline in real <infiniband/verbs.h> - there's no dynamic symbol to
 # dlsym/LD_PRELOAD-intercept at all, so verbs profiling only works when patched
 # mvapich2 source calls mv2_proxy_* directly; see TARGET=mvapich2 below.
 # No $(TARGET) in these names: the tractor struct layout these shims rely on
 # (gt_info(...)) doesn't depend on TARGET, so one set of shims works for every
-# MPI target built with the same other flags (FABRIC/MEMPROFILE/HWCOUNTERS/etc)
-ifeq "$(TARGET)" "fab_layers"
-# each shim needs tractor::t_fab_prof/t_fab_layer and the real vendor headers
-# (t_fab.h), all gated behind _FAB_PROFILE_ - normally set by FABRIC=on, but that's
+# MPI target built with the same other flags (TRANSPORT/MEMPROFILE/HWCOUNTERS/etc)
+ifeq "$(TARGET)" "transport_layers"
+# each shim needs tractor::t_transport_prof/t_transport_layer and the real vendor headers
+# (t_transport.h), all gated behind _TRANSPORT_PROFILE_ - normally set by TRANSPORT=on, but that's
 # a separate variable from TARGET, so set it here too rather than relying on the
 # caller to pass both
-CONTROLS+=-D_FAB_PROFILE_
-t_fab_layer_h=t_fab_layer_h.h
+CONTROLS+=-D_TRANSPORT_PROFILE_
+t_transport_layer_h=t_transport_layer_h.h
 #LIBS+=-L$(PSM2PATH)/lib64 -lpsm2 -L$(PSM3PATH)/lib64 -lpsm3 -L$(UCXPATH)/lib -lucp -lucs -L$(OFIPATH)/lib64 -lfabric
-fab_func_layers=-l psm2=mpi_layer_fab_psm2.cpp -l psm3=mpi_layer_fab_psm3.cpp -l ucx=mpi_layer_fab_ucx.cpp -l ofi=mpi_layer_fab_ofi.cpp
+transport_func_layers=-l psm2=mpi_layer_transport_psm2.cpp -l psm3=mpi_layer_transport_psm3.cpp -l ucx=mpi_layer_transport_ucx.cpp -l ofi=mpi_layer_transport_ofi.cpp
 # no plain (non-shim) layers here, so the core mpi_layer.cpp content is unused - skip generating it
 mpi_layer_skip_core=on
-FAB_LAYER_SRCS=mpi_layer_fab_psm2.cpp mpi_layer_fab_psm3.cpp mpi_layer_fab_ucx.cpp mpi_layer_fab_ofi.cpp
-FAB_LAYER_OBJS=mpi_layer_fab_psm2.o mpi_layer_fab_psm3.o mpi_layer_fab_ucx.o mpi_layer_fab_ofi.o
+TRANSPORT_LAYER_SRCS=mpi_layer_transport_psm2.cpp mpi_layer_transport_psm3.cpp mpi_layer_transport_ucx.cpp mpi_layer_transport_ofi.cpp
+TRANSPORT_LAYER_OBJS=mpi_layer_transport_psm2.o mpi_layer_transport_psm3.o mpi_layer_transport_ucx.o mpi_layer_transport_ofi.o
 # same lib<name>.so.MAJOR.MINOR + .so.MAJOR/.so symlink scheme as $(MTB)/$(MTBL)
-FAB_SHIM_BASENAMES=tractor$(FABLIBSUFFIX)_fab_psm2 tractor$(FABLIBSUFFIX)_fab_psm3 tractor$(FABLIBSUFFIX)_fab_ucx tractor$(FABLIBSUFFIX)_fab_ofi
-FAB_SHIM_LIBS=$(foreach b,$(FAB_SHIM_BASENAMES),lib$(b).so.$(MAJOR).$(MINOR))
+TRANSPORT_SHIM_BASENAMES=tractor$(TRANSPORTLIBSUFFIX)_transport_psm2 tractor$(TRANSPORTLIBSUFFIX)_transport_psm3 tractor$(TRANSPORTLIBSUFFIX)_transport_ucx tractor$(TRANSPORTLIBSUFFIX)_transport_ofi
+TRANSPORT_SHIM_LIBS=$(foreach b,$(TRANSPORT_SHIM_BASENAMES),lib$(b).so.$(MAJOR).$(MINOR))
 endif
 
 ifeq "$(TARGET)" "impi"
@@ -153,67 +153,67 @@ cpp_input=-D_MPICH_=3 -D_MVAPICH_
 # dlsym/LD_PRELOAD-intercept), so patched mvapich2 source calls mv2_proxy_ibv_*
 # directly instead; verbs+smpi are always invoked unconditionally by that patched
 # binary, nothing to pick at runtime, so they're compiled into core (not a shim).
-# t_fab.o/t_fab_layer_h already come from FABRIC=on above
+# t_transport.o/t_transport_layer_h already come from TRANSPORT=on above
 CONTROLS+=-D_VERBS_PROFILE_
 # psm2 is dlsym/RTLD_NEXT-interceptable (real exported symbols, unlike ibv_*), so
 # it's compiled in here rather than needing a mv2_proxy_psm2_* source patch; the
-# generated check on the runtime T_FAB_LAYER picks whichever of verbs/smpi/psm2
+# generated check on the runtime T_TRANSPORT_LAYER picks whichever of verbs/smpi/psm2
 # actually applies to a given mvapich2 build (ib-verbs vs opa-psm2 channel)
-fab_func_layers+=-l verbs -l smpi -l psm2
+transport_func_layers+=-l verbs -l smpi -l psm2
 
 endif
 
 
 # legacy single-layer-only builds, kept for reference (never hit by current Build*.sh)
-ifeq "$(FABRIC)" "PSM2"
+ifeq "$(TRANSPORT)" "PSM2"
 CONTROLS+=-D_PSM2_PROFILE_ 
 #LIBS+=-L$(PSM2PATH)/lib64 -lpsm2
-OBJECTS+=t_fab.o 
-t_fab_layer_h=t_fab_layer_h.h
-fab_layer=psm2
-#fab_func_layers=-l psm2
+OBJECTS+=t_transport.o 
+t_transport_layer_h=t_transport_layer_h.h
+transport_layer=psm2
+#transport_func_layers=-l psm2
 EXTRANAMELIB:=$(EXTRANAMELIB).psm2
 endif
 
 
-ifeq "$(FABRIC)" "VERBS"
+ifeq "$(TRANSPORT)" "VERBS"
 CONTROLS+= -D_VERBS_PROFILE_
 #LIBS+=-L$(VERBSPATH)/lib64 -libverbs
-OBJECTS+=t_fab.o 
-t_fab_layer_h=t_fab_layer_h.h
-fab_layer=verbs
-fab_func_layers=-l verbs -l smpi
+OBJECTS+=t_transport.o 
+t_transport_layer_h=t_transport_layer_h.h
+transport_layer=verbs
+transport_func_layers=-l verbs -l smpi
 EXTRANAMELIB:=$(EXTRANAMELIB).verbs
 
 endif
 
-ifeq "$(FABRIC)" "PSM3"
+ifeq "$(TRANSPORT)" "PSM3"
 CONTROLS+=-D_PSM3_PROFILE_ 
 #LIBS+=-L$(PSM3PATH)/lib64 -lpsm3
-OBJECTS+=t_fab.o 
-t_fab_layer_h=t_fab_layer_h.h
-fab_layer=psm3
-fab_func_layers=-l psm3
+OBJECTS+=t_transport.o 
+t_transport_layer_h=t_transport_layer_h.h
+transport_layer=psm3
+transport_func_layers=-l psm3
 EXTRANAMELIB:=$(EXTRANAMELIB).psm3
 endif
 
-ifeq "$(FABRIC)" "UCX"
+ifeq "$(TRANSPORT)" "UCX"
 CONTROLS+=-D_UCX_PROFILE_ 
 #LIBS+=-L$(UCXPATH)/lib -lucp -lucs
-OBJECTS+=t_fab.o 
-t_fab_layer_h=t_fab_layer_h.h
-fab_layer=ucx
-fab_func_layers=-l ucx
+OBJECTS+=t_transport.o 
+t_transport_layer_h=t_transport_layer_h.h
+transport_layer=ucx
+transport_func_layers=-l ucx
 EXTRANAMELIB:=$(EXTRANAMELIB).ucx
 endif
 
-ifeq "$(FABRIC)" "OFI"
+ifeq "$(TRANSPORT)" "OFI"
 CONTROLS+=-D_OFI_PROFILE_ 
 #LIBS+=-L$(OFIPATH)/lib64 -lfabric
-OBJECTS+=t_fab.o 
-t_fab_layer_h=t_fab_layer_h.h
-fab_layer=ofi
-fab_func_layers=-l ofi
+OBJECTS+=t_transport.o 
+t_transport_layer_h=t_transport_layer_h.h
+transport_layer=ofi
+transport_func_layers=-l ofi
 EXTRANAMELIB:=$(EXTRANAMELIB).ofi
 endif
 
@@ -258,7 +258,7 @@ DEBUG_TESTS=-g -fno-inline
 
 ifeq "$(DIAG)" "on"
 DBG=_dbg
-DEBUG+= -fno-inline -D_TRACTOR_DIAG_ -D_TRACTOR_DEBUG_TRACTOR_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_FAB_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_MPI_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_GPU_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_OMPT_ENTRY_EXIT_  -D_TRACTOR_DEBUG_COMM_ENTRY_EXIT_ 
+DEBUG+= -fno-inline -D_TRACTOR_DIAG_ -D_TRACTOR_DEBUG_TRACTOR_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_TRANSPORT_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_MPI_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_GPU_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_OMPT_ENTRY_EXIT_  -D_TRACTOR_DEBUG_COMM_ENTRY_EXIT_ 
 OPT=-O0
 OBJECTS+=t_debug.o
 LIBS+=-lunwind
@@ -333,9 +333,9 @@ endif
 
 
 LIBSUFFIX=$(SUFFIX)$(DBG).$(TARGET)$(EXTRANAMELIB)$(CT_SUFFIX)
-# fab shims are TARGET-independent (see FABRIC=on block above) and never get
-# CT_SUFFIX either, since PARSE_MPI_INTERNAL doesn't affect the fab wrapper functions
-FABLIBSUFFIX=$(SUFFIX)$(DBG)$(EXTRANAMELIB)
+# transport shims are TARGET-independent (see TRANSPORT=on block above) and never get
+# CT_SUFFIX either, since PARSE_MPI_INTERNAL doesn't affect the transport wrapper functions
+TRANSPORTLIBSUFFIX=$(SUFFIX)$(DBG)$(EXTRANAMELIB)
 BINSUFFIX=$(SUFFIX)$(DBG).$(TARGET)
 MTBL=tractor$(LIBSUFFIX)
 MTB=lib$(MTBL).so.$(MAJOR).$(MINOR)
@@ -344,13 +344,13 @@ PTPD=$(PTPDL).$(MAJOR).$(MINOR)
 
 CMISC+=-D_TRACTOR_LIB_SUFFIX_=\"$(LIBSUFFIX)\" -D_TRACTOR_BIN_SUFFIX_=\"$(BINSUFFIX)\"   -D_TRACTOR_ZERO_ON_ALLOCATE_ #-D_TRACTOR_PASSTHROUGH_
 
-ifeq "$(TARGET)" "fab_layers"
-# standalone: only the fab shims, no core lib/ptpd built here
-all: $(FAB_SHIM_LIBS)
+ifeq "$(TARGET)" "transport_layers"
+# standalone: only the transport shims, no core lib/ptpd built here
+all: $(TRANSPORT_SHIM_LIBS)
 
-install: $(FAB_SHIM_LIBS)
-	(mkdir -p ../../../lib/$(COMPILER); chmod o+rx $(FAB_SHIM_LIBS); cp -v $(FAB_SHIM_LIBS) ../../../lib/$(COMPILER); \
-	cd ../../../lib/$(COMPILER); for b in $(FAB_SHIM_BASENAMES); do ln -sf lib$$b.so.$(MAJOR).$(MINOR) lib$$b.so.$(MAJOR); ln -sf lib$$b.so.$(MAJOR) lib$$b.so; done )
+install: $(TRANSPORT_SHIM_LIBS)
+	(mkdir -p ../../../lib/$(COMPILER); chmod o+rx $(TRANSPORT_SHIM_LIBS); cp -v $(TRANSPORT_SHIM_LIBS) ../../../lib/$(COMPILER); \
+	cd ../../../lib/$(COMPILER); for b in $(TRANSPORT_SHIM_BASENAMES); do ln -sf lib$$b.so.$(MAJOR).$(MINOR) lib$$b.so.$(MAJOR); ln -sf lib$$b.so.$(MAJOR) lib$$b.so; done )
 else
 all: $(MTB) $(PTPD)
 
@@ -364,11 +364,11 @@ endif
 $(MTB): $(CPSOURCES) $(OBJECTS)
 	$(MPICXX) -o $(MTB) $(DEBUG) $(OPT) $(OMP) $(LDOPTMT) $(CONTROLS) $(SHARED) $(OBJECTS) $(LIBS)
 
-# fab shims dlsym() their real symbols at runtime and never call real MPI, so they're
+# transport shims dlsym() their real symbols at runtime and never call real MPI, so they're
 # linked with plain CXX (CXX comes from env.sh; no MPI runtime dependency) and don't
 # link against any specific core .so - gt_info(...)/t_info resolve at load time
 # against whatever core lib is loaded alongside them in the target process
-libtractor$(FABLIBSUFFIX)_fab_%.so.$(MAJOR).$(MINOR): mpi_layer_fab_%.o
+libtractor$(TRANSPORTLIBSUFFIX)_transport_%.so.$(MAJOR).$(MINOR): mpi_layer_transport_%.o
 	$(CXX) -o $@ $(DEBUG) $(OPT) $(SHARED) $< -ldl
 
 mpi_layer.o: mpi_layer.cpp
@@ -380,13 +380,13 @@ $(FUNCID): mpi_func.inc ../../common/mpi_func_ids.h
 	../../common/mpi_func_ids.pl -i ../../common/mpi_func_ids.h mpi_func.inc -o mpi_func_ids_through.h mpi_func_names.h mpi_func_ids_trans.h  
 
 mpi_layer.cpp: mpi_layer.cpp.in mpi_layer.cpp.in.end $(FUNCID)
-	./mpi_layer.pl -p $(USE_PRAGMA_WEAK) -e $(PRINT_EXTENDED_STUFF) -m $(MAXMPI) -t $(PCT) -c $(PARSE_GPU) -s $(mpi_layer_skip_core) -i mpi_func.inc -o mpi_layer.cpp $(fab_func_layers)
+	./mpi_layer.pl -p $(USE_PRAGMA_WEAK) -e $(PRINT_EXTENDED_STUFF) -m $(MAXMPI) -t $(PCT) -c $(PARSE_GPU) -s $(mpi_layer_skip_core) -i mpi_func.inc -o mpi_layer.cpp $(transport_func_layers)
 
-# fab_func_layers with "=outfile" makes mpi_layer.cpp's recipe also emit these
+# transport_func_layers with "=outfile" makes mpi_layer.cpp's recipe also emit these
 # as a side effect; own recipe (not merged suffix-rule) avoids a -j race where
 # the shim .so link could start before the .o was actually compiled
-mpi_layer_fab_%.o: mpi_layer.cpp
-	$(MPICXX) -o $@ -c $(INCLUDE) $(CONTROLS) $(CMISC) $(CXXMISC) $(DEBUG) $(OPT) $(OMP) $(FPIC) mpi_layer_fab_$*.cpp
+mpi_layer_transport_%.o: mpi_layer.cpp
+	$(MPICXX) -o $@ -c $(INCLUDE) $(CONTROLS) $(CMISC) $(CXXMISC) $(DEBUG) $(OPT) $(OMP) $(FPIC) mpi_layer_transport_$*.cpp
 
 $(OBJECTS):   $(FUNCID)
 
@@ -407,6 +407,6 @@ $(PTPD): $(MTB)
 
 clean:
 	rm -f mpi_func_ids_through.h mpi_func_names.h mpi_func_ids_trans.h $(OBJECTS) lib$(MTBL).so lib$(MTBL).so.$(MAJOR) $(MTB) $(PTPD) $(PTPDL) mpi_layer.c  \
-        t_fab_layer.h t_fab_layer_const.h t_fab_layer_h.h \
-        $(FAB_LAYER_SRCS) $(FAB_LAYER_OBJS) $(FAB_SHIM_LIBS)
+        t_transport_layer.h t_transport_layer_const.h t_transport_layer_h.h \
+        $(TRANSPORT_LAYER_SRCS) $(TRANSPORT_LAYER_OBJS) $(TRANSPORT_SHIM_LIBS)
 

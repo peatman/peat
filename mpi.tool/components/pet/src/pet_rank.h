@@ -21,7 +21,7 @@
 
 #include "common_types.h"
 #include "pet_event.h"
-#include "pet_fabric_event.h"
+#include "pet_transport_event.h"
 #include "pet_thread.h"
 #include "stat.h"
 #include "timeline.h"
@@ -117,10 +117,10 @@ class PET_Rank
     int verbose; // if true, add algo debug output
     std::map<Completion_Entry, Completion_Chain> completion_chains;
     std::map<PEAT_MPI_Request, PET_ToR_Event> pers_store;
-    std::list<PET_Fabric_Event> fabric_events;
-    static PEAT_LNum total_fabric_events;
-    static PEAT_LNum total_fabric_events_added;
-    static PEAT_LNum total_fabric_events_removed;
+    std::list<PET_Transport_Event> transport_events;
+    static PEAT_LNum total_transport_events;
+    static PEAT_LNum total_transport_events_added;
+    static PEAT_LNum total_transport_events_removed;
     PET_Event *last_read_event;
     PEAT_Bool orphans_processed;
     std::list<PET_Collective_Event *> nb_collectives; // outstanding nonblocking collectives (owners of foreign progress records)
@@ -415,8 +415,8 @@ class PET_Rank
     }
     void register_parallel_region(PET_Event *event);
     std::map<PEAT_Signed_Num, std::list<PET_Region>> parallel_regions;
-    PEAT_Bool insert_fabric_event(PET_Fabric_Event &event);
-    PEAT_Bool remove_fabric_events(PEAT_Clock clk);
+    PEAT_Bool insert_transport_event(PET_Transport_Event &event);
+    PEAT_Bool remove_transport_events(PEAT_Clock clk);
     PEAT_Num check_for_outstanding_progress_messages(PEAT_Clock clk)
     {
         PEAT_Num event_processed = 0;

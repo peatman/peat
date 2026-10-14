@@ -76,16 +76,16 @@ PEAT_Bool PET_ToR_Event::check_up_status() const
     if (check_tx()) {
         if (is_smp(PEAT_DIRECTION_TX))
             return is_rdv(PEAT_DIRECTION_TX); // smp transfers are acked
-        for (std::list<PET_Fabric_Event>::const_iterator fab_event_it = fabric_events.cbegin(); fab_event_it != fabric_events.cend(); ++fab_event_it) {
-            if (fab_event_it->is_any_rx() && !fab_event_it->is_peek() && !fab_event_it->is_poll())
+        for (std::list<PET_Transport_Event>::const_iterator transport_event_it = transport_events.cbegin(); transport_event_it != transport_events.cend(); ++transport_event_it) {
+            if (transport_event_it->is_any_rx() && !transport_event_it->is_peek() && !transport_event_it->is_poll())
                 return true;
         }
     }
     if (check_rx()) {
         if (is_smp(PEAT_DIRECTION_RX))
             return is_rdv(PEAT_DIRECTION_RX); // smp transfers are acked
-        for (std::list<PET_Fabric_Event>::const_iterator fab_event_it = fabric_events.cbegin(); fab_event_it != fabric_events.cend(); ++fab_event_it) {
-            if (fab_event_it->is_any_tx() && !fab_event_it->is_peek() && !fab_event_it->is_poll())
+        for (std::list<PET_Transport_Event>::const_iterator transport_event_it = transport_events.cbegin(); transport_event_it != transport_events.cend(); ++transport_event_it) {
+            if (transport_event_it->is_any_tx() && !transport_event_it->is_peek() && !transport_event_it->is_poll())
                 return true;
         }
     }
@@ -335,7 +335,7 @@ PEAT_Bool PET_ToR_Event::estimate_blocked()
                     sub_t = event_parts.meat;
                 event_parts.adjust(0, sub_t, 0);
                 event_parts.stat.overlap = get_overlap();
-                event_parts.stat.fabric = get_fabric();
+                event_parts.stat.transport = get_transport();
                 concatenate_event();
                 finish_calculations = true;
                 submit(e_time.func.out, EET_FUNC_END, this, this, NULL);
@@ -343,19 +343,19 @@ PEAT_Bool PET_ToR_Event::estimate_blocked()
             } else {
                 if (m_out > 0) { // || !(tx_message.is_blocking || is_rdv(false)) && tx_message.start > 0) {
 
-                    // event_parts.stat.fabric = __max__(m_out - m_in, 0);
+                    // event_parts.stat.transport = __max__(m_out - m_in, 0);
                     // set wait stat first
                     /* if (f_in > 0 && f_in < m_in) {
                         event_parts.stat.wait = m_in - f_in;
                     } */
-                    // then adjust fabric time
+                    // then adjust transport time
                     sub_t = f_out - m_out;
                     sub_t = clamp_sub_t_to_nested(sub_t, f_out);
                     if (sub_t > event_parts.meat)
                         sub_t = event_parts.meat;
                     event_parts.adjust(0, sub_t, 0);
                     event_parts.stat.overlap = get_overlap();
-                    event_parts.stat.fabric = get_fabric();
+                    event_parts.stat.transport = get_transport();
                     concatenate_event();
                     finish_calculations = true;
                     submit(e_time.func.out, EET_FUNC_END, this, this, NULL);
@@ -372,9 +372,9 @@ PEAT_Bool PET_ToR_Event::estimate_blocked()
             PEAT_Clock m_out = get_up_status(PEAT_DIRECTION_RX) ? get_ack_start() : get_message_finish(PEAT_DIRECTION_RX);
             PEAT_Clock sub_t = f_out - m_out;
             if (m_out > 0) {
-                // event_parts.stat.fabric = m_out - m_in;
+                // event_parts.stat.transport = m_out - m_in;
                 if (m_out <= f_in) {
-                    // transmission ended before recevider starts, "zero" fabric side
+                    // transmission ended before recevider starts, "zero" transport side
                     sub_t = event_parts.meat;
                 } else {
                     // set idle time here
@@ -388,7 +388,7 @@ PEAT_Bool PET_ToR_Event::estimate_blocked()
                 }
                 event_parts.adjust(0, sub_t, 0);
                 event_parts.stat.overlap = get_overlap();
-                event_parts.stat.fabric = get_fabric();
+                event_parts.stat.transport = get_transport();
                 concatenate_event();
                 finish_calculations = true;
                 submit(e_time.func.out, EET_FUNC_END, this, this, NULL);
@@ -418,7 +418,7 @@ PEAT_Bool PET_ToR_Event::estimate_nonblocked()
         // PEAT_Clock cpu_times = is_rdv() ? rts.get_cpu_times() : tx_message.get_cpu_times();
         if (m_out > 0 || (!(is_blocking) && m_in > 0)) {
             // warning( pet_core, this, "Abnormal path used...\n" );
-            // event_parts.stat.fabric = __max__(m_out - m_in, 0);
+            // event_parts.stat.transport = __max__(m_out - m_in, 0);
             /* if (f_in > 0 && f_in < m_in) {
                 event_parts.stat.wait = m_in - f_in;
             } */
@@ -450,9 +450,9 @@ PEAT_Bool PET_ToR_Event::estimate_nonblocked()
         PEAT_Clock m_out = get_message_finish(PEAT_DIRECTION_RX) < 0 ? get_cts_finish(PEAT_DIRECTION_RX) : get_message_finish(PEAT_DIRECTION_RX);
         PEAT_Clock sub_t = f_out - m_out;
         if (m_out > 0) {
-            // event_parts.stat.fabric = m_out - m_in;
+            // event_parts.stat.transport = m_out - m_in;
             if (m_out <= f_in) {
-                // transmission ended before recevider starts, "zero" fabric side
+                // transmission ended before recevider starts, "zero" transport side
                 sub_t = event_parts.meat;
             } else {
                 // set idle time here
@@ -462,7 +462,7 @@ PEAT_Bool PET_ToR_Event::estimate_nonblocked()
             }
             if (sub_t < 0) {
                 // this medians that the message is actually received LATER than this functions ends
-                // zero fabric side, handle it later in TEST/WAIT
+                // zero transport side, handle it later in TEST/WAIT
                 sub_t = f_out - f_in;
                 // pet_warning( pet_core, this, "Abnormal path used...\n" );
             }
@@ -608,11 +608,11 @@ PET_Event *PET_ToR_Event::get_real_event(PET_Event *evt)
     return evt;
 }
 
-PET_Fabric_Event *PET_ToR_Event::get_send_event(PEAT_UID index)
+PET_Transport_Event *PET_ToR_Event::get_send_event(PEAT_UID index)
 {
     PEAT_UID i = 0;
-    PET_Fabric_Event *evt = NULL;
-    for (std::list<PET_Fabric_Event>::iterator event_it = fabric_events.begin(); event_it != fabric_events.end(); ++event_it) {
+    PET_Transport_Event *evt = NULL;
+    for (std::list<PET_Transport_Event>::iterator event_it = transport_events.begin(); event_it != transport_events.end(); ++event_it) {
         if (event_it->is_tx()) {
             evt = &(*event_it);
             if (index <= i) { // sometimes index=-1
@@ -625,11 +625,11 @@ PET_Fabric_Event *PET_ToR_Event::get_send_event(PEAT_UID index)
     return evt; // last event found
 }
 
-PET_Fabric_Event *PET_ToR_Event::get_recv_event(PEAT_UID index)
+PET_Transport_Event *PET_ToR_Event::get_recv_event(PEAT_UID index)
 {
     PEAT_UID i = 0;
-    PET_Fabric_Event *evt = NULL;
-    for (std::list<PET_Fabric_Event>::iterator event_it = fabric_events.begin(); event_it != fabric_events.end(); ++event_it) {
+    PET_Transport_Event *evt = NULL;
+    for (std::list<PET_Transport_Event>::iterator event_it = transport_events.begin(); event_it != transport_events.end(); ++event_it) {
         if (event_it->is_rx()) {
             evt = &(*event_it);
             if (index <= i) { // sometimes index=-1
@@ -737,20 +737,20 @@ PEAT_Bool PET_ToR_Event::split_event()
         // PEAT_Num num_sends = 0, num_recvs = 0, num_isends = 0, num_irecvs = 0, num_waits = 0;
         PET_Local_Event::split_event();
         /*
-        for ( std::list <PET_Fabric_Event>::const_iterator fab_event_it = fabric_events.cbegin(); fab_event_it != fabric_events.cend(); ++fab_event_it ) {
-            if ( fab_event_it->is_wait() || fab_event_it->is_test() ) {
+        for ( std::list <PET_Transport_Event>::const_iterator transport_event_it = transport_events.cbegin(); transport_event_it != transport_events.cend(); ++transport_event_it ) {
+            if ( transport_event_it->is_wait() || transport_event_it->is_test() ) {
                 num_waits++;
             }
-            if ( fab_event_it->is_isend() && check_tx() ) {
+            if ( transport_event_it->is_isend() && check_tx() ) {
                 num_isends++;
             }
-            if ( fab_event_it->is_irecv() && check_rx() ) {
+            if ( transport_event_it->is_irecv() && check_rx() ) {
                 num_irecvs++;
             }
-            if ( fab_event_it->is_send() && check_tx() ) {
+            if ( transport_event_it->is_send() && check_tx() ) {
                 num_sends++;
             }
-            if ( fab_event_it->is_recv() && check_rx() ) {
+            if ( transport_event_it->is_recv() && check_rx() ) {
                 num_recvs++;
             }
         }*/
@@ -761,8 +761,8 @@ PEAT_Bool PET_ToR_Event::split_event()
 
 PEAT_Bool PET_ToR_Event::get_bounds()
 {
-    if (fabric_events.empty() && !is_persistent_init() && is_send() && !is_non_block()) {
-        pet_warning(pet_core, this, "No fabric events during send Suspicious.\n");
+    if (transport_events.empty() && !is_persistent_init() && is_send() && !is_non_block()) {
+        pet_warning(pet_core, this, "No transport events during send Suspicious.\n");
         return PET_Local_Event::get_bounds();
     }
     if (is_persistent_init()) {
@@ -770,17 +770,17 @@ PEAT_Bool PET_ToR_Event::get_bounds()
     }
     PEAT_Bool up_status = check_up_status();
     PEAT_Ratio r = (PEAT_Ratio)e_time.mpi.duration() / (PEAT_Ratio)ut_time.mpi.duration();
-    for (std::list<PET_Fabric_Event>::const_iterator fab_event_it = fabric_events.cbegin(); fab_event_it != fabric_events.cend(); ++fab_event_it) {
-        PEAT_Bool is_any_tx = fab_event_it->is_any_tx();
-        PEAT_Bool is_any_rx = fab_event_it->is_any_rx();
+    for (std::list<PET_Transport_Event>::const_iterator transport_event_it = transport_events.cbegin(); transport_event_it != transport_events.cend(); ++transport_event_it) {
+        PEAT_Bool is_any_tx = transport_event_it->is_any_tx();
+        PEAT_Bool is_any_rx = transport_event_it->is_any_rx();
         PEAT_Bool is_any_tx_rx = is_any_tx || is_any_rx;
 
-        if (((is_any_tx_rx && up_status) || (is_any_tx && check_tx()) || (is_any_rx && check_rx())) && is_TT_match(fab_event_it->get_t_type())) {
-            PEAT_Clock d2 = ut_time.mpi.out - (fab_event_it->ut_time.func.out - (fab_event_it->ut_time.func.out - fab_event_it->ut_time.mpi.out) / fab_event_it->l_num_calls);
+        if (((is_any_tx_rx && up_status) || (is_any_tx && check_tx()) || (is_any_rx && check_rx())) && is_TT_match(transport_event_it->get_t_type())) {
+            PEAT_Clock d2 = ut_time.mpi.out - (transport_event_it->ut_time.func.out - (transport_event_it->ut_time.func.out - transport_event_it->ut_time.mpi.out) / transport_event_it->l_num_calls);
             if (d2 < 0)
                 d2 = 0;
             if (ut_time.pe.in <= 0) {
-                PEAT_Clock d = fab_event_it->ut_time.func.in + (fab_event_it->ut_time.mpi.in - fab_event_it->ut_time.func.in) / fab_event_it->l_num_calls - ut_time.mpi.in;
+                PEAT_Clock d = transport_event_it->ut_time.func.in + (transport_event_it->ut_time.mpi.in - transport_event_it->ut_time.func.in) / transport_event_it->l_num_calls - ut_time.mpi.in;
                 if (d < 0)
                     d = 0;
                 ut_time.pe.in = ut_time.mpi.in + d;
@@ -878,7 +878,7 @@ void PET_ToR_Event::handle_event(Estimation_Event *event)
             pet_throw_error(pet_core, this, event, "Persistent requests inits handled other way.\n");
         }
         {
-            PET_Fabric_Event *send = get_send_event(parent_event == NULL ? 0L : sub_index());
+            PET_Transport_Event *send = get_send_event(parent_event == NULL ? 0L : sub_index());
             PEAT_Clock start = event->start;
             if (send && send->is_non_block()) {
                 PEAT_Clock d = send->ut_time.mpi.out - ut_time.mpi.in;
@@ -922,7 +922,7 @@ void PET_ToR_Event::handle_event(Estimation_Event *event)
         {
             PEAT_Clock start = event->start;
 #if 0
-				PET_Fabric_Event* send = get_send_event(parent_event == NULL ? 0 : sub_index());
+				PET_Transport_Event* send = get_send_event(parent_event == NULL ? 0 : sub_index());
 				if ( send && send->is_non_block() ) {
 					PEAT_Clock d = send->ut_time.mpi.out - ut_time.mpi.in;
 					start = e_time.mpi.in + d;
@@ -964,7 +964,7 @@ void PET_ToR_Event::handle_event(Estimation_Event *event)
             pet_throw_error(pet_core, this, event, "Persistent requests inits handled other way.\n");
         }
         {
-            PET_Fabric_Event *send = get_send_event(parent_event == NULL ? 0L : sub_index());
+            PET_Transport_Event *send = get_send_event(parent_event == NULL ? 0L : sub_index());
             PEAT_Clock start = event->start;
 #if 1
             if (send && send->is_non_block()) {

@@ -34,7 +34,7 @@
 #include "communicators.h"
 #include "func_split.h"
 #include "model_id.h"
-#include "pet_fabric_event.h"
+#include "pet_transport_event.h"
 #include "requests.h"
 #include "te_timeline.h"
 #include "transport.h"
@@ -413,8 +413,8 @@ class PET_Core
         PEAT_Func_ID_Pair pair(evt->func_id, evt->parent_func_id);
         return func_split->get_func_split(t, pair, evt->get_ranks_num(), size);
     }
-    void build_fabric_events_list(PET_Event *event);
-    PEAT_Bool read_fabric_events(PET_Event *event);
+    void build_transport_events_list(PET_Event *event);
+    PEAT_Bool read_transport_events(PET_Event *event);
     PEAT_Bool update_time_predictor(PEAT_Clock &, PET_Time_Event *, PET_Event *);
     PEAT_Signed_Num get_pe_type() { return globals.progress_engine; }
     PEAT_Bool get_up_status() { return globals.use_up != 0; }
@@ -448,7 +448,7 @@ class PET_Core
 
     File_Storage_GZ *input_MPI;
     File_Storage_GZ *input_HWC;
-    File_Storage_GZ *input_fab;
+    File_Storage_GZ *input_transport;
     File_Storage_GZ *output_MPI;
     File_Storage_GZ *output_HWC;
     File_Storage_GZ *output_bind;
@@ -466,7 +466,7 @@ class PET_Core
     Communicators *com_store;
     const Model_ID &model_id;
     std::vector<PEAT_Clock> tsc_corrector;
-    std::vector<PEAT_Clock> fabric_tsc_corrector;
+    std::vector<PEAT_Clock> transport_tsc_corrector;
     PEAT_UID loop_counter;
     void write_event_profile(const std::string &name, const Event_Set_Stat::t_stat_type type);
     void write_trace_info(const std::string &name);

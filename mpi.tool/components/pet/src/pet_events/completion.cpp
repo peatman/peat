@@ -41,12 +41,12 @@
 
 PEAT_Bool PET_Completion_Event::get_bounds()
 {
-    for (std::list<PET_Fabric_Event>::const_iterator fab_event_it = fabric_events.cbegin(); fab_event_it != fabric_events.cend(); ++fab_event_it) {
-        PEAT_Clock d2 = ut_time.mpi.out - fab_event_it->ut_time.mpi.out;
+    for (std::list<PET_Transport_Event>::const_iterator transport_event_it = transport_events.cbegin(); transport_event_it != transport_events.cend(); ++transport_event_it) {
+        PEAT_Clock d2 = ut_time.mpi.out - transport_event_it->ut_time.mpi.out;
         if (d2 < 0)
             d2 = 0;
         if (t_time.pe.in <= 0) {
-            PEAT_Clock d = fab_event_it->ut_time.mpi.in - ut_time.mpi.in;
+            PEAT_Clock d = transport_event_it->ut_time.mpi.in - ut_time.mpi.in;
             if (d < 0)
                 d = 0;
             t_time.pe.in = t_time.func.in + d;
@@ -83,7 +83,7 @@ PEAT_Bool PET_Completion_Event::override_children()
                     evt->set_block(true); // evt->set_verify();
                     evt->clear_estimated();
                     evt->ut_time = ut_time;
-                    // evt->fabric_events = fabric_events;
+                    // evt->transport_events = transport_events;
                     p_events.push_back(evt);
                     if (evt->get_parent_event() == NULL) {
                         if (evt->get_host_event() == NULL) {
@@ -102,7 +102,7 @@ PEAT_Bool PET_Completion_Event::override_children()
                     evt->set_block(true);
                     evt->clear_estimated();
                     evt->ut_time = ut_time;
-                    // evt->fabric_events = fabric_events;
+                    // evt->transport_events = transport_events;
                     p_events.push_back(evt);
                     if (evt->get_parent_event() == NULL) {
                         if (evt->get_host_event() == NULL) {
@@ -464,7 +464,7 @@ PEAT_Bool PET_Completion_Event::estimate(Estimation_Event *event)
                 get_core()->destroy_chain(rank, entry, this);
             }
             event_parts.stat.overlap = get_overlap();
-            event_parts.stat.fabric = get_fabric();
+            event_parts.stat.transport = get_transport();
             concatenate_event();
             if (get_core()->is_verbose() && e_time.func.out < event_start) {
                 fprintf(stderr, "Rank %d %s(%lld): ends at %lld but concluded only at %lld (event type %d, max_finish %lld, estimated=%d)\n", rank, global_func_id.name_by_idx(func_id), (long long)ids[0],
@@ -694,18 +694,18 @@ PEAT_Clock PET_Completion_Event::get_overlap() const
     }
     return total_overlap;
 }
-PEAT_Clock PET_Completion_Event::get_fabric() const
+PEAT_Clock PET_Completion_Event::get_transport() const
 {
-    PEAT_Clock total_fabric = 0;
+    PEAT_Clock total_transport = 0;
     for (std::map<PEAT_MPI_Request, PET_ToR_Event *>::const_iterator event_it = tor_events.cbegin(); event_it != tor_events.cend(); ++event_it) {
         PET_ToR_Event *evt = event_it->second;
-        total_fabric += evt->get_fabric();
+        total_transport += evt->get_transport();
     }
     for (std::map<PEAT_MPI_Request, PET_Collective_Event *>::const_iterator event_it = collective_events.cbegin(); event_it != collective_events.cend(); ++event_it) {
         PET_Collective_Event *evt = event_it->second;
-        total_fabric += evt->get_fabric();
+        total_transport += evt->get_transport();
     }
-    return total_fabric;
+    return total_transport;
 }
 PEAT_Bool PET_Completion_Event::split_event()
 {

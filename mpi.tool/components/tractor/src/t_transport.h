@@ -16,8 +16,8 @@
  * along with PEAT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef __T_FAB_H__
-#define __T_FAB_H__
+#ifndef __T_TRANSPORT_H__
+#define __T_TRANSPORT_H__
 
 #if 0
 #ifdef _VERBS_PROFILE_
@@ -36,7 +36,7 @@
 #endif
 #endif
 
-#ifdef _FAB_PROFILE_
+#ifdef _TRANSPORT_PROFILE_
 #include <psm2.h>
 #include <psm2_am.h>
 #include <psm2_mq.h>
@@ -68,10 +68,10 @@ typedef enum {
     TWO_FREE
 } smp_ctrl_avail_flag_t;
 
-struct t_fab_profiler : t_base_event {
-    t_fab_profiler();
-    ~t_fab_profiler();
-    long long write_fab_file(bool);
+struct t_transport_profiler : t_base_event {
+    t_transport_profiler();
+    ~t_transport_profiler();
+    long long write_transport_file(bool);
     // void init_hooks();
     void init(int max_threads, char *_stat_dir, char *_tmp_dir, char *_stat_template, int _use_realtime_dump);
     char *gz_ext;
@@ -88,4 +88,4 @@ struct t_fab_profiler : t_base_event {
 };
 #include <infiniband/verbs.h>
 
-#endif //__T_FAB_H__
+#endif //__T_TRANSPORT_H__

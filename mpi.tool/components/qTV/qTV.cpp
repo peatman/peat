@@ -125,18 +125,18 @@ void TV::draw_main_image()
         int ranks = elements->get_draw_rank_count();
         elements->paint.clear(ranks);
         elements->paint.thread_height = (fontMetrics().height() * 2);
-        int mpi_ulc = 0, fab_ulc, omp_ulc, gpu_ulc;
+        int mpi_ulc = 0, transport_ulc, omp_ulc, gpu_ulc;
         for (int a = 0; a < ranks; a++) {
             elements->paint.mpi_ulc[a] = mpi_ulc;
             int mpi_threads = elements->get_mpi_threads(a);
-            int fab_threads = elements->get_fab_threads(a);
+            int transport_threads = elements->get_transport_threads(a);
             int omp_threads = elements->get_omp_threads(a);
             int gpu_threads = elements->get_gpu_threads(a);
-            fab_ulc = (mpi_ulc + mpi_threads * elements->paint.thread_height);
-            omp_ulc = (fab_ulc + fab_threads * elements->paint.thread_height);
+            transport_ulc = (mpi_ulc + mpi_threads * elements->paint.thread_height);
+            omp_ulc = (transport_ulc + transport_threads * elements->paint.thread_height);
             gpu_ulc = (omp_ulc + omp_threads * elements->paint.thread_height);
             mpi_ulc = (gpu_ulc + gpu_threads * elements->paint.thread_height);
-            elements->paint.fab_ulc[a] = fab_ulc;
+            elements->paint.transport_ulc[a] = transport_ulc;
             elements->paint.omp_ulc[a] = omp_ulc;
             elements->paint.gpu_ulc[a] = gpu_ulc;
         }
@@ -672,9 +672,9 @@ bool TV::event(QEvent *e)
         QString tool_tip;
         if (evt) {
             tool_tip = QString("Function:%1\nRank:%2\nPrimary ID:%3\nIDs:%4\nThread:%5\n").arg(global_func_id.name_by_idx(evt->func_id)).arg(evt->rank).arg(evt->ids[0]).arg(QString::fromStdString(peat_ids_string(evt->ids))).arg(evt->thread);
-            if (evt->is_fab()) {
-                const TV_Fab_Event *fab_evt = static_cast<const TV_Fab_Event *>(evt);
-                tool_tip += QString("Calls:%1\nClocks between calls:%2\n").arg(fab_evt->num_calls).arg(fab_evt->total_clocks_bitween_calls);
+            if (evt->is_transport()) {
+                const TV_Transport_Event *transport_evt = static_cast<const TV_Transport_Event *>(evt);
+                tool_tip += QString("Calls:%1\nClocks between calls:%2\n").arg(transport_evt->num_calls).arg(transport_evt->total_clocks_bitween_calls);
             }
         } else {
             tool_tip = QString("User Code/Thread wait");
@@ -808,7 +808,7 @@ void TV::load_model(QFileInfo &trace_file, const std::set<PEAT_Rank> &ranks_to_l
         main_image_first = new QImage();
     }
     elements = new Elements(trace_file, shown);
-    if (!elements->load_model_data(pb, sr, mpi_file_names, hwc_file_names, bind_file_names, fab_file_names, ranks_to_load, tmin, tmax, load_threads, tp)) {
+    if (!elements->load_model_data(pb, sr, mpi_file_names, hwc_file_names, bind_file_names, transport_file_names, ranks_to_load, tmin, tmax, load_threads, tp)) {
         qDebug() << "Failed in trace parser.";
     }
     // qDebug() << *elements;
@@ -1031,7 +1031,7 @@ void TV::look_for_info()
             func_item->setText(10, outputDouble((PEAT_Ratio(e->e_time.func.duration()) / elements->get_trace_info().freq) * 1000000));
             func_item->setTextAlignment(10, Qt::AlignRight);
 
-            if (elements->user_regions && e->addrs) { // fabric events carry no address/source info
+            if (elements->user_regions && e->addrs) { // transport events carry no address/source info
                 QString tt;
                 QStringList source_locations;
                 QString source_file;
@@ -1060,9 +1060,9 @@ void TV::look_for_info()
                 func_item->setToolTip(0, tt);
                 func_item->setData(0, Qt::UserRole, userData);
                 func_item->setData(11, Qt::UserRole, userData);
-            } else if (e->is_fab()) {
-                const TV_Fab_Event *fab_e = static_cast<const TV_Fab_Event *>(e);
-                func_item->setText(11, QString("Calls:%1 Clocks between calls:%2").arg(fab_e->num_calls).arg(fab_e->total_clocks_bitween_calls));
+            } else if (e->is_transport()) {
+                const TV_Transport_Event *transport_e = static_cast<const TV_Transport_Event *>(e);
+                func_item->setText(11, QString("Calls:%1 Clocks between calls:%2").arg(transport_e->num_calls).arg(transport_e->total_clocks_bitween_calls));
             }
 
             for (int f = 0; const TV_Event *child = e->get_child(f); f++) {
@@ -1118,7 +1118,7 @@ void TV::look_for_functions()
             stop_clk = t;
         }
         functions_view = new FunctionsTabWidget;
-        elements->get_functions_in_region(functions_view->get_mpi_table(), functions_view->get_omp_table(), functions_view->get_gpu_table(), functions_view->get_fab_table(), start_clk, stop_clk, height());
+        elements->get_functions_in_region(functions_view->get_mpi_table(), functions_view->get_omp_table(), functions_view->get_gpu_table(), functions_view->get_transport_table(), start_clk, stop_clk, height());
 
         // Connect double-click handler to open source files, for every tab
         auto connectTableWidget = [this](QTableWidget *table) {
@@ -1129,7 +1129,7 @@ void TV::look_for_functions()
         connectTableWidget(functions_view->get_mpi_table());
         connectTableWidget(functions_view->get_omp_table());
         connectTableWidget(functions_view->get_gpu_table());
-        connectTableWidget(functions_view->get_fab_table());
+        connectTableWidget(functions_view->get_transport_table());
 
         // connect((const QObject*) functionsView->horizontalHeader(), SIGNAL(sectionClicked(int)), (const QObject*) functionsView, SLOT(sortByColumn(int)));//sort column by header click
         functions_view->show();

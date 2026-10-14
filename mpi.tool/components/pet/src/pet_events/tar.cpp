@@ -202,7 +202,7 @@ PEAT_Bool PET_TaR_Event::estimate(Estimation_Event *event)
         PEAT_Clock m_r_in = get_message_start(PEAT_DIRECTION_RX);
         PEAT_Clock m_r_out = get_message_finish(PEAT_DIRECTION_RX);
         if (m_t_out > 0 && m_r_out > 0) {
-            // event_parts.stat.fabric = __max__( m_t_out - m_t_in, 0 ) + (m_r_out - m_r_in);
+            // event_parts.stat.transport = __max__( m_t_out - m_t_in, 0 ) + (m_r_out - m_r_in);
             if (f_in < m_t_in) {
                 event_parts.stat.wait = m_t_in - f_in;
             }
@@ -222,7 +222,7 @@ PEAT_Bool PET_TaR_Event::estimate(Estimation_Event *event)
                 sub_t = event_parts.meat;
             event_parts.adjust(0, sub_t, 0);
             event_parts.stat.overlap = get_overlap();
-            event_parts.stat.fabric = get_fabric();
+            event_parts.stat.transport = get_transport();
             concatenate_event();
             finish_calculations = true;
             submit(e_time.func.out, EET_FUNC_END, this, this, NULL);

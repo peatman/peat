@@ -16,8 +16,8 @@
  * along with PEAT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef __PET_FABRIC_EVENT_H__
-#define __PET_FABRIC_EVENT_H__
+#ifndef __PET_TRANSPORT_EVENT_H__
+#define __PET_TRANSPORT_EVENT_H__
 
 #include "common_types.h"
 #include <assert.h>
@@ -29,13 +29,13 @@ enum PEAT_Transfer_Type {
     PEAT_TT_BOTH,
     PEAT_TT_MAX
 };
-struct PET_Fabric_Event : public PET_Time_Event {
+struct PET_Transport_Event : public PET_Time_Event {
     PEAT_UID id;
     PEAT_MPI_Func_ID func_id;
     PEAT_Clock total_clocks_bitween_calls;
     PEAT_LNum l_num_calls;
     PEAT_Thread thread;
-    PET_Fabric_Event() : id(-1), func_id(TMPI_FUNC_ID_NONE), total_clocks_bitween_calls(-1), l_num_calls(-1), thread(-1) {}
+    PET_Transport_Event() : id(-1), func_id(TMPI_FUNC_ID_NONE), total_clocks_bitween_calls(-1), l_num_calls(-1), thread(-1) {}
 
   public:
     PEAT_Clock remove_tractor_everhead()
@@ -200,4 +200,4 @@ struct PET_Fabric_Event : public PET_Time_Event {
     }
 };
 
-#endif // __PET_FABRIC_EVENT_H__
+#endif // __PET_TRANSPORT_EVENT_H__

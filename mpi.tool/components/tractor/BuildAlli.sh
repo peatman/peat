@@ -10,7 +10,7 @@ rm -f Build.${COMPILER}.dir
 
 #do_not_remove=1 ./Build.sh mvapich:2.3.5x-mt-ib-verbs-eng  mvapich2 off   on   off  off off off 
 #do_not_remove=1 ./Build.sh mvapich:2.3.5x-mt-ib-verbs      mvapich2 off   on   off  off off off 
-export FABRIC=on
+export TRANSPORT=on
 #do_not_remove=1 ./Build.sh mvapich:2.3.5x-mt-ib-verbs-eng  mvapich2 off   on   off  off off off 
 #do_not_remove=1 ./Build.sh mvapich:2.3.5x-mt-ib-verbs      mvapich2 off   on   off  off off off 
 #exit
@@ -21,15 +21,15 @@ export FABRIC=on
 #do_not_remove=1 ./Build.sh mvapich:4.1x-mt-ofi-eng         mvapich4  off   on  off  off off  off 
 #do_not_remove=1 ./Build.sh mpich:4.3.2x-mt-ofi-eng         mpich4    off   on  off  off off  off 
 #do_not_remove=1 ./Build.sh mpich:5.0.1x-mt-ofi-eng         mpich5    off   on  off  off off  off
-#do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng        fab_layers off   off  off  off off off
+#do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng        transport_layers off   off  off  off off off
 #do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng        mpich5     off   off  off  off off off
-#export FABRIC=on
+#export TRANSPORT=on
 #do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng        mpich5   off   off  off  off off off
 
 #exit
-# build fab layers (mpi doesn't matter here so use mpich) 
-#do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng          fab_layers off   off  off  off off off
-#do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng          fab_layers off   on  off  off off off
+# build transport layers (mpi doesn't matter here so use mpich) 
+#do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng          transport_layers off   off  off  off off off
+#do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng          transport_layers off   on  off  off off off
 #do_not_remove=1 ./Build.sh mpich:5.0.1x-mt-ofi-eng           mpich5     off   on  off  off off off
 #do_not_remove=1 ./Build.sh openmpi:5.0.10x-eng               openmpi5   off   on  off  off off off 
 #do_not_remove=1 ./Build.sh openmpi:5.0.10x                   openmpi5   off   on  off  off off off 
@@ -37,12 +37,12 @@ export FABRIC=on
 
 #exit
 
-./Build.sh  mpich:5.0.1x-mt-ofi-eng     fab_layers off   off  off  off off off &
-./Build.sh  mpich:5.0.1x-mt-ofi-eng     fab_layers off   on   off  off off off &
+./Build.sh  mpich:5.0.1x-mt-ofi-eng     transport_layers off   off  off  off off off &
+./Build.sh  mpich:5.0.1x-mt-ofi-eng     transport_layers off   on   off  off off off &
 
-unset FABRIC
+unset TRANSPORT
 
-# fab layer and colletive transfers are explicitly turned off for Intel MPI (no source in public) 
+# transport layer and colletive transfers are explicitly turned off for Intel MPI (no source in public) 
 #          mpi_type                         target  mem  diag  GPU  buf v2p  hwc  
 ./Build.sh impi                               impi  off   off  off  off off off &
 #./Build.sh impi                               impi  off   off  on   off off off &
@@ -67,7 +67,7 @@ unset FABRIC
 # unset ENG_MPI_BUILD
 
 
-# orinary mvapich2 builds (no ct and fab) 
+# orinary mvapich2 builds (no ct and transport) 
  ./Build.sh mvapich:2.3.5x-mt-ib-verbs       mvapich2 off   off  off  off off off &
 # ./Build.sh mvapich:2.3.5x-mt-ib-verbs       mvapich2 off   off  on   off off off &
  ./Build.sh mvapich:2.3.5x-mt-ib-verbs       mvapich2 off   on   off  off off off &
@@ -76,7 +76,7 @@ unset FABRIC
 #          1                                  2       3    4     5    6   7    8 
 #       mpi_type                           target    mem  diag  GPU  buf v2p  hwc  
 
-# orinary mvapich4 builds (no ct and fab) 
+# orinary mvapich4 builds (no ct and transport) 
 
 ./Build.sh mpich:4.3.2x-mt-ofi             mpich4    off   off  off  off off  off &
 #./Build.sh mpich:4.3.2x-mt-ofi             mpich4    off   off  on   off off  off &
@@ -94,9 +94,9 @@ unset FABRIC
 ./Build.sh mpich:5.0.1x-mt-ofi             mpich5    off   on   off  off off  off &
 #./Build.sh mpich:5.0.1x-mt-ofi             mpich5    off   on   on   off off  off &
 
-export FABRIC=on
+export TRANSPORT=on
 
-# ct and fab (SMPI/Verbs/psm2 combined) mvapich2 builds 
+# ct and transport (SMPI/Verbs/psm2 combined) mvapich2 builds 
 
  ./Build.sh mvapich:2.3.5x-mt-ib-verbs-eng   mvapich2 off   off  off  off off off &
 # ./Build.sh mvapich:2.3.5x-mt-ib-verbs-eng   mvapich2 off   off  on   off off off &
@@ -104,20 +104,20 @@ export FABRIC=on
 # ./Build.sh mvapich:2.3.5x-mt-ib-verbs-eng   mvapich2 off   on   on   off off off &
 
 
-# ct and fab (psm2) mvapich2 builds 
+# ct and transport (psm2) mvapich2 builds 
 # ./Build.sh mvapich:2.3.5x-st-opa-psm2-eng   mvapich2 off   off  off  off off off &
 # ./Build.sh mvapich:2.3.5x-st-opa-psm2-eng   mvapich2 off   off  on   off off off &
 # ./Build.sh mvapich:2.3.5x-st-opa-psm2-eng   mvapich2 off   on   off  off off off &
 # ./Build.sh mvapich:2.3.5x-st-opa-psm2-eng   mvapich2 off   on   on   off off off &
 
-# engineering mpich4 builds (ct and fab) 
+# engineering mpich4 builds (ct and transport) 
 
 ./Build.sh mpich:4.3.2x-mt-ofi-eng         mpich4    off   off  off  off off  off &
 #./Build.sh mpich:4.3.2x-mt-ofi-eng         mpich4    off   off  on   off off  off &
 ./Build.sh mpich:4.3.2x-mt-ofi-eng         mpich4    off   on   off  off off  off &
 #./Build.sh mpich:4.3.2x-mt-ofi-eng         mpich4    off   on   on   off off  off &
 
-# engineering mpich5 builds (ct and fab) 
+# engineering mpich5 builds (ct and transport) 
 
 ./Build.sh mpich:5.0.1x-mt-ofi-eng         mpich5    off   off  off  off off  off &
 #./Build.sh mpich:5.0.1x-mt-ofi-eng         mpich5    off   off  on   off off  off &

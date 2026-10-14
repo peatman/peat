@@ -94,13 +94,13 @@ static void debug_printf(const char *format, ...) {};
 #define __DEBUG_EPILOG_MPI_LAYER__
 #endif
 
-#ifdef _TRACTOR_DEBUG_FAB_LAYER_ENTRY_EXIT_
+#ifdef _TRACTOR_DEBUG_TRANSPORT_LAYER_ENTRY_EXIT_
 #define _TRACTOR_DEBUG_ENTRY_EXIT_
-#define __DEBUG_PROLOG_FAB_LAYER__ __DEBUG_PROLOG__
-#define __DEBUG_EPILOG_FAB_LAYER__ __DEBUG_EPILOG__
+#define __DEBUG_PROLOG_TRANSPORT_LAYER__ __DEBUG_PROLOG__
+#define __DEBUG_EPILOG_TRANSPORT_LAYER__ __DEBUG_EPILOG__
 #else
-#define __DEBUG_PROLOG_FAB_LAYER__
-#define __DEBUG_EPILOG_FAB_LAYER__
+#define __DEBUG_PROLOG_TRANSPORT_LAYER__
+#define __DEBUG_EPILOG_TRANSPORT_LAYER__
 #endif
 
 #ifdef _TRACTOR_DEBUG_GPU_LAYER_ENTRY_EXIT_
@@ -348,7 +348,7 @@ struct msl_event {
             PEAT_Clock total_clocks_bitween_calls;
             PEAT_Clock first_call;
             int num_calls;
-        } __attribute__((packed)) __attribute__((aligned(4))) fab;
+        } __attribute__((packed)) __attribute__((aligned(4))) transport;
         struct {
             int num_arguments;
             int num_out_arguments;
@@ -395,8 +395,8 @@ extern  ompt_finalize_tool_t ompt_finalize_tool;
 #define __msl_allocate_event(tid_in, level, skip_write, event, counters) gt_info(allocate_event(tid_in, level, skip_write, event, counters))
 #define __msl_reuse_event(tid_in, level, event, counters, funcid) gt_info(reuse_event(tid_in, level, event, counters, funcid))
 #define __msl_discard_event(tid_in, level, event, children_base) gt_info(discard_event(tid_in, level, event, children_base))
-#define __msl_fab_allocate_event(tid_in, event, funcid) gt_info(t_fab_prof).allocate_event(tid_in, event, funcid)
-#define __msl_fab_reuse_event(tid_in, event, funcid) gt_info(t_fab_prof).reuse_event(tid_in, event, funcid)
+#define __msl_transport_allocate_event(tid_in, event, funcid) gt_info(t_transport_prof).allocate_event(tid_in, event, funcid)
+#define __msl_transport_reuse_event(tid_in, event, funcid) gt_info(t_transport_prof).reuse_event(tid_in, event, funcid)
 
 #define __msl_get_tid(tid_in) gt_info(get_tid(tid_in))
 #define __msl_check_chain(tid, level) gt_info(t_check_chain(tid, level))

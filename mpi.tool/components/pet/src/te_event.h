@@ -170,7 +170,7 @@ struct TE_Event {
             return finish - ideal_finish;
         return 0;
     };
-    PEAT_Clock get_fabric() const
+    PEAT_Clock get_transport() const
     {
         if (finish > 0)
             return finish - start;

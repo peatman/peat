@@ -34,9 +34,9 @@
 #define event_dbg(x)  \
     if (verbose > x) \
     cerr
-PEAT_LNum PET_Rank::total_fabric_events = 0;
-PEAT_LNum PET_Rank::total_fabric_events_added = 0;
-PEAT_LNum PET_Rank::total_fabric_events_removed = 0;
+PEAT_LNum PET_Rank::total_transport_events = 0;
+PEAT_LNum PET_Rank::total_transport_events_added = 0;
+PEAT_LNum PET_Rank::total_transport_events_removed = 0;
 
 void PET_Rank::collect_garbage()
 {
@@ -45,7 +45,7 @@ void PET_Rank::collect_garbage()
         PEAT_Clock deleted_clock = (*thread_it)->delete_processed_events();
         max_deleted_clock = __max__(deleted_clock, max_deleted_clock);
     }
-    remove_fabric_events(max_deleted_clock);
+    remove_transport_events(max_deleted_clock);
 }
 void PET_Rank::register_parallel_region(PET_Event *event)
 {
@@ -83,45 +83,45 @@ void PET_Rank::register_parallel_region(PET_Event *event)
         region_list.push_back(t_region);
     }
 }
-PEAT_Bool PET_Rank::insert_fabric_event(PET_Fabric_Event &event)
+PEAT_Bool PET_Rank::insert_transport_event(PET_Transport_Event &event)
 {
-    fabric_events.push_back(event);
+    transport_events.push_back(event);
 #pragma omp atomic
-    total_fabric_events++;
+    total_transport_events++;
 #pragma omp atomic
-    total_fabric_events_added++;
+    total_transport_events_added++;
     return true;
 }
 
-PEAT_Bool PET_Rank::remove_fabric_events(PEAT_Clock clk)
+PEAT_Bool PET_Rank::remove_transport_events(PEAT_Clock clk)
 {
 
-    PET_Fabric_Event evt;
+    PET_Transport_Event evt;
 #if 0
-	while ( !fabric_events.empty() ) {
-		evt = fabric_events.front();
+	while ( !transport_events.empty() ) {
+		evt = transport_events.front();
 		if ( evt.ut_time.func.out < event->ut_time.func.out ) {
-			fabric_events.pop_front();
+			transport_events.pop_front();
 #pragma omp atomic  
-			total_fabric_events--;
+			total_transport_events--;
 #pragma omp atomic  
-			total_fabric_events_removed++;
+			total_transport_events_removed++;
 		} else break;
 	};
 #else
-    for (std::list<PET_Fabric_Event>::iterator fab_event_it = fabric_events.begin(); fab_event_it != fabric_events.end();) {
-        evt = *fab_event_it;
+    for (std::list<PET_Transport_Event>::iterator transport_event_it = transport_events.begin(); transport_event_it != transport_events.end();) {
+        evt = *transport_event_it;
         if (evt.ut_time.func.in >= clk)
             break;
         if (evt.ut_time.func.out >= clk) {
-            ++fab_event_it;
+            ++transport_event_it;
             continue;
         }
-        fab_event_it = fabric_events.erase(fab_event_it);
+        transport_event_it = transport_events.erase(transport_event_it);
 #pragma omp atomic
-        total_fabric_events--;
+        total_transport_events--;
 #pragma omp atomic
-        total_fabric_events_removed++;
+        total_transport_events_removed++;
     }
 #endif
 

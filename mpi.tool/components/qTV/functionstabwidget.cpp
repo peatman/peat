@@ -32,4 +32,4 @@ FunctionsTabWidget::~FunctionsTabWidget()
 QTableWidget *FunctionsTabWidget::get_mpi_table() { return ui->mpi; }
 QTableWidget *FunctionsTabWidget::get_omp_table() { return ui->omp; }
 QTableWidget *FunctionsTabWidget::get_gpu_table() { return ui->gpu; }
-QTableWidget *FunctionsTabWidget::get_fab_table() { return ui->fab; }
+QTableWidget *FunctionsTabWidget::get_transport_table() { return ui->transport; }

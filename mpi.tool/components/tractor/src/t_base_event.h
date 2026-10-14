@@ -234,8 +234,8 @@ struct t_base_event {
 
     int reuse_event(int tid, int level, msl_event **event, msl_extras_counters *counters, short func_id);
     void allocate_event(int tid, int level, int skip_dump, msl_event **event, msl_extras_counters *counters);
-    int reuse_event(int tid, msl_event **event, short func_id);     /* fabric layer: level 0, no counters */
-    void allocate_event(int tid, msl_event **event, short func_id); /* fabric layer: level 0, no counters */
+    int reuse_event(int tid, msl_event **event, short func_id);     /* transport-API: level 0, no counters */
+    void allocate_event(int tid, msl_event **event, short func_id); /* transport-API: level 0, no counters */
     int discard_event(int tid, int level, msl_event **event, long long children_base);
     void check_chain(pid_t tid, int level);
     void fini();

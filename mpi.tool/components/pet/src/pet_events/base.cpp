@@ -398,12 +398,12 @@ PET_Event *PET_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_H
     PEAT_Ratio r_t = (PEAT_Ratio)o_event_parts.duration() / (PEAT_Ratio)event_parts.duration();
     gz_HWC->printf(rank, ";  \t ef=%lld:of=%lld:r=%lf:%lf\t st=%lld:se=%lld(%lld):head=%lld:tail=%lld", event_parts.meat, o_event_parts.meat, r, r_t, sub_t_t, sub_t_ae, sub_t_ae_t, head, tail);
     gz_HWC->printf(rank, " \t %s", global_func_id.name_by_idx(func_id));
-    std::map<std::string, PEAT_LNum> fabric_funcs;
-    for (std::list<PET_Fabric_Event>::const_iterator fab_event_it = fabric_events.cbegin(); fab_event_it != fabric_events.cend(); ++fab_event_it) {
-        fabric_funcs[global_func_id.name_by_idx(fab_event_it->func_id)] += fab_event_it->l_num_calls;
+    std::map<std::string, PEAT_LNum> transport_funcs;
+    for (std::list<PET_Transport_Event>::const_iterator transport_event_it = transport_events.cbegin(); transport_event_it != transport_events.cend(); ++transport_event_it) {
+        transport_funcs[global_func_id.name_by_idx(transport_event_it->func_id)] += transport_event_it->l_num_calls;
     }
-    for (std::map<std::string, PEAT_LNum>::const_iterator fab_func_it = fabric_funcs.cbegin(); fab_func_it != fabric_funcs.cend(); ++fab_func_it) {
-        gz_HWC->printf(rank, " %s(%lld)", fab_func_it->first.c_str(), fab_func_it->second);
+    for (std::map<std::string, PEAT_LNum>::const_iterator transport_func_it = transport_funcs.cbegin(); transport_func_it != transport_funcs.cend(); ++transport_func_it) {
+        gz_HWC->printf(rank, " %s(%lld)", transport_func_it->first.c_str(), transport_func_it->second);
     }
     gz_HWC->printf(rank, "%s", hwc_eol);
 
@@ -715,7 +715,7 @@ PEAT_Bool PET_Event::split_event()
 {
     if (event_parts.duration() > 0)
         return true;
-    get_core()->build_fabric_events_list(this);
+    get_core()->build_transport_events_list(this);
     get_bounds();
     if (e_time.pe.in > 0) {
         if (e_time.pe.in < e_time.mpi.in) {
@@ -761,10 +761,10 @@ PEAT_Bool PET_Event::split_event()
 }
 PEAT_Bool PET_Event::get_bounds()
 {
-    for (std::list<PET_Fabric_Event>::const_iterator fab_event_it = fabric_events.cbegin(); fab_event_it != fabric_events.cend(); ++fab_event_it) {
-        if (fab_event_it->is_any_tx() || fab_event_it->is_any_rx()) {
-            PEAT_Clock d = fab_event_it->ut_time.mpi.in - ut_time.mpi.in;
-            PEAT_Clock d2 = ut_time.mpi.out - fab_event_it->ut_time.mpi.out;
+    for (std::list<PET_Transport_Event>::const_iterator transport_event_it = transport_events.cbegin(); transport_event_it != transport_events.cend(); ++transport_event_it) {
+        if (transport_event_it->is_any_tx() || transport_event_it->is_any_rx()) {
+            PEAT_Clock d = transport_event_it->ut_time.mpi.in - ut_time.mpi.in;
+            PEAT_Clock d2 = ut_time.mpi.out - transport_event_it->ut_time.mpi.out;
             if (d >= 0 && d2 >= 0) {
                 // assert( d >= 0 );
                 // assert( d2 >= 0 );
@@ -776,7 +776,7 @@ PEAT_Bool PET_Event::get_bounds()
                 e_time.pe.out = e_time.func.out - d2;
             }
         } else {
-            pet_warning(pet_core, this, "Unclassified fabric event.\n");
+            pet_warning(pet_core, this, "Unclassified transport event.\n");
         }
     }
     return true;
@@ -785,21 +785,21 @@ PEAT_Clock PET_Event::scale_cpu_part(PEAT_Ratio ratio)
 {
     PEAT_Clock old_prolog_length = event_parts.prolog;
     PEAT_Clock old_epilog_length = event_parts.epilog;
-    PEAT_Clock old_fabric_length = event_parts.meat;
+    PEAT_Clock old_transport_length = event_parts.meat;
 
     PEAT_Clock new_prolog_length = (PEAT_Clock)(ratio * old_prolog_length);
     PEAT_Clock new_epilog_length = (PEAT_Clock)(ratio * old_epilog_length);
-    PEAT_Clock new_fabric_length = old_fabric_length;
+    PEAT_Clock new_transport_length = old_transport_length;
     PEAT_Clock prolog_adjustment = old_prolog_length - new_prolog_length;
-    PEAT_Clock fabric_adjustment = old_fabric_length - new_fabric_length;
+    PEAT_Clock transport_adjustment = old_transport_length - new_transport_length;
     PEAT_Clock epilog_adjustment = old_epilog_length - new_epilog_length;
-    return event_parts.adjust(prolog_adjustment, fabric_adjustment, epilog_adjustment);
+    return event_parts.adjust(prolog_adjustment, transport_adjustment, epilog_adjustment);
 };
 
 PEAT_Bool PET_Event::guess_blocking() const
 {
-    for (std::list<PET_Fabric_Event>::const_iterator fab_event_it = fabric_events.cbegin(); fab_event_it != fabric_events.cend(); ++fab_event_it) {
-        if (fab_event_it->is_send() || fab_event_it->is_wait() || fab_event_it->is_test() || fab_event_it->is_poll() || fab_event_it->is_notify()) {
+    for (std::list<PET_Transport_Event>::const_iterator transport_event_it = transport_events.cbegin(); transport_event_it != transport_events.cend(); ++transport_event_it) {
+        if (transport_event_it->is_send() || transport_event_it->is_wait() || transport_event_it->is_test() || transport_event_it->is_poll() || transport_event_it->is_notify()) {
             return true;
         }
     }

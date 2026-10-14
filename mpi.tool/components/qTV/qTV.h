@@ -200,7 +200,7 @@ class TV : public QWidget
     std::map<PEAT_Rank, std::string> mpi_file_names;
     std::map<PEAT_Rank, std::string> hwc_file_names;
     std::map<PEAT_Rank, std::string> bind_file_names;
-    std::map<PEAT_Rank, std::string> fab_file_names;
+    std::map<PEAT_Rank, std::string> transport_file_names;
 
     bool back_to_full_view;
     bool drag;

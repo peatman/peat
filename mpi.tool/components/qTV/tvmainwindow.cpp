@@ -485,7 +485,7 @@ void TVMainWindow::proceed_load_data()
         int max_threads = 1;
 #endif
         int load_threads, render_threads;
-        trace.set_propertiers(info.mpi_times, info.nodes, 0, 100, max_threads, max_threads, info.has_fab_files());
+        trace.set_propertiers(info.mpi_times, info.nodes, 0, 100, max_threads, max_threads, info.has_transport_files());
         if (trace.exec() == QDialog::Accepted) {
             std::set<PEAT_Rank> ranks_to_load;
             int tmin, tmax;
@@ -701,7 +701,7 @@ void TVMainWindow::reload_data()
             int max_threads = 1;
 #endif
             int load_threads, render_threads;
-            trace.set_propertiers(info.mpi_times, info.nodes, tmin, tmax, max_threads, max_threads, info.has_fab_files());
+            trace.set_propertiers(info.mpi_times, info.nodes, tmin, tmax, max_threads, max_threads, info.has_transport_files());
             QApplication::removePostedEvents(NULL);
             QApplication::processEvents();
             if (trace.exec() == QDialog::Accepted) {

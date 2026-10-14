@@ -37,7 +37,7 @@ class FunctionsTabWidget : public QTabWidget
     QTableWidget *get_mpi_table();
     QTableWidget *get_omp_table();
     QTableWidget *get_gpu_table();
-    QTableWidget *get_fab_table();
+    QTableWidget *get_transport_table();
 
   private:
     Ui::FunctionsTabWidget *ui;

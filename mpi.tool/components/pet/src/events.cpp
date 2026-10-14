@@ -565,7 +565,7 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
         if (prev_event) {
             event_rank->sub_time = difference + event->apply_user_code(get_user_code_ratio(prev_event, event), prev_event);
         }
-        read_fabric_events(event);
+        read_transport_events(event);
         event->insert();
         // event->split_event();
         event->post_read_event();
@@ -660,16 +660,16 @@ void PET_Core::update_active_event_chain(PEAT_Clock sub_t, PET_Event *event)
     return;
 }
 #if 1
-PEAT_Bool PET_Core::read_fabric_events(PET_Event *event)
+PEAT_Bool PET_Core::read_transport_events(PET_Event *event)
 {
     PEAT_Node node = event->node;
     PEAT_Node rank = event->rank;
     String_Split trace_line_f;
 
-    while (input_fab->read_lines(trace_line_f, rank, ':')) {
+    while (input_transport->read_lines(trace_line_f, rank, ':')) {
         if (trace_line_f.size() < 2)
             continue;
-        PET_Fabric_Event evt;
+        PET_Transport_Event evt;
         extract(evt.id, trace_line_f.at(0), 10);
         extract(evt.thread, trace_line_f.at(1), 10);
         extract(evt.func_id, trace_line_f.at(2), 10, false);
@@ -698,24 +698,24 @@ PEAT_Bool PET_Core::read_fabric_events(PET_Event *event)
         evt.e_time.mpi.out = evt.e_time.func.out - evt.e_time.mpi.out;
         extract(evt.total_clocks_bitween_calls, trace_line_f.at(7), 10);
         extract(evt.l_num_calls, trace_line_f.at(8), 10);
-        update_time_predictor(fabric_tsc_corrector[rank], &evt, NULL);
-        nodes.at(node).ranks.at(rank).insert_fabric_event(evt);
+        update_time_predictor(transport_tsc_corrector[rank], &evt, NULL);
+        nodes.at(node).ranks.at(rank).insert_transport_event(evt);
         if (evt.ut_time.func.in >= event->ut_time.func.out)
             break;
     };
     return true;
 }
 #else
-PEAT_Bool PET_Core::read_fabric_events(PET_Event *event)
+PEAT_Bool PET_Core::read_transport_events(PET_Event *event)
 {
     PEAT_Node node = event->node;
     PEAT_Node rank = event->rank;
     String_Split trace_line_f;
 
-    while (input_fab->read_lines(trace_line_f, rank, ':')) {
+    while (input_transport->read_lines(trace_line_f, rank, ':')) {
         if (trace_line_f.size() < 2)
             continue;
-        PET_Fabric_Event evt, tmp_evt;
+        PET_Transport_Event evt, tmp_evt;
         extract(evt.id, trace_line_f.at(0), 10);
         extract(evt.func_id, trace_line_f.at(2), 10, false);
         if (evt.func_id == TMPI_FUNC_ID_NONE) {
@@ -750,7 +750,7 @@ PEAT_Bool PET_Core::read_fabric_events(PET_Event *event)
         PEAT_Clock clocks_bitween_calls = evt.total_clocks_bitween_calls / evt.l_num_calls;
         evt.e_time.mpi.out = evt.e_time.func.out - evt.e_time.mpi.out;
         PEAT_Clock func_clocks = (evt.e_time.func.out - evt.total_clocks_bitween_calls) / evt.l_num_calls - pre_tractor_overhead - post_tractor_overhead;
-        update_time_predictor(fabric_tsc_corrector[rank], &evt);
+        update_time_predictor(transport_tsc_corrector[rank], &evt);
 
         for (PEAT_LNum i = 0; i < evt.l_num_calls; i++) {
             tmp_evt = evt;
@@ -767,7 +767,7 @@ PEAT_Bool PET_Core::read_fabric_events(PET_Event *event)
             tmp_evt.ut_time = tmp_evt.e_time;
             tmp_evt.total_clocks_bitween_calls = 0;
             tmp_evt.l_num_calls = 1;
-            nodes.at(node).ranks.at(rank).insert_fabric_event(tmp_evt);
+            nodes.at(node).ranks.at(rank).insert_transport_event(tmp_evt);
         }
         if (evt.ut_time.func.in >= event->ut_time.func.out)
             break;
@@ -795,7 +795,7 @@ PEAT_Bool PET_Core::update_time_predictor(PEAT_Clock &predictor, PET_Time_Event 
     return true;
 }
 
-void PET_Core::build_fabric_events_list(PET_Event *event)
+void PET_Core::build_transport_events_list(PET_Event *event)
 {
     PET_Event *prev_event = NULL;
     PEAT_Clock min_clock = 0;
@@ -810,11 +810,11 @@ void PET_Core::build_fabric_events_list(PET_Event *event)
     }
     // build UC events first
     PET_Rank *r = get_pet_rank(event);
-    if (event->uc_fabric_events.empty()) { // for children avoid putting events twice
-        std::list<PET_Fabric_Event>::iterator fab_event_it = r->fabric_events.begin();
+    if (event->uc_transport_events.empty()) { // for children avoid putting events twice
+        std::list<PET_Transport_Event>::iterator transport_event_it = r->transport_events.begin();
 
-        for (; fab_event_it != r->fabric_events.end(); ++fab_event_it) {
-            PET_Fabric_Event &evt = *fab_event_it;
+        for (; transport_event_it != r->transport_events.end(); ++transport_event_it) {
+            PET_Transport_Event &evt = *transport_event_it;
             if (evt.ut_time.func.out < min_clock)
                 continue;
             if (evt.ut_time.func.in > max_clock)
@@ -824,7 +824,7 @@ void PET_Core::build_fabric_events_list(PET_Event *event)
 
             PEAT_Clock clocks_bitween_calls = evt.total_clocks_bitween_calls / evt.l_num_calls;
             PEAT_Clock func_clocks = (evt.e_time.func.out - evt.e_time.func.in - evt.total_clocks_bitween_calls) / evt.l_num_calls - pre_tractor_overhead - post_tractor_overhead;
-            PET_Fabric_Event tmp_evt = evt, tmp_evt2;
+            PET_Transport_Event tmp_evt = evt, tmp_evt2;
             PEAT_LNum i, i_s;
             for (i = 0, i_s = 0; i < evt.l_num_calls; i++) {
                 tmp_evt.e_time.func.in = evt.e_time.func.in + i_s * (func_clocks + clocks_bitween_calls + pre_tractor_overhead + post_tractor_overhead);
@@ -844,15 +844,15 @@ void PET_Core::build_fabric_events_list(PET_Event *event)
                 tmp_evt2 = tmp_evt;
             }
             if (tmp_evt2.total_clocks_bitween_calls >= 0)
-                event->uc_fabric_events.push_back(tmp_evt2);
+                event->uc_transport_events.push_back(tmp_evt2);
         }
     }
     min_clock = event->ut_time.func.in;
     max_clock = event->ut_time.func.out;
-    if (event->fabric_events.empty()) { // for children avoid putting events twice
-        std::list<PET_Fabric_Event>::iterator fab_event_it = r->fabric_events.begin();
-        for (; fab_event_it != r->fabric_events.end(); ++fab_event_it) {
-            PET_Fabric_Event &evt = *fab_event_it;
+    if (event->transport_events.empty()) { // for children avoid putting events twice
+        std::list<PET_Transport_Event>::iterator transport_event_it = r->transport_events.begin();
+        for (; transport_event_it != r->transport_events.end(); ++transport_event_it) {
+            PET_Transport_Event &evt = *transport_event_it;
             if (evt.ut_time.func.out < min_clock)
                 continue;
             if (evt.ut_time.func.in > max_clock)
@@ -862,7 +862,7 @@ void PET_Core::build_fabric_events_list(PET_Event *event)
 
             PEAT_Clock clocks_bitween_calls = evt.total_clocks_bitween_calls / evt.l_num_calls;
             PEAT_Clock func_clocks = (evt.e_time.func.out - evt.e_time.func.in - evt.total_clocks_bitween_calls) / evt.l_num_calls - pre_tractor_overhead - post_tractor_overhead;
-            PET_Fabric_Event tmp_evt = evt, tmp_evt2;
+            PET_Transport_Event tmp_evt = evt, tmp_evt2;
             PEAT_LNum i, i_s;
             for (i = 0, i_s = 0; i < evt.l_num_calls; i++) {
                 tmp_evt.e_time.func.in = evt.e_time.func.in + i_s * (func_clocks + clocks_bitween_calls + pre_tractor_overhead + post_tractor_overhead);
@@ -882,7 +882,7 @@ void PET_Core::build_fabric_events_list(PET_Event *event)
                 tmp_evt2 = tmp_evt;
             }
             if (tmp_evt2.total_clocks_bitween_calls >= 0)
-                event->fabric_events.push_back(tmp_evt2);
+                event->transport_events.push_back(tmp_evt2);
         }
     }
 }

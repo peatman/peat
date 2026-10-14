@@ -37,7 +37,7 @@ class TraceDialog : public QDialog
   public:
     explicit TraceDialog(QWidget *parent = nullptr);
     ~TraceDialog();
-    void set_propertiers(std::vector<PEAT_MPI_Time> &times, std::vector<PEAT_Node_Desc> &nodes, int tmin, int tmax, int load_threads, int render_threads, bool has_fab_files);
+    void set_propertiers(std::vector<PEAT_MPI_Time> &times, std::vector<PEAT_Node_Desc> &nodes, int tmin, int tmax, int load_threads, int render_threads, bool has_transport_files);
     void get_propertiers(std::set<PEAT_Rank> &ranks, int &tmin, int &tmax, int &load_threads, int &render_threads, TV_TraceParts &tp);
   private slots:
 

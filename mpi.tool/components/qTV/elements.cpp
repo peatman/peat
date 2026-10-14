@@ -57,7 +57,7 @@ Elements::Elements(QFileInfo &name, TV_TraceParts *swn) : trace_info_file(name),
     trace_line_MPIs = new String_Split[omp_get_max_threads() + 1];
     trace_line_HWCs = new String_Split[omp_get_max_threads() + 1];
     trace_line_binds = new String_Split[omp_get_max_threads() + 1];
-    trace_line_fabs = new String_Split[omp_get_max_threads() + 1];
+    trace_line_transports = new String_Split[omp_get_max_threads() + 1];
     locks = NULL;
 #endif
 }
@@ -77,7 +77,7 @@ Elements::~Elements()
     delete[] trace_line_MPIs;
     delete[] trace_line_HWCs;
     delete[] trace_line_binds;
-    delete[] trace_line_fabs;
+    delete[] trace_line_transports;
 #endif
 }
 bool Elements::find_collective(Collective &entry)
@@ -233,28 +233,28 @@ bool Elements::get_message(const PEAT_Rank rank, File_Storage_GZ *input_bind, TV
     }
 }
 
-PEAT_Bool Elements::get_fab_event(const PEAT_Rank rank, File_Storage_GZ *input_fab, TV_Fab_Event **event)
+PEAT_Bool Elements::get_transport_event(const PEAT_Rank rank, File_Storage_GZ *input_transport, TV_Transport_Event **event)
 {
     *event = NULL;
 #ifdef _OPENMP
-    String_Split &trace_line_fab = trace_line_fabs[omp_get_thread_num()];
+    String_Split &trace_line_transport = trace_line_transports[omp_get_thread_num()];
 #endif
-    trace_line_fab.clear();
-    PEAT_Bool f = input_fab->read_lines(trace_line_fab, rank, ':');
+    trace_line_transport.clear();
+    PEAT_Bool f = input_transport->read_lines(trace_line_transport, rank, ':');
     if (!f)
         return false;
-    if (trace_line_fab.size() < 9)
+    if (trace_line_transport.size() < 9)
         return true; // malformed/short line, keep reading
-    TV_Fab_Event *evt = new TV_Fab_Event();
-    if (!evt->read_fab_event(rank, trace_line_fab)) {
-        evt->e_time.func.in += fab_tsc_predictor.at(rank);
-        fab_tsc_predictor[rank] = evt->e_time.func.in; //update predictor anyway 
+    TV_Transport_Event *evt = new TV_Transport_Event();
+    if (!evt->read_transport_event(rank, trace_line_transport)) {
+        evt->e_time.func.in += transport_tsc_predictor.at(rank);
+        transport_tsc_predictor[rank] = evt->e_time.func.in; //update predictor anyway 
         delete evt;
         return true;
     }
    
-    evt->e_time.func.in += fab_tsc_predictor.at(rank);
-    fab_tsc_predictor[rank] = evt->e_time.func.in;
+    evt->e_time.func.in += transport_tsc_predictor.at(rank);
+    transport_tsc_predictor[rank] = evt->e_time.func.in;
     evt->e_time.mpi.in += evt->e_time.func.in;
     evt->e_time.mpi.out += evt->e_time.func.in;
     evt->e_time.func.out += evt->e_time.func.in;
@@ -290,25 +290,25 @@ void Elements::compact_events(int nthreads)
     }
 }
 
-void Elements::compact_fab_events(int nthreads)
+void Elements::compact_transport_events(int nthreads)
 {
 #pragma omp parallel for schedule(dynamic) num_threads(nthreads)
-    for (PEAT_Rank rank = 0; rank < events_fabV.size(); ++rank) {
+    for (PEAT_Rank rank = 0; rank < events_transportV.size(); ++rank) {
         //    for (std::vector<std::vector<TV_Event*>>::iterator rank_it = eventsV.begin(); rank_it != eventsV.end(); ++rank_it, ++r) {
         PEAT_UID index = 0;
-        for (std::vector<TV_Fab_Event*>::iterator event_it = events_fabV.at(rank).begin(); event_it != events_fabV.at(rank).end(); ++event_it) {
-            TV_Fab_Event* evt = *event_it;
+        for (std::vector<TV_Transport_Event*>::iterator event_it = events_transportV.at(rank).begin(); event_it != events_transportV.at(rank).end(); ++event_it) {
+            TV_Transport_Event* evt = *event_it;
             if (evt) {
-                events_fabV.at(rank)[index] = evt;
+                events_transportV.at(rank)[index] = evt;
 #ifdef QTV_TR_VECTOR
-                events_fab_tr.at(rank)[evt->ids[0]] = index;
+                events_transport_tr.at(rank)[evt->ids[0]] = index;
 #else
-                events_fab_tr.at(rank)[evt->ids[0]] = evt;
+                events_transport_tr.at(rank)[evt->ids[0]] = evt;
 #endif
                 ++index;
             }
         }
-        events_fabV.at(rank).resize(index);
+        events_transportV.at(rank).resize(index);
     }
 }
 
@@ -316,12 +316,12 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
                                std::map<PEAT_Rank, std::string> &mpi_file_names,
                                std::map<PEAT_Rank, std::string> &hwc_file_names,
                                std::map<PEAT_Rank, std::string> &bind_file_names,
-                               std::map<PEAT_Rank, std::string> &fab_file_names,
+                               std::map<PEAT_Rank, std::string> &transport_file_names,
                                const std::set<PEAT_Rank> &ranks_to_load,
                                int tmin, int tmax, int load_threads, TV_TraceParts &tp)
 {
     const QString prog_bar_text = pb->format();
-    if (!parse_trace_info_file(trace_info_file, mpi_file_names, hwc_file_names, bind_file_names, fab_file_names, ranks_to_load)) {
+    if (!parse_trace_info_file(trace_info_file, mpi_file_names, hwc_file_names, bind_file_names, transport_file_names, ranks_to_load)) {
         // TODO add messageBox?;
         return false;
     };
@@ -329,19 +329,19 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
     File_Storage_GZ mpi_files(mpi_file_names, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE);
     File_Storage_GZ hwc_files(hwc_file_names, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE);
     File_Storage_GZ bind_files(bind_file_names, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE);
-    File_Storage_GZ fab_files(fab_file_names, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE);
+    File_Storage_GZ transport_files(transport_file_names, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE);
     ranks_to_load_v.clear();
     ranks_to_load_v_rev.clear();
     ranks_to_load_v_rev.resize(bind_file_names.size());
     max_mpi_tid.clear();
     max_mpi_tid.resize(bind_file_names.size());
-    max_fab_tid.clear();
-    max_fab_tid.resize(bind_file_names.size());
+    max_transport_tid.clear();
+    max_transport_tid.resize(bind_file_names.size());
     max_omp_tid.clear();
     max_omp_tid.resize(bind_file_names.size());
     max_gpu_tid.clear();
     max_gpu_tid.resize(bind_file_names.size());
-    fab_tsc_predictor.assign(bind_file_names.size(), 0);
+    transport_tsc_predictor.assign(bind_file_names.size(), 0);
     PEAT_Rank r = 0;
     for (std::set<PEAT_Rank>::const_iterator rank_it = ranks_to_load.cbegin(); rank_it != ranks_to_load.cend(); ++rank_it, ++r) {
         ranks_to_load_v.push_back(*rank_it);
@@ -442,15 +442,15 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
                 rank_completed++;
             }
         }
-        pb->setFormat("Reading fab files " + prog_bar_text + " done");
+        pb->setFormat("Reading transport files " + prog_bar_text + " done");
         QApplication::processEvents();
-        if (!fab_file_names.empty() && tp.fab_functions) {
-            std::vector<PEAT_Rank> fab_ranks;
-            fab_ranks.reserve(fab_file_names.size());
-            for (std::map<PEAT_Rank, std::string>::const_iterator it = fab_file_names.begin(); it != fab_file_names.end(); ++it) {
-                fab_ranks.push_back(it->first);
+        if (!transport_file_names.empty() && tp.transport_functions) {
+            std::vector<PEAT_Rank> transport_ranks;
+            transport_ranks.reserve(transport_file_names.size());
+            for (std::map<PEAT_Rank, std::string>::const_iterator it = transport_file_names.begin(); it != transport_file_names.end(); ++it) {
+                transport_ranks.push_back(it->first);
             }
-            m_r = fab_ranks.size();
+            m_r = transport_ranks.size();
 #pragma omp parallel for schedule(dynamic) num_threads(load_threads)
             for (PEAT_Rank r = 0; r < m_r; ++r) {
                 PEAT_Clock min_clock = (trace_info.rank_times[ranks_to_load_v[r]].t3 - trace_info.rank_times[ranks_to_load_v[r]].t2) / 100 * tmin + trace_info.rank_times[ranks_to_load_v[r]].t1;
@@ -459,39 +459,39 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
                     min_clock = LLONG_MIN;
                 if (tmax >= 99)
                     max_clock = LLONG_MAX;
-                PEAT_Rank rank = fab_ranks[r];
+                PEAT_Rank rank = transport_ranks[r];
                 PEAT_UID max_id = 0;
                 PEAT_Bool rc = true;
                 do {
-                    TV_Fab_Event *fab_event = NULL;
-                    rc = get_fab_event(rank, &fab_files, &fab_event);
-                    if (fab_event) {
-                        if (fab_event->e_time.func.out < min_clock) { // saturation issue
-                            delete fab_event;
+                    TV_Transport_Event *transport_event = NULL;
+                    rc = get_transport_event(rank, &transport_files, &transport_event);
+                    if (transport_event) {
+                        if (transport_event->e_time.func.out < min_clock) { // saturation issue
+                            delete transport_event;
                             continue;
                         }
-                        if (fab_event->e_time.func.in > max_clock && psection[r].empty()) {
+                        if (transport_event->e_time.func.in > max_clock && psection[r].empty()) {
                             // cut_events(ranks_to_load_v[r],event->ids[0]);
-                            max_id = fab_event->ids[0];
-                            delete fab_event;
+                            max_id = transport_event->ids[0];
+                            delete transport_event;
                             break;
                         }
-                        if (!add_fab_event(fab_event, tp)) {
-                            delete fab_event; // event rejected
+                        if (!add_transport_event(transport_event, tp)) {
+                            delete transport_event; // event rejected
                         }
                         else {
-                            max_id = fab_event->ids[0] + 1;
+                            max_id = transport_event->ids[0] + 1;
                         }
                     }
                 } while (rc);
-                cut_fab_events(ranks_to_load_v[r], max_id);
-                fab_files.close(rank);
+                cut_transport_events(ranks_to_load_v[r], max_id);
+                transport_files.close(rank);
             }
         }
     } catch (const std::runtime_error &e) {
         qDebug() << "Couldn't open message file. Error: " << e.what() << "\n";
     }
-    compact_fab_events(load_threads);
+    compact_transport_events(load_threads);
 
     pb->hide();
     pb->setFormat(prog_bar_text); // revert original text
@@ -505,7 +505,7 @@ bool Elements::parse_trace_info_file(
     std::map<PEAT_Rank, std::string> &mpi_file_names,
     std::map<PEAT_Rank, std::string> &hwc_file_names,
     std::map<PEAT_Rank, std::string> &bind_file_names,
-    std::map<PEAT_Rank, std::string> &fab_file_names,
+    std::map<PEAT_Rank, std::string> &transport_file_names,
     const std::set<PEAT_Rank> &ranks_to_load)
 {
     if (!trace_info.parse_trace_info_file(trace_info_file))
@@ -520,7 +520,7 @@ bool Elements::parse_trace_info_file(
     mpi_file_names.clear();
     hwc_file_names.clear();
     bind_file_names.clear();
-    fab_file_names.clear();
+    transport_file_names.clear();
     QFileInfoList all_files_found = directory.entryInfoList(QStringList(file_tmpl + "*"), QDir::Files);
     for (QFileInfoList::iterator it = all_files_found.begin(); it != all_files_found.end(); ++it) {
         QString file = it->fileName();
@@ -562,14 +562,14 @@ bool Elements::parse_trace_info_file(
 
     // user_regions = new Address_File_Storage(trace_info.path.toStdString(), "", trace_info.trace_files.toStdString(), trace_info.com_ext.toStdString(), trace_info.app_ext.toStdString(), rank_set, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE,NULL);
 
-    // fab files are always raw (tractor writes them directly, mat/pet never post-process them), so
-    // - unlike mpi/hwc - they live in trace_info.path, not next to trace.info. fab_files isn't always
-    // recorded into trace.info (e.g. older traces), default to ".fab" like mat/pet do in that case.
-    glob.fab_files = trace_info.fab_files.isEmpty() ? ".fab" : trace_info.fab_files.toStdString();
-    std::map<PEAT_Rank, std::string> raw_fab_names = get_file_names(glob.input_path, glob.trace_files, glob.fab_files, false);
-    for (std::map<PEAT_Rank, std::string>::const_iterator it = raw_fab_names.begin(); it != raw_fab_names.end(); ++it) {
+    // transport files are always raw (tractor writes them directly, mat/pet never post-process them), so
+    // - unlike mpi/hwc - they live in trace_info.path, not next to trace.info. transport_files isn't always
+    // recorded into trace.info (e.g. older traces), default to ".transport" like mat/pet do in that case.
+    glob.transport_files = trace_info.transport_files.isEmpty() ? ".transport" : trace_info.transport_files.toStdString();
+    std::map<PEAT_Rank, std::string> raw_transport_names = get_file_names(glob.input_path, glob.trace_files, glob.transport_files, false);
+    for (std::map<PEAT_Rank, std::string>::const_iterator it = raw_transport_names.begin(); it != raw_transport_names.end(); ++it) {
         if (ranks_to_load.count(it->first) == 1)
-            fab_file_names[it->first] = it->second;
+            transport_file_names[it->first] = it->second;
     }
 
     if (ptp) {
@@ -614,19 +614,19 @@ bool Elements::parse_trace_info_file(
         tsc_predictor.assign(ranks_to_load.empty() ? 0 : (*ranks_to_load.rbegin() + 1), 0);
     }
     eventsV.resize(user_regions->last_event_idx.size());
-    events_fabV.resize(user_regions->last_fab_event_idx.size());
+    events_transportV.resize(user_regions->last_transport_event_idx.size());
     events_tr.resize(user_regions->last_event_idx.size());
-    events_fab_tr.resize(user_regions->last_event_idx.size());
+    events_transport_tr.resize(user_regions->last_event_idx.size());
     // PEAT_Rank_Pair p(user_regions->last_event_idx.size());
     for (int i = 0; i < eventsV.size(); i++) {
         if (ranks_to_load.count(i) == 1) {
             eventsV[i].resize(user_regions->last_event_idx.at(i) + 1);
-            events_fabV[i].resize(user_regions->last_fab_event_idx.at(i) + 1);
+            events_transportV[i].resize(user_regions->last_transport_event_idx.at(i) + 1);
 #ifdef QTV_TR_VECTOR
             events_tr[i].resize(user_regions->last_event_idx.at(i) + 1);
             std::fill(events_tr[i].begin(), events_tr[i].end(), -1);
-            events_fab_tr[i].resize(user_regions->last_fab_event_idx.at(i) + 1);
-            std::fill(events_fab_tr[i].begin(), events_fab_tr[i].end(), -1);
+            events_transport_tr[i].resize(user_regions->last_transport_event_idx.at(i) + 1);
+            std::fill(events_transport_tr[i].begin(), events_transport_tr[i].end(), -1);
 #endif
         }
     }
@@ -712,7 +712,7 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
         p[tid]->setPen(Qt::NoPen);
         p[tid]->setBrush(tv_colors.event_brushes[TV_BRUSH_EVENT_TYPE_USER_CODE]);
         long y_start = paint.mpi_ulc.at(r);
-        long pix_in_rank = (get_mpi_threads(r) + get_fab_threads(r) + get_omp_threads(r) + get_gpu_threads(r)) * paint.thread_height;
+        long pix_in_rank = (get_mpi_threads(r) + get_transport_threads(r) + get_omp_threads(r) + get_gpu_threads(r)) * paint.thread_height;
         p[tid]->drawRect(0, y_start, s_width, pix_in_rank);
         if (r && (r < get_draw_rank_count())) {
             p[tid]->setPen(line_rank);
@@ -902,51 +902,51 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                 //  if (cur_func_ptr == cur_func) xEndOfPreviousMPIEvent = x_start + width;
             }
         }
-        // Draw fabric events (row band placed right below this rank's MPI rows, see draw_main_image)
-        const std::vector<TV_Fab_Event *> &it_fab_rank = events_fabV.at(ranks_to_load_v.at(r));
-        if (!it_fab_rank.empty()) {
-            std::vector<TV_Fab_Event *>::const_iterator fab_init_it = lower_bound(it_fab_rank, start_time);
-            if (fab_init_it != it_fab_rank.begin()) {
-                --fab_init_it;
+        // Draw transport events (row band placed right below this rank's MPI rows, see draw_main_image)
+        const std::vector<TV_Transport_Event *> &it_transport_rank = events_transportV.at(ranks_to_load_v.at(r));
+        if (!it_transport_rank.empty()) {
+            std::vector<TV_Transport_Event *>::const_iterator transport_init_it = lower_bound(it_transport_rank, start_time);
+            if (transport_init_it != it_transport_rank.begin()) {
+                --transport_init_it;
             }
-            for (std::vector<TV_Fab_Event *>::const_iterator it = fab_init_it; it != it_fab_rank.end(); ++it) {
-                const TV_Fab_Event *cur_fab = *it;
-                if (cur_fab == NULL) {
+            for (std::vector<TV_Transport_Event *>::const_iterator it = transport_init_it; it != it_transport_rank.end(); ++it) {
+                const TV_Transport_Event *cur_transport = *it;
+                if (cur_transport == NULL) {
                     continue;
                 }
-                if (cur_fab->e_time.func.out <= start_time) {
+                if (cur_transport->e_time.func.out <= start_time) {
                     continue;
                 }
-                if (cur_fab->e_time.func.in >= stop_time) {
+                if (cur_transport->e_time.func.in >= stop_time) {
                     break;
                 }
                 if (tid == 0)
                     progress(prevclk, QApplication::processEvents);
-                long f_width = double(cur_fab->e_time.func.duration()) * pix_in_tic;
+                long f_width = double(cur_transport->e_time.func.duration()) * pix_in_tic;
                 if (f_width < 1) {
                     f_width = 1;
                 }
-                long x_start = (cur_fab->e_time.func.in - start_time) * pix_in_tic;
+                long x_start = (cur_transport->e_time.func.in - start_time) * pix_in_tic;
                 if (x_start < 0) {
                     f_width += x_start;
                     x_start = 0;
                 }
-                long fab_y_start = thread_height * cur_fab->thread + paint.fab_ulc.at(r);
+                long transport_y_start = thread_height * cur_transport->thread + paint.transport_ulc.at(r);
                 p[tid]->setOpacity(1.0);
-                QColor fab_cc = threadImages[tid]->pixel(x_start, fab_y_start);
-                if (fab_cc != user_region_color && (f_width < 2)) {
+                QColor transport_cc = threadImages[tid]->pixel(x_start, transport_y_start);
+                if (transport_cc != user_region_color && (f_width < 2)) {
                     no_draw_elems++;
                     continue;
                 }
-                QRect fab_rfrom(x_start, fab_y_start, f_width, thread_height);
-                p[tid]->setBrush(tv_colors.event_brushes[TV_BRUSH_EVENT_TYPE_FAB]);
+                QRect transport_rfrom(x_start, transport_y_start, f_width, thread_height);
+                p[tid]->setBrush(tv_colors.event_brushes[TV_BRUSH_EVENT_TYPE_TRANSPORT]);
                 p[tid]->setPen(tv_colors.func_line);
                 p[tid]->setOpacity(current_opacity);
-                p[tid]->drawRect(fab_rfrom);
+                p[tid]->drawRect(transport_rfrom);
                 if (f_width > w_min_name_size) {
                     p[tid]->setOpacity(1.0);
                     p[tid]->setPen(tv_colors.func_text);
-                    p[tid]->drawText(fab_rfrom, Qt::AlignLeft | Qt::AlignVCenter, QString(global_func_id.name_by_idx(cur_fab->func_id)) + QString("\nidx:") + QString().setNum(cur_fab->ids[0]));
+                    p[tid]->drawText(transport_rfrom, Qt::AlignLeft | Qt::AlignVCenter, QString(global_func_id.name_by_idx(cur_transport->func_id)) + QString("\nidx:") + QString().setNum(cur_transport->ids[0]));
                 }
             }
         }
@@ -1200,15 +1200,15 @@ TV_Event *Elements::find_event(PEAT_Rank rank, PEAT_Clock clk, int thread, int s
     return NULL;
 }
 
-TV_Fab_Event *Elements::find_fab_event(PEAT_Rank rank, PEAT_Clock clk, int thread) const
+TV_Transport_Event *Elements::find_transport_event(PEAT_Rank rank, PEAT_Clock clk, int thread) const
 {
-    const std::vector<TV_Fab_Event *> &it_rank = events_fabV.at(rank);
+    const std::vector<TV_Transport_Event *> &it_rank = events_transportV.at(rank);
     if (it_rank.empty())
         return NULL;
-    std::vector<TV_Fab_Event *>::const_iterator it_func = lower_bound(it_rank, clk);
+    std::vector<TV_Transport_Event *>::const_iterator it_func = lower_bound(it_rank, clk);
     if (it_func != it_rank.begin())
         --it_func;
-    TV_Fab_Event *cur_event = *it_func;
+    TV_Transport_Event *cur_event = *it_func;
     while (cur_event && cur_event->e_time.func.out < clk) {
         ++it_func;
         if (it_func == it_rank.end())
@@ -1299,20 +1299,20 @@ bool Elements::add_event(TV_Event *event, TV_TraceParts &tp)
     return true;
 }
 
-bool Elements::add_fab_event(TV_Fab_Event* event, TV_TraceParts& tp)
+bool Elements::add_transport_event(TV_Transport_Event* event, TV_TraceParts& tp)
 {
-    if (!tp.fab_functions)
+    if (!tp.transport_functions)
         return false;
 
     try {
-        if (event->thread + 1 > max_fab_tid[event->rank])
-            max_fab_tid[event->rank] = event->thread + 1;
+        if (event->thread + 1 > max_transport_tid[event->rank])
+            max_transport_tid[event->rank] = event->thread + 1;
     }
     catch (const std::bad_alloc& e) {
         qDebug() << "Elements::addFunction. No memory. Size:" << fsize() << " sizeof " << sizeof(TV_Event) << e.what();
         exit(1);
     }
-    events_fabV[event->rank][event->ids[0]] = event;
+    events_transportV[event->rank][event->ids[0]] = event;
     return true;
 }
 
@@ -1377,7 +1377,7 @@ void Elements::add_message(TV_Event *from, TV_Event *to, TV_Pen_Message_Type typ
 
 void Elements::clear()
 {
-    qDebug() << "Clearing" << fsize() << "functions, " << fabsize() << "fabric events and " << msize() << "messages.";
+    qDebug() << "Clearing" << fsize() << "functions, " << transport_size() << "transport events and " << msize() << "messages.";
 
 #if 0
 #pragma omp parallel for schedule(dynamic) 
@@ -1399,14 +1399,14 @@ void Elements::clear()
     events_tr.clear();
     messages.clear();
     coll.clear();
-    for (std::vector<std::vector<TV_Fab_Event *>>::reverse_iterator rank_it = events_fabV.rbegin(); rank_it != events_fabV.rend(); ++rank_it) {
-        for (std::vector<TV_Fab_Event *>::reverse_iterator event_it = rank_it->rbegin(); event_it != rank_it->rend(); ++event_it) {
+    for (std::vector<std::vector<TV_Transport_Event *>>::reverse_iterator rank_it = events_transportV.rbegin(); rank_it != events_transportV.rend(); ++rank_it) {
+        for (std::vector<TV_Transport_Event *>::reverse_iterator event_it = rank_it->rbegin(); event_it != rank_it->rend(); ++event_it) {
             if (*event_it != NULL)
                 delete (*event_it);
             *event_it = NULL;
         }
     }
-    events_fabV.clear();
+    events_transportV.clear();
     // numberOfRanks = 0;
     model_time_stop = 0.0;
     model_time_start = LLONG_MAX;
@@ -1415,13 +1415,13 @@ void Elements::clear()
     // zoom_time_stop = 0.0;
 }
 
-void Elements::get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_tw, QTableWidget *gpu_tw, QTableWidget *fab_tw, const PEAT_Clock start, const PEAT_Clock stop, const PEAT_Num height) const
+void Elements::get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_tw, QTableWidget *gpu_tw, QTableWidget *transport_tw, const PEAT_Clock start, const PEAT_Clock stop, const PEAT_Num height) const
 {
     Q_ASSERT(mpi_tw);
     Q_ASSERT(omp_tw);
     Q_ASSERT(gpu_tw);
-    Q_ASSERT(fab_tw);
-    QTableWidget *all_tables[4] = {mpi_tw, omp_tw, gpu_tw, fab_tw};
+    Q_ASSERT(transport_tw);
+    QTableWidget *all_tables[4] = {mpi_tw, omp_tw, gpu_tw, transport_tw};
     QStringList column_names;
     column_names << "Name" << "Rank" << "UID" << "Start" << "End" << "Duration(clk)" << "Duration(sec E-06)" << "Before (clk)" << "After (clk)" << "Prev UID" << "Next UID";
     for (QTableWidget *tbl : all_tables) {
@@ -1430,7 +1430,7 @@ void Elements::get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_t
         tbl->setWindowTitle("Functions in region");
     }
 
-    // fabric events carry no address/source info (addrs is never allocated for TV_Fab_Event)
+    // transport events carry no address/source info (addrs is never allocated for TV_Transport_Event)
     auto add_addr_info = [&](QTableWidgetItem *item, const TV_Event *e) {
         if (!user_regions || !e->addrs)
             return;
@@ -1560,14 +1560,14 @@ void Elements::get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_t
         }
     }
 
-    for (std::vector<std::vector<TV_Fab_Event *>>::const_iterator it_rank = events_fabV.begin(); it_rank != events_fabV.end(); ++it_rank) {
+    for (std::vector<std::vector<TV_Transport_Event *>>::const_iterator it_rank = events_transportV.begin(); it_rank != events_transportV.end(); ++it_rank) {
         if (it_rank->empty())
             continue;
-        std::vector<TV_Fab_Event *>::const_iterator lb = lower_bound(*it_rank, start);
-        std::vector<TV_Fab_Event *>::const_iterator prev_it = lb;
-        std::vector<TV_Fab_Event *>::const_iterator next_it = prev_it;
-        for (std::vector<TV_Fab_Event *>::const_iterator it_func = lb; it_func != it_rank->cend(); ++it_func) {
-            const TV_Fab_Event *cur_func_ptr = *it_func;
+        std::vector<TV_Transport_Event *>::const_iterator lb = lower_bound(*it_rank, start);
+        std::vector<TV_Transport_Event *>::const_iterator prev_it = lb;
+        std::vector<TV_Transport_Event *>::const_iterator next_it = prev_it;
+        for (std::vector<TV_Transport_Event *>::const_iterator it_func = lb; it_func != it_rank->cend(); ++it_func) {
+            const TV_Transport_Event *cur_func_ptr = *it_func;
             if (it_func != it_rank->cbegin()) {
                 prev_it = it_func;
                 --prev_it;
@@ -1584,7 +1584,7 @@ void Elements::get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_t
                 break;
             if (cur_func_ptr->e_time.func.out < start)
                 continue;
-            add_row(fab_tw, cur_func_ptr, *prev_it, *next_it);
+            add_row(transport_tw, cur_func_ptr, *prev_it, *next_it);
         }
     }
 
@@ -1969,7 +1969,7 @@ TV_Event *Elements::get_event(int x, int y, int width) const
     int selector = -1;
     for (int r = 0; r < ranks_to_load_v.size(); ++r) {
         long rank_top = paint.mpi_ulc.at(r);
-        long pix_in_rank = (get_mpi_threads(r) + get_fab_threads(r) + get_omp_threads(r) + get_gpu_threads(r)) * paint.thread_height;
+        long pix_in_rank = (get_mpi_threads(r) + get_transport_threads(r) + get_omp_threads(r) + get_gpu_threads(r)) * paint.thread_height;
         if (y >= rank_top && y < rank_top + pix_in_rank) {
             if (y > paint.gpu_ulc.at(r)) {
                 selector = 2;
@@ -1977,9 +1977,9 @@ TV_Event *Elements::get_event(int x, int y, int width) const
             } else if (y > paint.omp_ulc.at(r)) {
                 selector = 1;
                 thread = (y - paint.omp_ulc.at(r)) / paint.thread_height;
-            } else if (y > paint.fab_ulc.at(r)) {
+            } else if (y > paint.transport_ulc.at(r)) {
                 selector = 3;
-                thread = (y - paint.fab_ulc.at(r)) / paint.thread_height;
+                thread = (y - paint.transport_ulc.at(r)) / paint.thread_height;
             } else if (y > paint.mpi_ulc.at(r)) {
                 selector = 0;
                 thread = (y - paint.mpi_ulc.at(r)) / paint.thread_height;
@@ -1992,7 +1992,7 @@ TV_Event *Elements::get_event(int x, int y, int width) const
     if (rank < 0)
         return NULL;
     if (selector == 3)
-        return find_fab_event(rank, clk, thread);
+        return find_transport_event(rank, clk, thread);
     return (find_event(rank, clk, selector, thread));
 }
 

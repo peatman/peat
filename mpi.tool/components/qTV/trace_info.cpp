@@ -57,13 +57,13 @@ bool Trace_Info::parse_trace_info_file(QFileInfo &tracefile)
             mpi_files = lines.at(3);
             hwc_files = lines.at(4);
             bind_files = lines.at(5);
-            fab_files = lines.at(6);
+            transport_files = lines.at(6);
             com_ext = lines.at(7);
             app_ext = lines.at(8);
             // mpi_files.remove( '.' );
             // hwc_files.remove( '.' );
             // bind_files.remove( '.' );
-            // fab_files.remove( '.' );
+            // transport_files.remove( '.' );
             // com_ext.remove( '.' );
             // app_ext.remove( '.' );
             break;
@@ -181,16 +181,16 @@ bool Trace_Info::parse_trace_info_file(QFileInfo &tracefile)
 
     return true;
 }
-bool Trace_Info::has_fab_files() const
+bool Trace_Info::has_transport_files() const
 {
-    // fab files are always raw (see Elements::parse_trace_info_file), so - unlike mpi/hwc - they
-    // live in `path`, not next to trace.info. fab_files isn't always recorded into trace.info
-    // (e.g. older traces), default to ".fab" like mat/pet/Elements do in that case.
+    // transport files are always raw (see Elements::parse_trace_info_file), so - unlike mpi/hwc - they
+    // live in `path`, not next to trace.info. transport_files isn't always recorded into trace.info
+    // (e.g. older traces), default to ".transport" like mat/pet/Elements do in that case.
     if (path.isEmpty() || trace_files.isEmpty())
         return false;
-    std::string fab_ext = fab_files.isEmpty() ? ".fab" : fab_files.toStdString();
+    std::string transport_ext = transport_files.isEmpty() ? ".transport" : transport_files.toStdString();
     try {
-        std::map<PEAT_Rank, std::string> found = get_file_names(path.toStdString(), trace_files.toStdString(), fab_ext, false);
+        std::map<PEAT_Rank, std::string> found = get_file_names(path.toStdString(), trace_files.toStdString(), transport_ext, false);
         return !found.empty();
     } catch (const std::runtime_error &) {
         return false;

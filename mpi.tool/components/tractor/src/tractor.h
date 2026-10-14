@@ -34,8 +34,8 @@
 #endif
 #include "t_base_event.h"
 
-#if defined(_FAB_PROFILE_)
-#include "t_fab.h"
+#if defined(_TRANSPORT_PROFILE_)
+#include "t_transport.h"
 #endif
 
 #include <iomanip>
@@ -76,7 +76,7 @@ struct t_bin {
 struct num_processed_events {
     long processed_events = 0;
     long max_uniq_idx = 0;
-    long max_fab_uniq_idx = 0;
+    long max_transport_uniq_idx = 0;
     long max_thread_id = 0;
     int nesting_levels = 1; /* achieved, number of id columns written */
 };
@@ -102,15 +102,15 @@ struct T_Stat_Record {
 #endif
 /*
 
-#if defined(_FAB_PROFILE_)
-enum t_fab_layer {
-    T_FAB_LAYER_NONE=0,
-    T_FAB_LAYER_VERBS,
-    T_FAB_LAYER_OFI,
-    T_FAB_LAYER_PSM2,
-    T_FAB_LAYER_PSM3,
-    T_FAB_LAYER_UCX,
-    T_FAB_LAYER_MAX
+#if defined(_TRANSPORT_PROFILE_)
+enum t_transport_layer {
+    T_TRANSPORT_LAYER_NONE=0,
+    T_TRANSPORT_LAYER_VERBS,
+    T_TRANSPORT_LAYER_OFI,
+    T_TRANSPORT_LAYER_PSM2,
+    T_TRANSPORT_LAYER_PSM3,
+    T_TRANSPORT_LAYER_UCX,
+    T_TRANSPORT_LAYER_MAX
 };
 #endif
 */
@@ -122,9 +122,9 @@ struct tractor : t_base_event {
     int pcontrol;
     int t_write_main_files;
     int t_use_signals;
-#ifdef _FAB_PROFILE_
-    int t_collect_fab;
-    int t_permit_collect_fab;
+#ifdef _TRANSPORT_PROFILE_
+    int t_collect_transport;
+    int t_permit_collect_transport;
 #endif
     char mpi_filename[1024];
     char hwc_filename[1024];
@@ -215,9 +215,9 @@ struct tractor : t_base_event {
     char ptpd_in_binpath[MAX_PATH];
 #endif
 
-#if defined(_FAB_PROFILE_)
-    t_fab_profiler t_fab_prof;
-    // t_fab_layer fab_layer;
+#if defined(_TRANSPORT_PROFILE_)
+    t_transport_profiler t_transport_prof;
+    // t_transport_layer transport_layer;
 #endif
 
     char gz_mode[16];

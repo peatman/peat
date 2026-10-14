@@ -309,7 +309,7 @@ int main(int argc, char **argv)
     glob_param.bind_files = ".bind";
     glob_param.mpi_files = ".mpi";
     glob_param.hwc_files = ".hwc";
-    glob_param.fab_files = ".fab";
+    glob_param.transport_files = ".transport";
     std::string trace_info_file;
     glob_param.input_path = ".";
     glob_param.transport_file = "pet.transport";
@@ -366,7 +366,7 @@ int main(int argc, char **argv)
 
         std::map<PEAT_Rank, std::string> MPI_files = get_file_names(glob_param.input_path, glob_param.trace_files, glob_param.mpi_files, true);
         std::map<PEAT_Rank, std::string> HWC_files = get_file_names(glob_param.input_path, glob_param.trace_files, glob_param.hwc_files, true);
-        std::map<PEAT_Rank, std::string> fab_files = get_file_names(glob_param.input_path, glob_param.trace_files, glob_param.fab_files, false);
+        std::map<PEAT_Rank, std::string> transport_files = get_file_names(glob_param.input_path, glob_param.trace_files, glob_param.transport_files, false);
         PEAT_Rank mpi_info_files_num = (PEAT_Rank)MPI_files.size();
         PEAT_Rank chunk = mpi_info_files_num / glob_param.comm_size;
         if (chunk < 1) {
@@ -387,10 +387,10 @@ int main(int argc, char **argv)
                 // std::cout << "BIND_OUT: " << glob_param.pe_bind_files_in_rank_out[ it->first ] << std::endl;
             }
         }
-        for (std::map<PEAT_Rank, std::string>::const_iterator it = fab_files.begin(); it != fab_files.end(); ++it) {
+        for (std::map<PEAT_Rank, std::string>::const_iterator it = transport_files.begin(); it != transport_files.end(); ++it) {
             if (it->first >= model_rank_start && it->first < model_rank_end) {
-                glob_param.pe_fab_files_in_rank[it->first] = it->second;
-                // std::cout << "FAB: " << glob_param.pe_fab_files_in_rank[ it->first ] << std::endl;
+                glob_param.pe_transport_files_in_rank[it->first] = it->second;
+                // std::cout << "TRANSPORT: " << glob_param.pe_transport_files_in_rank[ it->first ] << std::endl;
             }
         }
         for (std::map<PEAT_Rank, std::string>::const_iterator it = HWC_files.begin(); it != HWC_files.end(); ++it) {

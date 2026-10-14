@@ -105,7 +105,7 @@ int t_base_event::get_tid(pid_t tid_in)
     pid_t tid = tid_in - t_pid;
 
     debug_printf("Base Event::get_tid. %d %d %p.\n", tid_in, t_tid, tid2t_tid);
-    // if (tid2t_tid==NULL) return 0; // happens if t_fab_profiler won't count any events
+    // if (tid2t_tid==NULL) return 0; // happens if t_transport_profiler won't count any events
     if (counting_permit) {
         if (tid >= t_max_tid_num) {
             fprintf(stderr, "Rank %d. Thread ID=%d. is out of range (0..%d).\n", t_mpi_rank, tid, t_max_tid_num);
@@ -341,7 +341,7 @@ void t_base_event::check_chain(pid_t tid, int level)
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
 
-/* fabric layer records: level 0, no counters; fabric calls are never nested in each other */
+/* transport-API records: level 0, no counters; transport-API calls are never nested in each other */
 int t_base_event::reuse_event(int tid, msl_event **event, short func_id)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__

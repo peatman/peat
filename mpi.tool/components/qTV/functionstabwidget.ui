@@ -31,9 +31,9 @@
     <string>GPU</string>
    </attribute>
   </widget>
-  <widget class="QTableWidget" name="fab">
+  <widget class="QTableWidget" name="transport">
    <attribute name="title">
-    <string>Fabric</string>
+    <string>Transport</string>
    </attribute>
   </widget>
  </widget>

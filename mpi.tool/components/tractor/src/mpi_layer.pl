@@ -48,9 +48,9 @@ my $funccount=0;
 my $parse_gpu=0;
 my $skip_core=0;
 sub make_dup;
-my @fab_layers; 
-my $is_shim_layer=0; # set by parse_file_fab: standalone shim file being generated, vs. legacy core-embedded append
-my $fab_reentrant_declared=0; # set once the t_fab_reentrant guard has been printed into the current output file
+my @transport_layers; 
+my $is_shim_layer=0; # set by parse_file_transport: standalone shim file being generated, vs. legacy core-embedded append
+my $transport_reentrant_declared=0; # set once the t_transport_reentrant guard has been printed into the current output file
 
 #my $prolog="
 #$line[4]=~s/ //g;
@@ -765,30 +765,30 @@ make_class_p2p($line,"mpi_fio");
 }
 }
 
-sub make_class_fab {
+sub make_class_transport {
 my $line=shift;
-my $fab_layer=shift;
+my $transport_layer=shift;
 my @line=@$line;
 my $funcretcode=$line[1];
 my $funcname=$line[2];
 my $funcpars=$line[3];
 my $c_prototype="$funcretcode $funcname($funcpars)";
 # all layers are compiled into one library now; only the layer matching the
-# runtime fab_layer (T_FAB_LAYER env var) actually records fab events
-my %fab_layer_enum_of = (
-    "psm2"  => "T_FAB_LAYER_PSM2",
-    "psm3"  => "T_FAB_LAYER_PSM3",
-    "verbs" => "T_FAB_LAYER_VERBS",
-    "smpi"  => "T_FAB_LAYER_VERBS",
-    "ucx"   => "T_FAB_LAYER_UCX",
-    "ofi"   => "T_FAB_LAYER_OFI",
+# runtime transport_layer (T_TRANSPORT_LAYER env var) actually records transport events
+my %transport_layer_enum_of = (
+    "psm2"  => "T_TRANSPORT_LAYER_PSM2",
+    "psm3"  => "T_TRANSPORT_LAYER_PSM3",
+    "verbs" => "T_TRANSPORT_LAYER_VERBS",
+    "smpi"  => "T_TRANSPORT_LAYER_VERBS",
+    "ucx"   => "T_TRANSPORT_LAYER_UCX",
+    "ofi"   => "T_TRANSPORT_LAYER_OFI",
 );
-my $fab_layer_enum = $fab_layer_enum_of{$fab_layer};
+my $transport_layer_enum = $transport_layer_enum_of{$transport_layer};
 # only meaningful for the legacy core-embedded path (verbs/smpi mixed in with everything
 # else in one binary); a standalone shim only ever contains one layer's functions and is
-# only dlopen()'d once fab_layer already matches it, so the check would always be true
-# there anyway - and it needlessly requires T_FAB_LAYER_*/fab_layer to be visible/defined.
-# my $fab_layer_check = ($fab_layer_enum && !$is_shim_layer) ? " || (gt_info(fab_layer)!=$fab_layer_enum)" : "";
+# only dlopen()'d once transport_layer already matches it, so the check would always be true
+# there anyway - and it needlessly requires T_TRANSPORT_LAYER_*/transport_layer to be visible/defined.
+# my $transport_layer_check = ($transport_layer_enum && !$is_shim_layer) ? " || (gt_info(transport_layer)!=$transport_layer_enum)" : "";
 #my $t_prototype;
 my $properties=$line[6];
 
@@ -798,7 +798,7 @@ my $rtdl;
 my $funcname_t="t_$funcname";
 #psm2_error_t(*t_psm_profiler::t_psm2_mq_send)(psm2_mq_t, psm2_epaddr_t, uint32_t, uint64_t,const void *, uint32_t) = 0;
 #psm2_error_t(*t_psm_profiler::t_psm2_mq_send2)(psm2_mq_t, psm2_epaddr_t, uint32_t,psm2_mq_tag_t *, const void *, uint32_t ) = 0;
-#print STDERR "Writing Headers $funcname on layer $fab_layer\n";
+#print STDERR "Writing Headers $funcname on layer $transport_layer\n";
 
 #print STDERR "----$c_prototype, $properties----\n";
 #die;
@@ -810,7 +810,7 @@ $c_prototype="$funcretcode mv2_$funcname($funcpars)" if ($properties=~/MV2_PREFI
 $c_prototype="$funcretcode mv2_proxy_$funcname($funcpars)" if ($properties=~/MV2_PROXY/ );
 
 #print "static $funcretcode (*$funcname_t)($funcpars);\n" if ($properties=~/PSM2/); 
-#print OUT_CPP "$funcretcode (*t_fab_profiler::$funcname_t)($funcpars) = 0;\n" if ($properties=~/PSM2/); 
+#print OUT_CPP "$funcretcode (*t_transport_profiler::$funcname_t)($funcpars) = 0;\n" if ($properties=~/PSM2/); 
 #print "$funcretcode (*$funcname_t)($funcpars) = 0;\n" if ($properties=~/PSM2/); 
    
 
@@ -835,19 +835,19 @@ $funcname=$funcname_t if ($properties=~/T_PREFIX/);
 
 if ($properties =~ /VERBS/ || $properties =~ /SMPI/) {
     if ($funcid =~ /POLL/) {
-        $print_code=`cat pinc/fab.poll.direct.code.inc`;
+        $print_code=`cat pinc/transport.poll.direct.code.inc`;
     } else {
-        $print_code=`cat pinc/fab.direct.code.inc`;
+        $print_code=`cat pinc/transport.direct.code.inc`;
     }
 } else {
     if ($funcid =~ /IPEEK/ ) { #|| $funcid eq "FI_CQ_READ_ID") {
-        $print_code=`cat pinc/fab.ipeek.code.inc`;
+        $print_code=`cat pinc/transport.ipeek.code.inc`;
     } else {
-       $print_code=`cat pinc/fab.code.inc`;
+       $print_code=`cat pinc/transport.code.inc`;
     }
 }
 eval $print_code;
-print STDERR "Function $prototype:$@ on layer $fab_layer generated\n";
+print STDERR "Function $prototype:$@ on layer $transport_layer generated\n";
 $funccount++;
 }
 
@@ -998,17 +998,17 @@ return "";
 
 sub make_c_func {
 my $lineref=shift;
-my $fab_layer=shift;
+my $transport_layer=shift;
 my $guard=mpi_version_guard($$lineref[6]);
 print $guard if $guard ne "";
-make_c_func_body($lineref,$fab_layer);
+make_c_func_body($lineref,$transport_layer);
 print "#endif /* MPI version guard */\n" if $guard ne "";
 return;
 }
 
 sub make_c_func_body {
 my $lineref=shift;
-my $fab_layer=shift;
+my $transport_layer=shift;
 
 # divide functions into 'classes' 
 # clases are:
@@ -1034,12 +1034,12 @@ if ($properties =~/CLASS_OSC/) { make_class_osc($lineref);return;}
 if ($properties =~/CLASS_FIO/) { make_class_fio($lineref);return;} 
 if ($properties =~/CLASS_CL/) { make_class_gpu($lineref);return;} 
 if ($properties =~/CLASS_ZE/) { make_class_gpu($lineref);return;} 
-if ($properties =~/CLASS_PSM2/) { make_class_fab($lineref,$fab_layer);return;} 
-if ($properties =~/CLASS_PSM3/) { make_class_fab($lineref,$fab_layer);return;} 
-if ($properties =~/CLASS_VERBS/) { make_class_fab($lineref,$fab_layer);return;} 
-if ($properties =~/CLASS_SMPI/) { make_class_fab($lineref,$fab_layer);return;} 
-if ($properties =~/CLASS_UCX/) { make_class_fab($lineref,$fab_layer);return;} 
-if ($properties =~/CLASS_OFI/) { make_class_fab($lineref,$fab_layer);return;} 
+if ($properties =~/CLASS_PSM2/) { make_class_transport($lineref,$transport_layer);return;} 
+if ($properties =~/CLASS_PSM3/) { make_class_transport($lineref,$transport_layer);return;} 
+if ($properties =~/CLASS_VERBS/) { make_class_transport($lineref,$transport_layer);return;} 
+if ($properties =~/CLASS_SMPI/) { make_class_transport($lineref,$transport_layer);return;} 
+if ($properties =~/CLASS_UCX/) { make_class_transport($lineref,$transport_layer);return;} 
+if ($properties =~/CLASS_OFI/) { make_class_transport($lineref,$transport_layer);return;} 
 make_class_local($lineref); #any other functions
 return;
 }
@@ -1141,10 +1141,10 @@ return $linecount;
 }
 
 ####################################################################################
-sub parse_file_fab{
+sub parse_file_transport{
 my $file=shift;
-my $fab_layer=shift;
-my $is_shim=shift; # standalone shim file: always built for exactly one layer, so skip the _FAB_PROFILE_ guard (it would just leave the shim empty)
+my $transport_layer=shift;
+my $is_shim=shift; # standalone shim file: always built for exactly one layer, so skip the _TRANSPORT_PROFILE_ guard (it would just leave the shim empty)
 my @line;
 my $event;
 my $rank=0;
@@ -1153,21 +1153,21 @@ my $next_percentage=10;
 my $cur_percentage=0;
 
 open(IN,$file) or die "Can't open input file: $file !" ;
-print STDERR "Parsing file $file for layer $fab_layer\n";
+print STDERR "Parsing file $file for layer $transport_layer\n";
 
 $is_shim_layer=$is_shim;
 
 while( <IN> ) {
   chomp($_);
   my $line=$_;
-  last if ($line =~/${fab_layer}_layer_starts_here/);
+  last if ($line =~/${transport_layer}_layer_starts_here/);
  }
-  print "#if defined(_FAB_PROFILE_)\n" unless $is_shim;
-  print "#include \"t_fab.h\"\n";
-  if ($is_shim) { $fab_reentrant_declared=0; }
-  if (!$fab_reentrant_declared) {
-    print "static thread_local bool t_fab_reentrant = false;\n";
-    $fab_reentrant_declared=1;
+  print "#if defined(_TRANSPORT_PROFILE_)\n" unless $is_shim;
+  print "#include \"t_transport.h\"\n";
+  if ($is_shim) { $transport_reentrant_declared=0; }
+  if (!$transport_reentrant_declared) {
+    print "static thread_local bool t_transport_reentrant = false;\n";
+    $transport_reentrant_declared=1;
   }
 
 while( <IN> ) {
@@ -1188,10 +1188,10 @@ while( <IN> ) {
   if ($line[1] eq "") {next;}
   #print STDERR "$line[0] $line[1] $line[2]\n";
   $linecount++;
-  make_c_func(\@line,$fab_layer);
+  make_c_func(\@line,$transport_layer);
 }
 close (IN);
-  print "#endif /* defined(_FAB_PROFILE_) */\n" unless $is_shim;
+  print "#endif /* defined(_TRANSPORT_PROFILE_) */\n" unless $is_shim;
 
 return $linecount;
 }
@@ -1211,8 +1211,8 @@ sub parse_command_line {
          case "-c" {$parse_gpu=1 if $ARGV[$i+1] eq "on"; $i++}
          case "-e" {$print_extended_stuff=1 if $ARGV[$i+1] eq "on"; $i++}
          case "-p" {$use_pragma_weak=1 if $ARGV[$i+1] eq "on";$i++}
-         case "-l" {my $fab_layer = $ARGV[$i+1]; push (@fab_layers,$fab_layer); $i++} 
-         case "-s" {$skip_core=1 if $ARGV[$i+1] eq "on"; $i++} # skip core parse_file(): only fab shim files are wanted
+         case "-l" {my $transport_layer = $ARGV[$i+1]; push (@transport_layers,$transport_layer); $i++} 
+         case "-s" {$skip_core=1 if $ARGV[$i+1] eq "on"; $i++} # skip core parse_file(): only transport shim files are wanted
          else {print "Unknown switch $ARGV[$i]\n";die;}
       }
    }
@@ -1226,7 +1226,7 @@ sub parse_command_line {
 my $linecount=0;
 parse_command_line;
 if ($skip_core) {
-   # nothing needs the core mpi_layer.cpp content (e.g. TARGET=fab_layers only
+   # nothing needs the core mpi_layer.cpp content (e.g. TARGET=transport_layers only
    # wants the per-layer files below); still touch it so Make's timestamp
    # dependency is satisfied without paying for the full parse_file() pass
    `touch $mpilayer`;
@@ -1238,25 +1238,25 @@ if ($skip_core) {
    $linecount=parse_file($mpifuncs);
 }
 select(OUT);
-foreach my $fab_layer_spec(@fab_layers) {
-   # "-l layer" appends into the main $mpilayer (legacy single-fabric build);
+foreach my $transport_layer_spec(@transport_layers) {
+   # "-l layer" appends into the main $mpilayer (legacy single-layer build);
    # "-l layer=outfile" writes a standalone shim source for that one layer,
-   # so it can be built into its own libtractor_fab_<layer>.so and dlopen'd
-   # at runtime depending on T_FAB_LAYER, instead of being baked into the core lib.
-   my ($fab_layer,$fab_outfile) = split('=',$fab_layer_spec,2);
-   if (defined $fab_outfile) {
-      open(FABOUT,">$fab_outfile") or die ("Cannot open $fab_outfile for writing");
-      select(FABOUT);
+   # so it can be built into its own libtractor_transport_<layer>.so and dlopen'd
+   # at runtime depending on T_TRANSPORT_LAYER, instead of being baked into the core lib.
+   my ($transport_layer,$transport_outfile) = split('=',$transport_layer_spec,2);
+   if (defined $transport_outfile) {
+      open(TRANSPORTOUT,">$transport_outfile") or die ("Cannot open $transport_outfile for writing");
+      select(TRANSPORTOUT);
       print "#include \"mpi.h\"\n#include \"mpi_func_ids.h\"\n#include \"tractor.h\"\n";
       print "#if defined(__CPLUSPLUS__) || defined(__cplusplus)\nextern \"C\" {\n#endif\n";
       print "#include \"t_extradef.h\"\n";
       print "extern long long global_tool_overhead;\n";
-      $linecount+=parse_file_fab($mpifuncs,$fab_layer,1);
+      $linecount+=parse_file_transport($mpifuncs,$transport_layer,1);
       print "#if defined(__CPLUSPLUS__) || defined(__cplusplus)\n}\n#endif\n";
       select(OUT);
-      close(FABOUT);
+      close(TRANSPORTOUT);
    } else {
-      $linecount+=parse_file_fab($mpifuncs,$fab_layer,0);
+      $linecount+=parse_file_transport($mpifuncs,$transport_layer,0);
    }
 }
 

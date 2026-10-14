@@ -21,7 +21,7 @@
 #endif
 
 #include "t_extradef.h"
-#include "t_fab.h"
+#include "t_transport.h"
 #include "tractor.h"
 #include <cstdint>
 #include <dlfcn.h>
@@ -36,13 +36,13 @@
 static int f_init_parse = 0;
 extern long long global_tool_overhead;
 
-/* static void init_fab_hooks();
+/* static void init_transport_hooks();
 
-void t_fab_profiler::init_hooks()  {
-    init_fab_hooks();
+void t_transport_profiler::init_hooks()  {
+    init_transport_hooks();
 }
 */
-t_fab_profiler::t_fab_profiler()
+t_transport_profiler::t_transport_profiler()
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
     gz_ext = ".gz";
@@ -60,7 +60,7 @@ t_fab_profiler::t_fab_profiler()
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
 
-t_fab_profiler::~t_fab_profiler()
+t_transport_profiler::~t_transport_profiler()
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
     if (fps_events) {
@@ -90,12 +90,12 @@ t_fab_profiler::~t_fab_profiler()
 
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
-void t_fab_profiler::init(int max_threads, char *_stat_dir, char *_tmp_dir, char *_stat_template, int _use_realtime_dump)
+void t_transport_profiler::init(int max_threads, char *_stat_dir, char *_tmp_dir, char *_stat_template, int _use_realtime_dump)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
-    t_base_event::init(max_threads, 1); // fabric calls never nest
+    t_base_event::init(max_threads, 1); // transport-API calls never nest
     use_realtime_dump = _use_realtime_dump;
-    debug_printf("Fabric Profiler:max_threads=%d. %s %s \n", t_max_threads, _stat_dir, _stat_template);
+    debug_printf("Transport Profiler:max_threads=%d. %s %s \n", t_max_threads, _stat_dir, _stat_template);
     stat_template = _stat_template;
     stat_dir = _stat_dir;
     tmp_dir = _tmp_dir;
@@ -106,12 +106,12 @@ void t_fab_profiler::init(int max_threads, char *_stat_dir, char *_tmp_dir, char
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
 
-void t_fab_profiler::dump_extras(pid_t tid, int level, msl_base_chain **chain)
+void t_transport_profiler::dump_extras(pid_t tid, int level, msl_base_chain **chain)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
-void t_fab_profiler::dump_events(pid_t tid, int level, msl_adv_chain **chain)
+void t_transport_profiler::dump_events(pid_t tid, int level, msl_adv_chain **chain)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
     if (fps_events[tid] == NULL) {
@@ -130,7 +130,7 @@ void t_fab_profiler::dump_events(pid_t tid, int level, msl_adv_chain **chain)
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
 
-long long t_fab_profiler::write_fab_file(bool print_names)
+long long t_transport_profiler::write_transport_file(bool print_names)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
     if (calls_limit == 0) {
@@ -158,9 +158,9 @@ long long t_fab_profiler::write_fab_file(bool print_names)
     }
     if (t_mpi_rank >= 0)
         sprintf(pid, ".%u", t_mpi_rank); // else sprintf(pid, ".%u.%d", upid, i);
-    sprintf(filename, "%s.fab%s%s", tfilename, pid, gz_ext);
+    sprintf(filename, "%s.transport%s%s", tfilename, pid, gz_ext);
     gzFile fps = gzopen(filename, gz_mode);
-    debug_printf("FAB Events:max_threads=%d. %d %d \n", t_max_threads, onetimealloc, num_addrs);
+    debug_printf("TRANSPORT Events:max_threads=%d. %d %d \n", t_max_threads, onetimealloc, num_addrs);
 
     if (fps) {
         int tsc_mpi_entry_ind = 1;
@@ -193,7 +193,7 @@ long long t_fab_profiler::write_fab_file(bool print_names)
                 max_events[i] = (current_chain[i]->next == NULL) ? event_index[i][0] : onetimealloc;
 
                 current_array[i] = (msl_event *)current_chain[i]->events_array;
-                debug_printf("FAB Events:thread %d. %d %llx, %llx - %llx %llx \n", i, max_events[i], this, current_chain[i], events_start_chain[i], current_array[i]);
+                debug_printf("TRANSPORT Events:thread %d. %d %llx, %llx - %llx %llx \n", i, max_events[i], this, current_chain[i], events_start_chain[i], current_array[i]);
                 t_timeline t_tl(current_array[i][0].tscs[0], i);
                 if (max_events[i] > 0)
                     timeline[t_tl] = i;
@@ -229,8 +229,8 @@ long long t_fab_profiler::write_fab_file(bool print_names)
             l_tscs[3] = current_array[tid][record_counter[tid]].tscs[3];
             l_tscs[0] -= tsc_counter;
             tsc_counter = current_array[tid][record_counter[tid]].tscs[0];
-            int l_num_calls = current_array[tid][record_counter[tid]].fab.num_calls;
-            long long total_clocks_bitween_calls = current_array[tid][record_counter[tid]].fab.total_clocks_bitween_calls;
+            int l_num_calls = current_array[tid][record_counter[tid]].transport.num_calls;
+            long long total_clocks_bitween_calls = current_array[tid][record_counter[tid]].transport.total_clocks_bitween_calls;
             gzprintf(fps, ":%lld:%lld:%lld:%lld:%lld:%d\n", l_tscs[0], l_tscs[1], l_tscs[2], l_tscs[3], total_clocks_bitween_calls, l_num_calls);
             record_counter[tid]++;
             if (record_counter[tid] >= max_events[tid]) {
@@ -264,9 +264,9 @@ long long t_fab_profiler::write_fab_file(bool print_names)
     return uniq_index;
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
-#if defined(_FAB_PROFILE_)
-#ifndef _TRACTOR_FAB_LIB_SUFFIX_
-#define _TRACTOR_FAB_LIB_SUFFIX_ ""
+#if defined(_TRANSPORT_PROFILE_)
+#ifndef _TRACTOR_TRANSPORT_LIB_SUFFIX_
+#define _TRACTOR_TRANSPORT_LIB_SUFFIX_ ""
 #endif
 
 
@@ -275,13 +275,13 @@ extern "C" {
 #endif
 /*
 #ifdef _VERBS_PROFILE_
-#include "t_fab_layer_h.h"
+#include "t_transport_layer_h.h"
 #endif
-#include "t_fab_layer.h"
+#include "t_transport_layer.h"
 
-static void init_fab_hooks()  {
+static void init_transport_hooks()  {
    if (!f_init_parse) {
-     #include "t_fab_layer_const.h"
+     #include "t_transport_layer_const.h"
    }
     //printf ("init_hooks()\n");
     f_init_parse=1;

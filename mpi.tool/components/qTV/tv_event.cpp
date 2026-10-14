@@ -317,26 +317,26 @@ PEAT_Bool TV_GPU_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_str
 {
     return TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs, hdr);
 }
-// uid:tid:func_name_or_id:tsc0:tsc1:tsc2:tsc3:total_clocks_bitween_calls:num_calls (see t_fab_profiler::write_fab_file)
-PEAT_Bool TV_Fab_Event::read_fab_event(PEAT_Rank r_rank, const String_Split &fab_string)
+// uid:tid:func_name_or_id:tsc0:tsc1:tsc2:tsc3:total_clocks_bitween_calls:num_calls (see t_transport_profiler::write_transport_file)
+PEAT_Bool TV_Transport_Event::read_transport_event(PEAT_Rank r_rank, const String_Split &transport_string)
 {
-    if (fab_string.size() < 9)
+    if (transport_string.size() < 9)
         return false;
     rank = r_rank;
-    extract(ids[0], fab_string.at(0), 10); // fabric records carry a single id
-    extract(thread, fab_string.at(1), 10);
-    extract(func_id, fab_string.at(2), 10, false);
+    extract(ids[0], transport_string.at(0), 10); // transport records carry a single id
+    extract(thread, transport_string.at(1), 10);
+    extract(func_id, transport_string.at(2), 10, false);
     if (func_id == TMPI_FUNC_ID_NONE) {
-        func_id = global_func_id.idx_by_name(fab_string.at(2));
+        func_id = global_func_id.idx_by_name(transport_string.at(2));
     }
-    extract(e_time.func.in, fab_string.at(3), 10);
-    extract(e_time.mpi.in, fab_string.at(4), 10);
-    extract(e_time.mpi.out, fab_string.at(5), 10);
-    extract(e_time.func.out, fab_string.at(6), 10);
-    /* fab events have different time coding */
+    extract(e_time.func.in, transport_string.at(3), 10);
+    extract(e_time.mpi.in, transport_string.at(4), 10);
+    extract(e_time.mpi.out, transport_string.at(5), 10);
+    extract(e_time.func.out, transport_string.at(6), 10);
+    /* transport events have different time coding */
     e_time.mpi.out = e_time.func.out - e_time.mpi.out;
 
-    extract(total_clocks_bitween_calls, fab_string.at(7), 10);
-    extract(num_calls, fab_string.at(8), 10);
+    extract(total_clocks_bitween_calls, transport_string.at(7), 10);
+    extract(num_calls, transport_string.at(8), 10);
     return true;
 }
