@@ -195,9 +195,7 @@ class Collectives : public Outputs
     // friend std::ostream &operator<<(std::ostream &dbg, const Collectives &rec);
     std::map<int, std::map<MAT_Collective_Record, MAT_Collective_Clocks>> printed_collective;
 
-    PEAT_Bool add_pers_request(const PEAT_Rank rank, const PEAT_MPI_Request request);
-    PEAT_Bool remove_pers_request(const PEAT_Rank rank, const PEAT_MPI_Request request, Phase& ph);
-    PEAT_Bool update_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase& phase, Collective_Event* event);
+    PEAT_Bool update_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase& phase, Collective_Event* event, PEAT_Bool is_remote);
     PEAT_Bool find_collective(const PEAT_Rank rank, Collective_Event* event, collective_list::iterator* record);
     PEAT_Bool find_collective(const PEAT_Rank rank, const MAT_Request_Store_Record* rec, collective_list::iterator* record);
     PEAT_Bool add_pers_req_start(const PEAT_Rank rank, MAT_Collectives_Record* record);

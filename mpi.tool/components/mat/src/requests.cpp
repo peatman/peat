@@ -152,7 +152,7 @@ PEAT_Bool Requests::parse_collective_completion_phase(const PEAT_Rank rank, cons
             print_req_bind(rank, request, ret_it.record->get_ph(), phase, is_remote);
         } else {
             MAT_Collectives_Record* coll = (MAT_Collectives_Record*)ret_it.record;
-            coll_func_store->update_request(rank, request, phase, coll->coll_event);
+            coll_func_store->update_request(rank, request, phase, coll->coll_event,is_remote);
         }
         return true;
     }

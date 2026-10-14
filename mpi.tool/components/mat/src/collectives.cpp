@@ -609,13 +609,13 @@ PEAT_Bool Collectives::find_collective(const PEAT_Rank rank, Collective_Event* e
     return false;
 }
 
-PEAT_Bool Collectives::update_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase &phase, Collective_Event *event)
+PEAT_Bool Collectives::update_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase &phase, Collective_Event *event, PEAT_Bool is_remote)
 {
     collective_list::iterator coll;
     if(find_collective(rank,event, &coll)) {
         assert(coll_get_value(coll, coll_events_list).at(rank)->request == request);
         coll_get_value(coll, coll_events_list).at(rank)->request = 0;
-        request_func_store->print_req_bind(rank, request, coll_get_value(coll, coll_events_list).at(rank)->ph, phase, false);
+        request_func_store->print_req_bind(rank, request, coll_get_value(coll, coll_events_list).at(rank)->ph, phase, is_remote);
         if(coll_get_value(coll, expected_ranks).empty()) {
 
             if(check_completion(coll)) {
@@ -648,21 +648,21 @@ void Collectives::send_collective(PEAT_Rank rank, const Tractor_Event &event)
     PEAT_MPI_Comm comm;
     const PEAT_MPI_Func_ID mpifunc = event.func_id;
     if (mpifunc == MPI_FILE_OPEN_ID) {
-        fh_comms[event.MPIFIO.fh] = event.MPIFIO.comm;
+        fh_comms[rank][event.MPIFIO.fh] = event.MPIFIO.comm;
     }
     if (mpifunc == MPI_FILE_CLOSE_ID) {
-        fh_comms.erase(event.MPIFIO.fh);
+        fh_comms[rank].erase(event.MPIFIO.fh);
     }
 
     if (!global_func_id.check_property(mpifunc, PEAT_PROP_COMM)) {
         if (global_func_id.check_property(mpifunc, PEAT_PROP_FILE_HANDLE)) {
-            comm = fh_comms.at(event.MPIFIO.fh);
+            comm = fh_comms.at(rank).at(event.MPIFIO.fh);
         } else {
             comm = 2; // mpi_comm_world
         }
     } else {
         // Temporal stub
-        if (!global_func_id.check_property(mpifunc, PEAT_PROP_FILE_HANDLE) && !global_func_id.check_property(mpifunc, PEAT_PROP_FILE_POINTER_HANDLE)) {
+        if (!global_func_id.check_property(mpifunc, PEAT_PROP_FILE_HANDLE) && !global_func_id.check_property(event.func_id, PEAT_PROP_FILE_POINTER_INPUT) && !global_func_id.check_property(event.func_id, PEAT_PROP_FILE_POINTER_OUTPUT)) {
             if (mpifunc >= MPI_COMM_CREATE_ID && event.Collective.comm == 0) {
                 comm = 2;
             } else {
@@ -687,14 +687,19 @@ void Collectives::send_collective(PEAT_Rank rank, const Tractor_Event &event)
             return;
         }
 #endif
-        MAT_Request_Record record;
-        record.peer = mat_peer;
-        record.ids = event.ids;
         PEAT_MPI_Request request = event.func_class == PEAT_PROP_CLASS_FIO ? event.MPIFIO.request : event.Collective.request;
         if (request > 0) {
+            MAT_Request_Record record;
+            record.peer = mat_peer;
+            record.ids = event.ids;
             record.request = request;
-            req_store->flown_away_requests[rank][request] = record;
+            if(global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) {
+                req_store->flown_away_pers_requests[rank][record.request] = record;
+            } else {
+                req_store->flown_away_requests[rank][record.request] = record;
+            }
         }
+
         print_collective_out(event);
         delivery.buffer = (char *)peat_malloc_aligned(size, 64);
         delivery.receiver = mat_peer;
