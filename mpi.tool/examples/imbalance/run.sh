@@ -1,14 +1,13 @@
 #!/bin/bash
 
 compiler=oneAPI:2026.1.0
-export mpi_type=mpich:5.0.1x-mt-ofi-eng
+export mpi_type=mpich:5.0.2x-mt-ofi-eng
 export libfabric_eng='-eng'
-#export mpi_type=mpich:4.3.2x-mt-ofi
 . env.sh
 set -x
 
 LD_PRELOAD=../../lib/intel/libtractor.mpich5.eng.so 
-LD_PRELOAD="$LD_PRELOAD:../../lib/intel/libtractor_fab_ofi.so"
+LD_PRELOAD="$LD_PRELOAD:../../lib/intel/libtractor_transport_ofi.so"
 
 
 export PEAT_TRACTOR_PRINT_FUNC_NAMES=1

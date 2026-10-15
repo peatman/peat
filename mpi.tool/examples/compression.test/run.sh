@@ -1,11 +1,8 @@
 #!/bin/bash
 
-compiler=oneAPI:2026.0.0.198
-#export mpi_type=mvapich:4.1x-mt-sock-eng 
-#export mpi_type=mpich:4.3.2x-mt-sock-eng 
-export mpi_type=mpich:5.0.1x-mt-sock-eng
-#export mpi_type=mpich:5.0.1g-mt-sock-eng
-#export mpi_type=mpich:5.0.1x-mt-sock
+compiler=oneAPI:2026.1.0
+export mpi_type=mpich:5.0.2x-mt-ofi-eng
+export libfabric_eng='-eng'
 . env.sh
 set -x
 
@@ -13,7 +10,7 @@ set -x
 #LD_PRELOAD=../../lib/intel/libtractor.mvapich4.ct.so 
 #LD_PRELOAD=../../lib/intel/libtractor_dbg.mpich4.ct.so 
 #LD_PRELOAD=../../lib/intel/libtractor.mpich5.so 
-LD_PRELOAD=../../lib/intel/libtractor.mpich5.ct.so 
+LD_PRELOAD=../../lib/intel/libtractor.mpich5.eng.so 
 #LD_PRELOAD=../../lib/gnu/libtractor_dbg.mpich5.so 
 #LD_PRELOAD=../../lib/intel/libtractor.mvapich4.so 
 #LD_PRELOAD=../../lib/intel/libtractor.impi.so 
@@ -23,7 +20,7 @@ export PEAT_TRACTOR_PRINT_FUNC_NAMES=1
 export PEAT_TRACTOR_STORE_MAP=1
 export PEAT_TRACTOR_WRITE_TRACE=1
 export I_MPI_DEBUG=4
-#export PEAT_TRACTOR_COMPRESS_EVENTS=2
+export PEAT_TRACTOR_COMPRESS_EVENTS=2
 #export PEAT_TRACTOR_ONE_TIME_ALLOC=100
 #export PEAT_TRACTOR_USE_REALTIME_DUMP=1
 export PEAT_TRACTOR_RETURN_LEVELS=0 #,2,4,5,6
@@ -59,6 +56,5 @@ export I_MPI_FABRICS=shm
 export HYDRA_TOPO_DEBUG=1
 
 mpiexec.hydra -launcher ssh -genvall -bind-to hwthread -map-by core  $LD_PRELOAD $PBS_NF -ppn $ppn -np $ranks ./compression.test 
-
-
+rm -f compression.test 
 
