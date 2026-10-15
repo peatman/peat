@@ -88,10 +88,10 @@ class Mat
     }
 #endif
     void process();
-    void process_unbound_events()
+    void process_unbound_events(PEAT_Rank my_rank)
     {
-        p2p_func_store->process_unbound_events();
-        coll_func_store->process_unbound_events();
+        p2p_func_store->process_unbound_events(my_rank);
+        coll_func_store->process_unbound_events(my_rank);
     }
     PEAT_Bool second_line;
 

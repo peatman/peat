@@ -241,7 +241,7 @@ void P2PAL::print_P2PF(const MAT_P2P_Record &left, const MAT_P2P_Record &right)
                     right.ph.ids[0]);
             peat_warning("Sizes mismatch\n");
         }
-        if (left.ph.func_id == right.ph.func_id && !global_func_id.check_property(right.ph.func_id, PEAT_PROP_DATA_TXRX)) {
+        if (left.ph.func_id == right.ph.func_id && !global_func_id.check_property(right.ph.func_id, PEAT_PROP_DATA_TXRX) && !global_func_id.check_property(right.ph.func_id, PEAT_PROP_PERSISTENT_REQUEST_START)) {
             peat_throw_error("Same functions used for send and receive\n");
         }
     }
@@ -416,15 +416,15 @@ PEAT_Bool P2PAL::empty() const
 #endif
 }
 
-PEAT_Bool P2PAL::add_pers_req_start(const PEAT_Rank rank, MAT_P2P_Record *record)
+PEAT_Bool P2PAL::add_pers_req_start(const PEAT_Rank rank, PEAT_MPI_Func_ID init_func_id, MAT_P2P_Record *record)
 {
     if (record->peer_rank == comm_store->get_MPI_PROC_NULL()) {
         return false;
     }
     P2P_Event_Key key(*record);
-    if (global_func_id.check_property(record->ph.func_id, PEAT_PROP_DATA_RX)) {
+    if (global_func_id.check_property(init_func_id, PEAT_PROP_DATA_RX)) {
         matching_queues[qt_recv][rank][key].push_back(record);
-    } else if (global_func_id.check_property(record->ph.func_id, PEAT_PROP_DATA_TX)) {
+    } else if (global_func_id.check_property(init_func_id, PEAT_PROP_DATA_TX)) {
         matching_queues[qt_send][rank][key].push_back(record);
     } else {
         std::cerr << "Weird persistent request." << std::endl;
@@ -591,7 +591,7 @@ void P2PAL::parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool in
         }
     } else {
         print_P2PL(event);
-#ifdef PEAT_MPI
+#if 0//def PEAT_MPI
         if (event.P2P.request > 0) {
             if (global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) {
                 if (req_store->thrown_away_pers_requests[rank].find(event.P2P.request) != req_store->thrown_away_pers_requests[rank].end()) {
@@ -717,7 +717,10 @@ void P2PAL::send_P2PTx(PEAT_Rank rank, const Tractor_Event &event)
         if (global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) {
             req_store->flown_away_pers_requests[rank][record.request] = record;
         } else {
-            req_store->flown_away_requests[rank][record.request] = record;
+            if(global_func_id.check_property(event.func_id, PEAT_PROP_MPI_INTERNAL))
+                req_store->flown_away_internal_requests[rank][record.request] = record;
+            else
+                req_store->flown_away_user_requests[rank][record.request].push_back(record);
         }
     }
     PEAT_Event_Delivery delivery;
@@ -765,7 +768,7 @@ void P2PAL::process_remote_event(PEAT_Signed_Num size, PEAT_Rank src)
 }
 #endif
 
-void P2PAL::process_unbound_events()
+void P2PAL::process_unbound_events(PEAT_Rank my_rank)
 {
     for (matching_event_type::iterator rank_it = matching_queues[qt_send].begin(); rank_it != matching_queues[qt_send].end(); ++rank_it) {
         for (std::map<P2P_Event_Key, std::list<MAT_P2P_Record *>>::iterator send_it = rank_it->begin(); send_it != rank_it->end(); ++send_it) {

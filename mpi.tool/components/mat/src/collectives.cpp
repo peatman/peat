@@ -156,7 +156,7 @@ void Collectives::print_collective_out(const Tractor_Event &event)
     output_MPI->printf(event.rank, "\n");
 #endif
 }
-void Collectives::print_collective_err(const MAT_Collective &record)
+void Collectives::print_collective_err(const MAT_Collective &record, PEAT_Rank my_rank)
 {
     std::string uids;
     std::string missing_ranks;
@@ -175,7 +175,7 @@ void Collectives::print_collective_err(const MAT_Collective &record)
             sprintf(local_uids, ":%d", rank);
             missing_ranks = missing_ranks + local_uids;
         }
-        sprintf(header, "%d:%s", PEAT_RT_Bind_Collective, global_func_id.name_by_idx(record.func_id));
+        sprintf(header, "Rank:%d:%d:%s", my_rank,PEAT_RT_Bind_Collective, global_func_id.name_by_idx(record.func_id));
         std::string final = header;
         final = final + uids + " Missing Ranks:" + missing_ranks + "\n";
         fputs(final.c_str(), stderr);
@@ -681,6 +681,12 @@ void Collectives::send_collective(PEAT_Rank rank, const Tractor_Event &event)
         PEAT_Rank mat_peer = collective_handlers[rank][cKey];
         collective_handlers[rank][cKey]++;
         collective_handlers[rank][cKey] %= mat_compute_comm_size;
+        if(mpifunc == MPI_FILE_OPEN_ID) {
+            fh_comms_redirect[rank][event.MPIFIO.fh] = mat_peer;
+        }
+        if (global_func_id.check_property(mpifunc, PEAT_PROP_FILE_HANDLE)) {
+            mat_peer = fh_comms_redirect.at(rank).at(event.MPIFIO.fh);
+        }
 #ifdef USE_LOCAL_PARSE
         if (mat_peer == my_rank) {
             parse_collective(rank, event, false);
@@ -696,7 +702,7 @@ void Collectives::send_collective(PEAT_Rank rank, const Tractor_Event &event)
             if(global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) {
                 req_store->flown_away_pers_requests[rank][record.request] = record;
             } else {
-                req_store->flown_away_requests[rank][record.request] = record;
+                req_store->flown_away_user_requests[rank][record.request].push_back(record);
             }
         }
 
@@ -742,13 +748,13 @@ PEAT_Bool Collectives::get_flown_away_req(const PEAT_Rank rank, const PEAT_MPI_R
 */
 #endif
 
-void Collectives::process_unbound_events()
+void Collectives::process_unbound_events(PEAT_Rank my_rank)
 {
     for (std::map<collective_key, collective_list_struct>::iterator coll_it = coll_queues.begin(); coll_it != coll_queues.end(); ++coll_it) {
         if (!coll_it->second.collectives.empty()) {
             peat_throw_error("Collective queue not empty\n");
             for (collective_list::iterator it = coll_it->second.collectives.begin(); it != coll_it->second.collectives.end(); ++it) {
-                print_collective_err(coll_get_record(it));
+                print_collective_err(coll_get_record(it),my_rank);
             }
         }
     }

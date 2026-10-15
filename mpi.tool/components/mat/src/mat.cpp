@@ -177,7 +177,11 @@ PEAT_Bool Mat::parse_single_event(const int rank)
     }
 
     if (t_event.func_class == PEAT_PROP_CLASS_FIO) {
+#ifdef PEAT_MPI
+        coll_func_store->send_collective(rank, t_event);
+#else
         coll_func_store->parse_collective(rank, t_event, false);
+#endif
     }
 
     if (t_event.func_class == PEAT_PROP_CLASS_BUF_LOCAL) {
@@ -185,7 +189,11 @@ PEAT_Bool Mat::parse_single_event(const int rank)
     }
     if (t_event.func_class == PEAT_PROP_CLASS_COMM) {
         if (global_func_id.check_property(mpifunc, PEAT_PROP_DATA_COLLECTIVE)) {
+#ifdef PEAT_MPI
+            coll_func_store->send_collective(rank, t_event);
+#else
             coll_func_store->parse_collective(rank, t_event, false);
+#endif
         } else {
             comm_func_store->parse_comm(rank, t_event);
         }
@@ -581,7 +589,7 @@ void Mat::process()
         }
     }
 #endif
-    process_unbound_events();
+    process_unbound_events(globals.comm_rank);
 #ifdef PEAT_MPI
     int perm = 0;
     MPI_Status status;

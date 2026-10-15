@@ -34,20 +34,22 @@ PEAT_Bool Request_Store::find_request(const PEAT_Rank rank, const PEAT_MPI_Reque
 {
     if (!queues[rank].empty()) {
         std::map<PEAT_MPI_Request, std::list<MAT_Request_Store_Record>>::iterator req_it = queues[rank].find(request);
-        for (std::list<MAT_Request_Store_Record >::iterator event_it= req_it->second.begin(); event_it != req_it->second.end(); ++event_it) {
-            if (event_it->request_type == type || 
-                (event_it->request_type == REQUEST_TYPE_PERSISTENT && type == REQUEST_TYPE_ANY_PERSISTENT) ||
-                ((event_it->request_type == REQUEST_TYPE_USER_P2P  || event_it->request_type == REQUEST_TYPE_USER_COLLECTIVE || 
-                    event_it->request_type == REQUEST_TYPE_USER_COMM || event_it->request_type == REQUEST_TYPE_USER_FIO ||
-                    event_it->request_type == REQUEST_TYPE_USER_OSC) &&
-                    type == REQUEST_TYPE_ANY_NOT_PERSISTENT)) {
-                *ret_it = *event_it;
-                if(erase) {
-                    req_it->second.erase(event_it);
+        if(req_it != queues[rank].end()) {
+            for(std::list<MAT_Request_Store_Record >::iterator event_it = req_it->second.begin(); event_it != req_it->second.end(); ++event_it) {
+                if(event_it->request_type == type ||
+                    (event_it->request_type == REQUEST_TYPE_PERSISTENT && type == REQUEST_TYPE_ANY_PERSISTENT) ||
+                    ((event_it->request_type == REQUEST_TYPE_USER_P2P || event_it->request_type == REQUEST_TYPE_USER_COLLECTIVE ||
+                        event_it->request_type == REQUEST_TYPE_USER_COMM || event_it->request_type == REQUEST_TYPE_USER_FIO ||
+                        event_it->request_type == REQUEST_TYPE_USER_OSC) &&
+                        type == REQUEST_TYPE_ANY_NOT_PERSISTENT)) {
+                    *ret_it = *event_it;
+                    if(erase) {
+                        req_it->second.erase(event_it);
+                    }
+                    return true;
                 }
-                return true;
             }
-		}
+        }
     }
     return false;
 }

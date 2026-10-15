@@ -201,7 +201,7 @@ class Collectives : public Outputs
     PEAT_Bool add_pers_req_start(const PEAT_Rank rank, MAT_Collectives_Record* record);
 
 
-    void process_unbound_events();
+    void process_unbound_events(PEAT_Rank my_rank);
 #ifdef PEAT_MPI
     PEAT_Signed_Num check_unbound_events();
 #endif
@@ -217,12 +217,13 @@ class Collectives : public Outputs
     void process_collective(const PEAT_Rank rank, MAT_Collectives_Record* event, int pc_level, PEAT_Bool is_remote);
 
     void print_collective_out(const Tractor_Event &event);
-    void print_collective_err(const MAT_Collective &record);
+    void print_collective_err(const MAT_Collective &record, PEAT_Rank my_rank);
     void print_collective_bind(const MAT_Collective &record);
     PEAT_Bool check_completion(const MAT_Collective &record);
     PEAT_Bool check_completion(collective_list::iterator &record);
     std::map<collective_key, collective_list_struct> coll_queues;
     std::map<PEAT_Rank, std::map<PEAT_MPI_File, PEAT_MPI_Comm>> fh_comms;
+    std::map<PEAT_Rank, std::map<PEAT_MPI_File, PEAT_Rank>> fh_comms_redirect;
     PTP *ptp;
     Communicators *comm_store;
     Request_Store* req_store;

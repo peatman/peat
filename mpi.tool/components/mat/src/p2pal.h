@@ -142,8 +142,8 @@ class P2PAL : public Outputs
     void print_Local(const Tractor_Event &event);
     PEAT_Bool update_request(const PEAT_Rank rank, const Request_Store_Record_Type type, const PEAT_MPI_Tag tag, const PEAT_Rank source, const PEAT_Message_Size size, PEAT_MPI_Request request, const Phase &phase, PEAT_Bool is_remote);
     PEAT_Bool match_peer(matching_event_type &queues, std::list<MAT_P2P_Record *>::iterator &ret_it, const MAT_P2P_Record &input_record) const;
-    PEAT_Bool add_pers_req_start(const PEAT_Rank rank, MAT_P2P_Record *record);
-    void process_unbound_events();
+    PEAT_Bool add_pers_req_start(const PEAT_Rank rank, PEAT_MPI_Func_ID init_func_id, MAT_P2P_Record *record);
+    void process_unbound_events(PEAT_Rank my_rank);
     PEAT_Signed_Num check_unbound_events();
     PEAT_Bool is_wild_card(const MAT_P2P_Record &r) const
     {
