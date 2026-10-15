@@ -444,6 +444,248 @@
      goto fn_exit;
  }
 +#endif
+--- a/src/mpi/coll/allgather/allgather_allcomm_nb.c
++++ b/src/mpi/coll/allgather/allgather_allcomm_nb.c
+@@ -18,7 +18,7 @@
+                         &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/allgatherv/allgatherv_allcomm_nb.c
++++ b/src/mpi/coll/allgatherv/allgatherv_allcomm_nb.c
+@@ -18,7 +18,7 @@
+                          comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/allreduce/allreduce_allcomm_nb.c
++++ b/src/mpi/coll/allreduce/allreduce_allcomm_nb.c
+@@ -16,7 +16,7 @@
+     mpi_errno = MPIR_Iallreduce(sendbuf, recvbuf, count, datatype, op, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/alltoall/alltoall_allcomm_nb.c
++++ b/src/mpi/coll/alltoall/alltoall_allcomm_nb.c
+@@ -18,7 +18,7 @@
+                        &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/alltoallv/alltoallv_allcomm_nb.c
++++ b/src/mpi/coll/alltoallv/alltoallv_allcomm_nb.c
+@@ -19,7 +19,7 @@
+                         recvtype, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/alltoallw/alltoallw_allcomm_nb.c
++++ b/src/mpi/coll/alltoallw/alltoallw_allcomm_nb.c
+@@ -20,7 +20,7 @@
+                         recvtypes, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/barrier/barrier_allcomm_nb.c
++++ b/src/mpi/coll/barrier/barrier_allcomm_nb.c
+@@ -14,7 +14,7 @@
+     mpi_errno = MPIR_Ibarrier(comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/bcast/bcast_allcomm_nb.c
++++ b/src/mpi/coll/bcast/bcast_allcomm_nb.c
+@@ -15,7 +15,7 @@
+     mpi_errno = MPIR_Ibcast(buffer, count, datatype, root, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/exscan/exscan_allcomm_nb.c
++++ b/src/mpi/coll/exscan/exscan_allcomm_nb.c
+@@ -16,7 +16,7 @@
+     mpi_errno = MPIR_Iexscan(sendbuf, recvbuf, count, datatype, op, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/gather/gather_allcomm_nb.c
++++ b/src/mpi/coll/gather/gather_allcomm_nb.c
+@@ -17,7 +17,7 @@
+         MPIR_Igather(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype, root, comm_ptr,
+                      &req_ptr);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/gatherv/gatherv_allcomm_nb.c
++++ b/src/mpi/coll/gatherv/gatherv_allcomm_nb.c
+@@ -19,7 +19,7 @@
+                       comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/neighbor_allgather/neighbor_allgather_allcomm_nb.c
++++ b/src/mpi/coll/neighbor_allgather/neighbor_allgather_allcomm_nb.c
+@@ -18,7 +18,7 @@
+                                  comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/neighbor_allgatherv/neighbor_allgatherv_allcomm_nb.c
++++ b/src/mpi/coll/neighbor_allgatherv/neighbor_allgatherv_allcomm_nb.c
+@@ -19,7 +19,7 @@
+                                           &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/neighbor_alltoall/neighbor_alltoall_allcomm_nb.c
++++ b/src/mpi/coll/neighbor_alltoall/neighbor_alltoall_allcomm_nb.c
+@@ -17,7 +17,7 @@
+                                         recvbuf, recvcount, recvtype, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/neighbor_alltoallv/neighbor_alltoallv_allcomm_nb.c
++++ b/src/mpi/coll/neighbor_alltoallv/neighbor_alltoallv_allcomm_nb.c
+@@ -20,7 +20,7 @@
+                                  rdispls, recvtype, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/neighbor_alltoallw/neighbor_alltoallw_allcomm_nb.c
++++ b/src/mpi/coll/neighbor_alltoallw/neighbor_alltoallw_allcomm_nb.c
+@@ -20,7 +20,7 @@
+                                  rdispls, recvtypes, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/reduce/reduce_allcomm_nb.c
++++ b/src/mpi/coll/reduce/reduce_allcomm_nb.c
+@@ -16,7 +16,7 @@
+     mpi_errno = MPIR_Ireduce(sendbuf, recvbuf, count, datatype, op, root, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/reduce_scatter/reduce_scatter_allcomm_nb.c
++++ b/src/mpi/coll/reduce_scatter/reduce_scatter_allcomm_nb.c
+@@ -17,7 +17,7 @@
+         MPIR_Ireduce_scatter(sendbuf, recvbuf, recvcounts, datatype, op, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/reduce_scatter_block/reduce_scatter_block_allcomm_nb.c
++++ b/src/mpi/coll/reduce_scatter_block/reduce_scatter_block_allcomm_nb.c
+@@ -17,7 +17,7 @@
+         MPIR_Ireduce_scatter_block(sendbuf, recvbuf, recvcount, datatype, op, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/scan/scan_allcomm_nb.c
++++ b/src/mpi/coll/scan/scan_allcomm_nb.c
+@@ -15,7 +15,7 @@
+     mpi_errno = MPIR_Iscan(sendbuf, recvbuf, count, datatype, op, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/scatter/scatter_allcomm_nb.c
++++ b/src/mpi/coll/scatter/scatter_allcomm_nb.c
+@@ -18,7 +18,7 @@
+                       &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/scatterv/scatterv_allcomm_nb.c
++++ b/src/mpi/coll/scatterv/scatterv_allcomm_nb.c
+@@ -19,7 +19,7 @@
+                        comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
 --- a/src/mpi/comm/commutil.c
 +++ b/src/mpi/comm/commutil.c
 @@ -300,8 +300,11 @@
@@ -965,7 +1207,30 @@
                          e->u.send.sreq = NULL;
                          if (s->kind == MPIR_SCHED_KIND_GENERALIZED) {
                              MPIR_Comm_release(e->u.send.comm);
-@@ -1110,7 +1113,8 @@
+@@ -1105,12 +1108,31 @@
+                     break;
+                 case MPIDU_SCHED_ENTRY_PT2PT_RECV:
+                     if (e->u.recv.rreq != NULL && MPIR_Request_is_complete(e->u.recv.rreq)) {
++                        MPIR_Process_status(&e->u.recv.rreq->status);
++                        /* Propagate the real receive status (source/tag/count) to the
++                         * schedule's request so that MPI_Wait/MPI_Test on the request
++                         * returned by MPI_Isendrecv(_replace) report it correctly, matching
++                         * the blocking MPI_Sendrecv behavior. e->u.recv.status is always
++                         * MPI_STATUS_IGNORE here (see MPIDU_Sched_pt2pt_recv), so it cannot
++                         * be used to carry this information like the plain RECV case does.
++                         * The count fields hold a raw byte count (MPI_Get_count later divides
++                         * it by the user's datatype extent), so copy them as-is from the real
++                         * receive request instead of converting through e->u.recv.datatype. */
++                        int cancelled = MPIR_STATUS_GET_CANCEL_BIT(e->u.recv.rreq->status);
++                        s->req->status.MPI_SOURCE = e->u.recv.rreq->status.MPI_SOURCE;
++                        s->req->status.MPI_TAG = e->u.recv.rreq->status.MPI_TAG;
++                        s->req->status.count_lo = e->u.recv.rreq->status.count_lo;
++                        s->req->status.count_hi_and_cancelled =
++                            e->u.recv.rreq->status.count_hi_and_cancelled & ~1;
++                        MPIR_STATUS_SET_CANCEL_BIT(s->req->status, cancelled);
++
+                         if (s->req->status.MPI_ERROR) {
+                             e->status = MPIDU_SCHED_ENTRY_STATUS_FAILED;
                          } else {
                              e->status = MPIDU_SCHED_ENTRY_STATUS_COMPLETE;
                          }
@@ -975,7 +1240,7 @@
                          e->u.recv.rreq = NULL;
                          if (s->kind == MPIR_SCHED_KIND_GENERALIZED) {
                              MPIR_Comm_release(e->u.recv.comm);
-@@ -1205,3 +1209,33 @@
+@@ -1205,3 +1227,33 @@
          return mpi_errno;
      }
  }

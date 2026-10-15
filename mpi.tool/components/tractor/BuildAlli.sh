@@ -20,25 +20,25 @@ export TRANSPORT=on
 #do_not_remove=1 ./Build.sh mpich:4.3.2x-mt-ofi-eng         mpich4    off   on   on   off off  on 
 #do_not_remove=1 ./Build.sh mvapich:4.1x-mt-ofi-eng         mvapich4  off   on  off  off off  off 
 #do_not_remove=1 ./Build.sh mpich:4.3.2x-mt-ofi-eng         mpich4    off   on  off  off off  off 
-#do_not_remove=1 ./Build.sh mpich:5.0.1x-mt-ofi-eng         mpich5    off   on  off  off off  off
-#do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng        transport_layers off   off  off  off off off
-#do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng        mpich5     off   off  off  off off off
+#do_not_remove=1 ./Build.sh mpich:5.0.2x-mt-ofi-eng         mpich5    off   on  off  off off  off
+#do_not_remove=1 ./Build.sh  mpich:5.0.2x-mt-ofi-eng        transport_layers off   off  off  off off off
+#do_not_remove=1 ./Build.sh  mpich:5.0.2x-mt-ofi-eng        mpich5     off   off  off  off off off
 #export TRANSPORT=on
-#do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng        mpich5   off   off  off  off off off
+#do_not_remove=1 ./Build.sh  mpich:5.0.2x-mt-ofi-eng        mpich5   off   off  off  off off off
 
 #exit
 # build transport layers (mpi doesn't matter here so use mpich) 
-#do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng          transport_layers off   off  off  off off off
-#do_not_remove=1 ./Build.sh  mpich:5.0.1x-mt-ofi-eng          transport_layers off   on  off  off off off
-#do_not_remove=1 ./Build.sh mpich:5.0.1x-mt-ofi-eng           mpich5     off   on  off  off off off
+#do_not_remove=1 ./Build.sh  mpich:5.0.2x-mt-ofi-eng          transport_layers off   off  off  off off off
+#do_not_remove=1 ./Build.sh  mpich:5.0.2x-mt-ofi-eng          transport_layers off   on  off  off off off
+#do_not_remove=1 ./Build.sh mpich:5.0.2x-mt-ofi-eng           mpich5     off   on  off  off off off
 #do_not_remove=1 ./Build.sh openmpi:5.0.10x-eng               openmpi5   off   on  off  off off off 
 #do_not_remove=1 ./Build.sh openmpi:5.0.10x                   openmpi5   off   on  off  off off off 
 #do_not_remove=1 ./Build.sh mvapich:4.1x-mt-ofi-eng         mvapich4  off   on   off  off off off
 
 #exit
 
-./Build.sh  mpich:5.0.1x-mt-ofi-eng     transport_layers off   off  off  off off off &
-./Build.sh  mpich:5.0.1x-mt-ofi-eng     transport_layers off   on   off  off off off &
+./Build.sh  mpich:5.0.2x-mt-ofi-eng     transport_layers off   off  off  off off off &
+./Build.sh  mpich:5.0.2x-mt-ofi-eng     transport_layers off   on   off  off off off &
 
 unset TRANSPORT
 
@@ -89,10 +89,10 @@ unset TRANSPORT
 # ./Build.sh mvapich:4.1x-mt-ofi            mvapich4  off   on   on   off off off &
 
 
-./Build.sh mpich:5.0.1x-mt-ofi             mpich5    off   off  off  off off  off &
-#./Build.sh mpich:5.0.1x-mt-ofi             mpich5    off   off  on   off off  off &
-./Build.sh mpich:5.0.1x-mt-ofi             mpich5    off   on   off  off off  off &
-#./Build.sh mpich:5.0.1x-mt-ofi             mpich5    off   on   on   off off  off &
+./Build.sh mpich:5.0.2x-mt-ofi             mpich5    off   off  off  off off  off &
+#./Build.sh mpich:5.0.2x-mt-ofi             mpich5    off   off  on   off off  off &
+./Build.sh mpich:5.0.2x-mt-ofi             mpich5    off   on   off  off off  off &
+#./Build.sh mpich:5.0.2x-mt-ofi             mpich5    off   on   on   off off  off &
 
 export TRANSPORT=on
 
@@ -119,10 +119,10 @@ export TRANSPORT=on
 
 # engineering mpich5 builds (ct and transport) 
 
-./Build.sh mpich:5.0.1x-mt-ofi-eng         mpich5    off   off  off  off off  off &
-#./Build.sh mpich:5.0.1x-mt-ofi-eng         mpich5    off   off  on   off off  off &
-./Build.sh mpich:5.0.1x-mt-ofi-eng         mpich5    off   on   off  off off  off &
-#./Build.sh mpich:5.0.1x-mt-ofi-eng         mpich5    off   on   on   off off  off &
+./Build.sh mpich:5.0.2x-mt-ofi-eng         mpich5    off   off  off  off off  off &
+#./Build.sh mpich:5.0.2x-mt-ofi-eng         mpich5    off   off  on   off off  off &
+./Build.sh mpich:5.0.2x-mt-ofi-eng         mpich5    off   on   off  off off  off &
+#./Build.sh mpich:5.0.2x-mt-ofi-eng         mpich5    off   on   on   off off  off &
 
 
 ./Build.sh mvapich:4.1x-mt-ofi-eng         mvapich4  off   off  off  off off off &
