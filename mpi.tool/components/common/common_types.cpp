@@ -396,8 +396,12 @@ void Address_File_Storage::parse(const String_Split &lines, const PEAT_Rank rank
             int columns = 2;
             extract(columns, lines.at(4));
             id_columns[rank] = columns < 2 ? 2 : columns;
-            extract(last_event_id, lines.at(5));
-            last_transport_event_idx[rank] = last_event_id;
+            if(lines.size() > 5) {
+                extract(last_event_id, lines.at(5));
+                last_transport_event_idx[rank] = last_event_id;
+            } else {
+                last_transport_event_idx[rank] = 0;
+            }
             break;
         }
         case PEAT_RT_User_Regions_Total: {
