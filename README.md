@@ -3,7 +3,7 @@ PEAT - Performance (-Estimation &-) Analysing Toolkit
 Status: TECHNICAL PREVIEW!!!
 
 However you're welcome to download/compile and use it in your own work.
-Estimation capability (pet/urpu) is excluded in main branch.
+Estimation capability (pet/urpu/omp.tool) is excluded in main branch.
 
 Contains: mpi.tool 
 
