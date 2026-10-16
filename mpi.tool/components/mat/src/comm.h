@@ -26,25 +26,30 @@
 #include "file_io.h"
 #include "ptp.h"
 #include "tevent.h"
+#include "request_store.h"
+#include "requests.h"
 
 class Comm : public Outputs
 {
   public:
-    Comm(PTP *p, Communicators *c,
+    Comm(
          /*
         #ifdef PEAT_MPI
                 const std::vector<PEAT_Rank>& wR, const std::vector<PEAT_Rank>& mRs, const MPI_Comm mat_cc, const PEAT_Rank m_r,
         #endif
         */
          int v = false);
-    ~Comm();
+
+    void initialize(PTP *p, Communicators *c, Request_Store *rs, Requests* r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
 
     void parse_comm(const PEAT_Rank rank, Tractor_Event &event);
     void print_comm_out(const Tractor_Event &event);
+    PEAT_Bool update_request(const PEAT_Rank rank, PEAT_MPI_Request request, const Phase& phase, PEAT_Bool is_remote);
 
     PTP *ptp;
-    Communicators *com_store;
-
+    Communicators *comm_store;
+    Request_Store* req_store;
+    Requests* request_func_store;
     int verbose;
 };
 

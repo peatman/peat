@@ -22,7 +22,7 @@
 #include <assert.h>
 #include <sstream>
 
-GPU::GPU(PTP *p, Communicators *c,
+GPU::GPU(
          /*
          #ifdef PEAT_MPI
              const std::vector<PEAT_Rank>& wR, const std::vector<PEAT_Rank>& mRs, const MPI_Comm mat_cc, const PEAT_Num mat_ccs, const PEAT_Rank m_r,
@@ -33,22 +33,26 @@ GPU::GPU(PTP *p, Communicators *c,
                       whole_ranks(wR), my_ranks(mRs), mat_compute_comm(mat_cc), mat_compute_comm_size(mat_ccs), my_rank(m_r),
                   #endif
                   */
-                  cur_transfer(NULL), cur_exec(NULL), ptp(p), com_store(c), verbose(v)
+                  cur_transfer(NULL), cur_exec(NULL), ptp(NULL), comm_store(NULL), verbose(v)
+{
+}
+
+void GPU::initialize(PTP *p, Communicators *c, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
 {
     assert(c);
     assert(p);
-    // com_store = c;
-    // ptp = p;
+    comm_store = c;
+    ptp = p;
+    Outputs::initialize(MPI, HWC, bind);
 }
 
 GPU::~GPU()
 {
     ptp = 0;
-    com_store = 0;
+    comm_store = 0;
 }
 void GPU::print_GPU_out(const Tractor_Event &event)
 {
-    // cerr << "Local. Rank:" << local_record.rank << ". uniq_id:" << local_record.ph[0].uniq_id << endl;
 #ifdef MAT_PROCESS_HWC_MPI_OUTPUT
     output_MPI->printf(event.rank, "%s:%s", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id));
 #if 0
@@ -255,16 +259,16 @@ void GPU::parse_GPU(const PEAT_Rank rank, const Tractor_Event &event)
     return;
 }
 
-bool GPU::check_completion()
+PEAT_Bool GPU::check_completion()
 {
     return true;
 }
 
-bool GPU::find_handle(PEAT_Rank rank, PEAT_MPI_Request request)
+PEAT_Bool GPU::find_handle(PEAT_Rank rank, PEAT_MPI_Request request)
 {
     return false;
 }
-bool GPU::update_handle(PEAT_Rank rank, PEAT_MPI_Request request, const Phase &phase)
+PEAT_Bool GPU::update_handle(PEAT_Rank rank, PEAT_MPI_Request request, const Phase &phase)
 {
     return false;
 }

@@ -33,7 +33,9 @@
     <ClCompile Include="..\mat\src\main.cpp" />
     <ClCompile Include="..\mat\src\mat.cpp" />
     <ClCompile Include="..\mat\src\p2pal.cpp" />
+    <ClCompile Include="..\mat\src\osc.cpp" />
     <ClCompile Include="..\mat\src\requests.cpp" />
+    <ClCompile Include="..\mat\src\request_store.cpp" />
     <ClCompile Include="..\mat\src\tempdebug.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Disabled</Optimization>
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Release.MPI|x64'">Disabled</Optimization>
@@ -60,8 +62,10 @@
     <ClInclude Include="..\mat\src\gpu.h" />
     <ClInclude Include="..\mat\src\mat.h" />
     <ClInclude Include="..\mat\src\p2pal.h" />
+    <ClInclude Include="..\mat\src\osc.h" />
     <ClInclude Include="..\mat\src\records.h" />
     <ClInclude Include="..\mat\src\requests.h" />
+    <ClInclude Include="..\mat\src\request_store.h" />
     <ClInclude Include="..\mat\src\tevent.h" />
   </ItemGroup>
   <ItemGroup>
@@ -118,27 +122,27 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\include;..\contrib\getopt\include;</IncludePath>
-    <LibraryPath>$(ICInstallDir)\compiler\lib\intel64_win;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);..\contrib\zlib\install\lib;$(ICInstallDir)\lib</LibraryPath>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\msvc\include;..\contrib\getopt\include;</IncludePath>
+    <LibraryPath>$(ICInstallDir)\compiler\lib\intel64_win;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);..\contrib\zlib\install\msvc\lib;$(ICInstallDir)\lib</LibraryPath>
     <ExecutablePath>$(ICInstallDir)bin;$(NativeExecutablePath);$(VC_ExecutablePath_x64);$(WindowsSDK_ExecutablePath);$(VS_ExecutablePath);$(MSBuild_ExecutablePath);$(FxCopDir);$(PATH)</ExecutablePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug.MPI|x64'">
     <LinkIncremental>true</LinkIncremental>
-    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\include;..\contrib\getopt\include;</IncludePath>
-    <LibraryPath>$(MSBuildProgramFiles32)\Intel\oneAPI\mpi\latest\lib\mpi\debug;$(MSBuildProgramFiles32)\Intel\oneAPI\mpi\latest\lib;$(I_MPI_ROOT)\lib\mpi\debug;$(I_MPI_ROOT)\lib;$(ICInstallDir)\compiler\lib\intel64_win;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);..\contrib\zlib\install\lib;$(ICInstallDir)\lib</LibraryPath>
-    <ExecutablePath>$(ICInstallDir)bin;$(NativeExecutablePath);$(VC_ExecutablePath_x64);$(WindowsSDK_ExecutablePath);$(VS_ExecutablePath);$(MSBuild_ExecutablePath);$(FxCopDir);$(PATH)</ExecutablePath>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\msvc\include;..\contrib\getopt\include;</IncludePath>
+    <LibraryPath>$(MSBuildProgramFiles32)\Intel\oneAPI\mpi\latest\lib\mpi\debug;$(MSBuildProgramFiles32)\Intel\oneAPI\mpi\latest\lib;$(I_MPI_ROOT)\lib\mpi\debug;$(I_MPI_ROOT)\lib;$(ICInstallDir)\compiler\lib\intel64_win;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);..\contrib\zlib\install\msvc\lib;$(ICInstallDir)\lib;$(I_MPI_ROOT)\bin</LibraryPath>
+    <ExecutablePath>$(ICInstallDir)bin;$(NativeExecutablePath);$(VC_ExecutablePath_x64);$(WindowsSDK_ExecutablePath);$(VS_ExecutablePath);$(MSBuild_ExecutablePath);$(FxCopDir);$(I_MPI_ROOT)\bin;$(PATH)</ExecutablePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\include;..\contrib\getopt\include;</IncludePath>
-    <LibraryPath>$(ICInstallDir)\compiler\lib\intel64_win;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);..\contrib\zlib\install\lib;$(ICInstallDir)\lib</LibraryPath>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\msvc\include;..\contrib\getopt\include;</IncludePath>
+    <LibraryPath>$(ICInstallDir)\compiler\lib\intel64_win;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);..\contrib\zlib\install\msvc\lib;$(ICInstallDir)\lib</LibraryPath>
     <LibraryWPath>$(WindowsSDK_MetadataPath);</LibraryWPath>
     <ExecutablePath>$(ICInstallDir)bin;$(NativeExecutablePath);$(VC_ExecutablePath_x64);$(WindowsSDK_ExecutablePath);$(VS_ExecutablePath);$(MSBuild_ExecutablePath);$(FxCopDir);$(PATH)</ExecutablePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release.MPI|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\include;..\contrib\getopt\include;</IncludePath>
-    <LibraryPath>$(MSBuildProgramFiles32)\Intel\oneAPI\mpi\latest\lib;$(I_MPI_ROOT)\lib;$(ICInstallDir)\compiler\lib\intel64_win;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);..\contrib\zlib\install\lib;$(ICInstallDir)\lib</LibraryPath>
+    <IncludePath>$(VC_IncludePath);$(WindowsSDK_IncludePath);.;..\common;..\contrib\zlib\install\msvc\include;..\contrib\getopt\include;</IncludePath>
+    <LibraryPath>$(MSBuildProgramFiles32)\Intel\oneAPI\mpi\latest\lib;$(I_MPI_ROOT)\lib;$(ICInstallDir)\compiler\lib\intel64_win;$(VC_LibraryPath_x64);$(WindowsSDK_LibraryPath_x64);..\contrib\zlib\install\msvc\lib;$(ICInstallDir)\lib</LibraryPath>
     <LibraryWPath>$(WindowsSDK_MetadataPath);</LibraryWPath>
     <ExecutablePath>$(ICInstallDir)bin;$(NativeExecutablePath);$(VC_ExecutablePath_x64);$(WindowsSDK_ExecutablePath);$(VS_ExecutablePath);$(MSBuild_ExecutablePath);$(FxCopDir);$(PATH)</ExecutablePath>
   </PropertyGroup>
@@ -147,7 +151,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions);MAT_PROCESS_HWC_MPI_OUTPUT</PreprocessorDefinitions>
       <SDLCheck>false</SDLCheck>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <AdditionalIncludeDirectories>$(I_MPI_ROOT)\include</AdditionalIncludeDirectories>
@@ -168,7 +172,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>PEAT_MPI;ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>PEAT_MPI;ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;_DEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions);MAT_PROCESS_HWC_MPI_OUTPUT</PreprocessorDefinitions>
       <SDLCheck>false</SDLCheck>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <AdditionalIncludeDirectories>$(I_MPI_ROOT)\include</AdditionalIncludeDirectories>
@@ -191,7 +195,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions);MAT_PROCESS_HWC_MPI_OUTPUT</PreprocessorDefinitions>
       <SDLCheck>false</SDLCheck>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
@@ -219,7 +223,7 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>PEAT_MPI;ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>PEAT_MPI;ZLIB_WINAPI;NOMINMAX;STATIC_GETOPT;WIN32;_CRT_SECURE_NO_WARNINGS;_FILE_OFFSET_BITS=64;_LARGEFILE64_SOURCE=1;_LFS64_LARGEFILE=1;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions);MAT_PROCESS_HWC_MPI_OUTPUT</PreprocessorDefinitions>
       <SDLCheck>false</SDLCheck>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>

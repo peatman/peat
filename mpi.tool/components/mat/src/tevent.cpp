@@ -24,14 +24,16 @@
 #include <sstream>
 #include <stdexcept>
 
-void Tractor_Event::get_extra_txrx(const String_Split &line, const Communicators *com_store)
+Phase::Phase(Tractor_Event& t) : func_id(t.func_id), thread_id(t.thread_id), tsc_time(t.tsc_time), tsc_u_time(t.tsc_u_time), addrs(t.addrs), ids(t.ids) {}
+
+void Tractor_Event::get_extra_txrx(const String_Split &line, const Communicators *comm_store)
 {
 
     /*
     const int block_main_event_info_length = 5;
     const int block_tsc_start = block_main_event_info_length;
-    const int block_hw_start = block_tsc_start + com_store->frames.at(rank).size_tsc_block;
-    const int block_auxiliary_start = block_hw_start + com_store->frames.at(rank).size_hw_block;
+    const int block_hw_start = block_tsc_start + comm_store->frames.at(rank).size_tsc_block;
+    const int block_auxiliary_start = block_hw_start + comm_store->frames.at(rank).size_hw_block;
     PEAT_Signed_Num aux_fields_num = 0; extract(aux_fields_num, line.at(block_auxiliary_start));
     assert(aux_fields_num == 3);
     extract(P2P.peer, line.at(block_auxiliary_start + 1), 16);
@@ -39,7 +41,7 @@ void Tractor_Event::get_extra_txrx(const String_Split &line, const Communicators
     extract(P2P.bytes, line.at(block_auxiliary_start+3), 16);
     */
 }
-Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, const String_Split &line_hwc, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file, const Communicators *com_store) : rank(r), num_children(0), level(0)
+Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, const String_Split &line_hwc, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file, const Communicators *comm_store) : rank(r), num_children(0), level(0)
 {
     // no need to check line.size() due line.at() throw an exception
     //  First read the record header (ids, thread, nesting)
@@ -55,6 +57,10 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
     if (func_id == TMPI_FUNC_ID_NONE) {
         func_id = global_func_id.idx_by_name(line_mpi.at(b));
     }
+    if (ids[0] == 399 && rank == 1) {
+        ids[0] = ids[0];
+    }
+
     if (!line_hwc.empty()) { // line_hwc is empty when hwc files aren't read (matching_only on)
         assert(hdr.same_ids(line_hwc));
         extract(tsc_time.func.in, line_hwc.at(h), 10);
@@ -121,8 +127,7 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
         extract(Comms.comm, line_mpi.at(b + 1), 16);
         extract(Comms.newcomm, line_mpi.at(b + 2), 16);
         extract(Comms.remote_comm, line_mpi.at(b + 3), 16);
-        extract(Comms.inter_comm, line_mpi.at(b + 4), 16);
-        extract(Comms.request, line_mpi.at(b + 5), 16);
+        extract(Comms.request, line_mpi.at(b + 4), 16);
     }
     if (
         ((func_id >= MPI_P2P_TRANSFER_START) && (func_id < MPI_P2P_TRANSFER_END)) ||
@@ -167,7 +172,7 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
         extract(Requests.input_request_num, line_mpi.at(b + 1));
         extract(Requests.triggered_request_num, line_mpi.at(b + 2));
         extract(Requests.flag, line_mpi.at(b + 3));
-        extract(Requests.buf, line_mpi.at(b + 4 ), 16);
+        extract(Requests.buf, line_mpi.at(b + 4), 16);
         if (func_id == MPI_STARTALL_ID || func_id == MPI_START_ID || func_id == MPI_REQUEST_FREE_ID || func_id == MPI_CANCEL_ID) {
             for (int i = 0; i < (int)Requests.input_request_num; i++) {
                 PEAT_MPI_Request req;
@@ -243,3 +248,4 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
         func_class = PEAT_PROP_CLASS_OMPT;
     }
 }
+ 

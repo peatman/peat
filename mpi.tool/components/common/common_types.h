@@ -512,7 +512,7 @@ struct Global_Parameters {
     std::string bind_files;
     std::string mpi_files;
     std::string hwc_files;
-    std::string fab_files;
+    std::string transport_files;
     std::string ptpd_ext;
     std::string app_ext;
     std::string map_file;
@@ -564,7 +564,7 @@ struct Global_Parameters {
 
     std::map<PEAT_Rank, std::string> pe_MPI_files_in_rank;
     std::map<PEAT_Rank, std::string> pe_HWC_files_in_rank;
-    std::map<PEAT_Rank, std::string> pe_fab_files_in_rank;
+    std::map<PEAT_Rank, std::string> pe_transport_files_in_rank;
     std::map<PEAT_Rank, std::string> pe_MPI_files_in_rank_out;
     std::map<PEAT_Rank, std::string> pe_HWC_files_in_rank_out;
     std::map<PEAT_Rank, std::string> pe_bind_files_in_rank_out;
@@ -803,7 +803,7 @@ struct Address_File_Storage {
     std::map<PEAT_Rank, std::map<PEAT_UID, User_Address_Info>> appAddresses;
     std::map<PEAT_Rank, std::map<User_Address_Key, PEAT_Ratio>> mAddresses; // addresses from input model
     std::map<PEAT_Rank, PEAT_UID> last_event_idx;
-    std::map<PEAT_Rank, PEAT_UID> last_fab_event_idx;
+    std::map<PEAT_Rank, PEAT_UID> last_transport_event_idx;
     std::map<PEAT_Rank, PEAT_Thread> last_thread_idx;
     std::map<PEAT_Rank, int> id_columns;          // id columns in the .mpi/.hwc records 
     File_Storage_GZ *UR_File;
@@ -872,7 +872,7 @@ struct PEAT_Time_Parts {
     PEAT_Clock epilog = 0;
     /* statistic part */
     struct PEAT_Time_Parts_Stat {
-        PEAT_Clock fabric = 0;
+        PEAT_Clock transport = 0;
         PEAT_Clock wait = 0;
         PEAT_Clock overlap = 0;
     } stat;

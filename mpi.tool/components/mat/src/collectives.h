@@ -24,6 +24,7 @@
 #include "ptp.h"
 #include "records.h"
 #include "tevent.h"
+#include "request_store.h"
 
 #include <assert.h>
 #include <list>
@@ -34,14 +35,15 @@
 #define UPDATE_FIRST_ENTRY
 
 struct Collective_Event { // tsc_u_time is for debugging purposes only!
-    Collective_Event() : ids(2, -1), request(0), permanent_request(0) {}
-    PEAT_Event_IDs ids;
+    Collective_Event() : request(0), permanent_request(0), comm(0) {}
+    Collective_Event(const Tractor_Event& s);
     // PEAT_Collective_Bytes send_bytes,recv_bytes;
     //  std::vector<PEAT_Addr> addrs;
     std::vector<PEAT_UID> addrs;
     PEAT_Time tsc_time, tsc_u_time;
     PEAT_MPI_Request request, permanent_request;
-    Phase completion;
+    PEAT_MPI_Comm comm;
+    Phase ph;
 };
 
 struct Collective_Entry {
@@ -51,7 +53,7 @@ struct Collective_Entry {
     PEAT_Rank size; // Number of ranks in collective
     PEAT_Rank root;
     int pc_level;
-    std::map<PEAT_Rank, Collective_Event> coll_events_list; // map<source_rank, destination_properties>
+    std::map<PEAT_Rank, Collective_Event*> coll_events_list; // map<source_rank, destination_properties>
     PEAT_Collective_Bytes send_bytes, recv_bytes;
 };
 #if 0
@@ -68,7 +70,7 @@ struct collective_key {
     PEAT_Num func_id;
     collective_key(PEAT_MPI_Comm c, PEAT_Num f) : comm(c), func_id(f) {}
     friend std::ostream &operator<<(std::ostream &dbg, const collective_key &key);
-    bool operator<(const collective_key &key) const
+    PEAT_Bool operator<(const collective_key &key) const
     {
         if (comm < key.comm) {
             return true;
@@ -86,18 +88,18 @@ struct collective_key {
     }
 };
 
-struct PEAT_Collective_Record {
+struct MAT_Collective_Record {
     PEAT_MPI_Func_ID func_id;
     PEAT_Collective_Bytes send_bytes, recv_bytes;
     // std::map<PEAT_Rank, std::string> comp_funcs;//map<source_rank, destination_properties>
     std::string comp_func;
     PEAT_Rank root, size;
     PEAT_MPI_Comm comm;
-    PEAT_Collective_Record() : root(-1), size(-1), comm(0)
+    MAT_Collective_Record() : root(-1), size(-1), comm(0)
     {
         func_id = TMPI_FUNC_ID_NONE;
     };
-    bool operator<(const PEAT_Collective_Record &right) const
+    PEAT_Bool operator<(const MAT_Collective_Record &right) const
     {
         if (size < right.size)
             return true;
@@ -133,12 +135,12 @@ struct PEAT_Collective_Record {
     }
 };
 
-struct PEAT_Collective_Clock {
+struct MAT_Collective_Clock {
     PEAT_Clock total_c, imb_c, min_c, max_c;
     PEAT_LNum occ;
-    PEAT_Collective_Clock() : total_c(0), imb_c(0), min_c(0), max_c(0), occ(0) {};
+    MAT_Collective_Clock() : total_c(0), imb_c(0), min_c(0), max_c(0), occ(0) {};
 
-    PEAT_Collective_Clock(const PEAT_Collective_Clock &right)
+    MAT_Collective_Clock(const MAT_Collective_Clock &right)
     {
         total_c = right.total_c;
         imb_c = right.imb_c;
@@ -147,7 +149,7 @@ struct PEAT_Collective_Clock {
         occ = right.occ;
     };
 
-    PEAT_Collective_Clock &operator=(const PEAT_Collective_Clock &right)
+    MAT_Collective_Clock &operator=(const MAT_Collective_Clock &right)
     {
         total_c = right.total_c;
         imb_c = right.imb_c;
@@ -157,16 +159,18 @@ struct PEAT_Collective_Clock {
         return *this;
     };
 };
-struct PEAT_Collective_Clocks {
-    std::map<PEAT_Rank, PEAT_Collective_Clock> clocks;
+struct MAT_Collective_Clocks {
+    std::map<PEAT_Rank, MAT_Collective_Clock> clocks;
 };
-
+/* Collective storage itself */
+class Requests;
+class Comm;
 class Collectives : public Outputs
 { // it still called collectives but it also handles File IO
   public:
     int print_on_first;
     PEAT_LNum collectives_bound;
-    Collectives(PTP *p, Communicators *c, int pos
+    Collectives(int pos
 #ifdef PEAT_MPI
                 ,
                 std::list<PEAT_Event_Delivery> *ad, const std::vector<PEAT_Rank> &wR, const std::vector<PEAT_Rank> &mRs, const MPI_Comm mat_cc, const PEAT_Num mat_ccs, const PEAT_Rank m_r
@@ -174,8 +178,9 @@ class Collectives : public Outputs
 
     );
     virtual ~Collectives();
-    void parse_collective(const PEAT_Rank rank, const Tractor_Event &event, bool is_remote);
-    bool empty() const;
+    void initialize(PTP *p, Communicators *cs, Request_Store *rs, Comm *c, Requests* r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
+    void parse_collective(const PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool is_remote);
+    PEAT_Bool empty() const;
     PEAT_Num collective_queue_size() const;
     typedef std::list<MAT_Collective> collective_list;
     struct collective_list_struct {
@@ -188,37 +193,42 @@ class Collectives : public Outputs
 #define coll_get_record(x) *x
 
     // friend std::ostream &operator<<(std::ostream &dbg, const Collectives &rec);
-    std::map<int, std::map<PEAT_Collective_Record, PEAT_Collective_Clocks>> printed_collective;
-    std::map<PEAT_Rank, std::map<PEAT_MPI_Request, MAT_Record>> fio_requests;
+    std::map<int, std::map<MAT_Collective_Record, MAT_Collective_Clocks>> printed_collective;
 
-    bool find_request(PEAT_Rank rank, PEAT_MPI_Request request, collective_list::iterator &coll);
-    bool update_request(PEAT_Rank rank, PEAT_MPI_Request request, const Phase &phase, collective_list::iterator &coll);
+    PEAT_Bool update_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase& phase, Collective_Event* event, PEAT_Bool is_remote);
+    PEAT_Bool find_collective(const PEAT_Rank rank, Collective_Event* event, collective_list::iterator* record);
+    PEAT_Bool find_collective(const PEAT_Rank rank, const MAT_Request_Store_Record* rec, collective_list::iterator* record);
+    PEAT_Bool add_pers_req_start(const PEAT_Rank rank, MAT_Collectives_Record* record);
 
-    bool find_request(PEAT_Rank rank, PEAT_MPI_Request request, MAT_Record *ret_it, PEAT_Bool erase);
 
-    void process_unbound_events();
+    void process_unbound_events(PEAT_Rank my_rank);
 #ifdef PEAT_MPI
     PEAT_Signed_Num check_unbound_events();
 #endif
 
-    bool erase_collective(collective_key &key, collective_list::iterator &record);
-    bool erase_collective(collective_list::iterator &record);
+    PEAT_Bool erase_collective(collective_key &key, collective_list::iterator &record);
+    PEAT_Bool erase_collective(collective_list::iterator &record);
     void print_collective_bind_str(PEAT_Rank rank, const char *str);
     void print_sizes() const;
 
   private:
-    bool match_collective(collective_list_struct &queue, collective_list::iterator &record, PEAT_Rank rank) const;
-    bool match_collective(collective_list::iterator &first, collective_list::iterator &last, collective_list::iterator &record, PEAT_Rank rank) const;
+    PEAT_Bool match_collective(collective_list_struct &queue, collective_list::iterator &record, PEAT_Rank rank) const;
+    PEAT_Bool match_collective(collective_list::iterator &first, collective_list::iterator &last, collective_list::iterator &record, PEAT_Rank rank) const;
+    void process_collective(const PEAT_Rank rank, MAT_Collectives_Record* event, int pc_level, PEAT_Bool is_remote);
 
     void print_collective_out(const Tractor_Event &event);
-    void print_collective_err(const MAT_Collective &record);
+    void print_collective_err(const MAT_Collective &record, PEAT_Rank my_rank);
     void print_collective_bind(const MAT_Collective &record);
-    bool check_completion(const MAT_Collective &record);
-    bool check_completion(collective_list::iterator &record);
+    PEAT_Bool check_completion(const MAT_Collective &record);
+    PEAT_Bool check_completion(collective_list::iterator &record);
     std::map<collective_key, collective_list_struct> coll_queues;
-    std::map<PEAT_MPI_File, PEAT_MPI_Comm> fh_comms;
+    std::map<PEAT_Rank, std::map<PEAT_MPI_File, PEAT_MPI_Comm>> fh_comms;
+    std::map<PEAT_Rank, std::map<PEAT_MPI_File, PEAT_Rank>> fh_comms_redirect;
     PTP *ptp;
-    Communicators *com_store;
+    Communicators *comm_store;
+    Request_Store* req_store;
+    Requests* request_func_store;
+    Comm  *comm_func_store;
 
     // std::vector<PEAT_Num> waiting_collectives;
 
@@ -232,15 +242,9 @@ class Collectives : public Outputs
     std::vector<std::map<collective_key, PEAT_Rank>> collective_handlers;
 
   public:
-    std::map<PEAT_Rank, std::map<PEAT_MPI_Request, MAT_Request_Record>> flown_away_requests;
-    // std::map<PEAT_Rank, std::list<MAT_Request_Record> > flown_away_pers_requests;
 
     void send_collective(PEAT_Rank rank, const Tractor_Event &event);
     void process_remote_collective(PEAT_Signed_Num size, PEAT_Rank src);
-    /*
-    void print_collective_r(int size, int src);
-    PEAT_Bool get_flown_away_req(const PEAT_Rank rank, const PEAT_MPI_Request request, Phase& ph, PEAT_Bool del);
-    */
     PEAT_Num check_completions();
 #endif
 };

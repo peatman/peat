@@ -2,7 +2,7 @@
 
 compiler=oneAPI:2026.1.0
 libfabric_eng='-eng'
-export mpi_type=mpich:5.0.1x-mt-ofi-eng
+export mpi_type=mpich:5.0.2x-mt-ofi-eng
 . env.sh
 set -x
 
@@ -49,5 +49,5 @@ export MPICH_POSIX_NUM_COLLS_THRESHOLD=9999 # should be quite big but this one i
 
 mpiexec.hydra -launcher ssh -genvall -bind-to hwthread -map-by core  $LD_PRELOAD $PBS_NF -ppn $ppn -np $ranks ./alltoall $nnodes $ppn 4194304 10 #24
 
-
+rm -f alltoall 
 

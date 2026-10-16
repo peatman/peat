@@ -24,15 +24,17 @@
 #include <map>
 #include <string>
 #include <vector>
+struct Tractor_Event;
 struct Phase {
-    Phase() : func_id(TMPI_FUNC_ID_NONE), ids(2, -1), thread_id(-1) {}
+    Phase() : func_id(TMPI_FUNC_ID_NONE), thread_id(-1) {}
     ~Phase()
     {
         addrs.clear();
     }
+    Phase(Tractor_Event& t);
     PEAT_MPI_Func_ID func_id;
     PEAT_Event_IDs ids; // id path as written in the trace: ids[0] is the top-level id (2 entries in the legacy format)
-    PEAT_UID thread_id;
+    PEAT_Thread thread_id;
     // std::vector<PEAT_Addr> addrs;
     std::vector<PEAT_UID> addrs;
     PEAT_Time tsc_u_time, tsc_time;
@@ -78,28 +80,75 @@ struct Phase {
     friend std::ostream &operator<<(std::ostream &dbg, const Phase &ph);
 };
 
-struct Record {
-    Record() : rank(0), size(0), tag(0), message(0), comm(0) {}
+struct MAT_Record {
+    MAT_Record() : rank(0), pc_level(0) {}
+    MAT_Record(const MAT_Record& s) : rank(s.rank), pc_level(s.pc_level) {}
     PEAT_Rank rank;
+    int pc_level;
+    virtual int record_type() = 0;
+    virtual Phase& get_ph() = 0;
+};
+
+struct MAT_Comm_Record : public MAT_Record {
+
+    PEAT_MPI_Comm comm, new_comm, remote_comm;
+	PEAT_MPI_Request request;
+    MAT_Comm_Record() : MAT_Record(),comm(0),new_comm(0),remote_comm(0),request(0) {}
+    int record_type() { return 3; }
+	Phase ph; 
+    virtual Phase& get_ph() { return ph; }
+};
+
+struct MAT_FIO_Record : public MAT_Record {
+
+    PEAT_MPI_Comm comm;
+    PEAT_MPI_Request request;
+    PEAT_MPI_File  fh;
+    MAT_FIO_Record() : MAT_Record(), comm(0), request(0), fh(0) {}
+    MAT_FIO_Record(const Tractor_Event& s);
+    int record_type() { return 4; }
+    Phase ph; 
+    virtual Phase& get_ph() { return ph; }
+};
+
+struct MAT_OSC_Record : public MAT_Record {
+
+    PEAT_MPI_Comm comm;
+    PEAT_MPI_Request request;
+    PEAT_MPI_File  fh;
+    MAT_OSC_Record() : MAT_Record(), comm(0), request(0), fh(0) {}
+    MAT_OSC_Record(const Tractor_Event& s);
+    int record_type() { return 4; }
+    Phase ph;
+    virtual Phase& get_ph() { return ph; }
+};
+
+struct MAT_P2P_Record : public MAT_Record {
+    MAT_P2P_Record() : MAT_Record(), comm(0), size(0), tag(0), message(0), peer_rank(-1), request(0), peer_assigned(false), is_send(false) {}
+    MAT_P2P_Record(const Tractor_Event& s);
+    PEAT_MPI_Comm comm;
     PEAT_Message_Size size;
     PEAT_MPI_Tag tag;
     PEAT_MPI_Message message;
-    PEAT_MPI_Comm comm;
-    Phase ph[3];
-};
-
-struct MAT_Record : public Record {
-    MAT_Record() : peer_rank(-1), request(0), pc_level(0), peer_assigned(false), is_send(false) {}
-    ~MAT_Record()
-    {
-        peer_rank = -1;
-    }
     PEAT_Rank peer_rank;
     PEAT_MPI_Request request;
-    int pc_level;
-    bool peer_assigned;
-    bool is_send;
+    PEAT_Bool peer_assigned;
+    PEAT_Bool is_send;
+    Phase ph;
+    virtual int record_type() {return 1;}
+    virtual Phase& get_ph() { return ph; }
 };
+struct Collective_Event;
+struct MAT_Collectives_Record : public MAT_Record {
+    MAT_Collectives_Record() : MAT_Record(), coll_event(NULL) {}
+    MAT_Collectives_Record(const MAT_Collectives_Record& s);
+    MAT_Collectives_Record(const Tractor_Event& s);
+    ~MAT_Collectives_Record();
+    Collective_Event *coll_event;
+    virtual int record_type() { return 2; };
+    virtual Phase& get_ph();
+};
+
 struct MAT_Request_Record {
     MAT_Request_Record() : request(0), peer(-1), ids(2, -1), pc_level(0) {}
     PEAT_MPI_Request request;
@@ -108,16 +157,14 @@ struct MAT_Request_Record {
     int pc_level;
 };
 struct PEAT_P2P_Record {
-    PEAT_MPI_Func_ID func_id[3];
+    PEAT_MPI_Func_ID func_id;
     PEAT_LNum bytes;
     PEAT_Rank rank, peer;
     PEAT_P2P_Record() : bytes(0), rank(-1), peer(-1)
     {
-        func_id[0] = TMPI_FUNC_ID_NONE;
-        func_id[1] = TMPI_FUNC_ID_NONE;
-        func_id[2] = TMPI_FUNC_ID_NONE;
+        func_id = TMPI_FUNC_ID_NONE;
     };
-    bool operator<(const PEAT_P2P_Record &right) const
+    PEAT_Bool operator<(const PEAT_P2P_Record &right) const
     {
         if (rank < right.rank)
             return true;
@@ -131,17 +178,9 @@ struct PEAT_P2P_Record {
             return true;
         if (bytes > right.bytes)
             return false;
-        if (func_id[0] < right.func_id[0])
+        if (func_id < right.func_id)
             return true;
-        if (func_id[0] > right.func_id[0])
-            return false;
-        if (func_id[1] < right.func_id[1])
-            return true;
-        if (func_id[1] > right.func_id[1])
-            return false;
-        if (func_id[2] < right.func_id[2])
-            return true;
-        if (func_id[2] > right.func_id[2])
+        if (func_id > right.func_id)
             return false;
         return false;
     }
@@ -155,7 +194,7 @@ struct PEAT_GPUT_Record {
         func_id[0] = TMPI_FUNC_ID_NONE;
         func_id[1] = TMPI_FUNC_ID_NONE;
     };
-    bool operator<(const PEAT_GPUT_Record &right) const
+    PEAT_Bool operator<(const PEAT_GPUT_Record &right) const
     {
         if (rank < right.rank)
             return true;
@@ -186,7 +225,7 @@ struct PEAT_GPUE_Record {
         func_id[0] = TMPI_FUNC_ID_NONE;
         func_id[1] = TMPI_FUNC_ID_NONE;
     };
-    bool operator<(const PEAT_GPUE_Record &right) const
+    PEAT_Bool operator<(const PEAT_GPUE_Record &right) const
     {
         if (rank < right.rank)
             return true;

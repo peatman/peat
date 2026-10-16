@@ -35,7 +35,7 @@
     std::cerr
 Tractor_Event send_line, recv_line;
 
-bool Mat::parse_single_event(const int rank)
+PEAT_Bool Mat::parse_single_event(const int rank)
 {
     line_mpi.clear();
     line_hwc.clear();
@@ -50,30 +50,29 @@ bool Mat::parse_single_event(const int rank)
     if (line_mpi.size() < 2) {
         return false;
     }
-    Tractor_Event t_event(rank, line_mpi, line_hwc, model_id.num_hwcs, model_id.num_addrs, user_region_store, com_store);
+    Tractor_Event t_event(rank, line_mpi, line_hwc, model_id.num_hwcs, model_id.num_addrs, user_region_store, comm_store);
     PEAT_MPI_Func_ID mpifunc = t_event.func_id;
-    // nested records (progress engine calls issued inside another traced call) do not count as user-level events
-    const bool nested_record = t_event.level;
+    const bool nested_record = t_event.level > 0;
     PEAT_Clock mpi_time = 0, uc_time = 0, t_time = 0, occ_inc = 0;
     if (!globals.matching_only) { // tsc_time is all sentinel (-1) without hwc data, so these are meaningless
         if (!second_line) {
             t_event.tsc_time.func.in += tsc_predictor.at(rank);
             tsc_predictor[rank] = t_event.tsc_time.func.in;
-            if (!nested_record) {
+            if(!nested_record) {
                 mpi_time = t_event.tsc_time.mpi.out - t_event.tsc_time.mpi.in;
-                if (t_event.func_id != MPI_INIT_ID && t_event.func_id != MPI_INIT_THREAD_ID && !is_omp(t_event.func_class)) {
+                if(t_event.func_id != MPI_INIT_ID && t_event.func_id != MPI_INIT_THREAD_ID && !is_omp(t_event.func_class)) {
                     uc_time = t_event.tsc_time.func.in - tsc_corrector[rank];
                 } else {
                     t_time = 0;
                 }
-                if (t_event.thread_id == 0) {
+                if(t_event.thread_id == 0) {
                     tsc_corrector[rank] = t_event.tsc_time.func.in + t_event.tsc_time.func.out;
                 }
                 occ_inc = 1;
             }
-            if (t_event.func_id != MPI_INIT_ID && t_event.func_id != MPI_INIT_THREAD_ID && t_event.func_id != MPI_FINALIZE_ID && t_event.thread_id == 0) {
-                if (is_omp(t_event.func_class)) { // temporal clutch until fixed in tractor
-                    if (t_event.func_id == OMPT_SYNC_REGION_ID || t_event.func_id == OMPT_SYNC_REGION_WAIT_ID) {
+            if(t_event.func_id != MPI_INIT_ID && t_event.func_id != MPI_INIT_THREAD_ID && t_event.func_id != MPI_FINALIZE_ID && t_event.thread_id == 0) {
+                if(is_omp(t_event.func_class)) { // temporal clutch until fixed in tractor
+                    if(t_event.func_id == OMPT_SYNC_REGION_ID || t_event.func_id == OMPT_SYNC_REGION_WAIT_ID) {
                         t_time = t_event.tsc_time.mpi.in + t_event.tsc_time.func.out - t_event.tsc_time.mpi.out;
                     } else {
                         t_time = t_event.tsc_time.mpi.in;
@@ -106,6 +105,14 @@ bool Mat::parse_single_event(const int rank)
     }
 /* this section is not working as designed if --matching-only is enabled so some imbalance may occur */
     PEAT_Clock tsc_t = t_event.tsc_time.func.in;
+    if (tsc_t < 0) {
+        if (timeline.empty()) {
+            tsc_t = 0;
+        } else {
+            std::map<PEAT_Clock, PEAT_Rank> ::const_reverse_iterator rit = timeline.crbegin();
+            tsc_t = rit->first + 1;
+        }
+    }
     while (timeline.count(tsc_t) > 0)
         tsc_t++;
     timeline[tsc_t] = rank;
@@ -120,6 +127,7 @@ bool Mat::parse_single_event(const int rank)
         }
     }
     t_event.PControl.ctl = p_control_in_use[rank];
+
     if (t_event.func_class == PEAT_PROP_CLASS_COLLECTIVE) { // collective
 #ifdef PEAT_MPI
         coll_func_store->send_collective(rank, t_event);
@@ -127,7 +135,6 @@ bool Mat::parse_single_event(const int rank)
         coll_func_store->parse_collective(rank, t_event, false);
 #endif
     }
-
     if (t_event.func_class == PEAT_PROP_CLASS_P2P) { // P2P
         if (global_func_id.check_property(mpifunc, PEAT_PROP_DATA_TXRX)) {
             if (second_line) {
@@ -170,17 +177,29 @@ bool Mat::parse_single_event(const int rank)
     }
 
     if (t_event.func_class == PEAT_PROP_CLASS_FIO) {
+#ifdef PEAT_MPI
+        coll_func_store->send_collective(rank, t_event);
+#else
         coll_func_store->parse_collective(rank, t_event, false);
+#endif
     }
 
     if (t_event.func_class == PEAT_PROP_CLASS_BUF_LOCAL) {
         p2p_func_store->parse_Local(rank, t_event);
     }
     if (t_event.func_class == PEAT_PROP_CLASS_COMM) {
-        com_func_store->parse_comm(rank, t_event);
+        if (global_func_id.check_property(mpifunc, PEAT_PROP_DATA_COLLECTIVE)) {
+#ifdef PEAT_MPI
+            coll_func_store->send_collective(rank, t_event);
+#else
+            coll_func_store->parse_collective(rank, t_event, false);
+#endif
+        } else {
+            comm_func_store->parse_comm(rank, t_event);
+        }
     }
     if (t_event.func_class == PEAT_PROP_CLASS_OSC) {
-        t_event.func_class = PEAT_PROP_CLASS_LOCAL;
+        osc_func_store->parse_osc(rank, t_event);   
     }
 
     if (t_event.func_class == PEAT_PROP_CLASS_GPU) {
@@ -231,7 +250,7 @@ bool Mat::parse_single_event(const int rank)
         t.occurences += (t_time != 0);
         timings[0][PEAT_PROP_CODE_TRACTOR_OVERHEAD] = t;
     }
-    if (!second_line) {
+    if (!second_line && (t_event.ids.size()<2 || t_event.ids[1] < 0)) { //count only 'user' events
         rank_events_processed[rank]++;
 #pragma omp atomic
         events_processed++;
@@ -372,15 +391,15 @@ Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : globals(glob), m
     file_name = glob.input_path + DIR_DELIMITER + glob.trace_files + glob.ptpd_ext;
     std::map<PEAT_Rank, std::string> file_input_ptp_names;
     file_input_ptp_names[0] = file_name;
-    com_store = new Communicators(globals);
-    com_store->initialize(file_input_com_names, file_input_app_names, &model_id_storage);
+    comm_store = new Communicators(globals);
+    comm_store->initialize(file_input_com_names, file_input_app_names, &model_id_storage);
 
-    PEAT_Rank trace_comm_size = com_store->get_app_rank_count();
+    PEAT_Rank trace_comm_size = comm_store->get_app_rank_count();
     tsc_corrector.resize(trace_comm_size, 0);
     tsc_predictor.resize(trace_comm_size, 0);
     rank_events_processed.resize(trace_comm_size, 0);
 
-    for (std::map<PEAT_Rank, PEAT_Clock>::iterator it = com_store->frame_tsc_start.begin(); it != com_store->frame_tsc_start.end(); ++it) {
+    for (std::map<PEAT_Rank, PEAT_Clock>::iterator it = comm_store->frame_tsc_start.begin(); it != comm_store->frame_tsc_start.end(); ++it) {
         tsc_corrector.at(it->first) = it->second;
     }
     ptp = new PTP(globals); // No need to set FREQ first
@@ -405,45 +424,37 @@ Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : globals(glob), m
     completed_ranks.resize(trace_comm_size);
     my_ranks = globals.my_ranks;
 #endif
-    com_func_store = new Comm(ptp, com_store
-                              /*
-                              #ifdef PEAT_MPI
-                                     , whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
-                             #endif
-                             */
-    );
-    gpu_func_store = new GPU(ptp, com_store
-                             /*
-                             #ifdef PEAT_MPI
-                                     , whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
-                             #endif
-                             */
-    );
+	req_store = new Request_Store(ptp, globals.verbose);
 
-    p2p_func_store = new P2PAL(ptp, com_store, input_MPI, gpu_func_store, globals.skip_processing, globals.print_location
+    comm_func_store = new Comm();
+    osc_func_store = new OSC();
+    gpu_func_store = new GPU();
+
+	p2p_func_store = new P2PAL(input_MPI, globals.skip_processing, globals.print_location
 #ifdef PEAT_MPI
-                               ,
-                               &active_deliveries, whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
+							   ,
+							   &active_deliveries, whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
 #endif
-    );
-    coll_func_store = new Collectives(ptp, com_store, globals.print_location
+	);
+	coll_func_store = new Collectives(globals.print_location
 #ifdef PEAT_MPI
-                                      ,
-                                      &active_deliveries, whole_ranks, my_ranks, globals.comm_compute, globals.comm_size, globals.comm_rank
+									  ,
+									  &active_deliveries, whole_ranks, my_ranks, globals.comm_compute, globals.comm_size, globals.comm_rank
 #endif
-    );
-    request_func_store = new Request(ptp, com_store, p2p_func_store, coll_func_store, globals.skip_processing
+	);
+	request_func_store = new Requests(globals.skip_processing
 #ifdef PEAT_MPI
-                                     ,
-                                     &active_deliveries, whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
+									 ,
+									 &active_deliveries, whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
 #endif
-    );
-    com_func_store->initialize(output_MPI, output_HWC, output_bind);
-    gpu_func_store->initialize(output_MPI, output_HWC, output_bind);
-    p2p_func_store->initialize(output_MPI, output_HWC, output_bind);
-    coll_func_store->initialize(output_MPI, output_HWC, output_bind);
-    request_func_store->initialize(output_MPI, output_HWC, output_bind);
-    second_line = false;
+	);
+    comm_func_store->initialize(ptp, comm_store, req_store, request_func_store, output_MPI, output_HWC, output_bind);
+    osc_func_store->initialize(ptp, comm_store, req_store, request_func_store, output_MPI, output_HWC, output_bind);
+    gpu_func_store->initialize(ptp, comm_store, output_MPI, output_HWC, output_bind);
+	coll_func_store->initialize(ptp, comm_store, req_store, comm_func_store, request_func_store, output_MPI, output_HWC, output_bind);
+	p2p_func_store->initialize(ptp, comm_store, req_store, request_func_store, gpu_func_store, output_MPI, output_HWC, output_bind);
+	request_func_store->initialize(ptp, comm_store, req_store, p2p_func_store, comm_func_store, osc_func_store, coll_func_store, output_MPI, output_HWC, output_bind);
+	second_line = false;
 }
 Mat::~Mat()
 {
@@ -459,7 +470,7 @@ Mat::~Mat()
     delete request_func_store;
     delete coll_func_store;
     delete p2p_func_store;
-    delete com_store;
+    delete comm_store;
     delete ptp;
 }
 PEAT_Rank Mat::get_soonest_event(PEAT_Clock &tsc)
@@ -478,7 +489,7 @@ void Mat::process()
     const double bytes_step = (double)(input_MPI->get_all_files_size() + input_HWC->get_all_files_size()) * 0.01;
     PEAT_Ratio time_since_last_active = Wtime();
     // timeline.clear();
-    p2p_func_store->resize_queues(com_store->get_comm_world_rank_count());
+    p2p_func_store->resize_queues(comm_store->get_comm_world_rank_count());
     for (std::map<PEAT_Rank, std::string>::const_iterator rank = globals.pe_MPI_files_in_rank.begin(); rank != globals.pe_MPI_files_in_rank.end(); ++rank) {
         parse_single_event(rank->first);
     }
@@ -578,7 +589,7 @@ void Mat::process()
         }
     }
 #endif
-    process_unbound_events();
+    process_unbound_events(globals.comm_rank);
 #ifdef PEAT_MPI
     int perm = 0;
     MPI_Status status;
@@ -590,16 +601,14 @@ void Mat::process()
         for (std::map<int, int>::iterator tm_it = pc_levels.begin(); tm_it != pc_levels.end(); ++tm_it) {
             if (!p2p_func_store->printed_p2p[tm_it->first].empty()) {
                 printf("%20s: %7d\n", "PC Region", tm_it->first);
-                printf("%47s %10s %10s<=>%10s %14s %14s %14s %20s %14s\n", "func_ids", "Bytes", "Rank", "Peer", "Min", "Max", "Total", "Imbalance", "Calls");
+                printf("%17s %10s %10s<=>%10s %14s %14s %14s %20s %14s\n", "func_id", "Bytes", "Rank", "Peer", "Min", "Max", "Total", "Imbalance", "Calls");
                 for (std::map<PEAT_P2P_Record, PEAT_Single_Event_Clock>::iterator rIt = p2p_func_store->printed_p2p[tm_it->first].begin(); rIt != p2p_func_store->printed_p2p[tm_it->first].end(); ++rIt) {
                     PEAT_P2P_Record record = rIt->first;
                     PEAT_Single_Event_Clock clock = rIt->second;
                     char imb_buf[32];
                     snprintf(imb_buf, sizeof(imb_buf), "%lld (%3.2lf)", clock.imb_c, (double)clock.imb_c * 100.0 / (double)clock.total_c);
-                    printf("%15s %15s %15s %10lld %10d<=>%10d %14lld %14lld %14lld %20s %14lld\n",
-                           global_func_id.name_by_idx(record.func_id[0]),
-                           global_func_id.name_by_idx(record.func_id[1]),
-                           global_func_id.name_by_idx(record.func_id[2]),
+                    printf("%15s %10lld %10d<=>%10d %14lld %14lld %14lld %20s %14lld\n",
+                           global_func_id.name_by_idx(record.func_id),
                            record.bytes,
                            record.rank, record.peer,
                            clock.min_c, clock.max_c, clock.total_c, imb_buf, clock.occ);
@@ -609,16 +618,14 @@ void Mat::process()
     }
     if (!p2p_func_store->printed_p2p[0].empty()) {
         printf("%20s:\n", "Out of any PC region");
-        printf("%47s %10s %10s<=>%10s %14s %14s %14s %20s %14s\n", "func_ids", "Bytes", "Rank", "Peer", "Min", "Max", "Total", "Imbalance", "Calls");
+        printf("%17s %10s %10s<=>%10s %14s %14s %14s %20s %14s\n", "func_id", "Bytes", "Rank", "Peer", "Min", "Max", "Total", "Imbalance", "Calls");
         for (std::map<PEAT_P2P_Record, PEAT_Single_Event_Clock>::iterator rIt = p2p_func_store->printed_p2p[0].begin(); rIt != p2p_func_store->printed_p2p[0].end(); ++rIt) {
             PEAT_P2P_Record record = rIt->first;
             PEAT_Single_Event_Clock clock = rIt->second;
             char imb_buf[32];
             snprintf(imb_buf, sizeof(imb_buf), "%lld (%3.2lf)", clock.imb_c, (double) clock.imb_c * 100.0 / (double) clock.total_c);
-            printf("%15s %15s %15s %10lld %10d<=>%10d %14lld %14lld %14lld %20s %14lld\n",
-                   global_func_id.name_by_idx(record.func_id[0]),
-                   global_func_id.name_by_idx(record.func_id[1]),
-                   global_func_id.name_by_idx(record.func_id[2]),
+            printf("%15s %10lld %10d<=>%10d %14lld %14lld %14lld %20s %14lld\n",
+                   global_func_id.name_by_idx(record.func_id),
                    record.bytes,
                    record.rank, record.peer,
                    clock.min_c, clock.max_c, clock.total_c, imb_buf, clock.occ);
@@ -630,14 +637,14 @@ void Mat::process()
             if (!coll_func_store->printed_collective[tm_it->first].empty()) {
                 printf("%20s: %7d\n", "PC Region", tm_it->first);
                 printf("%15s %10s %10s %10s %10s %14s %14s %14s %20s %14s %10s\n", "Function", "Comm", "Root", "Size", "Rank", "Min", "Max", "Total", "Imbalance", "Calls", "Parameters");
-                for (std::map<PEAT_Collective_Record, PEAT_Collective_Clocks>::iterator cIt = coll_func_store->printed_collective[tm_it->first].begin(); cIt != coll_func_store->printed_collective[tm_it->first].end(); ++cIt) {
-                    PEAT_Collective_Record record = cIt->first;
-                    PEAT_Collective_Clocks clocks = cIt->second;
+                for (std::map<MAT_Collective_Record, MAT_Collective_Clocks>::iterator cIt = coll_func_store->printed_collective[tm_it->first].begin(); cIt != coll_func_store->printed_collective[tm_it->first].end(); ++cIt) {
+                    MAT_Collective_Record record = cIt->first;
+                    MAT_Collective_Clocks clocks = cIt->second;
                     printf("%15s %10x %10d %10d \n", global_func_id.name_by_idx(record.func_id), record.comm, record.root, record.size);
-                    std::map<PEAT_Rank, PEAT_Rank> coll_ranks = com_store->get_ranks_map_from_comm(record.comm);
+                    std::map<PEAT_Rank, PEAT_Rank> coll_ranks = comm_store->get_ranks_map_from_comm(record.comm);
                     for (std::map<PEAT_Rank, PEAT_Rank>::iterator rIt = coll_ranks.begin(); rIt != coll_ranks.end(); ++rIt) {
                         PEAT_Rank o_rank = rIt->first;
-                        PEAT_Collective_Clock clock = clocks.clocks.at(o_rank);
+                        MAT_Collective_Clock clock = clocks.clocks.at(o_rank);
                         char imb_buf[32];
                         snprintf(imb_buf, sizeof(imb_buf), "%lld(%3.2lf)", clock.imb_c, (double)clock.imb_c * 100.0 / (double)clock.total_c);
                         printf("%15s %10s %10s %10s %10d %14lld %14lld %14lld %20s %14lld %10s\n", record.comp_func.c_str(), " ", " ", " ",
@@ -678,14 +685,14 @@ void Mat::process()
     if (!coll_func_store->printed_collective[0].empty()) {
         printf("%20s:\n", "Out of any PC region");
         printf("%15s %10s %10s %10s %10s %14s %14s %14s %20s %14s %10s\n", "Function", "Comm", "Root", "Size", "Rank", "Min", "Max", "Total", "Imbalance", "Calls", "Parameters");
-        for (std::map<PEAT_Collective_Record, PEAT_Collective_Clocks>::iterator cIt = coll_func_store->printed_collective[0].begin(); cIt != coll_func_store->printed_collective[0].end(); ++cIt) {
-            PEAT_Collective_Record record = cIt->first;
-            PEAT_Collective_Clocks clocks = cIt->second;
+        for (std::map<MAT_Collective_Record, MAT_Collective_Clocks>::iterator cIt = coll_func_store->printed_collective[0].begin(); cIt != coll_func_store->printed_collective[0].end(); ++cIt) {
+            MAT_Collective_Record record = cIt->first;
+            MAT_Collective_Clocks clocks = cIt->second;
             printf("%15s %10x %10d %10d \n", global_func_id.name_by_idx(record.func_id), record.comm, record.root, record.size);
-            std::map<PEAT_Rank, PEAT_Rank> coll_ranks = com_store->get_ranks_map_from_comm(record.comm);
+            std::map<PEAT_Rank, PEAT_Rank> coll_ranks = comm_store->get_ranks_map_from_comm(record.comm);
             for (std::map<PEAT_Rank, PEAT_Rank>::iterator rIt = coll_ranks.begin(); rIt != coll_ranks.end(); ++rIt) {
                 PEAT_Rank o_rank = rIt->first;
-                PEAT_Collective_Clock clock = clocks.clocks.at(o_rank);
+                MAT_Collective_Clock clock = clocks.clocks.at(o_rank);
                 char imb_buf[32];
                 snprintf(imb_buf, sizeof(imb_buf), "%lld(%3.2lf)", clock.imb_c, (double) clock.imb_c * 100.0 / (double)clock.total_c);
                 printf("%15s %10s %10s %10s %10d %14lld %14lld %14lld %20s %14lld %10s\n", record.comp_func.c_str(), " ", " ", " ",
@@ -830,7 +837,7 @@ void Mat::write_trace_info(const std::string &name)
         traceinfo_file.printf(0, "PEATTRACEINFO\n");
         traceinfo_file.printf(0, "%d|%s|%s|%s|%s|%s|%s|%s|%s\n", PEAT_RT_Paths, peat_get_relative_path(globals.output_path, globals.input_path).c_str(),
                              globals.trace_files.c_str(),
-                             globals.mpi_files.c_str(), globals.hwc_files.c_str(), globals.bind_files.c_str(), globals.fab_files.c_str(), globals.com_ext.c_str(), globals.app_ext.c_str());
+                             globals.mpi_files.c_str(), globals.hwc_files.c_str(), globals.bind_files.c_str(), globals.transport_files.c_str(), globals.com_ext.c_str(), globals.app_ext.c_str());
         traceinfo_file.printf(0, "%d|%lld\n", PEAT_RT_CPU_Freq, ptp->get_trace_freq(0));
         traceinfo_file.printf(0, "%d|%d|%d|%d\n", PEAT_RT_Var_Block_Info, model_id.num_tscs, model_id.num_hwcs, model_id.num_addrs);
         if (coll_func_store->collectives_bound > 0)
@@ -849,9 +856,9 @@ void Mat::write_trace_info(const std::string &name)
             }
             traceinfo_file.printf(0, "\n");
         }
-        if (!com_store->mpi_time.empty()) {
+        if (!comm_store->mpi_time.empty()) {
             traceinfo_file.printf(0, "%d", PEAT_RT_MPI_Time);
-            for (std::map<PEAT_Rank, PEAT_MPI_Time>::const_iterator time_it = com_store->mpi_time.begin(); time_it != com_store->mpi_time.end(); ++time_it) {
+            for (std::map<PEAT_Rank, PEAT_MPI_Time>::const_iterator time_it = comm_store->mpi_time.begin(); time_it != comm_store->mpi_time.end(); ++time_it) {
                 traceinfo_file.printf(0, "|%d|%lld|%s", time_it->first, time_it->second.clocks, time_it->second.percentage.c_str());
             }
             traceinfo_file.printf(0, "\n");

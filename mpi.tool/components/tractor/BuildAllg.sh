@@ -29,10 +29,10 @@ rm -f Build.${COMPILER}.dir
 # ./Build.sh mpich:4.3.2g-mt-ofi             mpich4    off   on   on   off off  off &
 
 
-./Build.sh mpich:5.0.1g-mt-ofi             mpich5    off   off  off  off off  off &
-#./Build.sh mpich:5.0.1g-mt-ofi             mpich5    off   off  on   off off  off &
-./Build.sh mpich:5.0.1g-mt-ofi             mpich5    off   on   off  off off  off &
-#./Build.sh mpich:5.0.1g-mt-ofi             mpich5    off   on   on   off off  off &
+./Build.sh mpich:5.0.2g-mt-ofi             mpich5    off   off  off  off off  off &
+#./Build.sh mpich:5.0.2g-mt-ofi             mpich5    off   off  on   off off  off &
+./Build.sh mpich:5.0.2g-mt-ofi             mpich5    off   on   off  off off  off &
+#./Build.sh mpich:5.0.2g-mt-ofi             mpich5    off   on   on   off off  off &
 
 
  ./Build.sh mvapich:4.1g-mt-ofi             mvapich4  off   off  off  off off off &
@@ -46,10 +46,10 @@ rm -f Build.${COMPILER}.dir
 ./Build.sh mpich:4.3.2g-mt-ofi-eng         mpich4    off   on   off  off off  off &
 # ./Build.sh mpich:4.3.2g-mt-ofi-eng         mpich4    off   on   on   off off  off &
 
-./Build.sh mpich:5.0.1g-mt-ofi-eng         mpich5    off   off  off  off off  off &
-# ./Build.sh mpich:5.0.1g-mt-ofi-eng         mpich5    off   off  on   off off  off &
-./Build.sh mpich:5.0.1g-mt-ofi-eng         mpich5    off   on   off  off off  off &
-# ./Build.sh mpich:5.0.1g-mt-ofi-eng         mpich5    off   on   on   off off  off &
+./Build.sh mpich:5.0.2g-mt-ofi-eng         mpich5    off   off  off  off off  off &
+# ./Build.sh mpich:5.0.2g-mt-ofi-eng         mpich5    off   off  on   off off  off &
+./Build.sh mpich:5.0.2g-mt-ofi-eng         mpich5    off   on   off  off off  off &
+# ./Build.sh mpich:5.0.2g-mt-ofi-eng         mpich5    off   on   on   off off  off &
 
 ./Build.sh mvapich:4.1g-mt-ofi-eng         mvapich4  off   off  off  off off off &
 # ./Build.sh mvapich:4.1g-mt-ofi-eng         mvapich4  off   off  on   off off off &

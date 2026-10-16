@@ -23,6 +23,7 @@
 
 #include "collectives.h"
 #include "comm.h"
+#include "osc.h"
 #include "communicators.h"
 #include "gpu.h"
 #include "model_id.h"
@@ -40,13 +41,15 @@ class Mat
     std::vector<PEAT_Rank> whole_ranks;
     std::vector<PEAT_Rank> my_ranks;
     std::vector<PEAT_Rank> completed_ranks;
-    Communicators *com_store;
+    Communicators *comm_store;
     PTP *ptp;
     Collectives *coll_func_store;
     P2PAL *p2p_func_store;
     GPU *gpu_func_store;
-    Comm *com_func_store;
-    Request *request_func_store;
+    Comm* comm_func_store;
+    OSC* osc_func_store;
+    Requests *request_func_store;
+    Request_Store* req_store;
     File_Storage_GZ *input_MPI;
     File_Storage_GZ *input_HWC;
     File_Storage_GZ *output_MPI;
@@ -68,8 +71,10 @@ class Mat
     std::map<PEAT_Num, std::map<PEAT_Property, Mat_Time>> timings;
     Mat(Global_Parameters &file_names, Model_ID &model_id_storage);
     ~Mat();
+    Mat(const Mat &) = delete;
+    Mat &operator=(const Mat &) = delete;
     void write_trace_info(const std::string &name);
-    bool parse_single_event(const int rank);
+    PEAT_Bool parse_single_event(const int rank);
 #ifdef PEAT_MPI
     PEAT_Num handle_incoming_messages();
     std::list<PEAT_Event_Delivery> active_deliveries;
@@ -83,12 +88,12 @@ class Mat
     }
 #endif
     void process();
-    void process_unbound_events()
+    void process_unbound_events(PEAT_Rank my_rank)
     {
-        p2p_func_store->process_unbound_events();
-        coll_func_store->process_unbound_events();
+        p2p_func_store->process_unbound_events(my_rank);
+        coll_func_store->process_unbound_events(my_rank);
     }
-    bool second_line;
+    PEAT_Bool second_line;
 
   private:
     String_Split line_mpi;

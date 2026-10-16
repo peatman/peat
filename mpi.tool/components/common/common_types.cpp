@@ -74,7 +74,7 @@ void Global_Parameters::print()
     printf("Output path %s.\n", output_path.c_str());
     printf("User Regions File: %s.\n", user_region_file.c_str());
     printf("PEAT_Transport File: %s.\n", transport_file.c_str());
-    printf("Trace Files: %s<%s|%s|%s>.<rank>[.gz] %s%s.<rank>[.gz], %s%s[.gz].\n", trace_files.c_str(), mpi_files.c_str(), hwc_files.c_str(), fab_files.c_str(), trace_files.c_str(), com_ext.c_str(), trace_files.c_str(), app_ext.c_str());
+    printf("Trace Files: %s<%s|%s|%s>.<rank>[.gz] %s%s.<rank>[.gz], %s%s[.gz].\n", trace_files.c_str(), mpi_files.c_str(), hwc_files.c_str(), transport_files.c_str(), trace_files.c_str(), com_ext.c_str(), trace_files.c_str(), app_ext.c_str());
     if (mpi_time_file.length() > 0)
         printf("MPI Time File: %s.\n", mpi_time_file.c_str());
     if (map_file.length() > 0)
@@ -397,7 +397,7 @@ void Address_File_Storage::parse(const String_Split &lines, const PEAT_Rank rank
             extract(columns, lines.at(4));
             id_columns[rank] = columns < 2 ? 2 : columns;
             extract(last_event_id, lines.at(5));
-            last_fab_event_idx[rank] = last_event_id;
+            last_transport_event_idx[rank] = last_event_id;
             break;
         }
         case PEAT_RT_User_Regions_Total: {
