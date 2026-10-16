@@ -76,7 +76,7 @@
  
      int is_low_group;           /* For intercomms only, this boolean is
                                   * M* set for all members of one of the
-@@ -496,4 +499,19 @@
+@@ -496,4 +499,45 @@
  int MPIR_finalize_builtin_comms(void);
  
  void MPIR_Comm_set_session_ptr(MPIR_Comm * comm_ptr, MPIR_Session * session_ptr);
@@ -95,7 +95,43 @@
 +/* handle of this very comm, internal or not */
 +MPI_Comm mpi_internal_get_comm_handle_from_comm(MPIR_Comm *comm) MPICH_API_PUBLIC;
 +
++/* Kinds of MPICH-internal communicators (never visible to the user, hence never
++ * seen by the MPI/PMPI comm-management interception). */
++enum {
++    MPI_INTERNAL_COMM__LOCALCOMM = 1,        /* intercomm->local_comm */
++    MPI_INTERNAL_COMM__NODE_COMM,            /* comm->node_comm */
++    MPI_INTERNAL_COMM__NODE_ROOTS_COMM,      /* comm->node_roots_comm */
++    MPI_INTERNAL_COMM__MULTI_LEADS_COMM,     /* ch4 MPIDI_COMM(comm, multi_leads_comm) */
++    MPI_INTERNAL_COMM__INTER_NODE_LEADS_COMM,/* ch4 MPIDI_COMM(comm, inter_node_leads_comm) */
++    MPI_INTERNAL_COMM__SUB_NODE_COMM,        /* ch4 MPIDI_COMM(comm, sub_node_comm) */
++    MPI_INTERNAL_COMM__INTRA_NODE_LEADS_COMM,/* ch4 MPIDI_COMM(comm, intra_node_leads_comm) */
++    MPI_INTERNAL_COMM__BOOTSTRAP              /* e.g. MPIR_Comm_create_from_group_impl's new_comm: a
++                                               * top-level comm committed outside any public MPI_Comm_*
++                                               * entry point, so it has no parent_comm of its own */
++};
++
++/* Proxies called whenever an internal communicator is created/destroyed. mpi_internal_xxx
++ * are weak aliases of pmpi_internal_xxx (same scheme as MPI_xxx and PMPI_xxx), so a tool
++ * may override mpi_internal_xxx and chain to pmpi_internal_xxx.
++ * comm->parent_comm is already set on the create call.
++ * NOTE: a comm's own node_comm/node_roots_comm are reported before the comm
++ * itself when the comm is built via MPIR_Comm_commit (e.g. the ch4 split comms). */
++void mpi_internal_comm_create(MPIR_Comm *comm, MPIR_Comm *parent_comm, int kind) MPICH_API_PUBLIC;
++void mpi_internal_comm_free(MPIR_Comm *comm) MPICH_API_PUBLIC;
++void pmpi_internal_comm_create(MPIR_Comm *comm, MPIR_Comm *parent_comm, int kind) MPICH_API_PUBLIC;
++void pmpi_internal_comm_free(MPIR_Comm *comm) MPICH_API_PUBLIC;
++
  #endif /* MPIR_COMM_H_INCLUDED */
+--- a/src/include/mpir_datatype.h
++++ b/src/include/mpir_datatype.h
+@@ -976,4 +976,7 @@
+                                                  const MPI_Aint disp_array[],
+                                                  int dispinbytes, MPI_Aint old_extent);
+ 
++int mpi_internal_type_size(MPI_Datatype datatype, MPI_Aint * size) MPICH_API_PUBLIC;
++int mpi_internal_type_size_x(MPI_Datatype datatype, MPI_Count * size) MPICH_API_PUBLIC;
++
+ #endif /* MPIR_DATATYPE_H_INCLUDED */
 --- a/src/mpi/coll/helper_fns.c
 +++ b/src/mpi/coll/helper_fns.c
 @@ -56,6 +56,24 @@
@@ -364,6 +400,248 @@
      goto fn_exit;
  }
 +#endif
+--- a/src/mpi/coll/allgather/allgather_allcomm_nb.c
++++ b/src/mpi/coll/allgather/allgather_allcomm_nb.c
+@@ -18,7 +18,7 @@
+                         &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/allgatherv/allgatherv_allcomm_nb.c
++++ b/src/mpi/coll/allgatherv/allgatherv_allcomm_nb.c
+@@ -18,7 +18,7 @@
+                          comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/allreduce/allreduce_allcomm_nb.c
++++ b/src/mpi/coll/allreduce/allreduce_allcomm_nb.c
+@@ -15,7 +15,7 @@
+     mpi_errno = MPIR_Iallreduce(sendbuf, recvbuf, count, datatype, op, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/alltoall/alltoall_allcomm_nb.c
++++ b/src/mpi/coll/alltoall/alltoall_allcomm_nb.c
+@@ -18,7 +18,7 @@
+                        &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/alltoallv/alltoallv_allcomm_nb.c
++++ b/src/mpi/coll/alltoallv/alltoallv_allcomm_nb.c
+@@ -19,7 +19,7 @@
+                         recvtype, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/alltoallw/alltoallw_allcomm_nb.c
++++ b/src/mpi/coll/alltoallw/alltoallw_allcomm_nb.c
+@@ -19,7 +19,7 @@
+                         recvtypes, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/barrier/barrier_allcomm_nb.c
++++ b/src/mpi/coll/barrier/barrier_allcomm_nb.c
+@@ -14,7 +14,7 @@
+     mpi_errno = MPIR_Ibarrier(comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/bcast/bcast_allcomm_nb.c
++++ b/src/mpi/coll/bcast/bcast_allcomm_nb.c
+@@ -15,7 +15,7 @@
+     mpi_errno = MPIR_Ibcast(buffer, count, datatype, root, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/exscan/exscan_allcomm_nb.c
++++ b/src/mpi/coll/exscan/exscan_allcomm_nb.c
+@@ -15,7 +15,7 @@
+     mpi_errno = MPIR_Iexscan(sendbuf, recvbuf, count, datatype, op, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/gather/gather_allcomm_nb.c
++++ b/src/mpi/coll/gather/gather_allcomm_nb.c
+@@ -17,7 +17,7 @@
+         MPIR_Igather(sendbuf, sendcount, sendtype, recvbuf, recvcount, recvtype, root, comm_ptr,
+                      &req_ptr);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/gatherv/gatherv_allcomm_nb.c
++++ b/src/mpi/coll/gatherv/gatherv_allcomm_nb.c
+@@ -18,7 +18,7 @@
+                       comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/neighbor_allgather/neighbor_allgather_allcomm_nb.c
++++ b/src/mpi/coll/neighbor_allgather/neighbor_allgather_allcomm_nb.c
+@@ -18,7 +18,7 @@
+                                  comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/neighbor_allgatherv/neighbor_allgatherv_allcomm_nb.c
++++ b/src/mpi/coll/neighbor_allgatherv/neighbor_allgatherv_allcomm_nb.c
+@@ -19,7 +19,7 @@
+                                           &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/neighbor_alltoall/neighbor_alltoall_allcomm_nb.c
++++ b/src/mpi/coll/neighbor_alltoall/neighbor_alltoall_allcomm_nb.c
+@@ -17,7 +17,7 @@
+                                         recvbuf, recvcount, recvtype, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/neighbor_alltoallv/neighbor_alltoallv_allcomm_nb.c
++++ b/src/mpi/coll/neighbor_alltoallv/neighbor_alltoallv_allcomm_nb.c
+@@ -20,7 +20,7 @@
+                                  rdispls, recvtype, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/neighbor_alltoallw/neighbor_alltoallw_allcomm_nb.c
++++ b/src/mpi/coll/neighbor_alltoallw/neighbor_alltoallw_allcomm_nb.c
+@@ -20,7 +20,7 @@
+                                  rdispls, recvtypes, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/reduce/reduce_allcomm_nb.c
++++ b/src/mpi/coll/reduce/reduce_allcomm_nb.c
+@@ -16,7 +16,7 @@
+     mpi_errno = MPIR_Ireduce(sendbuf, recvbuf, count, datatype, op, root, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/reduce_scatter_block/reduce_scatter_block_allcomm_nb.c
++++ b/src/mpi/coll/reduce_scatter_block/reduce_scatter_block_allcomm_nb.c
+@@ -17,7 +17,7 @@
+         MPIR_Ireduce_scatter_block(sendbuf, recvbuf, recvcount, datatype, op, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/reduce_scatter/reduce_scatter_allcomm_nb.c
++++ b/src/mpi/coll/reduce_scatter/reduce_scatter_allcomm_nb.c
+@@ -17,7 +17,7 @@
+         MPIR_Ireduce_scatter(sendbuf, recvbuf, recvcounts, datatype, op, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/scan/scan_allcomm_nb.c
++++ b/src/mpi/coll/scan/scan_allcomm_nb.c
+@@ -15,7 +15,7 @@
+     mpi_errno = MPIR_Iscan(sendbuf, recvbuf, count, datatype, op, comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/scatter/scatter_allcomm_nb.c
++++ b/src/mpi/coll/scatter/scatter_allcomm_nb.c
+@@ -18,7 +18,7 @@
+                       &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
+--- a/src/mpi/coll/scatterv/scatterv_allcomm_nb.c
++++ b/src/mpi/coll/scatterv/scatterv_allcomm_nb.c
+@@ -19,7 +19,7 @@
+                        comm_ptr, &req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+-    mpi_errno = MPIC_Wait(req_ptr);
++    mpi_errno = PMPIC_Wait(req_ptr);
+     MPIR_ERR_CHECK(mpi_errno);
+     MPIR_Request_free(req_ptr);
+ 
 --- a/src/mpi/comm/commutil.c
 +++ b/src/mpi/comm/commutil.c
 @@ -302,8 +302,11 @@
@@ -378,23 +656,68 @@
  
      /* abstractions bleed a bit here... :(*/
      comm_p->next_sched_tag = MPIR_FIRST_NBC_TAG;
-@@ -686,6 +689,7 @@
+@@ -411,6 +414,8 @@
+     /* FIXME  : No local functions for the topology routines */
+ 
+     intercomm_ptr->local_comm = localcomm_ptr;
++    localcomm_ptr->parent_comm = intercomm_ptr;
++    mpi_internal_comm_create(localcomm_ptr, intercomm_ptr, MPI_INTERNAL_COMM__LOCALCOMM);
+ 
+     /* sets up the SMP-aware sub-communicators and tables */
+     mpi_errno = MPIR_Comm_commit(localcomm_ptr);
+@@ -637,6 +642,8 @@
+     int mpi_errno = MPI_SUCCESS;
+     MPIR_FUNC_ENTER;
+ 
++    mpi_internal_comm_free(subcomm);
++
+     mpi_errno = MPII_Coll_comm_cleanup(subcomm);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+@@ -686,6 +693,8 @@
                                          local_procs, MPIR_CONTEXT_INTRANODE_OFFSET,
                                          &comm->node_comm);
          MPIR_ERR_CHECK(mpi_errno);
 +        comm->node_comm->parent_comm = comm;
++        mpi_internal_comm_create(comm->node_comm, comm, MPI_INTERNAL_COMM__NODE_COMM);
      }
  
      /* -- node_roots_comm -- */
-@@ -712,6 +716,7 @@
+@@ -712,6 +721,8 @@
                                          external_procs, MPIR_CONTEXT_INTERNODE_OFFSET,
                                          &comm->node_roots_comm);
          MPIR_ERR_CHECK(mpi_errno);
 +        comm->node_roots_comm->parent_comm = comm;
++        mpi_internal_comm_create(comm->node_roots_comm, comm, MPI_INTERNAL_COMM__NODE_ROOTS_COMM);
      }
  
      comm->hierarchy_flags |= MPIR_COMM_HIERARCHY__PARENT;
-@@ -1167,6 +1172,10 @@
+@@ -803,6 +814,13 @@
+     int mpi_errno = MPI_SUCCESS;
+     MPIR_FUNC_ENTER;
+ 
++    /* report every genuine top-level comm the instant its handle is known, before any of its
++     * own pre-commit internal traffic (e.g. init_comm_seq's sequence-number broadcast) can
++     * reference it; MPIR_Subcomm_create (node_comm/node_roots_comm) never reaches this function,
++     * and LOCALCOMM already sets parent_comm before calling commit, so neither is duplicated */
++    if (!comm->parent_comm)
++        mpi_internal_comm_create(comm, NULL, MPI_INTERNAL_COMM__BOOTSTRAP);
++
+     mpi_errno = check_hierarchy(comm);
+     MPIR_ERR_CHECK(mpi_errno);
+ 
+@@ -1134,6 +1152,10 @@
+         if (MPIR_Process.comm_parent == comm_ptr)
+             MPIR_Process.comm_parent = NULL;
+ 
++        /* parent_comm is only ever set on internal comms (local_comm, ch4 leader comms) */
++        if (comm_ptr->parent_comm)
++            mpi_internal_comm_free(comm_ptr);
++
+         /* Cleanup collectives-specific infrastructure */
+         mpi_errno = MPII_Coll_comm_cleanup(comm_ptr);
+         MPIR_ERR_CHECK(mpi_errno);
+@@ -1167,6 +1189,10 @@
              MPIR_Subcomm_free(comm_ptr->node_roots_comm);
          MPL_free(comm_ptr->intranode_table);
          MPL_free(comm_ptr->internode_table);
@@ -405,9 +728,81 @@
  
          MPIR_stream_comm_free(comm_ptr);
  
+@@ -1331,3 +1357,45 @@
+         *kinds = MPIR_Process.memory_alloc_kinds;
+     }
+ }
++
++/* -- Begin Profiling Symbol Block for internal communicator create/free proxies */
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak mpi_internal_comm_create = pmpi_internal_comm_create
++#pragma weak mpi_internal_comm_free = pmpi_internal_comm_free
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF pmpi_internal_comm_create  mpi_internal_comm_create
++#pragma _HP_SECONDARY_DEF pmpi_internal_comm_free  mpi_internal_comm_free
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate mpi_internal_comm_create as pmpi_internal_comm_create
++#pragma _CRI duplicate mpi_internal_comm_free as pmpi_internal_comm_free
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++void mpi_internal_comm_create(MPIR_Comm *comm, MPIR_Comm *parent_comm, int kind)
++                  __attribute__((weak,alias("pmpi_internal_comm_create")));
++void mpi_internal_comm_free(MPIR_Comm *comm)
++                  __attribute__((weak,alias("pmpi_internal_comm_free")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef mpi_internal_comm_create
++#define mpi_internal_comm_create pmpi_internal_comm_create
++#undef mpi_internal_comm_free
++#define mpi_internal_comm_free pmpi_internal_comm_free
++
++/* default implementations are no-ops: the hooks exist only to be overridden by a tool */
++void mpi_internal_comm_create(MPIR_Comm *comm, MPIR_Comm *parent_comm, int kind)
++{
++    (void) comm;
++    (void) parent_comm;
++    (void) kind;
++}
++
++void mpi_internal_comm_free(MPIR_Comm *comm)
++{
++    (void) comm;
++}
++#undef mpi_internal_comm_create
++#undef mpi_internal_comm_free
++#endif
+--- a/src/mpi/datatype/datatype_impl.c
++++ b/src/mpi/datatype/datatype_impl.c
+@@ -545,3 +545,23 @@
+ 
+     return MPI_SUCCESS;
+ }
++
++/* public, unchecked size query that also works for internal (MPIR_*) datatypes */
++int mpi_internal_type_size(MPI_Datatype datatype, MPI_Aint * size)
++{
++    int mpi_errno = MPI_SUCCESS;
++
++    MPIR_Datatype_get_size_macro(datatype, *size);
++    MPIR_Assert(*size >= 0);
++
++    return mpi_errno;
++}
++
++int mpi_internal_type_size_x(MPI_Datatype datatype, MPI_Count * size)
++{
++    int mpi_errno = MPI_SUCCESS;
++
++    MPIR_Datatype_get_size_macro(datatype, *size);
++
++    return mpi_errno;
++}
 --- a/src/mpi/group/group_impl.c
 +++ b/src/mpi/group/group_impl.c
-@@ -453,3 +453,245 @@
+@@ -453,3 +453,260 @@
    fn_fail:
      goto fn_exit;
  }
@@ -604,6 +999,16 @@
 +
 +MPI_Request mpi_internal_get_request(MPIR_Request *request)
 +{
++    /* lightweight/pre-completed requests (MPI_PROC_NULL sends/receives, and sends/receives that complete
++     * inline before the posting call returns, e.g. an eager send delivered directly into the receiver's
++     * shared-memory queue) share one of a handful of statically allocated MPIR_Request objects per kind
++     * instead of a real per-call request - see MPIR_Request_builtin / MPIR_REQUEST_COMPLETE in
++     * src/include/mpir_request.h. Every such call shares the same handle for its kind, so a tool matching
++     * by request value cannot tell two such completions apart; map them all to 0 instead - the tractor's
++     * own convention for "no request/invalid", distinct from MPI_REQUEST_NULL (0x2c000000 here). */
++    if (request->handle >= MPIR_REQUEST_COMPLETE && request->handle < MPIR_REQUEST_COMPLETE + MPIR_REQUEST_N_BUILTIN) {
++        return 0;
++    }
 +    return request->handle;
 +}
 +
@@ -611,13 +1016,16 @@
 +{
 +    int i;
 +    for (i=0;i<inum;i++)  {
-+        requests_out[i]=requests_in[i]->handle;
++        requests_out[i]=mpi_internal_get_request(requests_in[i]);
 +    }
 +    return 0;
 +}
 +
 +MPI_Request MPI_Check_dummy(MPI_Request request)
 +{
++    if (request >= MPIR_REQUEST_COMPLETE && request < MPIR_REQUEST_COMPLETE + MPIR_REQUEST_N_BUILTIN) {
++        return 0;
++    }
 +    return request;
 +}
 +
@@ -645,14 +1053,65 @@
 +
 +MPI_Comm mpi_internal_get_top_comm_handle_from_comm(MPIR_Comm *comm)
 +{
++    if (comm == NULL) return MPI_COMM_NULL;
 +    if (comm->parent_comm) return mpi_internal_get_top_comm_handle_from_comm(comm->parent_comm);
 +    return comm->handle;
 +}
 +
 +MPI_Comm mpi_internal_get_comm_handle_from_comm(MPIR_Comm *comm)
 +{
++    if (comm == NULL) return MPI_COMM_NULL;
 +    return comm->handle;
 +}
+--- a/src/mpid/ch4/src/ch4_comm.c
++++ b/src/mpid/ch4/src/ch4_comm.c
+@@ -739,6 +739,9 @@
+                                     MPIR_CONTEXT_MULTILEADS_OFFSET,
+                                     &MPIDI_COMM(comm, multi_leads_comm));
+     MPIR_ERR_CHECK(mpi_errno);
++    MPIDI_COMM(comm, multi_leads_comm)->parent_comm = comm;
++    mpi_internal_comm_create(MPIDI_COMM(comm, multi_leads_comm), comm,
++                                MPI_INTERNAL_COMM__MULTI_LEADS_COMM);
+ 
+   fn_exit:
+     MPIR_CHKLMEM_FREEALL();
+@@ -775,6 +778,12 @@
+                                      &(MPIDI_COMM(comm, inter_node_leads_comm)));
+     if (mpi_errno)
+         MPIR_ERR_POP(mpi_errno);
++    /* MPIR_Comm_split_impl yields NULL on ranks with color == MPI_UNDEFINED */
++    if (MPIDI_COMM(comm, inter_node_leads_comm) != NULL) {
++        MPIDI_COMM(comm, inter_node_leads_comm)->parent_comm = comm;
++        mpi_internal_comm_create(MPIDI_COMM(comm, inter_node_leads_comm), comm,
++                                    MPI_INTERNAL_COMM__INTER_NODE_LEADS_COMM);
++    }
+ 
+     /* Create the intra-node sub comms */
+     mpi_errno =
+@@ -782,6 +791,11 @@
+                              MPIR_Comm_rank(comm->node_comm), &(MPIDI_COMM(comm, sub_node_comm)));
+     if (mpi_errno)
+         MPIR_ERR_POP(mpi_errno);
++    if (MPIDI_COMM(comm, sub_node_comm) != NULL) {
++        MPIDI_COMM(comm, sub_node_comm)->parent_comm = comm->node_comm;
++        mpi_internal_comm_create(MPIDI_COMM(comm, sub_node_comm), comm->node_comm,
++                                    MPI_INTERNAL_COMM__SUB_NODE_COMM);
++    }
+ 
+     if (MPIR_Comm_rank(comm->node_comm) % sub_node_comm_size == 0)
+         is_leader_color = 1;
+@@ -794,6 +808,11 @@
+                                      &(MPIDI_COMM(comm, intra_node_leads_comm)));
+     if (mpi_errno)
+         MPIR_ERR_POP(mpi_errno);
++    if (MPIDI_COMM(comm, intra_node_leads_comm) != NULL) {
++        MPIDI_COMM(comm, intra_node_leads_comm)->parent_comm = comm->node_comm;
++        mpi_internal_comm_create(MPIDI_COMM(comm, intra_node_leads_comm), comm->node_comm,
++                                    MPI_INTERNAL_COMM__INTRA_NODE_LEADS_COMM);
++    }
+ 
+   fn_exit:
+     MPIR_FUNC_EXIT;
 --- a/src/mpid/common/sched/mpidu_sched.c
 +++ b/src/mpid/common/sched/mpidu_sched.c
 @@ -1053,7 +1053,8 @@
@@ -685,7 +1144,30 @@
                          e->u.send.sreq = NULL;
                          if (s->kind == MPIR_SCHED_KIND_GENERALIZED) {
                              MPIR_Comm_release(e->u.send.comm);
-@@ -1108,7 +1111,8 @@
+@@ -1103,12 +1106,31 @@
+                     break;
+                 case MPIDU_SCHED_ENTRY_PT2PT_RECV:
+                     if (e->u.recv.rreq != NULL && MPIR_Request_is_complete(e->u.recv.rreq)) {
++                        MPIR_Process_status(&e->u.recv.rreq->status);
++                        /* Propagate the real receive status (source/tag/count) to the
++                         * schedule's request so that MPI_Wait/MPI_Test on the request
++                         * returned by MPI_Isendrecv(_replace) report it correctly, matching
++                         * the blocking MPI_Sendrecv behavior. e->u.recv.status is always
++                         * MPI_STATUS_IGNORE here (see MPIDU_Sched_pt2pt_recv), so it cannot
++                         * be used to carry this information like the plain RECV case does.
++                         * The count fields hold a raw byte count (MPI_Get_count later divides
++                         * it by the user's datatype extent), so copy them as-is from the real
++                         * receive request instead of converting through e->u.recv.datatype. */
++                        int cancelled = MPIR_STATUS_GET_CANCEL_BIT(e->u.recv.rreq->status);
++                        s->req->status.MPI_SOURCE = e->u.recv.rreq->status.MPI_SOURCE;
++                        s->req->status.MPI_TAG = e->u.recv.rreq->status.MPI_TAG;
++                        s->req->status.count_lo = e->u.recv.rreq->status.count_lo;
++                        s->req->status.count_hi_and_cancelled =
++                            e->u.recv.rreq->status.count_hi_and_cancelled & ~1;
++                        MPIR_STATUS_SET_CANCEL_BIT(s->req->status, cancelled);
++
+                         if (s->req->status.MPI_ERROR) {
+                             e->status = MPIDU_SCHED_ENTRY_STATUS_FAILED;
                          } else {
                              e->status = MPIDU_SCHED_ENTRY_STATUS_COMPLETE;
                          }
@@ -695,7 +1177,7 @@
                          e->u.recv.rreq = NULL;
                          if (s->kind == MPIR_SCHED_KIND_GENERALIZED) {
                              MPIR_Comm_release(e->u.recv.comm);
-@@ -1203,3 +1207,28 @@
+@@ -1203,3 +1225,28 @@
          return mpi_errno;
      }
  }
@@ -724,49 +1206,3 @@
 +}
 +#undef T_MPID_Request_release
 +#endif
---- a/src/mpid/common/sched/mpidu_sched.h
-+++ b/src/mpid/common/sched/mpidu_sched.h
-@@ -154,4 +154,7 @@
-                      MPI_Aint outcount, MPI_Datatype outtype, MPIR_Sched_t s);
- int MPIDU_Sched_barrier(MPIR_Sched_t s);
- 
-+void T_MPID_Request_release(MPIR_Request *req) MPICH_API_PUBLIC;
-+void PT_MPID_Request_release(MPIR_Request *req) MPICH_API_PUBLIC;
-+
- #endif /* MPIDU_SCHED_H_INCLUDED */
---- a/src/include/mpir_datatype.h
-+++ b/src/include/mpir_datatype.h
-@@ -976,4 +976,7 @@
-                                                  const MPI_Aint disp_array[],
-                                                  int dispinbytes, MPI_Aint old_extent);
- 
-+int mpi_internal_type_size(MPI_Datatype datatype, MPI_Aint * size) MPICH_API_PUBLIC;
-+int mpi_internal_type_size_x(MPI_Datatype datatype, MPI_Count * size) MPICH_API_PUBLIC;
-+
- #endif /* MPIR_DATATYPE_H_INCLUDED */
---- a/src/mpi/datatype/datatype_impl.c
-+++ b/src/mpi/datatype/datatype_impl.c
-@@ -545,3 +545,23 @@
- 
-     return MPI_SUCCESS;
- }
-+
-+/* public, unchecked size query that also works for internal (MPIR_*) datatypes */
-+int mpi_internal_type_size(MPI_Datatype datatype, MPI_Aint * size)
-+{
-+    int mpi_errno = MPI_SUCCESS;
-+
-+    MPIR_Datatype_get_size_macro(datatype, *size);
-+    MPIR_Assert(*size >= 0);
-+
-+    return mpi_errno;
-+}
-+
-+int mpi_internal_type_size_x(MPI_Datatype datatype, MPI_Count * size)
-+{
-+    int mpi_errno = MPI_SUCCESS;
-+
-+    MPIR_Datatype_get_size_macro(datatype, *size);
-+
-+    return mpi_errno;
-+}
