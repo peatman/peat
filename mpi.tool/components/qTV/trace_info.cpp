@@ -121,10 +121,10 @@ bool Trace_Info::parse_trace_info_file(QFileInfo &tracefile)
     std::string path_std = path.toStdString();
     std::string trace_files_std = trace_files.toStdString();
     std::string app_ext_std = app_ext.toStdString();
-
     std::string file_name = path_std + DIR_DELIMITER + trace_files_std + app_ext_std;
-
     File_Storage_GZ appfile(file_name, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_ICLOSE, NULL, false);
+
+    nodes.clear();
     do {
         appfile.read_lines(lines, 0, ':', ';');
         if (lines.size() < 2)
