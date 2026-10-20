@@ -46,9 +46,10 @@ class Communicators
     {
         return mpi_time.at(rank);
     }
-    struct CommunicatorInfo {
-        CommunicatorInfo() : comm_id(0) {}
+    struct Communicator_Info {
+        Communicator_Info() : comm_id(0), is_internal(false) {}
         PEAT_MPI_Comm comm_id;                                 // Estimator Communicator ID index
+        bool is_internal;                                      // created by the MPI library itself (not by the application)
         std::vector<PEAT_Rank> ranks;                          // index is local ranks in communicator. Value is global rank in COMM_WORLD.
         std::map<PEAT_Rank, std::vector<PEAT_Rank>> groups[2]; // rank groups (0 - local, 1 remote) this is a waaaaaay overkill to store ewach rank group (and surely can be optimized)  but helps debuging sometimes
                                                                /*
@@ -78,12 +79,12 @@ class Communicators
                                                                            return ptr_it;
                                                                        }
                                                                */
-        // friend std::ostream &operator<<(std::ostream &dbg, const CommunicatorInfo &mp);
+        // friend std::ostream &operator<<(std::ostream &dbg, const Communicator_Info &mp);
     };
     PEAT_Rank get_rank_from_comm(const PEAT_MPI_Comm comm, const PEAT_Rank destinationRank) const;
     std::map<PEAT_Rank, PEAT_Rank> get_ranks_map_from_comm(const PEAT_MPI_Comm comm) const;
     std::set<PEAT_Rank> get_ranks_set_from_comm(const PEAT_MPI_Comm comm) const;
-    std::map<PEAT_MPI_Comm, CommunicatorInfo> comms;
+    std::map<PEAT_MPI_Comm, Communicator_Info> comms;
     PEAT_Num get_comms_num() const { return comms.size(); }
     PEAT_MPI_Comm get_MPI_COMM_NULL() const
     {

@@ -100,11 +100,9 @@ struct t_comm {
             return false;
         bool result = false;
         if (comm1.kind == T_MPI_INTER_COMM) {
-            // try to compare both ways
-            result = compare_ranks(comm1.l_comm2world_ranks, comm2.l_comm2world_ranks) || compare_ranks(comm1.r_comm2world_ranks, comm2.r_comm2world_ranks);
-            if (!result) {
-                result = compare_ranks(comm1.l_comm2world_ranks, comm2.r_comm2world_ranks) || compare_ranks(comm1.r_comm2world_ranks, comm2.l_comm2world_ranks);
-            }
+            // same pair of groups, seen from the same side or from the opposite side; both groups must match
+            result = (compare_ranks(comm1.l_comm2world_ranks, comm2.l_comm2world_ranks) && compare_ranks(comm1.r_comm2world_ranks, comm2.r_comm2world_ranks)) ||
+                     (compare_ranks(comm1.l_comm2world_ranks, comm2.r_comm2world_ranks) && compare_ranks(comm1.r_comm2world_ranks, comm2.l_comm2world_ranks));
         } else {
             result = compare_ranks(comm1.l_comm2world_ranks, comm2.l_comm2world_ranks);
         }

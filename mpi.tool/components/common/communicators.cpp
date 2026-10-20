@@ -258,7 +258,7 @@ std::map<PEAT_Rank, PEAT_Rank> Communicators::get_ranks_map_from_comm(const PEAT
         }
         return resultRanks;
     }
-    const CommunicatorInfo &info = comms.at(comm);
+    const Communicator_Info &info = comms.at(comm);
     for (PEAT_Num i = 0; i < info.ranks.size(); ++i) {
         resultRanks[info.ranks.at(i)] = (PEAT_Rank)i;
     }
@@ -289,7 +289,7 @@ std::set<PEAT_Rank> Communicators::get_ranks_set_from_comm(const PEAT_MPI_Comm c
         }
         return resultRanks;
     }
-    const CommunicatorInfo &info = comms.at(comm);
+    const Communicator_Info &info = comms.at(comm);
     for (PEAT_Num i = 0; i < info.ranks.size(); ++i) {
         resultRanks.insert(info.ranks.at(i));
     }
@@ -304,16 +304,20 @@ std::set<PEAT_Rank> Communicators::get_ranks_set_from_comm(const PEAT_MPI_Comm c
 void Communicators::process_global_communicators(const String_Split &line) // fills basic comm info
 {
     // cerr << "Communicators::processNewComm " << line << " rank " << rank << endl;
+    // format: id:is_internal:size:rank_0:...
     PEAT_MPI_Comm comm_id = 0;
     extract(comm_id, line.at(1), 16);
+    int is_internal = 0;
+    extract(is_internal, line.at(2));
     PEAT_Rank comm_size = 0;
-    extract(comm_size, line.at(2));
-    CommunicatorInfo comm;
+    extract(comm_size, line.at(3));
+    Communicator_Info comm;
     comm.comm_id = comm_id;
+    comm.is_internal = is_internal != 0;
     if (comm_size > 0) {
         comm.ranks.resize(comm_size, 0);
         for (PEAT_Rank i = 0; i < comm_size; ++i) {
-            extract(comm.ranks[i], line.at(3 + i));
+            extract(comm.ranks[i], line.at(4 + i));
         }
     }
     comms[comm_id] = comm;
@@ -328,7 +332,7 @@ void Communicators::process_local_communicators(const PEAT_Rank rank, const Stri
     extract(local_group_size, line.at(5));
     PEAT_Rank remote_group_size = 0;
     extract(remote_group_size, line.at(6));
-    CommunicatorInfo &comm = comms.at(comm_id); // basic info should be filled while processing app file
+    Communicator_Info &comm = comms.at(comm_id); // basic info should be filled while processing app file
     if (local_group_size > 0) {
         comm.groups[0][rank].resize(local_group_size, 0);
         std::string ranks = line.at(7);
@@ -358,7 +362,7 @@ void Communicators::process_frame_info(const String_Split &line, PEAT_Rank rank)
     frame_tsc_start[rank] = startTSC;
 }
 
-std::ostream &operator<<(std::ostream &dbg, const Communicators::CommunicatorInfo &mp)
+std::ostream &operator<<(std::ostream &dbg, const Communicators::Communicator_Info &mp)
 {
     dbg << "peCommId:" << mp.comm_id << " ranks: " << mp.ranks << "\n";
     return dbg;
