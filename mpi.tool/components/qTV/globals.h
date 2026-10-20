@@ -26,6 +26,8 @@
 #endif
 
 #include <QBrush>
+#include <set>
+#include "../common/common_plain_types.h"
 #include <QPen>
 #if !defined(_WIN32) || defined(__MINGW32__)
 #include <x86intrin.h>
@@ -47,6 +49,8 @@ struct TV_TraceParts {
     bool omp_functions[5] = {true, true, true, true, true};
     bool gpu_functions[3] = {true, true, true};
     bool transport_functions = true;
+    std::set<PEAT_MPI_Comm> hidden_comms; // elements of these communicators are not shown
+    bool comm_visible(PEAT_MPI_Comm comm) const { return hidden_comms.empty() || hidden_comms.count(comm) == 0; }
     /*
     bool
         mpi_local_functions=true,

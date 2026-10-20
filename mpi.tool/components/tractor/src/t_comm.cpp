@@ -437,7 +437,8 @@ static int print_comms_rows(gzFile file, const PEAT_Record_Type line_prefix, con
         for (std::list<t_comm>::const_iterator it = it_comm_uniq->second.begin(); it != it_comm_uniq->second.end(); ++it,++printed_records) {
             const t_comm &com = *it;
             gzprintf(file, "%d", line_prefix);
-            gzprintf(file, ":%*x", name_id_len, com.idx + start_idx);
+            // global id assigned by binding (the one events carry); local index + offset only if the comm was never bound
+            gzprintf(file, ":%*x", name_id_len, com.gid);
             gzprintf(file, ":%*x", field_len, com.comm);
             gzprintf(file, ":%*lld", field_len2, com.begin_time);
             gzprintf(file, ":%*lld", field_len2, com.end_time);
