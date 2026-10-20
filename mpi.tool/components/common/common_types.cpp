@@ -263,8 +263,8 @@ Address_File_Storage::Address_File_Storage(const Global_Parameters &globals, int
 
 void PEAT_Record_Header::parse(const String_Split &line, int id_columns)
 {
-    if (id_columns < 2)
-        id_columns = 2;
+    if (id_columns < 1)
+        id_columns = 1;
     ids.resize(id_columns);
     for (int i = 0; i < id_columns; i++) {
         extract(ids[i], line.at(i));
@@ -316,8 +316,8 @@ std::string peat_ids_string(const PEAT_Event_IDs &ids)
 
 int peat_ids_parse(const String_Split &line, int pos, int columns, PEAT_Event_IDs &ids)
 {
-    if (columns < 2)
-        columns = 2;
+    if (columns < 1)
+        columns = 1;
     ids.resize(columns);
     for (int i = 0; i < columns; i++)
         extract(ids[i], line.at(pos + i));
@@ -395,7 +395,7 @@ void Address_File_Storage::parse(const String_Split &lines, const PEAT_Rank rank
             last_thread_idx[rank] = last_thread_Id;
             int columns = 2;
             extract(columns, lines.at(4));
-            id_columns[rank] = columns < 2 ? 2 : columns;
+            id_columns[rank] = columns < 1 ? 1 : columns;
             if(lines.size() > 5) {
                 extract(last_event_id, lines.at(5));
                 last_transport_event_idx[rank] = last_event_id;

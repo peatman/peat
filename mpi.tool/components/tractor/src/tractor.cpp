@@ -2053,8 +2053,8 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
     static long global_id = 0;
     const int levels = t_max_nesting_levels;
     /* id columns: the running index of the top-level record, then the index of the record among the children
-       of its parent, one column per nesting level; at least two columns so flat traces keep their old layout */
-    const int id_columns = t_max(2, t_achieved_nesting_levels);
+       of its parent, one column per nesting level (a flat trace, e.g. without internal MPI function tracing, has just one) */
+    const int id_columns = t_max(1, t_achieved_nesting_levels);
     const int slots = t_max_threads * levels; /* cursor per (thread, level): index tid * levels + level */
 
     std::vector<msl_adv_chain *> current_chain(slots, (msl_adv_chain *)NULL);
