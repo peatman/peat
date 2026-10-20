@@ -57,6 +57,65 @@ static PEAT_Bool equal(TV_Event_Type send, TV_Event_Type recv)
 #endif
 struct TV_Coll_Event;
 
+// Text descriptions of TV_Event::get_event_group() and TV_Event::get_event_type().
+inline const char *tv_event_group_name(int group)
+{
+    switch (group) {
+    case 0:
+        return "MPI";
+    case 1:
+        return "OpenMP";
+    case 2:
+        return "GPU";
+    case 3:
+        return "Transport";
+    }
+    return "Unknown";
+}
+inline const char *tv_event_type_name(TV_Event_Type type)
+{
+    switch (type) {
+    case TV_EVENT_TYPE_NONE:
+        return "None";
+    case TV_EVENT_TYPE_LOCAL:
+        return "Local";
+    case TV_EVENT_TYPE_LOCAL_BUF:
+        return "Local with buffer";
+/*    case TV_EVENT_TYPE_FAKE:
+        return "Fake";
+    case TV_EVENT_TYPE_COLL:
+        return "Collective base"; */
+    case TV_EVENT_TYPE_COLLECTIVE:
+        return "Collective";
+    case TV_EVENT_TYPE_COMM:
+        return "Communicator management";
+    case TV_EVENT_TYPE_TOR:
+    case TV_EVENT_TYPE_TAR:
+        return "Point to Point";
+    case TV_EVENT_TYPE_START:
+        return "Persistent Request start";
+    case TV_EVENT_TYPE_COMPLETION:
+        return "Request completion";
+    case TV_EVENT_TYPE_OMPT_LOCAL:
+        return "OpenMP local";
+    case TV_EVENT_TYPE_OMPT_TARGET_DATA:
+        return "OpenMP target data";
+    case TV_EVENT_TYPE_OMPT_PARALLEL:
+        return "OpenMP parallel";
+    case TV_EVENT_TYPE_GPU_LOCAL:
+        return "GPU local";
+    case TV_EVENT_TYPE_GPU_TRANSFER:
+        return "GPU transfer";
+    case TV_EVENT_TYPE_GPU_EXECUTION:
+        return "GPU execution";
+    case TV_EVENT_TYPE_OSC:
+        return "RMA";
+    case TV_EVENT_TYPE_MAX:
+        break;
+    }
+    return "Unknown";
+}
+
 struct TV_Event {
     PEAT_Time e_time;
     PEAT_MPI_Func_ID func_id;
@@ -86,6 +145,7 @@ struct TV_Event {
     virtual PEAT_Clock get_message_draw_start() const { return e_time.func.in; }
     virtual PEAT_Clock get_message_draw_end() const { return e_time.func.out; }
     virtual PEAT_Rank get_root() const { return -1; };
+    virtual PEAT_Bool get_comm(PEAT_MPI_Comm &) const { return false; } // true if the event has a communicator
 
     PEAT_Bool is_nested() const { return peat_ids_nested(ids); }
     /* records the progress engine issued inside this call, in trace order.
@@ -175,6 +235,11 @@ struct TV_OSC_Event : public TV_Local_Event {
 
   public:
     virtual TV_Event_Type get_event_type() const { return TV_EVENT_TYPE_OSC; }
+    virtual PEAT_Bool get_comm(PEAT_MPI_Comm &c) const
+    {
+        c = comm;
+        return true;
+    }
     TV_OSC_Event() : TV_Local_Event(), comm(0), peer_rank(-1), request(0), window(0), size(0), t_bytes(0) {}
     virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr);
     virtual PEAT_Message_Size get_tx_bytes() const { return check_tx() ? t_bytes : -1; }
@@ -191,6 +256,11 @@ struct TV_ToR_Event : public TV_Local_Event {
 
   public:
     virtual TV_Event_Type get_event_type() const { return TV_EVENT_TYPE_TOR; }
+    virtual PEAT_Bool get_comm(PEAT_MPI_Comm &c) const
+    {
+        c = comm;
+        return true;
+    }
     TV_ToR_Event() : TV_Local_Event(), comm(0), t_bytes(0), peer_rank(-1), tag(-1), request(0), message(0),
                      aux_event(NULL), aux_event_2(NULL)
     {
@@ -255,6 +325,11 @@ struct TV_Coll_Event : public TV_Local_Event {
         return TV_EVENT_TYPE_COLL;
     }
     PEAT_MPI_Comm comm;
+    virtual PEAT_Bool get_comm(PEAT_MPI_Comm &c) const
+    {
+        c = comm;
+        return true;
+    }
     TV_Coll_Event() : TV_Local_Event(), comm(0), int_event_index(0) {}
     virtual ~TV_Coll_Event();
 };

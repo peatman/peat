@@ -52,6 +52,7 @@
 #include "globals.h"
 // #include "messagesdialog.h"
 #include "elements.h"
+#include "communicatorsdialog.h"
 #include "functionstabwidget.h"
 #include "messagestabwidget.h"
 class TV : public QWidget
@@ -155,6 +156,7 @@ class TV : public QWidget
     }
     void undo_presentation();
     void redo_presentation();
+    std::shared_ptr<Communicators_Data> &get_communicators_data() { return communicators_data; }
 
   public slots:
     void reset_view();
@@ -172,6 +174,7 @@ class TV : public QWidget
     void draw_main_image();
     void handle_table_item_clicked(QTableWidgetItem *item);
     void handle_tree_item_clicked(QTreeWidgetItem *item);
+    void handle_info_item_clicked(QTreeWidgetItem *item, int column);
 
   protected:
     void paintEvent(QPaintEvent *);
@@ -216,6 +219,7 @@ class TV : public QWidget
     PEAT_Rank filter_rank;
     FunctionsTabWidget *functions_view;
     QTreeWidget *info_view;
+    std::shared_ptr<Communicators_Data> communicators_data; // read on demand, reset when a trace is loaded
     MessagesTabWidget *messages_view;
     // QTableWidget *messages_view;
     QTreeWidget *addresses_view;

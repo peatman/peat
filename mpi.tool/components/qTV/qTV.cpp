@@ -668,7 +668,12 @@ bool TV::event(QEvent *e)
         TV_Event *evt = elements->get_event(he->pos().x(), he->pos().y(), main_image->width());
         QString tool_tip;
         if (evt) {
-            tool_tip = QString("Function:%1\nRank:%2\nPrimary ID:%3\nIDs:%4\nThread:%5\n").arg(global_func_id.name_by_idx(evt->func_id)).arg(evt->rank).arg(evt->ids[0]).arg(QString::fromStdString(peat_ids_string(evt->ids))).arg(evt->thread);
+            tool_tip = QString("Function:%1\nRank:%2\n").arg(global_func_id.name_by_idx(evt->func_id)).arg(evt->rank);
+            PEAT_MPI_Comm comm = 0;
+            if (evt->get_comm(comm) && comm != 0) { // 0 is MPI_COMM_NULL
+                tool_tip += QString("Comm:%1%2\n").arg(QString::number(comm, 16)).arg(comm == 2 ? QString(" (comm_world)") : comm == 1 ? QString(" (comm_self)") : QString());
+            }
+            tool_tip += QString("IDs:%1\nThread:%2\n").arg(QString::fromStdString(peat_ids_string(evt->ids))).arg(evt->thread);
         } else {
             tool_tip = QString("User Code/Thread wait");
         }
@@ -800,6 +805,7 @@ void TV::load_model(QFileInfo &trace_file, const std::set<PEAT_Rank> &ranks_to_l
         main_image_first = 0;
         main_image_first = new QImage();
     }
+    communicators_data.reset();
     elements = new Elements(trace_file, shown);
     if (!elements->load_model_data(pb, sr, mpi_file_names, hwc_file_names, bind_file_names, ranks_to_load, tmin, tmax, load_threads, tp)) {
         qDebug() << "Failed in trace parser.";
@@ -984,6 +990,24 @@ void TV::handle_tree_item_clicked(QTreeWidgetItem *item)
         }
     }
 }
+void TV::handle_info_item_clicked(QTreeWidgetItem *item, int column)
+{
+    if (!item || !elements)
+        return;
+    const QVariant comm_data = item->data(column, Qt::UserRole + 1);
+    if (!comm_data.isValid()) { // not the communicator column: open the source file as before
+        handle_tree_item_clicked(item);
+        return;
+    }
+    if (!CommunicatorsDialog::load(info_view, elements->get_trace_info(), communicators_data))
+        return;
+    const std::vector<PEAT_MPI_Comm> only(1, comm_data.toInt());
+    CommunicatorsDialog dialog(info_view);
+    dialog.setWindowTitle(tr("Communicator %1").arg(QString::number(only[0], 16)));
+    dialog.set_communicators(communicators_data->communicators, &only);
+    dialog.setModal(true);
+    dialog.exec();
+}
 void TV::look_for_info()
 {
     if (elements && main_image && !image_creating) {
@@ -998,20 +1022,31 @@ void TV::look_for_info()
         info_view = new QTreeWidget;
         info_view->setWordWrap(false);
         info_view->setColumnCount(12);
-        info_view->setHeaderLabels(QStringList() << "Name" << "Group" << "Type" << "Rank" << "Thread" << "Primary ID" << "IDs" << "Start Time" << "End Time" << "Duration" << "Duration (us)" << "Source Location");
+        info_view->setHeaderLabels(QStringList() << "Name" << "Group" << "Type" << "Rank" << "Comm" << "Thread" << "IDs" << "Start Time" << "End Time" << "Duration" << "Duration (us)" << "Source Location");
 
         std::function<QTreeWidgetItem *(const TV_Event *)> add_event_item = [&](const TV_Event *e) -> QTreeWidgetItem * {
             QTreeWidgetItem *func_item = new QTreeWidgetItem((QTreeWidget *)0);
             func_item->setText(0, global_func_id.name_by_idx(e->func_id));
-            func_item->setData(1, Qt::DisplayRole, e->get_event_group());
+            func_item->setText(1, tv_event_group_name(e->get_event_group()));
             func_item->setTextAlignment(1, Qt::AlignHCenter);
-            func_item->setData(2, Qt::DisplayRole, e->get_event_type());
+            func_item->setText(2, tv_event_type_name(e->get_event_type()));
             func_item->setTextAlignment(2, Qt::AlignHCenter);
             func_item->setData(3, Qt::DisplayRole, e->rank);
             func_item->setTextAlignment(3, Qt::AlignHCenter);
-            func_item->setData(4, Qt::DisplayRole, e->thread);
+            PEAT_MPI_Comm comm = 0;
+            if (e->get_comm(comm) && comm != 0) { // 0 is MPI_COMM_NULL
+                func_item->setText(4, QString::number(comm, 16));
+                func_item->setData(4, Qt::UserRole + 1, comm);
+                func_item->setToolTip(4, "Click to show the communicator");
+                func_item->setForeground(4, info_view->palette().brush(QPalette::Link));
+                QFont link_font = func_item->font(4);
+                link_font.setUnderline(true);
+                func_item->setFont(4, link_font);
+            } else {
+                func_item->setText(4, "N/A");
+            }
             func_item->setTextAlignment(4, Qt::AlignHCenter);
-            func_item->setData(5, Qt::DisplayRole, e->ids[0]);
+            func_item->setData(5, Qt::DisplayRole, e->thread);
             func_item->setTextAlignment(5, Qt::AlignHCenter);
             func_item->setData(6, Qt::DisplayRole, QString::fromStdString(peat_ids_string(e->ids)));
             func_item->setTextAlignment(6, Qt::AlignHCenter);
@@ -1067,28 +1102,39 @@ void TV::look_for_info()
         info_view->addTopLevelItem(root_item);
 
         // Connect click handler to open source files
-        connect(info_view, &QTreeWidget::itemClicked, this, &TV::handle_tree_item_clicked);
+        connect(info_view, &QTreeWidget::itemClicked, this, &TV::handle_info_item_clicked);
 
-        for (int col = 0; col < info_view->columnCount(); col++) {
-            info_view->resizeColumnToContents(col);
-        }
-
-        int total_width = info_view->frameWidth() * 2;
-        for (int col = 0; col < info_view->columnCount(); col++) {
-            total_width += info_view->columnWidth(col);
-        }
-        std::function<int(QTreeWidgetItem *)> visible_height = [&](QTreeWidgetItem *item) -> int {
-            int h = info_view->visualItemRect(item).height();
-            if (item->isExpanded()) {
-                for (int c = 0; c < item->childCount(); c++) {
-                    h += visible_height(item->child(c));
-                }
+        // Fit the window to the visible rows; repeated when the tree is expanded or collapsed.
+        QTreeWidget *view = info_view;
+        auto fit_size = [view]() {
+            for (int col = 0; col < view->columnCount(); col++) {
+                view->resizeColumnToContents(col);
             }
-            return h;
+            int total_width = view->frameWidth() * 2;
+            for (int col = 0; col < view->columnCount(); col++) {
+                total_width += view->columnWidth(col);
+            }
+            int rows = 0;
+            for (QTreeWidgetItemIterator it(view, QTreeWidgetItemIterator::NotHidden); *it; ++it) {
+                bool visible = true; // a row is shown only if all its ancestors are expanded
+                for (QTreeWidgetItem *p = (*it)->parent(); p; p = p->parent()) {
+                    if (!p->isExpanded()) {
+                        visible = false;
+                        break;
+                    }
+                }
+                rows += visible;
+            }
+            int total_height = view->header()->height() + view->frameWidth() * 2 + rows * view->sizeHintForRow(0);
+            const QScreen *screen = view->screen();
+            if (screen) {
+                total_height = qMin(total_height, screen->availableGeometry().height());
+            }
+            view->resize(total_width, total_height);
         };
-        int total_height = info_view->header()->height() + info_view->frameWidth() * 2;
-        total_height += visible_height(root_item);
-        info_view->resize(total_width, total_height);
+        fit_size();
+        connect(info_view, &QTreeWidget::itemExpanded, info_view, [fit_size](QTreeWidgetItem *) { fit_size(); });
+        connect(info_view, &QTreeWidget::itemCollapsed, info_view, [fit_size](QTreeWidgetItem *) { fit_size(); });
 
         info_view->show();
     }
@@ -1121,6 +1167,16 @@ void TV::look_for_functions()
         connectTableWidget(functions_view->get_gpu_table());
 
         // connect((const QObject*) functionsView->horizontalHeader(), SIGNAL(sectionClicked(int)), (const QObject*) functionsView, SLOT(sortByColumn(int)));//sort column by header click
+        // The tables are sized to their contents, but the tab widget keeps its default size: fit it to the widest/tallest tab.
+        QSize tables_size(0, 0);
+        for (QTableWidget *table : {functions_view->get_mpi_table(), functions_view->get_omp_table(), functions_view->get_gpu_table()}) {
+            tables_size = tables_size.expandedTo(table->size());
+        }
+        QSize view_size(tables_size.width() + 8, tables_size.height() + functions_view->tabBar()->sizeHint().height() + 8);
+        if (const QScreen *screen = functions_view->screen()) {
+            view_size = view_size.boundedTo(screen->availableGeometry().size());
+        }
+        functions_view->resize(view_size);
         functions_view->show();
     }
 }

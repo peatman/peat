@@ -18,7 +18,9 @@
 
 #include "tvmainwindow.h"
 #include "./ui_tvmainwindow.h"
+#include "communicatorsdialog.h"
 #include "cutoffdialog.h"
+#include "filterdialog.h"
 #include "globals.h"
 #include "legenddialog.h"
 #include "textviewer.h"
@@ -647,44 +649,26 @@ void TVMainWindow::on_actionFind_triggered()
     tv->open_find_function();
 }
 
-void TVMainWindow::on_actionLocalsFunc_triggered(bool checked)
+void TVMainWindow::on_actionFilter_triggered()
 {
-    shown.mpi_functions[0] = checked;
+    FilterDialog d(this);
+    d.set_properties(shown);
+    if (!info.path.isEmpty() && !info.trace_files.isEmpty() && CommunicatorsDialog::load(this, info, tv->get_communicators_data()))
+        d.set_communicators(&tv->get_communicators_data()->communicators, shown.hidden_comms);
+    if (d.exec() == QDialog::Accepted) { // OK saves, Apply saves and redraws, Cancel drops the changes
+        d.get_properties(shown);
+        if (d.redraw_requested())
+            tv->redraw_view();
+    }
 }
 
-void TVMainWindow::on_actionP2PFunc_triggered(bool checked)
+void TVMainWindow::on_actionCommunicators_triggered()
 {
-    shown.mpi_functions[1] = checked;
-}
-
-void TVMainWindow::on_actionCollectivesFunc_triggered(bool checked)
-{
-    shown.mpi_functions[2] = checked;
-}
-
-void TVMainWindow::on_actionRequestsFunc_triggered(bool checked)
-{
-    shown.mpi_functions[3] = checked;
-}
-
-void TVMainWindow::on_actionCollectivesMessages_triggered(bool checked)
-{
-    shown.mpi_messages[1] = checked;
-}
-
-void TVMainWindow::on_actionP2PMessages_triggered(bool checked)
-{
-    shown.mpi_messages[0] = checked;
-}
-
-void TVMainWindow::on_actionInitiationMessages_triggered(bool checked)
-{
-    shown.mpi_messages[2] = checked;
-}
-
-void TVMainWindow::on_actionCompletionsMessages_triggered(bool checked)
-{
-    shown.mpi_messages[3] = checked;
+    if (!CommunicatorsDialog::load(this, info, tv->get_communicators_data()))
+        return;
+    CommunicatorsDialog dialog(this);
+    dialog.set_communicators(tv->get_communicators_data()->communicators);
+    dialog.exec();
 }
 
 void TVMainWindow::reload_data()

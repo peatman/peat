@@ -668,6 +668,9 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                 //  qreal ps = font.pointSize();
 
                 long height = thread_height;
+                PEAT_MPI_Comm event_comm = 0;
+                if (cur_func_ptr->get_comm(event_comm) && !shown->comm_visible(event_comm))
+                    continue;
                 switch (cur_func_ptr->get_event_type()) {
                 case TV_EVENT_TYPE_COLLECTIVE:
                     if (!shown->mpi_functions[2])
@@ -829,6 +832,9 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
             if (from->e_time.func.in >= stop_time && it_msg->second.msg_type != TV_PEN_MESSAGE_TYPE_REVERSED) {
                 break;
             }
+            PEAT_MPI_Comm message_comm = 0;
+            if (from->get_comm(message_comm) && !shown->comm_visible(message_comm))
+                continue;
             if (tid == 0)
                 progress(prevclk, QApplication::processEvents);
             // long wdt_from= qAbs(from.timeOut-from.timeIn)*pixInTic;
@@ -1191,7 +1197,7 @@ void Elements::get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_t
     Q_ASSERT(gpu_tw);
     QTableWidget *all_tables[3] = {mpi_tw, omp_tw, gpu_tw};
     QStringList column_names;
-    column_names << "Name" << "Rank" << "UID" << "Start" << "End" << "Duration(clk)" << "Duration(sec E-06)" << "Before (clk)" << "After (clk)" << "Prev UID" << "Next UID";
+    column_names << "Name" << "Rank" << "IDs" << "Start" << "End" << "Duration(clk)" << "Duration(sec E-06)" << "Before (clk)" << "After (clk)" << "Prev UID" << "Next UID";
     for (QTableWidget *tbl : all_tables) {
         tbl->setColumnCount(column_names.size());
         tbl->setHorizontalHeaderLabels(column_names);
@@ -1237,9 +1243,9 @@ void Elements::get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_t
         rank->setData(Qt::DisplayRole, cur_func_ptr->rank);
         rank->setTextAlignment(Qt::AlignHCenter);
         tbl->setItem(row, 1, rank);
-        // Uniq Idx
+        // IDs
         QTableWidgetItem *primary_item = new QTableWidgetItem();
-        primary_item->setData(Qt::DisplayRole, cur_func_ptr->ids[0]);
+        primary_item->setData(Qt::DisplayRole, QString::fromStdString(peat_ids_string(cur_func_ptr->ids)));
         primary_item->setTextAlignment(Qt::AlignHCenter);
         tbl->setItem(row, 2, primary_item);
         // Time In
@@ -1804,7 +1810,7 @@ PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, 
         *event = new TV_Local_Buf_Event();
     } else if (func_id >= MPI_START_COMM_COLLECTIVE_GROUP &&
                    func_id < MPI_END_COMM_COLLECTIVE_GROUP ||
-               func_id == MPI_COMM_FREE_ID) {
+               func_id == MPI_COMM_FREE_ID || func_id == MPID_COMM_CREATE_ID || func_id == MPID_COMM_FREE_ID) { // tractor writes the same comm payload for the mpi-internal create/free
         *event = new TV_Comm_Event();
         // possible_colt_included = true;
     } else if (func_id >= MPI_P2P_TRANSFER_START && func_id < MPI_P2P_TRANSFER_END ||

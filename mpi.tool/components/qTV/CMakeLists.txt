@@ -57,12 +57,17 @@ set(SOURCES
 		functionstabwidget.cpp
 		functionstabwidget.ui
 		textviewer.cpp
+		communicatorsdialog.cpp
+		communicatorsdialog.ui
+		filterdialog.cpp
+		filterdialog.ui
 		icons.qrc
 		../common/file_io.cpp
 		../common/common_types.cpp
 		../common/func_id.cpp
 		../common/utils.cpp
 		../common/ptp.cpp
+		../common/communicators.cpp
 		../common/model_id.cpp
 )
 
@@ -82,6 +87,8 @@ set(HEADERS
         tracedialog.h
         messagestabwidget.h
         functionstabwidget.h
+        communicatorsdialog.h
+        filterdialog.h 
         ../common/file_io.h
         ../common/common_types.h
         ../common/func_id.h

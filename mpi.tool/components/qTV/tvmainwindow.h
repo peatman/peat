@@ -102,21 +102,9 @@ class TVMainWindow : public QMainWindow
 
     void on_actionFind_triggered();
 
-    void on_actionLocalsFunc_triggered(bool checked);
+    void on_actionFilter_triggered();
 
-    void on_actionP2PFunc_triggered(bool checked);
-
-    void on_actionCollectivesFunc_triggered(bool checked);
-
-    void on_actionRequestsFunc_triggered(bool checked);
-
-    void on_actionCollectivesMessages_triggered(bool checked);
-
-    void on_actionP2PMessages_triggered(bool checked);
-
-    void on_actionInitiationMessages_triggered(bool checked);
-
-    void on_actionCompletionsMessages_triggered(bool checked);
+    void on_actionCommunicators_triggered();
 
     void on_horizontalScrollBar_sliderReleased();
 

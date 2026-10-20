@@ -106,38 +106,14 @@
     <property name="title">
      <string>&amp;View</string>
     </property>
-    <widget class="QMenu" name="menuIgnore">
-     <property name="title">
-      <string>&amp;Show</string>
-     </property>
-     <widget class="QMenu" name="menuFunctions">
-      <property name="title">
-       <string>Functions</string>
-      </property>
-      <addaction name="actionLocalsFunc"/>
-      <addaction name="actionP2PFunc"/>
-      <addaction name="actionCollectivesFunc"/>
-      <addaction name="actionRequestsFunc"/>
-     </widget>
-     <widget class="QMenu" name="menuMessages">
-      <property name="title">
-       <string>Messages</string>
-      </property>
-      <addaction name="actionCollectivesMessages"/>
-      <addaction name="actionP2PMessages"/>
-      <addaction name="actionInitiationMessages"/>
-      <addaction name="actionCompletionsMessages"/>
-     </widget>
-     <addaction name="menuFunctions"/>
-     <addaction name="menuMessages"/>
-    </widget>
     <addaction name="actionZoomIn"/>
     <addaction name="actionZoomOut"/>
     <addaction name="separator"/>
     <addaction name="actionReset"/>
     <addaction name="actionReDraw"/>
     <addaction name="separator"/>
-    <addaction name="menuIgnore"/>
+    <addaction name="actionFilter"/>
+    <addaction name="actionCommunicators"/>
    </widget>
    <widget class="QMenu" name="menuAnalyze">
     <property name="title">
@@ -307,92 +283,20 @@
     <enum>QAction::MenuRole::ApplicationSpecificRole</enum>
    </property>
   </action>
-  <action name="actionLocalsFunc">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="checked">
-    <bool>true</bool>
-   </property>
+  <action name="actionFilter">
    <property name="text">
-    <string>Locals</string>
+    <string>&amp;Filter...</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::MenuRole::ApplicationSpecificRole</enum>
    </property>
   </action>
-  <action name="actionP2PFunc">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="checked">
-    <bool>true</bool>
-   </property>
+  <action name="actionCommunicators">
    <property name="text">
-    <string>P2P</string>
+    <string>&amp;Communicators...</string>
    </property>
-  </action>
-  <action name="actionCollectivesFunc">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="checked">
-    <bool>true</bool>
-   </property>
-   <property name="text">
-    <string>Collectives</string>
-   </property>
-  </action>
-  <action name="actionRequestsFunc">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="checked">
-    <bool>true</bool>
-   </property>
-   <property name="text">
-    <string>Requests</string>
-   </property>
-  </action>
-  <action name="actionCollectivesMessages">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="checked">
-    <bool>true</bool>
-   </property>
-   <property name="text">
-    <string>Collectives</string>
-   </property>
-  </action>
-  <action name="actionP2PMessages">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="checked">
-    <bool>true</bool>
-   </property>
-   <property name="text">
-    <string>P2P</string>
-   </property>
-  </action>
-  <action name="actionInitiationMessages">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="checked">
-    <bool>true</bool>
-   </property>
-   <property name="text">
-    <string>Initiation</string>
-   </property>
-  </action>
-  <action name="actionCompletionsMessages">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="checked">
-    <bool>true</bool>
-   </property>
-   <property name="text">
-    <string>Completions</string>
+   <property name="menuRole">
+    <enum>QAction::MenuRole::ApplicationSpecificRole</enum>
    </property>
   </action>
   <action name="actionReLoad">
@@ -426,6 +330,11 @@
    </property>
    <property name="menuRole">
     <enum>QAction::MenuRole::ApplicationSpecificRole</enum>
+   </property>
+  </action>
+  <action name="action_Communicators">
+   <property name="text">
+    <string>&amp;Communicators</string>
    </property>
   </action>
  </widget>
