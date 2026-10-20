@@ -16,7 +16,7 @@ set -x
 #TRACTOR=0
 libdir=$(realpath ../../../../lib/intel)
 if [ "${TRACTOR:-1}" != "0" ] ; then
-LD_PRELOAD=$libdir/libtractor_dbg.mpich5.eng.so
+LD_PRELOAD=$libdir/libtractor.mpich5.eng.so
 fi
 
 export PEAT_TRACTOR_PRINT_FUNC_NAMES=1
