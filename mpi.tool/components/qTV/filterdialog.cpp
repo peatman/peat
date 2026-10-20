@@ -28,8 +28,8 @@ FilterDialog::FilterDialog(QWidget *parent)
     ui->tabWidget->setTabEnabled(ui->tabWidget->indexOf(ui->tabCommunicators), false);
     QHeaderView *header = ui->tableComms->horizontalHeader();
     header->setSectionResizeMode(QHeaderView::ResizeToContents);
-    header->setSectionResizeMode(3, QHeaderView::Stretch);
     header->setSectionResizeMode(4, QHeaderView::Stretch);
+    header->setSectionResizeMode(5, QHeaderView::Stretch);
 }
 
 FilterDialog::~FilterDialog()
@@ -75,7 +75,7 @@ void FilterDialog::set_communicators(const Communicators *communicators, const s
         return;
     QTableWidget *table = ui->tableComms;
     table->setRowCount(0);
-    auto add_row = [&](PEAT_MPI_Comm id, const QString &name, bool is_inter, size_t size, const QString &group1, const QString &group2) {
+    auto add_row = [&](PEAT_MPI_Comm id, const QString &name, bool is_inter, const QString &origin, size_t size, const QString &group1, const QString &group2) {
         const int row = table->rowCount();
         table->insertRow(row);
         QTableWidgetItem *id_item = new QTableWidgetItem(name);
@@ -86,21 +86,22 @@ void FilterDialog::set_communicators(const Communicators *communicators, const s
         size_item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
         table->setItem(row, 0, id_item);
         table->setItem(row, 1, new QTableWidgetItem(is_inter ? tr("Inter") : tr("Intra")));
-        table->setItem(row, 2, size_item);
-        table->setItem(row, 3, new QTableWidgetItem(group1));
-        table->setItem(row, 4, new QTableWidgetItem(group2));
+        table->setItem(row, 2, new QTableWidgetItem(origin));
+        table->setItem(row, 3, size_item);
+        table->setItem(row, 4, new QTableWidgetItem(group1));
+        table->setItem(row, 5, new QTableWidgetItem(group2));
     };
     // predefined communicators are not listed in the trace: 1 is MPI_COMM_SELF, 2 is MPI_COMM_WORLD
     std::vector<PEAT_Rank> world_ranks;
     for (PEAT_Rank r = 0; r < communicators->get_comm_world_rank_count(); ++r)
         world_ranks.push_back(r);
-    add_row(1, tr("1 (SELF)"), false, 1, tr("each rank itself"), QString()); // differs per rank
-    add_row(2, tr("2 (WORLD)"), false, world_ranks.size(), CommunicatorsDialog::format_ranks(world_ranks), QString());
+    add_row(1, tr("1 (comm_self)"), false, tr("Predefined"), 1, tr("each rank itself"), QString()); // differs per rank
+    add_row(2, tr("2 (comm_world)"), false, tr("Predefined"), world_ranks.size(), CommunicatorsDialog::format_ranks(world_ranks), QString());
     for (const auto &entry : communicators->comms) {
         const Communicators::Communicator_Info &info = entry.second;
         std::vector<PEAT_Rank> group1, group2;
         CommunicatorsDialog::get_groups(info, group1, group2);
-        add_row(info.comm_id, QString::number(info.comm_id, 16), !group2.empty(), info.ranks.size(), CommunicatorsDialog::format_ranks(group1), CommunicatorsDialog::format_ranks(group2));
+        add_row(info.comm_id, QString::number(info.comm_id, 16), !group2.empty(), info.is_internal ? tr("MPI internal") : tr("User"), info.ranks.size(), CommunicatorsDialog::format_ranks(group1), CommunicatorsDialog::format_ranks(group2));
     }
     table->resizeRowsToContents();
     comms_filled = true;

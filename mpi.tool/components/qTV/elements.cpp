@@ -2077,7 +2077,7 @@ PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, 
         *event = new TV_Local_Buf_Event();
     } else if (func_id >= MPI_START_COMM_COLLECTIVE_GROUP &&
                    func_id < MPI_END_COMM_COLLECTIVE_GROUP ||
-               func_id == MPI_COMM_FREE_ID) {
+               func_id == MPI_COMM_FREE_ID || func_id == MPID_COMM_CREATE_ID || func_id == MPID_COMM_FREE_ID) { // tractor writes the same comm payload for the mpi-internal create/free
         *event = new TV_Comm_Event();
         // possible_colt_included = true;
     } else if (func_id >= MPI_P2P_TRANSFER_START && func_id < MPI_P2P_TRANSFER_END ||

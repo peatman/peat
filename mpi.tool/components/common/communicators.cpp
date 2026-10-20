@@ -304,16 +304,20 @@ std::set<PEAT_Rank> Communicators::get_ranks_set_from_comm(const PEAT_MPI_Comm c
 void Communicators::process_global_communicators(const String_Split &line) // fills basic comm info
 {
     // cerr << "Communicators::processNewComm " << line << " rank " << rank << endl;
+    // format: id:is_internal:size:rank_0:...
     PEAT_MPI_Comm comm_id = 0;
     extract(comm_id, line.at(1), 16);
+    int is_internal = 0;
+    extract(is_internal, line.at(2));
     PEAT_Rank comm_size = 0;
-    extract(comm_size, line.at(2));
+    extract(comm_size, line.at(3));
     Communicator_Info comm;
     comm.comm_id = comm_id;
+    comm.is_internal = is_internal != 0;
     if (comm_size > 0) {
         comm.ranks.resize(comm_size, 0);
         for (PEAT_Rank i = 0; i < comm_size; ++i) {
-            extract(comm.ranks[i], line.at(3 + i));
+            extract(comm.ranks[i], line.at(4 + i));
         }
     }
     comms[comm_id] = comm;

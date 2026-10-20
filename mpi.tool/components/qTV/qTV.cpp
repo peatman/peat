@@ -674,7 +674,7 @@ bool TV::event(QEvent *e)
             tool_tip = QString("Function:%1\nRank:%2\n").arg(global_func_id.name_by_idx(evt->func_id)).arg(evt->rank);
             PEAT_MPI_Comm comm = 0;
             if (evt->get_comm(comm) && comm != 0) { // 0 is MPI_COMM_NULL
-                tool_tip += QString("Comm:%1%2\n").arg(QString::number(comm, 16)).arg(comm == 2 ? QString(" (WORLD)") : comm == 1 ? QString(" (SELF)") : QString());
+                tool_tip += QString("Comm:%1%2\n").arg(QString::number(comm, 16)).arg(comm == 2 ? QString(" (comm_world)") : comm == 1 ? QString(" (comm_self)") : QString());
             }
             tool_tip += QString("IDs:%1\nThread:%2\n").arg(QString::fromStdString(peat_ids_string(evt->ids))).arg(evt->thread);
             if (evt->is_transport()) {

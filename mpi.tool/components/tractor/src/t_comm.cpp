@@ -740,10 +740,11 @@ void t_global_comms::print_comms_report(gzFile file, const PEAT_Record_Type line
     const int name_id_len = 8;
     const int field_len = 14;
     const int field_len2 = 24;
-    const int separator_length = 2 * name_id_len + 1 + field_len + 1 + 3 * field_len2 + 3;
+    const int separator_length = 3 * name_id_len + 2 + field_len + 1 + 3 * field_len2 + 3;
     SEPARATOR(separator_length);
     gzprintf(file, "%d ", PEAT_RT_Remark);
     gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(name_id_len, "ID"));
+    gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(name_id_len, "Internal"));
     gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(name_id_len, "size"));
     gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(field_len2, "Ranks"));
     //    gzprintf(file, ":%*s%*s", PRINT_PARAMETERS(field_len, "Communicator"));
@@ -751,7 +752,8 @@ void t_global_comms::print_comms_report(gzFile file, const PEAT_Record_Type line
     SEPARATOR(separator_length);
     for (std::map<int, std::list<r_comm>>::const_iterator it_comm_uniq = g_comms.begin(); it_comm_uniq != g_comms.end(); ++it_comm_uniq) {
         gzprintf(file, "%d", line_prefix);
-        gzprintf(file, ":%*x:%*d", name_id_len, it_comm_uniq->first, name_id_len, it_comm_uniq->second.size()); // global id,size
+        const int is_internal = it_comm_uniq->second.empty() ? 0 : it_comm_uniq->second.front().is_internal; // same for all ranks of a comm
+        gzprintf(file, ":%*x:%*d:%*d", name_id_len, it_comm_uniq->first, name_id_len, is_internal, name_id_len, it_comm_uniq->second.size()); // global id,internal,size
         for (std::list<r_comm>::const_iterator it = it_comm_uniq->second.begin(); it != it_comm_uniq->second.end(); ++it) {
             const r_comm &comm = *it;
             gzprintf(file, ":%d", comm.rank);

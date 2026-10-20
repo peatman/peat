@@ -30,8 +30,8 @@ CommunicatorsDialog::CommunicatorsDialog(QWidget *parent)
     ui->setupUi(this);
     QHeaderView *header = ui->tableWidget->horizontalHeader();
     header->setSectionResizeMode(QHeaderView::ResizeToContents);
-    header->setSectionResizeMode(3, QHeaderView::Stretch);
     header->setSectionResizeMode(4, QHeaderView::Stretch);
+    header->setSectionResizeMode(5, QHeaderView::Stretch);
 }
 
 CommunicatorsDialog::~CommunicatorsDialog()
@@ -60,7 +60,7 @@ QString CommunicatorsDialog::format_ranks(const std::vector<PEAT_Rank> &ranks)
     return parts.join(", ");
 }
 
-CommunicatorsData::CommunicatorsData(const Trace_Info &info) : communicators(glob)
+Communicators_Data::Communicators_Data(const Trace_Info &info) : communicators(glob)
 {
     glob.input_path = info.path.toStdString();
     glob.trace_files = info.trace_files.toStdString();
@@ -73,7 +73,7 @@ CommunicatorsData::CommunicatorsData(const Trace_Info &info) : communicators(glo
     communicators.initialize(com_names, app_names, &model_id);
 }
 
-bool CommunicatorsDialog::load(QWidget *parent, const Trace_Info &info, std::shared_ptr<CommunicatorsData> &data)
+bool CommunicatorsDialog::load(QWidget *parent, const Trace_Info &info, std::shared_ptr<Communicators_Data> &data)
 {
     if (data)
         return true;
@@ -83,7 +83,7 @@ bool CommunicatorsDialog::load(QWidget *parent, const Trace_Info &info, std::sha
     }
     QApplication::setOverrideCursor(Qt::WaitCursor);
     try {
-        data = std::make_shared<CommunicatorsData>(info);
+        data = std::make_shared<Communicators_Data>(info);
     } catch (const std::exception &ex) {
         QApplication::restoreOverrideCursor();
         QMessageBox::critical(parent, tr("Communicators"), tr("Can't read communicators: %1").arg(ex.what()));
@@ -117,7 +117,7 @@ void CommunicatorsDialog::set_communicators(const Communicators &communicators, 
     QTableWidget *table = ui->tableWidget;
     table->setRowCount(0);
     int inter = 0;
-    auto add_row = [&](const QString &id, bool is_inter, const QString &size, const QString &g1, const QString &g2) {
+    auto add_row = [&](const QString &id, bool is_inter, const QString &origin, const QString &size, const QString &g1, const QString &g2) {
         const int row = table->rowCount();
         table->insertRow(row);
         QTableWidgetItem *id_item = new QTableWidgetItem(id);
@@ -126,15 +126,16 @@ void CommunicatorsDialog::set_communicators(const Communicators &communicators, 
         size_item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
         table->setItem(row, 0, id_item);
         table->setItem(row, 1, new QTableWidgetItem(is_inter ? tr("Inter") : tr("Intra")));
-        table->setItem(row, 2, size_item);
-        table->setItem(row, 3, new QTableWidgetItem(g1));
-        table->setItem(row, 4, new QTableWidgetItem(g2));
+        table->setItem(row, 2, new QTableWidgetItem(origin));
+        table->setItem(row, 3, size_item);
+        table->setItem(row, 4, new QTableWidgetItem(g1));
+        table->setItem(row, 5, new QTableWidgetItem(g2));
         inter += is_inter;
     };
     auto add_info = [&](const Communicators::Communicator_Info &info) {
         std::vector<PEAT_Rank> group1, group2;
         get_groups(info, group1, group2);
-        add_row(QString::number(info.comm_id, 16), !group2.empty(), QString::number(info.ranks.size()), format_ranks(group1), format_ranks(group2));
+        add_row(QString::number(info.comm_id, 16), !group2.empty(), info.is_internal ? tr("MPI internal") : tr("User"), QString::number(info.ranks.size()), format_ranks(group1), format_ranks(group2));
     };
     // predefined communicators are not listed in the trace: 1 is MPI_COMM_SELF, 2 is MPI_COMM_WORLD
     auto add_predefined = [&](PEAT_MPI_Comm id) {
@@ -144,15 +145,15 @@ void CommunicatorsDialog::set_communicators(const Communicators &communicators, 
         if (id == 2) {
             for (PEAT_Rank r = 0; r < communicators.get_comm_world_rank_count(); ++r)
                 ranks.push_back(r);
-            name += tr(" (WORLD)");
+            name += tr(" (comm_world)");
             size = QString::number(ranks.size());
             group = format_ranks(ranks);
         } else if (id == 1) { // differs per rank: each rank is alone in its own SELF
-            name += tr(" (SELF)");
+            name += tr(" (comm_self)");
             size = "1";
             group = tr("each rank itself");
         }
-        add_row(name, false, size, group, QString());
+        add_row(name, false, tr("Predefined"), size, group, QString());
     };
     if (!only) {
         add_predefined(1);

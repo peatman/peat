@@ -31,8 +31,8 @@ class CommunicatorsDialog;
 }
 
 // Communicators of a trace read from its app and com files. Throws std::exception on failure.
-struct CommunicatorsData {
-    explicit CommunicatorsData(const Trace_Info &info);
+struct Communicators_Data {
+    explicit Communicators_Data(const Trace_Info &info);
     Global_Parameters glob;
     Model_ID model_id;
     Communicators communicators;
@@ -49,7 +49,7 @@ class CommunicatorsDialog : public QDialog
     // Shows every communicator, or only those listed in `only` (e.g. the communicator of an event).
     void set_communicators(const Communicators &communicators, const std::vector<PEAT_MPI_Comm> *only = nullptr);
     // Reads the communicators of the trace once (cached in `data`); returns false after reporting an error.
-    static bool load(QWidget *parent, const Trace_Info &info, std::shared_ptr<CommunicatorsData> &data);
+    static bool load(QWidget *parent, const Trace_Info &info, std::shared_ptr<Communicators_Data> &data);
 
     static QString format_ranks(const std::vector<PEAT_Rank> &ranks);
     // Group 1 (local) and group 2 (remote, empty for an intra communicator) of a communicator.
