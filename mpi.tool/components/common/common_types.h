@@ -782,7 +782,7 @@ struct PEAT_Record_Header {
     int level;                    // nesting depth, 0 for a top-level record
     int payload;                  // index of the first payload field on the .mpi line (function name)
     int hwc_payload;              // index of the first payload field on the .hwc line (first tsc): nested lines carry the ids only
-    PEAT_Record_Header() : thread_id(0), num_children(-1), level(0), payload(3), hwc_payload(3) {}
+    PEAT_Record_Header() : thread_id(0), num_children(-1), level(0), payload(3), hwc_payload(1) {}
     void parse(const String_Split &line, int id_columns);     // from the .mpi line
     void parse_hwc(const String_Split &line, int id_columns); // from the .hwc line alone (no thread/num_children in the nested format)
     PEAT_Bool same_ids(const PEAT_Record_Header &other) const { return ids == other.ids && thread_id == other.thread_id; }
