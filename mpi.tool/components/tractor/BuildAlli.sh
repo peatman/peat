@@ -68,9 +68,9 @@ unset TRANSPORT
 
 
 # orinary mvapich2 builds (no ct and transport) 
- ./Build.sh mvapich:2.3.5x-mt-ib-verbs       mvapich2 off   off  off  off off off &
+# ./Build.sh mvapich:2.3.5x-mt-ib-verbs       mvapich2 off   off  off  off off off &
 # ./Build.sh mvapich:2.3.5x-mt-ib-verbs       mvapich2 off   off  on   off off off &
- ./Build.sh mvapich:2.3.5x-mt-ib-verbs       mvapich2 off   on   off  off off off &
+# ./Build.sh mvapich:2.3.5x-mt-ib-verbs       mvapich2 off   on   off  off off off &
 # ./Build.sh mvapich:2.3.5x-mt-ib-verbs       mvapich2 off   on   on   off off off &
 
 #          1                                  2       3    4     5    6   7    8 
