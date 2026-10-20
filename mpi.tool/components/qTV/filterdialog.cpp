@@ -26,10 +26,10 @@ FilterDialog::FilterDialog(QWidget *parent)
 {
     ui->setupUi(this);
     ui->tabWidget->setTabEnabled(ui->tabWidget->indexOf(ui->tabCommunicators), false);
+    setSizeGripEnabled(true);
     QHeaderView *header = ui->tableComms->horizontalHeader();
-    header->setSectionResizeMode(QHeaderView::ResizeToContents);
-    header->setSectionResizeMode(4, QHeaderView::Stretch);
-    header->setSectionResizeMode(5, QHeaderView::Stretch);
+    header->setSectionResizeMode(QHeaderView::Interactive);
+    header->setStretchLastSection(true);
 }
 
 FilterDialog::~FilterDialog()
@@ -103,6 +103,7 @@ void FilterDialog::set_communicators(const Communicators *communicators, const s
         CommunicatorsDialog::get_groups(info, group1, group2);
         add_row(info.comm_id, QString::number(info.comm_id, 16), !group2.empty(), info.is_internal ? tr("MPI internal") : tr("User"), info.ranks.size(), CommunicatorsDialog::format_ranks(group1), CommunicatorsDialog::format_ranks(group2));
     }
+    table->resizeColumnsToContents();
     table->resizeRowsToContents();
     comms_filled = true;
     ui->tabWidget->setTabEnabled(ui->tabWidget->indexOf(ui->tabCommunicators), true);

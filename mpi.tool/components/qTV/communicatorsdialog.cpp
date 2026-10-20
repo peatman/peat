@@ -29,9 +29,9 @@ CommunicatorsDialog::CommunicatorsDialog(QWidget *parent)
 {
     ui->setupUi(this);
     QHeaderView *header = ui->tableWidget->horizontalHeader();
-    header->setSectionResizeMode(QHeaderView::ResizeToContents);
-    header->setSectionResizeMode(4, QHeaderView::Stretch);
-    header->setSectionResizeMode(5, QHeaderView::Stretch);
+    header->setSectionResizeMode(QHeaderView::Interactive); // user-draggable columns; the last one fills the width
+    header->setStretchLastSection(true);
+    setSizeGripEnabled(true);
 }
 
 CommunicatorsDialog::~CommunicatorsDialog()
@@ -169,6 +169,7 @@ void CommunicatorsDialog::set_communicators(const Communicators &communicators, 
                 add_predefined(id);
         }
     }
+    table->resizeColumnsToContents();
     table->resizeRowsToContents();
     ui->labelSummary->setText(tr("%1 communicators (%2 inter)").arg(table->rowCount()).arg(inter));
 }
