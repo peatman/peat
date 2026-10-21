@@ -115,9 +115,9 @@
     <addaction name="actionFilter"/>
     <addaction name="actionCommunicators"/>
    </widget>
-   <widget class="QMenu" name="menuAnalyze">
+   <widget class="QMenu" name="menuAnalyse">
     <property name="title">
-     <string>&amp;Analyze</string>
+     <string>&amp;Analyse</string>
     </property>
     <widget class="QMenu" name="menuCollectives">
      <property name="title">
@@ -145,7 +145,7 @@
    </widget>
    <addaction name="menuFile"/>
    <addaction name="menuView"/>
-   <addaction name="menuAnalyze"/>
+   <addaction name="menuAnalyse"/>
    <addaction name="menuLegend"/>
   </widget>
   <widget class="QToolBar" name="toolBar">
