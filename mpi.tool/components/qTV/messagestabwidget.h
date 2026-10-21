@@ -40,6 +40,7 @@ class MessagesTabWidget : public QTabWidget
     QTableWidget *get_p2p_table();
     QTableWidget *get_gpu_table();
     QTreeWidget *get_collective_tree();
+    void fit_to_contents(const QSize &max_size); // call after the tables are filled: widest tab decides the width
 
   private:
     Ui::MessagesTabWidget *ui;

@@ -45,7 +45,8 @@ extern long long freq;
 void get_cpu_freq();
 struct TV_TraceParts {
     bool mpi_functions[4] = {true, true, true, true};
-    bool mpi_messages[4] = {true, true, true, true};
+    // p2p, blocking collectives, initiation, completion, collective init, collective start, collective completion
+    bool mpi_messages[7] = {true, true, true, true, true, true, true};
     bool omp_functions[5] = {true, true, true, true, true};
     bool gpu_functions[3] = {true, true, true};
     bool transport_functions = true;
@@ -99,8 +100,29 @@ enum TV_Pen_Message_Type {
     TV_PEN_MESSAGE_TYPE_COLLECTIVE,
     TV_PEN_MESSAGE_TYPE_GPU_HD_TRANSFER,
     TV_PEN_MESSAGE_TYPE_GPU_EXEC,
+    // TV_PEN_MESSAGE_TYPE_COLLECTIVE is the blocking collective; the following ones are appended (saved colours are keyed by index)
+    TV_PEN_MESSAGE_TYPE_COLLECTIVE_START,      // starts of a nonblocking (MPI_Ibcast) or persistent (MPI_Start*) collective
+    TV_PEN_MESSAGE_TYPE_COLLECTIVE_COMPLETION, // completions (Wait/Test/...) of a nonblocking/persistent collective
+    TV_PEN_MESSAGE_TYPE_COLLECTIVE_INIT,       // inits of a persistent collective (MPI_Bcast_init)
     TV_PEN_MESSAGE_TYPE_MAX
 };
+
+// index in TV_TraceParts::mpi_messages that shows/hides a collective message type, -1 for other types
+inline int collective_message_flag(TV_Pen_Message_Type type)
+{
+    switch (type) {
+    case TV_PEN_MESSAGE_TYPE_COLLECTIVE:
+        return 1;
+    case TV_PEN_MESSAGE_TYPE_COLLECTIVE_INIT:
+        return 4;
+    case TV_PEN_MESSAGE_TYPE_COLLECTIVE_START:
+        return 5;
+    case TV_PEN_MESSAGE_TYPE_COLLECTIVE_COMPLETION:
+        return 6;
+    default:
+        return -1;
+    }
+}
 
 struct TV_Colors {
     QPen message_pens[TV_PEN_MESSAGE_TYPE_MAX];

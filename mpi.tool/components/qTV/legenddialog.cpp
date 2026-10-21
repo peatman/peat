@@ -30,6 +30,9 @@ LegendDialog::LegendDialog(QWidget *parent)
     message_items.insert("Initiation", TV_PEN_MESSAGE_TYPE_INITIATION);
     message_items.insert("Completion", TV_PEN_MESSAGE_TYPE_COMPLETION);
     message_items.insert("Collective", TV_PEN_MESSAGE_TYPE_COLLECTIVE);
+    message_items.insert("Collective Init", TV_PEN_MESSAGE_TYPE_COLLECTIVE_INIT);
+    message_items.insert("Collective Start",TV_PEN_MESSAGE_TYPE_COLLECTIVE_START);
+    message_items.insert("Collective Completion", TV_PEN_MESSAGE_TYPE_COLLECTIVE_COMPLETION);
     message_items.insert("GPU H/D Transfer", TV_PEN_MESSAGE_TYPE_GPU_HD_TRANSFER);
     message_items.insert("GPU Exec", TV_PEN_MESSAGE_TYPE_GPU_EXEC);
 

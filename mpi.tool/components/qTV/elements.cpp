@@ -85,6 +85,89 @@ bool Elements::find_collective(Collective &entry)
     return false;
 }
 
+void Elements::resolve_collectives(TV_TraceParts &tp)
+{
+    // draws the chain across ranks as messages of the given type; the chain is also kept in coll[] for the region tables
+    struct Chain {
+        Elements *self;
+        TV_TraceParts &tp;
+        PEAT_Rank file_rank;
+        void operator()(Collective &c, TV_Pen_Message_Type type, size_t index) const
+        {
+            if (c.events.size() < 2)
+                return;
+            for (std::map<PEAT_Rank, TV_Event *>::const_iterator to_it = c.events.begin(), from_it = to_it++; to_it != c.events.end(); ++to_it, ++from_it) {
+                self->add_message(from_it->second, to_it->second, type, tp, file_rank, index);
+            }
+        }
+    };
+    // k-th Bind_Collective line of one persistent collective (same members) = its k-th start on every rank
+    std::map<std::pair<PEAT_Rank, PEAT_Event_IDs>, size_t> starts_seen;
+    for (PEAT_Rank file_rank = 0; file_rank < (PEAT_Rank)pending_colls.size(); ++file_rank) {
+        Chain chain = {this, tp, file_rank};
+        for (size_t p = 0; p < pending_colls[file_rank].size(); ++p) {
+            const size_t members_index = pending_colls[file_rank][p];
+            const Collective members = coll[file_rank][members_index]; // copy: pushing below may reallocate coll[file_rank]
+            PEAT_Bool persistent = false;
+            for (std::map<PEAT_Rank, TV_Event *>::const_iterator it = members.events.begin(); it != members.events.end(); ++it) {
+                persistent = persistent || global_func_id.check_property(it->second->func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT);
+            }
+            // starts: where the ranks entered the collective (the member itself for MPI_Ibcast, the k-th MPI_Start* for MPI_Bcast_init)
+            Collective starts;
+            starts.func_id = members.func_id;
+            size_t occurrence = 0;
+            if (persistent) {
+                occurrence = starts_seen[std::make_pair(members.events.begin()->first, members.events.begin()->second->ids)]++;
+                for (std::map<PEAT_Rank, TV_Event *>::const_iterator it = members.events.begin(); it != members.events.end(); ++it) {
+                    if (it->first < 0 || it->first >= (PEAT_Rank)bind_initiation_map.size())
+                        continue;
+                    std::map<PEAT_Event_IDs, std::vector<PEAT_Event_IDs>>::const_iterator init_it = bind_initiation_map[it->first].find(it->second->ids);
+                    if (init_it == bind_initiation_map[it->first].end() || occurrence >= init_it->second.size())
+                        continue;
+                    TV_Event *start = find_event(it->first, init_it->second[occurrence]);
+                    if (start)
+                        starts.events[it->first] = start;
+                }
+                if (occurrence == 0) // every start repeats the init's Bind_Collective line: draw the init once
+                    chain(coll[file_rank][members_index], TV_PEN_MESSAGE_TYPE_COLLECTIVE_INIT, members_index);
+            } else {
+                starts.events = members.events;
+            }
+            // completions are keyed by the start phase's ids
+            Collective done;
+            done.func_id = members.func_id;
+            done.completion = true;
+            for (std::map<PEAT_Rank, TV_Event *>::const_iterator it = starts.events.begin(); it != starts.events.end(); ++it) {
+                if (it->first < 0 || it->first >= (PEAT_Rank)bind_completion_map.size())
+                    continue;
+                std::map<PEAT_Event_IDs, PEAT_Event_IDs>::const_iterator comp_it = bind_completion_map[it->first].find(it->second->ids);
+                if (comp_it == bind_completion_map[it->first].end())
+                    continue;
+                TV_Event *comp = find_event(it->first, comp_it->second);
+                if (comp)
+                    done.events[it->first] = comp;
+            }
+            if (!persistent && done.events.empty()) { // blocking collective
+                chain(coll[file_rank][members_index], TV_PEN_MESSAGE_TYPE_COLLECTIVE, members_index);
+                continue;
+            }
+            if (persistent) {
+                if (starts.events.size() > 1) {
+                    coll[file_rank].push_back(starts);
+                    chain(coll[file_rank].back(), TV_PEN_MESSAGE_TYPE_COLLECTIVE_START, coll[file_rank].size() - 1);
+                }
+            } else {
+                chain(coll[file_rank][members_index], TV_PEN_MESSAGE_TYPE_COLLECTIVE_START, members_index);
+            }
+            if (done.events.size() > 1) {
+                coll[file_rank].push_back(done);
+                chain(coll[file_rank].back(), TV_PEN_MESSAGE_TYPE_COLLECTIVE_COMPLETION, coll[file_rank].size() - 1);
+            }
+        }
+    }
+    pending_colls.clear();
+}
+
 bool Elements::get_message(const PEAT_Rank rank, File_Storage_GZ *input_bind, TV_TraceParts &tp)
 {
 #ifdef _OPENMP
@@ -148,9 +231,10 @@ bool Elements::get_message(const PEAT_Rank rank, File_Storage_GZ *input_bind, TV
                         coll[rank].push_back(tmp);
                         index = coll[rank].size() - 1;
                     }
-                    for (std::map<PEAT_Rank, TV_Event *>::iterator to_it = tmp.events.begin(), from_it = to_it++; to_it != tmp.events.end(); ++to_it, ++from_it) {
-                        add_message(from_it->second, to_it->second, TV_PEN_MESSAGE_TYPE_COLLECTIVE, tp, rank, index);
-                    }
+                    // drawn in the resolve step after the bind files are read: whether this is a nonblocking/persistent
+                    // collective (and so also has completions to draw) is only known from the completion lines
+                    if (index != (size_t)-1)
+                        pending_colls[rank].push_back(index);
                 }
             } break;
             case PEAT_RT_Bind_Peer: { // func_A:rank_A:idsA:func_B:rank_B:idsB:size - both sides at phase[1] (the post); see P2PAL::print_P2PF
@@ -162,20 +246,10 @@ bool Elements::get_message(const PEAT_Rank rank, File_Storage_GZ *input_bind, TV
                 extract(to_rank, trace_line_bind.at(pos + 1));
                 PEAT_Event_IDs to_ids;
                 pos = bind_ids(trace_line_bind, pos + 2, to_rank, to_ids);
-                // draw to the receiver's completion (Wait/Test/Request_Release/...), not its post, when one was
-                // recorded: mat writes to_rank's completion line for its own post before this line, in the same
-                // file, whenever this Bind_Peer line is itself in to_rank's file (mat's default: written to the
-                // receiver's file) - so it's already in bind_completion_map by the time we get here.
-                if (to_rank == rank) {
-                    std::map<PEAT_Event_IDs, PEAT_Event_IDs>::const_iterator comp_it = bind_completion_map[rank].find(to_ids);
-                    if (comp_it != bind_completion_map[rank].end())
-                        to_ids = comp_it->second;
-                }
-                TV_Event *from = find_event(from_rank, from_ids);
-                TV_Event *to = find_event(to_rank, to_ids);
-                if (from && to) {
-                    add_message(from, to, TV_PEN_MESSAGE_TYPE_NORMAL, tp);
-                }
+                // The receiver's completion line (Wait/Test/Request_Release/...) may come after this line, so
+                // resolve it in resolve_peers() once all bind files are read.
+                Pending_Peer peer = {from_rank, from_ids, to_rank, to_ids};
+                pending_peers[rank].push_back(peer);
             } break;
             case PEAT_RT_Bind_Completion: { // type:func:ids:func:ids (both records of the file's rank)
                 PEAT_Rank to_rank = rank;
@@ -216,8 +290,11 @@ bool Elements::get_message(const PEAT_Rank rank, File_Storage_GZ *input_bind, TV
                 PEAT_Event_IDs from_ids, to_ids;
                 int pos = bind_ids(trace_line_bind, 2, from_rank, from_ids);
                 bind_ids(trace_line_bind, pos + 1, to_rank, to_ids);
-                TV_ToR_Event *from = static_cast<TV_ToR_Event *>(find_event(from_rank, from_ids));
-                TV_Start_Event *to = static_cast<TV_Start_Event *>(find_event(to_rank, to_ids));
+                // the init is a ToR for point-to-point but a collective event for persistent collectives
+                // (MPI_Barrier_init -> MPI_Startall), so it is taken as a plain TV_Event
+                bind_initiation_map[rank][from_ids].push_back(to_ids); // init -> its starts, for persistent collectives
+                TV_Event *from = find_event(from_rank, from_ids);
+                TV_Event *to = find_event(to_rank, to_ids);
                 if (from && to) {
                     to->t_events.push_back(from);
                     add_message(from, to, TV_PEN_MESSAGE_TYPE_INITIATION, tp);
@@ -421,6 +498,12 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
         m_r = bind_file_names.size();
         bind_completion_map.clear();
         bind_completion_map.resize(m_r); // sized single-threaded: each rank below only ever touches its own index
+        bind_initiation_map.clear();
+        bind_initiation_map.resize(m_r);
+        pending_peers.clear();
+        pending_peers.resize(m_r);
+        pending_colls.clear();
+        pending_colls.resize(m_r);
         if (tp.mpi_messages[0] || tp.mpi_messages[1] || tp.mpi_messages[2] || tp.mpi_messages[3]) {
 #pragma omp parallel for schedule(dynamic) num_threads(load_threads)
             for (PEAT_Rank r = 0; r < m_r; ++r) {
@@ -441,6 +524,25 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
 #pragma omp atomic
                 rank_completed++;
             }
+            // all completions are known now: draw each peer line to the receiver's completion, not its post,
+            // when one was recorded
+            for (std::vector<std::vector<Pending_Peer>>::const_iterator file_it = pending_peers.begin(); file_it != pending_peers.end(); ++file_it) {
+                for (std::vector<Pending_Peer>::const_iterator it = file_it->begin(); it != file_it->end(); ++it) {
+                    PEAT_Event_IDs to_ids = it->to_ids;
+                    if (it->to_rank >= 0 && it->to_rank < (PEAT_Rank)bind_completion_map.size()) {
+                        std::map<PEAT_Event_IDs, PEAT_Event_IDs>::const_iterator comp_it = bind_completion_map[it->to_rank].find(to_ids);
+                        if (comp_it != bind_completion_map[it->to_rank].end())
+                            to_ids = comp_it->second;
+                    }
+                    TV_Event *from = find_event(it->from_rank, it->from_ids);
+                    TV_Event *to = find_event(it->to_rank, to_ids);
+                    if (from && to) {
+                        add_message(from, to, TV_PEN_MESSAGE_TYPE_NORMAL, tp);
+                    }
+                }
+            }
+            pending_peers.clear();
+            resolve_collectives(tp);
         }
         pb->setFormat("Reading transport files " + prog_bar_text + " done");
         QApplication::processEvents();
@@ -1076,7 +1178,10 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                     p[tid]->drawPoint(x_to + wdt_to * 0.5, y_to);
                     break;
                 case TV_PEN_MESSAGE_TYPE_COLLECTIVE:
-                    if (!shown->mpi_messages[1] || !shown->mpi_functions[2])
+                case TV_PEN_MESSAGE_TYPE_COLLECTIVE_INIT:
+                case TV_PEN_MESSAGE_TYPE_COLLECTIVE_START:
+                case TV_PEN_MESSAGE_TYPE_COLLECTIVE_COMPLETION:
+                    if (!shown->mpi_messages[collective_message_flag(it_msg->second.msg_type)] || !shown->mpi_functions[2])
                         continue;
                     y_from += paint.mpi_ulc.at(ranks_to_load_v_rev[from->rank]);
                     y_to += paint.mpi_ulc.at(ranks_to_load_v_rev[to->rank]);
@@ -1086,7 +1191,7 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                         no_draw_elems++;
                         continue;
                     }
-                    p[tid]->setPen(tv_colors.message_pens[TV_PEN_MESSAGE_TYPE_COLLECTIVE]);
+                    p[tid]->setPen(tv_colors.message_pens[it_msg->second.msg_type]);
                     p[tid]->drawLine(x_from + wdt_from * 0.5, y_from + from_thread_height * 0.5, x_to + wdt_to * 0.5, y_to + to_thread_height * 0.5);
                     // Point at the end of the line
                     // p[tid]->setPen(message_pens[TV_PEN_MESSAGE_TYPE_NONE]);
@@ -1330,7 +1435,7 @@ void Elements::add_message(TV_Event *from, TV_Event *to, TV_Pen_Message_Type typ
     }
     if (type == TV_PEN_MESSAGE_TYPE_NORMAL && !tp.mpi_messages[0])
         return;
-    if (type == TV_PEN_MESSAGE_TYPE_COLLECTIVE && !tp.mpi_messages[1])
+    if (collective_message_flag(type) >= 0 && !tp.mpi_messages[collective_message_flag(type)])
         return;
     if (type == TV_PEN_MESSAGE_TYPE_INITIATION && !tp.mpi_messages[2])
         return;
@@ -1509,12 +1614,12 @@ void Elements::get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_t
         tbl->setItem(row, 8, after);
         // Before ID
         QTableWidgetItem *before_id = new QTableWidgetItem();
-        before_id->setData(Qt::DisplayRole, prev_event ? prev_event->ids[0] : -1);
+        before_id->setData(Qt::DisplayRole, prev_event ? QString::fromStdString(peat_ids_string(prev_event->ids)) : QString("-1"));
         before_id->setTextAlignment(Qt::AlignRight);
         tbl->setItem(row, 9, before_id);
         // AfterID
         QTableWidgetItem *after_id = new QTableWidgetItem();
-        after_id->setData(Qt::DisplayRole, next_event ? next_event->ids[0] : -1);
+        after_id->setData(Qt::DisplayRole, next_event ? QString::fromStdString(peat_ids_string(next_event->ids)) : QString("-1"));
         after_id->setTextAlignment(Qt::AlignRight);
         tbl->setItem(row, 10, after_id);
 
@@ -1617,12 +1722,12 @@ void Elements::get_messages_in_region(QTableWidget *initiation, QTableWidget *co
 {
     std::set<const Elements::Collective *> coll_set;
     QStringList p2p_column_names;
-    p2p_column_names << "From" << "Rank" << "Uniq Idx" << "Time" << "To" << "Rank" << "Uniq Idx" << "Time" << "Duration(clk)" << "Duration(sec E-06)" << "Volume(B)";
+    p2p_column_names << "From" << "Rank" << "IDs" << "Time" << "To" << "Rank" << "IDs" << "Time" << "Duration(clk)" << "Duration(sec E-06)" << "Volume(B)";
     p2p->setColumnCount(p2p_column_names.size());
     p2p->setHorizontalHeaderLabels(p2p_column_names);
     p2p->setWindowTitle("Messages in region");
     QStringList ic_column_names;
-    ic_column_names << "From" << "Rank" << "Uniq Idx" << "Time" << "To" << "Rank" << "Uniq Idx" << "Time" << "Duration(clk)" << "Duration(sec E-06)";
+    ic_column_names << "From" << "Rank" << "IDs" << "Time" << "To" << "Rank" << "IDs" << "Time" << "Duration(clk)" << "Duration(sec E-06)";
     initiation->setColumnCount(ic_column_names.size());
     initiation->setHorizontalHeaderLabels(ic_column_names);
     initiation->setWindowTitle("Messages in region");
@@ -1640,13 +1745,13 @@ void Elements::get_messages_in_region(QTableWidget *initiation, QTableWidget *co
             if ((from->get_message_draw_start() <= start && to->get_message_draw_end() <= start) || (from->get_message_draw_start() >= stop && to->get_message_draw_end() >= stop))
                 continue;
             //            qDebug() << msgs.at(i);
-            if (it_msg->second.msg_type == TV_PEN_MESSAGE_TYPE_COLLECTIVE) {
+            if (collective_message_flag(it_msg->second.msg_type) >= 0) {
                 const Elements::Collective *evt = &(coll[it_msg->second.rank][it_msg->second.index]);
                 if (coll_set.count(evt))
                     continue;
                 coll_set.insert(evt);
                 QStringList itemList;
-                itemList.append(global_func_id.name_by_idx(evt->func_id)); // itemDescriptionString.str().c_str());
+                itemList.append(QString(global_func_id.name_by_idx(evt->func_id)) + (it_msg->second.msg_type == TV_PEN_MESSAGE_TYPE_COLLECTIVE_COMPLETION ? " (completion)" : it_msg->second.msg_type == TV_PEN_MESSAGE_TYPE_COLLECTIVE_START ? " (start)" : it_msg->second.msg_type == TV_PEN_MESSAGE_TYPE_COLLECTIVE_INIT ? " (init)" : "")); // itemDescriptionString.str().c_str());
                 QTreeWidgetItem *func_name = new QTreeWidgetItem((QTreeWidget *)0, itemList);
                 QFont font1 = func_name->font(1);
                 font1.setBold(true);
@@ -1655,8 +1760,9 @@ void Elements::get_messages_in_region(QTableWidget *initiation, QTableWidget *co
                 for (std::map<PEAT_Rank, TV_Event *>::const_iterator evt_it = evt->events.cbegin(); evt_it != evt->events.cend(); ++evt_it) {
                     QTreeWidgetItem *func_prop = new QTreeWidgetItem(func_name);
                     func_prop->setText(1, QString("%1").arg(evt_it->second->rank));
-                    func_prop->setText(2, QString("%1").arg(evt_it->second->ids[0]));
+                    func_prop->setText(2, QString::fromStdString(peat_ids_string(evt_it->second->ids)));
                     if (user_regions) {
+                        const bool is_coll_evt = evt_it->second->get_event_type() == TV_EVENT_TYPE_COLLECTIVE; // completions (Wait/Test/...) and persistent starts are not
                         QString tt;
                         QString ttf;
                         QString source_file;
@@ -1683,10 +1789,12 @@ void Elements::get_messages_in_region(QTableWidget *initiation, QTableWidget *co
                         func_prop->setData(2, Qt::UserRole, userData);
                         func_prop->setToolTip(2, tt);
                         std::ostringstream coll_prop;
-                        coll_prop << "Root: " << evt_it->second->get_root() << "\nSend: ";
-                        static_cast<TV_Collective_Event *>(evt_it->second)->print_tx_bytes(coll_prop);
-                        coll_prop << "Recv: ";
-                        static_cast<TV_Collective_Event *>(evt_it->second)->print_rx_bytes(coll_prop);
+                        if (is_coll_evt) {
+                            coll_prop << "Root: " << evt_it->second->get_root() << "\nSend: ";
+                            static_cast<TV_Collective_Event *>(evt_it->second)->print_tx_bytes(coll_prop);
+                            coll_prop << "Recv: ";
+                            static_cast<TV_Collective_Event *>(evt_it->second)->print_rx_bytes(coll_prop);
+                        }
                         ttf = coll_prop.str().c_str();
                         // Word-wrap ttf to make tooltip more square
                         {
@@ -1732,9 +1840,9 @@ void Elements::get_messages_in_region(QTableWidget *initiation, QTableWidget *co
                 i_from_rank->setData(Qt::DisplayRole, from->rank);
                 i_from_rank->setTextAlignment(Qt::AlignHCenter);
                 tw->setItem(tw->rowCount() - 1, 1, i_from_rank);
-                // Uniq Idx (from)
+                // IDs (from)
                 QTableWidgetItem *i_from_idx = new QTableWidgetItem();
-                i_from_idx->setData(Qt::DisplayRole, from->ids[0]);
+                i_from_idx->setData(Qt::DisplayRole, QString::fromStdString(peat_ids_string(from->ids)));
                 i_from_idx->setTextAlignment(Qt::AlignHCenter);
                 tw->setItem(tw->rowCount() - 1, 2, i_from_idx);
                 // Time In (from)
@@ -1752,9 +1860,9 @@ void Elements::get_messages_in_region(QTableWidget *initiation, QTableWidget *co
                 i_to_rank->setData(Qt::DisplayRole, to->rank);
                 i_to_rank->setTextAlignment(Qt::AlignHCenter);
                 tw->setItem(tw->rowCount() - 1, 5, i_to_rank);
-                // UNiq Idx (to)
+                // IDs (to)
                 QTableWidgetItem *i_to_idx = new QTableWidgetItem();
-                i_to_idx->setData(Qt::DisplayRole, to->ids[0]);
+                i_to_idx->setData(Qt::DisplayRole, QString::fromStdString(peat_ids_string(to->ids)));
                 i_to_idx->setTextAlignment(Qt::AlignHCenter);
                 tw->setItem(tw->rowCount() - 1, 6, i_to_idx);
                 // Time Out (to)
@@ -1904,11 +2012,11 @@ void Elements::get_user_addresses_in_region(QTreeWidget *tw, const PEAT_Clock st
             QStringList itemList1, itemList2;
             itemList1.append(QString("%1").arg(r));
             itemList1.append(global_func_id.name_by_idx(cur_func_prev->func_id)); // itemDescriptionString.str().c_str());
-            itemList1.append(QString("%1").arg(cur_func_prev->ids[0]));
+            itemList1.append(QString::fromStdString(peat_ids_string(cur_func_prev->ids)));
             itemList1.append(QString("%1/%2").arg(cur_func_prev->get_tx_bytes()).arg(cur_func_prev->get_rx_bytes()));
             itemList2.append("");
             itemList2.append(global_func_id.name_by_idx(cur_func_next->func_id)); // itemDescriptionString.str().c_str());
-            itemList2.append(QString("%1").arg(cur_func_next->ids[0]));
+            itemList2.append(QString::fromStdString(peat_ids_string(cur_func_next->ids)));
             itemList2.append(QString("%1/%2").arg(cur_func_next->get_tx_bytes()).arg(cur_func_next->get_rx_bytes()));
             QTreeWidgetItem *func_name_prev = new QTreeWidgetItem((QTreeWidget *)0, itemList1);
             QFont font1 = func_name_prev->font(1);
@@ -2163,6 +2271,8 @@ PEAT_Bool Elements::find_coll_most_imbalance()
     candidates.clear();
     for (std::vector<std::vector<Collective>>::iterator rank_it = coll.begin(); rank_it != coll.end(); ++rank_it) {
         for (std::vector<Collective>::iterator coll_it = rank_it->begin(); coll_it != rank_it->end(); ++coll_it) {
+            if (coll_it->completion)
+                continue; // Wait/Test durations say nothing about the collective's imbalance
 #if 0
             PEAT_Clock min_start = LLONG_MAX, max_start = 0, min_end = LLONG_MAX, max_end = 0;
             double max_coll_clock = 0;
@@ -2209,6 +2319,8 @@ PEAT_Bool Elements::find_coll_least_bw(PEAT_Message_Size cutoff)
     candidates.clear();
     for (std::vector<std::vector<Collective>>::iterator rank_it = coll.begin(); rank_it != coll.end(); ++rank_it) {
         for (std::vector<Collective>::iterator coll_it = rank_it->begin(); coll_it != rank_it->end(); ++coll_it) {
+            if (coll_it->completion)
+                continue;
             PEAT_Clock min_start = LLONG_MAX, max_start = 0, min_end = LLONG_MAX, max_end = 0;
             PEAT_Clock min_duration = LLONG_MAX;
             PEAT_Message_Size size = 0;

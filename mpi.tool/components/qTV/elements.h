@@ -115,6 +115,7 @@ class Elements
     TV_Event *find_event(PEAT_Rank rank, const PEAT_Event_IDs &ids) const;    // any record by its id path
     int bind_ids(const String_Split &line, int pos, PEAT_Rank rank, PEAT_Event_IDs &ids) const; // id columns of a bind record, returns the next field
     TV_Event *find_event(PEAT_Rank rank, PEAT_Clock clk, int thread, int selector) const;
+    void resolve_collectives(TV_TraceParts &tp); // draws pending_colls once bind_completion_map is complete
     TV_Transport_Event *find_transport_event(PEAT_Rank rank, PEAT_Clock clk, int thread) const;
 
     void clear();
@@ -339,6 +340,21 @@ class Elements
     // duplicate the completion's ids into every peer line (see P2PAL::print_P2PF).
     std::vector<std::map<PEAT_Event_IDs, PEAT_Event_IDs>> bind_completion_map;
 
+    // rank -> (persistent init ids -> ids of the Start records that started it, in trace order), from
+    // PEAT_RT_Bind_Initiation lines. Lets resolve_collectives() find the k-th start of a persistent collective.
+    std::vector<std::map<PEAT_Event_IDs, std::vector<PEAT_Event_IDs>>> bind_initiation_map;
+
+    // PEAT_RT_Bind_Peer lines, kept until every bind file is read: the receiver's completion line may follow
+    // the peer line (or live in another file than the peer line), so they are resolved after the read loop.
+    struct Pending_Peer {
+        PEAT_Rank from_rank;
+        PEAT_Event_IDs from_ids;
+        PEAT_Rank to_rank;
+        PEAT_Event_IDs to_ids;
+    };
+    std::vector<std::vector<Pending_Peer>> pending_peers; // indexed by the rank of the file the line was read from
+    std::vector<std::vector<size_t>> pending_colls;       // same indexing: positions in coll[file rank] whose messages are drawn once completions are known
+
     // Messages related data structures
     std::vector<std::map<PEAT_UID, TV_Message>> messages;
     std::map<double, PEAT_Viewport> candidates;
@@ -350,7 +366,8 @@ class Elements
     // Collective related data structures
     struct Collective {
         PEAT_MPI_Func_ID func_id;
-        Collective() : func_id(TMPI_FUNC_ID_NONE) {}
+        PEAT_Bool completion; // events are the completions (Wait/Test/...) of a nonblocking/persistent collective, not its starts
+        Collective() : func_id(TMPI_FUNC_ID_NONE), completion(false) {}
         std::map<PEAT_Rank, TV_Event *> events;
         ALT_ALLOCATOR;
     };

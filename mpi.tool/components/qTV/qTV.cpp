@@ -21,7 +21,9 @@
 #include "elements.h"
 #include "textviewer.h"
 #include <QFontMetrics>
+#include <QGuiApplication>
 #include <QHeaderView>
+#include <QScreen>
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -1225,6 +1227,8 @@ void TV::look_for_messages()
         connect(messages_view->get_collective_tree(), &QTreeWidget::itemClicked, this, &TV::handle_tree_item_clicked);
 
         // connect((const QObject*)messagesView->horizontalHeader(), SIGNAL(sectionClicked(int)), (const QObject*) messagesView, SLOT(sortByColumn(int)));//sort column by header click
+        QScreen *screen = QGuiApplication::primaryScreen();
+        messages_view->fit_to_contents(screen ? screen->availableGeometry().size() * 0.9 : QSize(1600, 900));
         messages_view->show();
     }
 }

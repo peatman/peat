@@ -359,6 +359,30 @@
        <enum>Checked</enum>
       </property>
      </item>
+     <item>
+      <property name="text">
+       <string>Collective Init</string>
+      </property>
+      <property name="checkState">
+       <enum>Checked</enum>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Collective Start</string>
+      </property>
+      <property name="checkState">
+       <enum>Checked</enum>
+      </property>
+     </item>
+     <item>
+      <property name="text">
+       <string>Collective Completion</string>
+      </property>
+      <property name="checkState">
+       <enum>Checked</enum>
+      </property>
+     </item>
     </widget>
    </widget>
    <widget class="QListWidget" name="OMP">

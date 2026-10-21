@@ -47,6 +47,9 @@ void FilterDialog::set_properties(const TV_TraceParts &shown)
     ui->checkCollectivesMessages->setChecked(shown.mpi_messages[1]);
     ui->checkInitiationMessages->setChecked(shown.mpi_messages[2]);
     ui->checkCompletionsMessages->setChecked(shown.mpi_messages[3]);
+    ui->checkCollectiveInitMessages->setChecked(shown.mpi_messages[4]);
+    ui->checkCollectiveStartMessages->setChecked(shown.mpi_messages[5]);
+    ui->checkCollectiveCompletionMessages->setChecked(shown.mpi_messages[6]);
 }
 
 void FilterDialog::get_properties(TV_TraceParts &shown) const
@@ -59,6 +62,9 @@ void FilterDialog::get_properties(TV_TraceParts &shown) const
     shown.mpi_messages[1] = ui->checkCollectivesMessages->isChecked();
     shown.mpi_messages[2] = ui->checkInitiationMessages->isChecked();
     shown.mpi_messages[3] = ui->checkCompletionsMessages->isChecked();
+    shown.mpi_messages[4] = ui->checkCollectiveInitMessages->isChecked();
+    shown.mpi_messages[5] = ui->checkCollectiveStartMessages->isChecked();
+    shown.mpi_messages[6] = ui->checkCollectiveCompletionMessages->isChecked();
     if (comms_filled) {
         shown.hidden_comms.clear();
         for (int row = 0; row < ui->tableComms->rowCount(); ++row) {

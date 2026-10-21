@@ -69,6 +69,12 @@ TV_Global_Colors::TV_Global_Colors() : TV_Colors()
     message_pens[TV_PEN_MESSAGE_TYPE_GPU_HD_TRANSFER].setWidth(2);
     message_pens[TV_PEN_MESSAGE_TYPE_GPU_EXEC].setWidth(2);
     message_pens[TV_PEN_MESSAGE_TYPE_COLLECTIVE].setWidth(2);
+    message_pens[TV_PEN_MESSAGE_TYPE_COLLECTIVE_START].setBrush(QColor(255, 140, 0));
+    message_pens[TV_PEN_MESSAGE_TYPE_COLLECTIVE_COMPLETION].setBrush(Qt::green);
+    message_pens[TV_PEN_MESSAGE_TYPE_COLLECTIVE_INIT].setBrush(QColor(170, 0, 255));
+    message_pens[TV_PEN_MESSAGE_TYPE_COLLECTIVE_INIT].setWidth(2);
+    message_pens[TV_PEN_MESSAGE_TYPE_COLLECTIVE_START].setWidth(2);
+    message_pens[TV_PEN_MESSAGE_TYPE_COLLECTIVE_COMPLETION].setWidth(2);
 
     event_brushes[TV_BRUSH_EVENT_TYPE_USER_CODE].setColor(Qt::darkBlue);
     event_brushes[TV_BRUSH_EVENT_TYPE_SOURCE].setColor(Qt::red);
