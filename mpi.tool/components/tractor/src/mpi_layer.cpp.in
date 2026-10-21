@@ -1001,10 +1001,7 @@ static int MPI_Intercomm_create_from_groups_internal(MPI_Group local_group, int 
 
 
 #ifdef _PARSE_MPI_INTERNAL_
-#ifdef _OPENMPI_
-void mpi_internal_comm_create_internal(MPID_Comm *comm, MPID_Comm *parent_comm, int kind, void **p_entrys) {}
-void mpi_internal_comm_free_internal(MPID_Comm *comm, void **p_entrys) {}
-#else
+// mpi_internal_comm_create/free are called by the patched mpich based and Open MPI libraries (see patches/)
 void pmpi_internal_comm_create(MPID_Comm *comm, MPID_Comm *parent_comm, int kind);
 void pmpi_internal_comm_free(MPID_Comm *comm);
 #undef copy_comm
@@ -1069,5 +1066,4 @@ void mpi_internal_comm_free_internal(MPID_Comm *comm, void **p_entrys)
 #include "mpi_layer_comm_end.epilog.h"
     __DEBUG_EPILOG_MPI_LAYER__
 }
-#endif
 #endif

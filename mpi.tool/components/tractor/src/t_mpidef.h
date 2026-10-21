@@ -151,7 +151,13 @@ static inline void determine_comm_size(MPI_Comm comm, int kind, int *send_size, 
 
 #ifdef _PARSE_MPI_INTERNAL_
 
+#ifdef _OPENMPI_
+/* an MPI_Comm of Open MPI is a pointer to its communicator, so the communicator-internal hooks
+   (mpi_internal_comm_create/free) share their MPID_Comm * signature with the mpich branch */
+typedef struct ompi_communicator_t MPID_Comm;
+#else
 struct MPID_Comm;
+#endif
 struct MPID_Request;
 /* stub for openmpi */
 #ifdef _OPENMPI_
