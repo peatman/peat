@@ -889,7 +889,7 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                 }
                 p[tid]->setOpacity(1.0);
                 QColor cc = threadImages[tid]->pixel(x_start, y_start);
-                if (cc != user_region_color && (f_width < 2)) {
+                if (cc != user_region_color && (f_width < shown->func_min_width)) {
                     no_draw_elems++;
                     continue;
                 }
@@ -1039,7 +1039,7 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                 long transport_y_start = thread_height * cur_transport->thread + paint.transport_ulc.at(r);
                 p[tid]->setOpacity(1.0);
                 QColor transport_cc = threadImages[tid]->pixel(x_start, transport_y_start);
-                if (transport_cc != user_region_color && (f_width < 2)) {
+                if (transport_cc != user_region_color && (f_width < shown->func_min_width)) {
                     no_draw_elems++;
                     continue;
                 }
@@ -1126,7 +1126,9 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
             long wdt_to = to->e_time.pe.duration() * pix_in_tic;
             long x_to = (to->e_time.pe.in - start_time) * pix_in_tic;
             long y_to = y_offset + to_thread_height * to->thread;
-            if ((x_from > 0 && x_from < s_width) || (x_to + wdt_to > 0 && x_to + wdt_to < s_width)) {
+            // by default a line is drawn only if one of its ends is inside the view; optionally also when it just crosses the view
+            // (e.g. init long before, start long after)
+            if ((x_from > 0 && x_from < s_width) || (x_to + wdt_to > 0 && x_to + wdt_to < s_width) || (shown->draw_offscreen_messages && qMin(x_from, x_to + wdt_to) < s_width && qMax(x_from, x_to + wdt_to) > 0)) {
                 // Do not draw a line with 1 pix width
                 p[tid]->setPen(tv_colors.message_pens[it_msg->second.msg_type]);
                 switch (it_msg->second.msg_type) {
@@ -1604,11 +1606,15 @@ void Elements::get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_t
         tbl->setItem(row, 6, duration_micro);
         // distance Before
         PEAT_Clock prev_out = prev_event ? prev_event->e_time.func.out : cur_func_ptr->e_time.func.in;
+        if (prev_out > cur_func_ptr->e_time.func.in) // overlapping/nested neighbour: no negative gap
+            prev_out = cur_func_ptr->e_time.func.in;
         QTableWidgetItem *before = new QTableWidgetItem(outputDouble(cur_func_ptr->e_time.func.in - prev_out));
         before->setTextAlignment(Qt::AlignRight);
         tbl->setItem(row, 7, before);
         // distance After
         PEAT_Clock next_in = next_event ? next_event->e_time.func.in : cur_func_ptr->e_time.func.out;
+        if (next_in < cur_func_ptr->e_time.func.out) // overlapping/nested neighbour: no negative gap
+            next_in = cur_func_ptr->e_time.func.out;
         QTableWidgetItem *after = new QTableWidgetItem(outputDouble(next_in - cur_func_ptr->e_time.func.out));
         after->setTextAlignment(Qt::AlignRight);
         tbl->setItem(row, 8, after);
@@ -1634,21 +1640,11 @@ void Elements::get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_t
     for (std::vector<std::vector<TV_Event *>>::const_iterator it_rank = eventsV.begin(); it_rank != eventsV.end(); ++it_rank) {
         if (it_rank->empty())
             continue;
-        EventRankTypeConstIter prev_it = lower_bound(*it_rank, start);
-        EventRankTypeConstIter next_it = prev_it;
-        // ++next_it;
-        for (EventRankTypeConstIter it_func = prev_it; it_func != it_rank->cend(); ++it_func) {
+        for (EventRankTypeConstIter it_func = lower_bound(*it_rank, start); it_func != it_rank->cend(); ++it_func) {
             const TV_Event *cur_func_ptr = *it_func;
-            if (it_func != it_rank->cbegin()) {
-                prev_it = it_func;
-                --prev_it;
-            }
-            if (next_it != it_rank->cend()) {
-                ++next_it;
-            }
-            if (next_it == it_rank->cend()) {
-                next_it = it_func;
-            }
+            // absent neighbours (first/last event of the rank) stay NULL, they are not substituted by the event itself
+            const TV_Event *prev_event = (it_func != it_rank->cbegin()) ? *(it_func - 1) : NULL;
+            const TV_Event *next_event = (it_func + 1 != it_rank->cend()) ? *(it_func + 1) : NULL;
             if (cur_func_ptr == NULL)
                 continue;
             if (cur_func_ptr->e_time.func.in > stop)
@@ -1667,7 +1663,7 @@ void Elements::get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_t
                 target = mpi_tw;
                 break;
             }
-            add_row(target, cur_func_ptr, *prev_it, *next_it);
+            add_row(target, cur_func_ptr, prev_event, next_event);
         }
     }
 
@@ -1675,27 +1671,17 @@ void Elements::get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_t
         if (it_rank->empty())
             continue;
         std::vector<TV_Transport_Event *>::const_iterator lb = lower_bound(*it_rank, start);
-        std::vector<TV_Transport_Event *>::const_iterator prev_it = lb;
-        std::vector<TV_Transport_Event *>::const_iterator next_it = prev_it;
         for (std::vector<TV_Transport_Event *>::const_iterator it_func = lb; it_func != it_rank->cend(); ++it_func) {
             const TV_Transport_Event *cur_func_ptr = *it_func;
-            if (it_func != it_rank->cbegin()) {
-                prev_it = it_func;
-                --prev_it;
-            }
-            if (next_it != it_rank->cend()) {
-                ++next_it;
-            }
-            if (next_it == it_rank->cend()) {
-                next_it = it_func;
-            }
+            const TV_Event *prev_event = (it_func != it_rank->cbegin()) ? *(it_func - 1) : NULL;
+            const TV_Event *next_event = (it_func + 1 != it_rank->cend()) ? *(it_func + 1) : NULL;
             if (cur_func_ptr == NULL)
                 continue;
             if (cur_func_ptr->e_time.func.in > stop)
                 break;
             if (cur_func_ptr->e_time.func.out < start)
                 continue;
-            add_row(transport_tw, cur_func_ptr, *prev_it, *next_it);
+            add_row(transport_tw, cur_func_ptr, prev_event, next_event);
         }
     }
 
@@ -1991,11 +1977,12 @@ void Elements::get_user_addresses_in_region(QTreeWidget *tw, const PEAT_Clock st
             }
             // qDebug() << "Rank " << it_rank->first << " IDX prev " << it_func_previous->second.idx << " next " << it_func_next->second.idx;
             const TV_Event *cur_func_prev = *it_func;
-            const TV_Event *cur_func_next = *it_func_next;
-            while (cur_func_prev == NULL && it_func != it_rank->end())
+            // no next event after the last one of the rank: never dereference end()
+            const TV_Event *cur_func_next = (it_func_next != it_rank->end()) ? *it_func_next : NULL;
+            while (cur_func_prev == NULL && it_func != it_rank->begin())
                 cur_func_prev = *(--it_func);
-            while (cur_func_next == NULL && it_func_next != it_rank->end())
-                cur_func_next = *(++it_func_next);
+            while (cur_func_next == NULL && it_func_next != it_rank->end() && ++it_func_next != it_rank->end())
+                cur_func_next = *it_func_next;
             if (cur_func_prev == NULL || cur_func_next == NULL)
                 continue;
             if (cur_func_prev->e_time.func.in > stop)
@@ -2004,6 +1991,8 @@ void Elements::get_user_addresses_in_region(QTreeWidget *tw, const PEAT_Clock st
                 cur_func_prev = find_event(r, cur_func_prev->ids[0]);
             if (cur_func_next->is_nested())
                 cur_func_next = find_event(r, cur_func_next->ids[0] + 1);
+            if (cur_func_prev == NULL || cur_func_next == NULL)
+                continue;
             // const StatisticReader &rankStatLocal = ranksStat.at(it_rank->first);
 #ifdef _DEBUG
             regions_added++;

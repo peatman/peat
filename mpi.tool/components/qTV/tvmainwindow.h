@@ -109,6 +109,7 @@ class TVMainWindow : public QMainWindow
     void on_horizontalScrollBar_sliderReleased();
 
     void on_actionLegend_triggered();
+    void on_actionDrawOptions_triggered();
 
   protected:
     void keyPressEvent(QKeyEvent *);

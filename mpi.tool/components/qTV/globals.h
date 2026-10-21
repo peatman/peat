@@ -50,6 +50,8 @@ struct TV_TraceParts {
     bool omp_functions[5] = {true, true, true, true, true};
     bool gpu_functions[3] = {true, true, true};
     bool transport_functions = true;
+    int func_min_width = 2;                // functions narrower than this (px) are not drawn, unless over a user region; 1 draws all
+    bool draw_offscreen_messages = false;  // draw messages even when both ends are outside the window
     std::set<PEAT_MPI_Comm> hidden_comms; // elements of these communicators are not shown
     bool comm_visible(PEAT_MPI_Comm comm) const { return hidden_comms.empty() || hidden_comms.count(comm) == 0; }
     /*
