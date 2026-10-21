@@ -43,8 +43,18 @@ extern long long freq;
         }                                                           \
     }
 void get_cpu_freq();
+// index in TV_TraceParts::mpi_functions; the internal (PEAT_PROP_MPI_INTERNAL) group follows its user group
+enum TV_MPI_Func_Group {
+    TV_MPI_FUNC_GROUP_LOCALS,
+    TV_MPI_FUNC_GROUP_P2P,
+    TV_MPI_FUNC_GROUP_P2P_INTERNAL,
+    TV_MPI_FUNC_GROUP_COLLECTIVES,
+    TV_MPI_FUNC_GROUP_REQUESTS,
+    TV_MPI_FUNC_GROUP_REQUESTS_INTERNAL,
+    TV_MPI_FUNC_GROUP_MAX
+};
 struct TV_TraceParts {
-    bool mpi_functions[4] = {true, true, true, true};
+    bool mpi_functions[TV_MPI_FUNC_GROUP_MAX] = {true, true, true, true, true, true};
     // p2p, blocking collectives, initiation, completion, collective init, collective start, collective completion
     bool mpi_messages[7] = {true, true, true, true, true, true, true};
     bool omp_functions[5] = {true, true, true, true, true};

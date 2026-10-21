@@ -39,10 +39,12 @@ FilterDialog::~FilterDialog()
 
 void FilterDialog::set_properties(const TV_TraceParts &shown)
 {
-    ui->checkLocalsFunc->setChecked(shown.mpi_functions[0]);
-    ui->checkP2PFunc->setChecked(shown.mpi_functions[1]);
-    ui->checkCollectivesFunc->setChecked(shown.mpi_functions[2]);
-    ui->checkRequestsFunc->setChecked(shown.mpi_functions[3]);
+    ui->checkLocalsFunc->setChecked(shown.mpi_functions[TV_MPI_FUNC_GROUP_LOCALS]);
+    ui->checkP2PFunc->setChecked(shown.mpi_functions[TV_MPI_FUNC_GROUP_P2P]);
+    ui->checkCollectivesFunc->setChecked(shown.mpi_functions[TV_MPI_FUNC_GROUP_COLLECTIVES]);
+    ui->checkRequestsFunc->setChecked(shown.mpi_functions[TV_MPI_FUNC_GROUP_REQUESTS]);
+    ui->checkP2PInternalFunc->setChecked(shown.mpi_functions[TV_MPI_FUNC_GROUP_P2P_INTERNAL]);
+    ui->checkRequestsInternalFunc->setChecked(shown.mpi_functions[TV_MPI_FUNC_GROUP_REQUESTS_INTERNAL]);
     ui->checkP2PMessages->setChecked(shown.mpi_messages[0]);
     ui->checkCollectivesMessages->setChecked(shown.mpi_messages[1]);
     ui->checkInitiationMessages->setChecked(shown.mpi_messages[2]);
@@ -54,10 +56,12 @@ void FilterDialog::set_properties(const TV_TraceParts &shown)
 
 void FilterDialog::get_properties(TV_TraceParts &shown) const
 {
-    shown.mpi_functions[0] = ui->checkLocalsFunc->isChecked();
-    shown.mpi_functions[1] = ui->checkP2PFunc->isChecked();
-    shown.mpi_functions[2] = ui->checkCollectivesFunc->isChecked();
-    shown.mpi_functions[3] = ui->checkRequestsFunc->isChecked();
+    shown.mpi_functions[TV_MPI_FUNC_GROUP_LOCALS] = ui->checkLocalsFunc->isChecked();
+    shown.mpi_functions[TV_MPI_FUNC_GROUP_P2P] = ui->checkP2PFunc->isChecked();
+    shown.mpi_functions[TV_MPI_FUNC_GROUP_COLLECTIVES] = ui->checkCollectivesFunc->isChecked();
+    shown.mpi_functions[TV_MPI_FUNC_GROUP_REQUESTS] = ui->checkRequestsFunc->isChecked();
+    shown.mpi_functions[TV_MPI_FUNC_GROUP_P2P_INTERNAL] = ui->checkP2PInternalFunc->isChecked();
+    shown.mpi_functions[TV_MPI_FUNC_GROUP_REQUESTS_INTERNAL] = ui->checkRequestsInternalFunc->isChecked();
     shown.mpi_messages[0] = ui->checkP2PMessages->isChecked();
     shown.mpi_messages[1] = ui->checkCollectivesMessages->isChecked();
     shown.mpi_messages[2] = ui->checkInitiationMessages->isChecked();
