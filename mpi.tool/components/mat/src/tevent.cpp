@@ -57,9 +57,6 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
     if (func_id == TMPI_FUNC_ID_NONE) {
         func_id = global_func_id.idx_by_name(line_mpi.at(b));
     }
-    if (ids[0] == 399 && rank == 1) {
-        ids[0] = ids[0];
-    }
 
     if (!line_hwc.empty()) { // line_hwc is empty when hwc files aren't read (matching_only on)
         assert(hdr.same_ids(line_hwc));

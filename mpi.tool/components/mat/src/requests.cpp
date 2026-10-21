@@ -101,8 +101,6 @@ PEAT_Bool Requests::parse_P2P_completion_phase(const PEAT_Rank rank, const Reque
         std::cerr << "Null request detected. Rank: " << rank << ". Skipped." << std::endl;
         return false;
     }
-    PEAT_Bool check_and_clear_req[qt_size2] = {false, false, false};
-    PEAT_Bool rFound = false;
     if (request > 0) {
         p2p_func_store->update_request(rank, type, tag, source, size, request, phase,is_remote);
         return true;

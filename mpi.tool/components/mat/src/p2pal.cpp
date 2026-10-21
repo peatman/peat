@@ -334,7 +334,7 @@ PEAT_Bool P2PAL::update_request(const PEAT_Rank rank, const Request_Store_Record
 	MAT_P2P_Record* record = NULL;
     MAT_Request_Store_Record ret_it;
     if (request > 0) {
-		if (req_store->find_request(rank, request, REQUEST_TYPE_USER_P2P, &ret_it, true)) { //find and delete the request from the store, as it's being completed
+		if (req_store->find_request(rank, request, type, &ret_it, true)) { //find and delete the request from the store, as it's being completed
             record = static_cast<MAT_P2P_Record*>(ret_it.record);
         }   
     }
