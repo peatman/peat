@@ -142,7 +142,7 @@
         <item>
          <widget class="QCheckBox" name="checkCollectiveInitMessages">
           <property name="text">
-           <string>Collective Init</string>
+           <string>Collectives Init</string>
           </property>
           <property name="checked">
            <bool>true</bool>
@@ -152,7 +152,7 @@
         <item>
          <widget class="QCheckBox" name="checkCollectiveStartMessages">
           <property name="text">
-           <string>Collective Start</string>
+           <string>Collectives Start</string>
           </property>
           <property name="checked">
            <bool>true</bool>
@@ -162,7 +162,7 @@
         <item>
          <widget class="QCheckBox" name="checkCollectiveCompletionMessages">
           <property name="text">
-           <string>Collective Completion</string>
+           <string>Collectives Completion</string>
           </property>
           <property name="checked">
            <bool>true</bool>
