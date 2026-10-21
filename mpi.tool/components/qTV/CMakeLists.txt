@@ -61,6 +61,7 @@ set(SOURCES
 		communicatorsdialog.ui
 		filterdialog.cpp
 		filterdialog.ui
+		drawoptionsdialog.cpp
 		icons.qrc
 		../common/file_io.cpp
 		../common/common_types.cpp
@@ -89,6 +90,7 @@ set(HEADERS
         functionstabwidget.h
         communicatorsdialog.h
         filterdialog.h 
+        drawoptionsdialog.h
         ../common/file_io.h
         ../common/common_types.h
         ../common/func_id.h

@@ -137,9 +137,14 @@ void TraceDialog::get_propertiers(std::set<PEAT_Rank> &ranks, int &tmin, int &tm
     int f;
     int c = ui->listWidgetMPIFunctions->count();
 
-    for (f = 0; f < c; f++) {
-        tp.mpi_functions[f] = ui->listWidgetMPIFunctions->item(f)->checkState();
+    // list order: locals, p2p, collectives, requests; internal groups follow their user group
+    static const TV_MPI_Func_Group list_groups[] = {TV_MPI_FUNC_GROUP_LOCALS, TV_MPI_FUNC_GROUP_P2P, TV_MPI_FUNC_GROUP_COLLECTIVES, TV_MPI_FUNC_GROUP_REQUESTS};
+    for (f = 0; f < c && f < 4; f++) {
+        tp.mpi_functions[list_groups[f]] = ui->listWidgetMPIFunctions->item(f)->checkState();
     }
+    tp.mpi_functions[TV_MPI_FUNC_GROUP_P2P_INTERNAL] = tp.mpi_functions[TV_MPI_FUNC_GROUP_P2P];
+    tp.mpi_functions[TV_MPI_FUNC_GROUP_COLLECTIVES_INTERNAL] = tp.mpi_functions[TV_MPI_FUNC_GROUP_COLLECTIVES];
+    tp.mpi_functions[TV_MPI_FUNC_GROUP_REQUESTS_INTERNAL] = tp.mpi_functions[TV_MPI_FUNC_GROUP_REQUESTS];
 
     c = ui->listWidgetMPIMessages->count();
     for (f = 0; f < c; f++) {

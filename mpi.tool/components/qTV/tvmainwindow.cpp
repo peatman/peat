@@ -20,6 +20,7 @@
 #include "./ui_tvmainwindow.h"
 #include "communicatorsdialog.h"
 #include "cutoffdialog.h"
+#include "drawoptionsdialog.h"
 #include "filterdialog.h"
 #include "globals.h"
 #include "legenddialog.h"
@@ -56,6 +57,11 @@ TVMainWindow::TVMainWindow(QWidget *parent)
     sr->hide();
     statusBar()->addWidget(pb, 1);
     statusBar()->addWidget(sr, 1);
+    {
+        QSettings settings;
+        shown.func_min_width = settings.value("Drawing/func_min_width", 2).toInt();
+        shown.draw_offscreen_messages = settings.value("Drawing/offscreen_messages", false).toBool();
+    }
     tv = new TV(sa, statusBar(), pb, sr, &shown, this);
     sa->setWidget(tv);
     sa->setWidgetResizable(true);
@@ -751,6 +757,19 @@ void TVMainWindow::on_actionLegend_triggered()
     if (d.exec() == QDialog::Accepted) {
         d.get_properties(tv_colors);
         tv_colors.save();
+    }
+}
+
+void TVMainWindow::on_actionDrawOptions_triggered()
+{
+    DrawOptionsDialog d(this);
+    d.set_properties(shown);
+    if (d.exec() == QDialog::Accepted) {
+        d.get_properties(shown);
+        QSettings settings;
+        settings.setValue("Drawing/func_min_width", shown.func_min_width);
+        settings.setValue("Drawing/offscreen_messages", shown.draw_offscreen_messages);
+        tv->redraw_view();
     }
 }
 

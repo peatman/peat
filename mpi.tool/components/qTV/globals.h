@@ -43,8 +43,21 @@ extern long long freq;
         }                                                           \
     }
 void get_cpu_freq();
+// index in TV_TraceParts::mpi_functions; the internal (PEAT_PROP_MPI_INTERNAL) group follows its user group
+enum TV_MPI_Func_Group {
+    TV_MPI_FUNC_GROUP_LOCALS,
+    TV_MPI_FUNC_GROUP_P2P,
+    TV_MPI_FUNC_GROUP_P2P_INTERNAL,
+    TV_MPI_FUNC_GROUP_COLLECTIVES,
+    TV_MPI_FUNC_GROUP_COLLECTIVES_INTERNAL,
+    TV_MPI_FUNC_GROUP_REQUESTS,
+    TV_MPI_FUNC_GROUP_REQUESTS_INTERNAL,
+    TV_MPI_FUNC_GROUP_MAX
+};
 struct TV_TraceParts {
-    bool mpi_functions[4] = {true, true, true, true};
+    bool mpi_functions[TV_MPI_FUNC_GROUP_MAX] = {true, true, true, true, true, true, true};
+    int func_min_width = 2;               // functions narrower than this (px) are not drawn, unless over a user region; 1 draws all
+    bool draw_offscreen_messages = false; // draw messages even when both ends are outside the window
     bool mpi_messages[4] = {true, true, true, true};
     bool omp_functions[5] = {true, true, true, true, true};
     bool gpu_functions[3] = {true, true, true};

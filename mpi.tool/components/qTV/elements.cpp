@@ -39,6 +39,12 @@
 
 #define heightPercent 1.0
 #define showElementsThreshold 1 // 0.3
+
+// P2P and request functions called by the MPI library itself (PEAT_PROP_MPI_INTERNAL) have their own filter flags
+static bool mpi_func_shown(const TV_TraceParts &tp, const TV_Event *e, TV_MPI_Func_Group user_group)
+{
+    return tp.mpi_functions[user_group + global_func_id.check_property(e->func_id, PEAT_PROP_MPI_INTERNAL)];
+}
 #define MAX_SIZE 100
 Elements::Elements(QFileInfo &name, TV_TraceParts *swn) : trace_info_file(name), shown(swn), ptp(NULL), model_id(NULL), user_regions(NULL)
 #ifdef _OPENMP
@@ -659,7 +665,7 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                 }
                 p[tid]->setOpacity(1.0);
                 QColor cc = threadImages[tid]->pixel(x_start, y_start);
-                if (cc != user_region_color && (f_width < 2)) {
+                if (cc != user_region_color && (f_width < shown->func_min_width)) {
                     no_draw_elems++;
                     continue;
                 }
@@ -673,13 +679,13 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                     continue;
                 switch (cur_func_ptr->get_event_type()) {
                 case TV_EVENT_TYPE_COLLECTIVE:
-                    if (!shown->mpi_functions[2])
+                    if (!mpi_func_shown(*shown, cur_func_ptr, TV_MPI_FUNC_GROUP_COLLECTIVES))
                         continue;
                 case TV_EVENT_TYPE_COMM:
                     p[tid]->setBrush(tv_colors.event_brushes[TV_BRUSH_EVENT_TYPE_COLLECTIVE]);
                     break;
                 case TV_EVENT_TYPE_TOR:
-                    if (!shown->mpi_functions[1])
+                    if (!mpi_func_shown(*shown, cur_func_ptr, TV_MPI_FUNC_GROUP_P2P))
                         continue;
                     if (cur_func_ptr->check_tx()) {
                         p[tid]->setBrush(tv_colors.event_brushes[TV_BRUSH_EVENT_TYPE_SOURCE]);
@@ -689,17 +695,17 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                     }
                     break;
                 case TV_EVENT_TYPE_TAR:
-                    if (!shown->mpi_functions[1])
+                    if (!mpi_func_shown(*shown, cur_func_ptr, TV_MPI_FUNC_GROUP_P2P))
                         continue;
                     p[tid]->setBrush(tv_colors.event_brushes[TV_BRUSH_EVENT_TYPE_SAND]);
                     break;
                 case TV_EVENT_TYPE_START:
-                    if (!shown->mpi_functions[3])
+                    if (!mpi_func_shown(*shown, cur_func_ptr, TV_MPI_FUNC_GROUP_REQUESTS))
                         continue;
                     p[tid]->setBrush(tv_colors.event_brushes[TV_BRUSH_EVENT_TYPE_START]);
                     break;
                 case TV_EVENT_TYPE_COMPLETION:
-                    if (!shown->mpi_functions[3])
+                    if (!mpi_func_shown(*shown, cur_func_ptr, TV_MPI_FUNC_GROUP_REQUESTS))
                         continue;
                     p[tid]->setBrush(tv_colors.event_brushes[TV_BRUSH_EVENT_TYPE_COMPLETION]);
                     break;
@@ -848,7 +854,9 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
             long wdt_to = to->e_time.pe.duration() * pix_in_tic;
             long x_to = (to->e_time.pe.in - start_time) * pix_in_tic;
             long y_to = y_offset + to_thread_height * to->thread;
-            if ((x_from > 0 && x_from < s_width) || (x_to + wdt_to > 0 && x_to + wdt_to < s_width)) {
+            // by default a line is drawn only if one of its ends is inside the view; optionally also when it just crosses the view
+            // (e.g. init long before, start long after)
+            if ((x_from > 0 && x_from < s_width) || (x_to + wdt_to > 0 && x_to + wdt_to < s_width) || (shown->draw_offscreen_messages && qMin(x_from, x_to + wdt_to) < s_width && qMax(x_from, x_to + wdt_to) > 0)) {
                 // Do not draw a line with 1 pix width
                 p[tid]->setPen(tv_colors.message_pens[it_msg->second.msg_type]);
                 switch (it_msg->second.msg_type) {
@@ -858,7 +866,7 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                 case TV_PEN_MESSAGE_TYPE_REVERSED:
                     p[tid]->setPen(tv_colors.message_pens[TV_PEN_MESSAGE_TYPE_REVERSED]);
                 cont_noraml:
-                    if (!shown->mpi_functions[1] || !shown->mpi_messages[0])
+                    if (!mpi_func_shown(*shown, from, TV_MPI_FUNC_GROUP_P2P) || !shown->mpi_messages[0])
                         continue;
                     if (qAbs(x_to + wdt_to - x_from) <= showElementsThreshold) {
                         no_draw_elems++;
@@ -884,9 +892,9 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                     break;
                 case TV_PEN_MESSAGE_TYPE_INITIATION:
                 case TV_PEN_MESSAGE_TYPE_COMPLETION:
-                    if ((!shown->mpi_messages[2] || !shown->mpi_functions[3]) && it_msg->second.msg_type == TV_PEN_MESSAGE_TYPE_INITIATION)
+                    if ((!shown->mpi_messages[2] || !shown->mpi_functions[TV_MPI_FUNC_GROUP_REQUESTS]) && it_msg->second.msg_type == TV_PEN_MESSAGE_TYPE_INITIATION)
                         continue;
-                    if ((!shown->mpi_messages[3] || !shown->mpi_functions[3]) && it_msg->second.msg_type == TV_PEN_MESSAGE_TYPE_COMPLETION)
+                    if ((!shown->mpi_messages[3] || !shown->mpi_functions[TV_MPI_FUNC_GROUP_REQUESTS]) && it_msg->second.msg_type == TV_PEN_MESSAGE_TYPE_COMPLETION)
                         continue;
                     if (qAbs(x_to + wdt_to - x_from) <= showElementsThreshold) {
                         no_draw_elems++;
@@ -900,7 +908,7 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                     p[tid]->drawPoint(x_to + wdt_to * 0.5, y_to);
                     break;
                 case TV_PEN_MESSAGE_TYPE_COLLECTIVE:
-                    if (!shown->mpi_messages[1] || !shown->mpi_functions[2])
+                    if (!shown->mpi_messages[1] || !mpi_func_shown(*shown, from, TV_MPI_FUNC_GROUP_COLLECTIVES))
                         continue;
                     y_from += paint.mpi_ulc.at(ranks_to_load_v_rev[from->rank]);
                     y_to += paint.mpi_ulc.at(ranks_to_load_v_rev[to->rank]);
@@ -1032,21 +1040,21 @@ TV_Event *Elements::find_event(PEAT_Rank rank, PEAT_Clock clk, int thread, int s
 
 bool Elements::add_event(TV_Event *event, TV_TraceParts &tp)
 {
-    if (event->get_event_type() == TV_EVENT_TYPE_LOCAL && !tp.mpi_functions[0])
+    if (event->get_event_type() == TV_EVENT_TYPE_LOCAL && !tp.mpi_functions[TV_MPI_FUNC_GROUP_LOCALS])
         return false;
-    if (event->get_event_type() == TV_EVENT_TYPE_LOCAL_BUF && !tp.mpi_functions[0])
+    if (event->get_event_type() == TV_EVENT_TYPE_LOCAL_BUF && !tp.mpi_functions[TV_MPI_FUNC_GROUP_LOCALS])
         return false;
-    if (event->get_event_type() == TV_EVENT_TYPE_COLLECTIVE && !tp.mpi_functions[2])
+    if (event->get_event_type() == TV_EVENT_TYPE_COLLECTIVE && !mpi_func_shown(tp, event, TV_MPI_FUNC_GROUP_COLLECTIVES))
         return false;
-    if (event->get_event_type() == TV_EVENT_TYPE_COMM && !tp.mpi_functions[2])
+    if (event->get_event_type() == TV_EVENT_TYPE_COMM && !mpi_func_shown(tp, event, TV_MPI_FUNC_GROUP_COLLECTIVES))
         return false;
-    if (event->get_event_type() == TV_EVENT_TYPE_TOR && !tp.mpi_functions[1])
+    if (event->get_event_type() == TV_EVENT_TYPE_TOR && !mpi_func_shown(tp, event, TV_MPI_FUNC_GROUP_P2P))
         return false;
-    if (event->get_event_type() == TV_EVENT_TYPE_TAR && !tp.mpi_functions[1])
+    if (event->get_event_type() == TV_EVENT_TYPE_TAR && !mpi_func_shown(tp, event, TV_MPI_FUNC_GROUP_P2P))
         return false;
-    if (event->get_event_type() == TV_EVENT_TYPE_START && !tp.mpi_functions[3])
+    if (event->get_event_type() == TV_EVENT_TYPE_START && !mpi_func_shown(tp, event, TV_MPI_FUNC_GROUP_REQUESTS))
         return false;
-    if (event->get_event_type() == TV_EVENT_TYPE_COMPLETION && !tp.mpi_functions[3])
+    if (event->get_event_type() == TV_EVENT_TYPE_COMPLETION && !mpi_func_shown(tp, event, TV_MPI_FUNC_GROUP_REQUESTS))
         return false;
     if (event->e_time.func.out > model_time_stop) {
         model_time_stop = event->e_time.func.out;
