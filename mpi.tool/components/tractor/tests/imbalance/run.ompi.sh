@@ -1,15 +1,17 @@
 #!/bin/bash
 
 compiler=oneAPI:2026.1.0
+#export mpi_type=mpich:5.0.1x-mt-ofi-eng
 export mpi_type=openmpi:5.0.10x-eng
 #export mpi_type=openmpi:5.0.10x
 export libfabric_eng='-eng'
 . env.sh
 set -x
 
-#LD_PRELOAD="$LD_PRELOAD:../../lib/intel/libtractor_fab_ofi.so"
-#LD_PRELOAD=../../lib/intel/libtractor_dbg.openmpi5.eng.so
-LD_PRELOAD=../../lib/intel/libtractor.openmpi5.eng.so 
+libdir=$(realpath ../../../../lib/intel)
+if [ "${TRACTOR:-1}" != "0" ] ; then
+LD_PRELOAD=$libdir/libtractor.openmpi5.eng.so
+fi
 
 export PEAT_TRACTOR_PRINT_FUNC_NAMES=1
 export PEAT_TRACTOR_STORE_MAP=1
@@ -33,8 +35,7 @@ ldd "${_preload_libs[@]}"
 LD_PRELOAD=" -x LD_PRELOAD=$LD_PRELOAD "
 fi
 
-$MPIFC -O2 -g -fpp -o alltoall alltoall.f90
-#$MPICC -O2 -g -o repro_final  repro_final.c
+$MPICC -O2 -g -o alltoall alltoall.c
 
 if [ -f "$PBS_NODEFILE" ]   ; then
 nnodes=`sort -u $PBS_NODEFILE | wc -l`

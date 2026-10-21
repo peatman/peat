@@ -1,20 +1,22 @@
 #!/bin/bash
 
 compiler=oneAPI:2026.1.0
-export mpi_type=mpich:5.1.0x-mt-ofi-eng
+export mpi_type=mpich:5.0.2x-mt-ofi-eng
 export libfabric_eng='-eng'
-#export mpi_type=mpich:4.3.2x-mt-ofi
 . env.sh
 set -x
 
-LD_PRELOAD=../../../../lib/intel/libtractor.mpich5.eng.so 
-LD_PRELOAD="$LD_PRELOAD:../../../../lib/intel/libtractor_transport_ofi.so"
+libdir=$(realpath ../../../../lib/intel)
+if [ "${TRACTOR:-1}" != "0" ] ; then
+LD_PRELOAD=$libdir/libtractor.mpich5.eng.so
+LD_PRELOAD="$LD_PRELOAD:$libdir/libtractor_transport_ofi.so"
+fi
 
 
 export PEAT_TRACTOR_PRINT_FUNC_NAMES=1
 export PEAT_TRACTOR_STORE_MAP=1
-export PEAT_TRACTOR_COLLECT_TRANSPORT=1
-export PEAT_TRACTOR_TRANSPORT_LAYER=ofi
+export PEAT_TRACTOR_COLLECT_FAB=1
+export PEAT_TRACTOR_FAB_LAYER=ofi
 export PEAT_TRACTOR_WRITE_TRACE=1
 export I_MPI_DEBUG=4
 #export PEAT_TRACTOR_ONE_TIME_ALLOC=100
@@ -33,7 +35,8 @@ ldd "${_preload_libs[@]}"
 LD_PRELOAD=" -genv LD_PRELOAD $LD_PRELOAD "
 fi
 
-$MPICC -O2 -g -o nest_test nest_test.c
+$MPICC -O2 -g -o alltoall alltoall.c
+#$MPICC -O2 -g -o repro_final  repro_final.c
 
 if [ -f "$PBS_NODEFILE" ]   ; then
 nnodes=`sort -u $PBS_NODEFILE | wc -l`
@@ -56,7 +59,7 @@ export HYDRA_TOPO_DEBUG=1
 #export FI_HMEM=none
 export MPICH_POSIX_NUM_COLLS_THRESHOLD=9999 # should be quite big but this one is enought for the example
 
-mpiexec.hydra -launcher ssh -genvall -bind-to hwthread -map-by core  $LD_PRELOAD $PBS_NF -ppn $ppn -np $ranks $GDB ./nest_test
+mpiexec.hydra -launcher ssh -genvall -bind-to hwthread -map-by core  $LD_PRELOAD $PBS_NF -ppn $ppn -np $ranks $GDB ./alltoall $nnodes $ppn 4194304 10 #24
 rm -f alltoall
 
 #mpiexec.hydra -launcher ssh -genvall -bind-to hwthread -map-by core  $LD_PRELOAD $PBS_NF -ppn $ppn -np $ranks $GDB ./repro_final 

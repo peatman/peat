@@ -6,14 +6,11 @@ export libfabric_eng='-eng'
 . env.sh
 set -x
 
-#LD_PRELOAD=../../lib/intel/libtractor_dbg.mvapich4.ct.so 
-#LD_PRELOAD=../../lib/intel/libtractor.mvapich4.ct.so 
-#LD_PRELOAD=../../lib/intel/libtractor_dbg.mpich4.ct.so 
-#LD_PRELOAD=../../lib/intel/libtractor.mpich5.so 
-LD_PRELOAD=../../lib/intel/libtractor.mpich5.eng.so 
-#LD_PRELOAD=../../lib/gnu/libtractor_dbg.mpich5.so 
-#LD_PRELOAD=../../lib/intel/libtractor.mvapich4.so 
-#LD_PRELOAD=../../lib/intel/libtractor.impi.so 
+libdir=$(realpath ../../../../lib/intel)
+if [ "${TRACTOR:-1}" != "0" ] ; then
+LD_PRELOAD=$libdir/libtractor.mpich5.eng.so
+LD_PRELOAD="$LD_PRELOAD:$libdir/libtractor_transport_ofi.so"
+fi
 
 
 export PEAT_TRACTOR_PRINT_FUNC_NAMES=1
