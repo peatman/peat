@@ -850,7 +850,7 @@ void TVMainWindow::about_dialog()
                           "- Visualize whole trace and particular piece of it\n"
                           "- Function/Messages in region\n"
                           "- Find Event\n"
-                          "- Analyze imbalance and BW\n"
+                          "- Analyse imbalance and BW\n"
                           "- Presentation mode\n(emphasize trace details during (remote) presentaion\n"
 ));
 }
