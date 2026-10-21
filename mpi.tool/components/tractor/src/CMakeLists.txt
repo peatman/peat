@@ -31,8 +31,8 @@
 cmake_minimum_required(VERSION 3.16...4.4)
 project(tractor CXX C)
 
-set(TRACTOR_MAJOR 1)
-set(TRACTOR_MINOR 0)
+set(TRACTOR_MAJOR 0)
+set(TRACTOR_MINOR 1)
 string(TIMESTAMP TRACTOR_BUILD_DATE "%Y-%m-%d %H:%M:%S")
 
 # ---------------------------------------------------------------------------
