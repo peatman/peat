@@ -35,9 +35,6 @@
 #include <omp.h>
 #endif
 
-#define heightPercent 1.0
-#define showElementsThreshold 1 // 0.3
-#define MAX_SIZE 100
 #if 0
  // debugging function to be placed here
 #endif
