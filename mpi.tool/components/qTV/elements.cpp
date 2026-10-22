@@ -45,6 +45,31 @@ static bool mpi_func_shown(const TV_TraceParts &tp, const TV_Event *e, TV_MPI_Fu
 {
     return tp.mpi_functions[user_group + global_func_id.check_property(e->func_id, PEAT_PROP_MPI_INTERNAL)];
 }
+// mirrors the per-event filters of the event drawing loop, so that a message is not drawn when an event it connects is hidden
+static bool event_shown(const TV_TraceParts &tp, const TV_Event *e, double pix_in_tic)
+{
+    PEAT_MPI_Comm comm = 0;
+    if (e->get_comm(comm) && !tp.comm_visible(comm))
+        return false;
+    if (double(e->e_time.func.duration()) * pix_in_tic < tp.func_min_width)
+        return false;
+    switch (e->get_event_type()) {
+    case TV_EVENT_TYPE_COLLECTIVE:
+        return mpi_func_shown(tp, e, TV_MPI_FUNC_GROUP_COLLECTIVES);
+    case TV_EVENT_TYPE_TOR:
+    case TV_EVENT_TYPE_TAR:
+        return mpi_func_shown(tp, e, TV_MPI_FUNC_GROUP_P2P);
+    case TV_EVENT_TYPE_START:
+    case TV_EVENT_TYPE_COMPLETION:
+        return mpi_func_shown(tp, e, TV_MPI_FUNC_GROUP_REQUESTS);
+    case TV_EVENT_TYPE_GPU_TRANSFER:
+        return tp.gpu_functions[1];
+    case TV_EVENT_TYPE_GPU_LOCAL:
+        return tp.gpu_functions[0];
+    default:
+        return true;
+    }
+}
 #define MAX_SIZE 100
 Elements::Elements(QFileInfo &name, TV_TraceParts *swn) : trace_info_file(name), shown(swn), ptp(NULL), model_id(NULL), user_regions(NULL)
 #ifdef _OPENMP
@@ -840,6 +865,8 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
             }
             PEAT_MPI_Comm message_comm = 0;
             if (from->get_comm(message_comm) && !shown->comm_visible(message_comm))
+                continue;
+            if (!event_shown(*shown, from, pix_in_tic) || !event_shown(*shown, to, pix_in_tic))
                 continue;
             if (tid == 0)
                 progress(prevclk, QApplication::processEvents);
