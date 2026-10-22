@@ -10,7 +10,26 @@
  	MPID_STATE_MPIDI_CH3I_ACCUMULATE,
 --- a/src/include/mpiimpl.h
 +++ b/src/include/mpiimpl.h
-@@ -1283,6 +1283,7 @@
+@@ -1151,6 +1151,18 @@
+     MPID_HIERARCHY_NODE = 3,        /* is the subcomm for a node */
+     MPID_HIERARCHY_SIZE             /* cardinality of this enum */
+ } MPID_Comm_hierarchy_kind_t;
++
++/* Kinds of MVAPICH2-internal communicators (never visible to the user, hence never
++ * seen by the MPI/PMPI comm-management interception). */
++enum {
++    MPI_INTERNAL_COMM__LOCALCOMM = 1,        /* intercomm->local_comm */
++    MPI_INTERNAL_COMM__NODE_COMM,            /* comm->node_comm */
++    MPI_INTERNAL_COMM__NODE_ROOTS_COMM,      /* comm->node_roots_comm */
++    MPI_INTERNAL_COMM__BOOTSTRAP              /* a top-level comm committed outside any public
++                                               * MPI_Comm_* entry point, so it has no parent_comm
++                                               * of its own */
++};
++
+ /* Communicators */
+ 
+ typedef enum {
+@@ -1283,6 +1295,7 @@
      struct MPID_Comm *node_comm; /* Comm of processes in this comm that are on
                                      the same node as this process. */
      struct MPID_Comm *node_roots_comm; /* Comm of root processes for other nodes. */
@@ -18,7 +37,7 @@
      int *intranode_table;        /* intranode_table[i] gives the rank in
                                      node_comm of rank i in this comm or -1 if i
                                      is not in this process' node_comm.
-@@ -1290,6 +1291,8 @@
+@@ -1290,6 +1303,8 @@
      int *internode_table;        /* internode_table[i] gives the rank in
                                      node_roots_comm of rank i in this comm.
                                      It is of size 'local_size'. */
@@ -27,7 +46,7 @@
  
      int           is_low_group;  /* For intercomms only, this boolean is
  				    set for all members of one of the 
-@@ -1563,7 +1566,7 @@
+@@ -1563,7 +1578,7 @@
    (e.g., 'MPID_Request_send_t') that extends the 'MPID_Request'.
    
    S*/
@@ -36,7 +55,7 @@
      MPIU_OBJECT_HEADER; /* adds handle and ref_count fields */
      MPID_Request_kind_t kind;
      /* pointer to the completion counter */
-@@ -3991,6 +3994,33 @@
+@@ -3991,6 +4006,33 @@
  int MPIR_Allgather_cuda_intra_MV2 (const void *, int, MPI_Datatype, void *,
              int, MPI_Datatype, MPID_Comm*, MPIR_Errflag_t*);
  #endif
@@ -765,7 +784,23 @@
      if(src_array != NULL) { 
 --- a/src/mpi/comm/commutil.c
 +++ b/src/mpi/comm/commutil.c
-@@ -110,8 +110,11 @@
+@@ -27,6 +27,15 @@
+ #include "coll_shmem.h"
+ #endif /* #if defined(CHANNEL_MRAIL) || defined(CHANNEL_PSM) */ 
+ 
++/* Proxies called whenever an internal communicator is created/destroyed. mpi_internal_xxx
++ * are weak aliases of pmpi_internal_xxx (same scheme as MPI_xxx and PMPI_xxx), so a tool
++ * may override mpi_internal_xxx and chain to pmpi_internal_xxx.
++ * comm->parent_comm is already set on the create call. */
++void mpi_internal_comm_create(MPID_Comm *comm, MPID_Comm *parent_comm, int kind);
++void mpi_internal_comm_free(MPID_Comm *comm);
++void pmpi_internal_comm_create(MPID_Comm *comm, MPID_Comm *parent_comm, int kind);
++void pmpi_internal_comm_free(MPID_Comm *comm);
++
+ 
+ /* This is the utility file for comm that contains the basic comm items
+    and storage management */
+@@ -110,8 +119,11 @@
      comm_p->hierarchy_kind = MPID_HIERARCHY_FLAT;
      comm_p->node_comm = NULL;
      comm_p->node_roots_comm = NULL;
@@ -777,15 +812,31 @@
  #ifdef _OSU_MVAPICH_
      comm_p->dev.ch.shmem_coll_count = 0; 
      comm_p->dev.ch.allgather_coll_count = 0; 
-@@ -628,6 +631,7 @@
+@@ -260,6 +272,8 @@
+     /* FIXME  : No local functions for the topology routines */
+ 
+     intercomm_ptr->local_comm = localcomm_ptr;
++    localcomm_ptr->parent_comm = intercomm_ptr;
++    mpi_internal_comm_create(localcomm_ptr, intercomm_ptr, MPI_INTERNAL_COMM__LOCALCOMM);
+ #ifdef _OSU_MVAPICH_
+     localcomm_ptr->dev.ch.shmem_coll_ok = 0;
+     localcomm_ptr->dev.ch.is_global_block  = 0;
+@@ -628,6 +642,14 @@
       * our hierarchy of communicators */
      MPIU_Assert(comm->node_comm == NULL);
      MPIU_Assert(comm->node_roots_comm == NULL);
 +    MPIU_Assert(comm->parent_comm == NULL);
++
++    /* report every genuine top-level comm the instant its handle is known, before any of its
++     * own pre-commit internal traffic can reference it; the node_comm/node_roots_comm
++     * creation below never recurses back into MPIR_Comm_commit, and LOCALCOMM already sets
++     * parent_comm before calling commit, so neither is duplicated */
++    if (!comm->parent_comm)
++        mpi_internal_comm_create(comm, NULL, MPI_INTERNAL_COMM__BOOTSTRAP);
  
      mpi_errno = set_collops(comm);
      if (mpi_errno)
-@@ -660,6 +664,11 @@
+@@ -660,6 +682,11 @@
              if (comm->internode_table)
                  MPIU_Free(comm->internode_table);
  
@@ -797,23 +848,36 @@
              mpi_errno = MPI_SUCCESS;
              goto fn_exit;
          }
-@@ -693,6 +702,7 @@
+@@ -693,6 +720,8 @@
  
              comm->node_comm->local_size = num_local;
              comm->node_comm->remote_size = num_local;
 +            comm->node_comm->parent_comm = comm;
++            mpi_internal_comm_create(comm->node_comm, comm, MPI_INTERNAL_COMM__NODE_COMM);
  
              MPIR_Comm_map_irregular(comm->node_comm, comm, local_procs,
                                      num_local, MPIR_COMM_MAP_DIR_L2L, NULL);
-@@ -726,6 +736,7 @@
+@@ -726,6 +755,8 @@
  
              comm->node_roots_comm->local_size = num_external;
              comm->node_roots_comm->remote_size = num_external;
 +            comm->node_roots_comm->parent_comm = comm;
++            mpi_internal_comm_create(comm->node_roots_comm, comm, MPI_INTERNAL_COMM__NODE_ROOTS_COMM);
  
              MPIR_Comm_map_irregular(comm->node_roots_comm, comm,
                                      external_procs, num_external, MPIR_COMM_MAP_DIR_L2L, NULL);
-@@ -1098,6 +1109,11 @@
+@@ -1043,6 +1074,10 @@
+         if (MPIR_Process.comm_parent == comm_ptr)
+             MPIR_Process.comm_parent = NULL;
+ 
++        /* parent_comm is only ever set on internal comms (local_comm, node_comm, node_roots_comm) */
++        if (comm_ptr->parent_comm)
++            mpi_internal_comm_free(comm_ptr);
++
+         /* Notify the device that the communicator is about to be
+          * destroyed */
+         mpi_errno = MPID_Dev_comm_destroy_hook(comm_ptr);
+@@ -1098,6 +1133,11 @@
          if (comm_ptr->internode_table != NULL)
              MPIU_Free(comm_ptr->internode_table);
  
@@ -825,6 +889,84 @@
          /* Free the context value.  This should come after freeing the
           * intra/inter-node communicators since those free calls won't
           * release this context ID and releasing this before then could lead
+@@ -1264,3 +1304,45 @@
+     MPID_MPI_FUNC_EXIT(MPID_STATE_MPIR_COMM_REGISTER_HINT);
+     return mpi_errno;
+ }
++
++/* -- Begin Profiling Symbol Block for internal communicator create/free proxies */
++#if defined(HAVE_PRAGMA_WEAK)
++#pragma weak mpi_internal_comm_create = pmpi_internal_comm_create
++#pragma weak mpi_internal_comm_free = pmpi_internal_comm_free
++#elif defined(HAVE_PRAGMA_HP_SEC_DEF)
++#pragma _HP_SECONDARY_DEF pmpi_internal_comm_create  mpi_internal_comm_create
++#pragma _HP_SECONDARY_DEF pmpi_internal_comm_free  mpi_internal_comm_free
++#elif defined(HAVE_PRAGMA_CRI_DUP)
++#pragma _CRI duplicate mpi_internal_comm_create as pmpi_internal_comm_create
++#pragma _CRI duplicate mpi_internal_comm_free as pmpi_internal_comm_free
++#elif defined(HAVE_WEAK_ATTRIBUTE)
++void mpi_internal_comm_create(MPID_Comm *comm, MPID_Comm *parent_comm, int kind)
++                  __attribute__((weak,alias("pmpi_internal_comm_create")));
++void mpi_internal_comm_free(MPID_Comm *comm)
++                  __attribute__((weak,alias("pmpi_internal_comm_free")));
++#endif
++/* -- End Profiling Symbol Block */
++
++/* Define MPICH_MPI_FROM_PMPI if weak symbols are not supported to build
++   the MPI routines */
++#ifndef MPICH_MPI_FROM_PMPI
++#undef mpi_internal_comm_create
++#define mpi_internal_comm_create pmpi_internal_comm_create
++#undef mpi_internal_comm_free
++#define mpi_internal_comm_free pmpi_internal_comm_free
++
++/* default implementations are no-ops: the hooks exist only to be overridden by a tool */
++void mpi_internal_comm_create(MPID_Comm *comm, MPID_Comm *parent_comm, int kind)
++{
++    (void) comm;
++    (void) parent_comm;
++    (void) kind;
++}
++
++void mpi_internal_comm_free(MPID_Comm *comm)
++{
++    (void) comm;
++}
++#undef mpi_internal_comm_create
++#undef mpi_internal_comm_free
++#endif
+--- a/src/mpi/datatype/type_size.c
++++ b/src/mpi/datatype/type_size.c
+@@ -124,3 +124,14 @@
+     goto fn_exit;
+     /* --END ERROR HANDLING-- */
+ }
++
++/* public, unchecked size query that also works for internal (MPID_*) datatypes */
++int mpi_internal_type_size(MPI_Datatype datatype, MPI_Aint * size)
++{
++    int mpi_errno = MPI_SUCCESS;
++
++    MPID_Datatype_get_size_macro(datatype, *size);
++    MPIU_Assert(*size >= 0);
++
++    return mpi_errno;
++}
+--- a/src/mpi/datatype/type_size_x.c
++++ b/src/mpi/datatype/type_size_x.c
+@@ -128,3 +128,12 @@
+     goto fn_exit;
+     /* --END ERROR HANDLING-- */
+ }
++
++int mpi_internal_type_size_x(MPI_Datatype datatype, MPI_Count * size)
++{
++    int mpi_errno = MPI_SUCCESS;
++
++    MPID_Datatype_get_size_macro(datatype, *size);
++
++    return mpi_errno;
++}
 --- a/src/mpi/group/group_translate_ranks.c
 +++ b/src/mpi/group/group_translate_ranks.c
 @@ -6,6 +6,7 @@
@@ -835,7 +977,7 @@
  #include "group.h"
  
  /* -- Begin Profiling Symbol Block for routine MPI_Group_translate_ranks */
-@@ -224,3 +225,330 @@
+@@ -224,3 +225,332 @@
      /* --END ERROR HANDLING-- */
  }
  
@@ -1153,6 +1295,7 @@
 +
 +MPI_Comm mpi_internal_get_top_comm_handle_from_comm(MPID_Comm *comm)
 +{
++    if (comm == NULL) return MPI_COMM_NULL;
 +    if (comm->parent_comm) return mpi_internal_get_top_comm_handle_from_comm(comm->parent_comm);
 +    return comm->handle;
 +}
@@ -1164,6 +1307,7 @@
 +
 +MPI_Comm mpi_internal_get_comm_handle_from_comm(MPID_Comm *comm)
 +{
++    if (comm == NULL) return MPI_COMM_NULL;
 +    return comm->handle;
 +}
 --- a/src/mpi/pt2pt/mpir_request.c

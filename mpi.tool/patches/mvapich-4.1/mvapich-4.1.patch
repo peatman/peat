@@ -976,7 +976,7 @@
 +}
 --- a/src/mpi/group/group_impl.c
 +++ b/src/mpi/group/group_impl.c
-@@ -687,3 +687,258 @@
+@@ -687,3 +687,260 @@
    fn_fail:
      goto fn_exit;
  }
@@ -1227,12 +1227,14 @@
 +
 +MPI_Comm mpi_internal_get_top_comm_handle_from_comm(MPIR_Comm *comm)
 +{
++    if (comm == NULL) return MPI_COMM_NULL;
 +    if (comm->parent_comm) return mpi_internal_get_top_comm_handle_from_comm(comm->parent_comm);
 +    return comm->handle;
 +}
 +
 +MPI_Comm mpi_internal_get_comm_handle_from_comm(MPIR_Comm *comm)
 +{
++    if (comm == NULL) return MPI_COMM_NULL;
 +    return comm->handle;
 +}
 --- a/src/mpi/romio/version.m4
