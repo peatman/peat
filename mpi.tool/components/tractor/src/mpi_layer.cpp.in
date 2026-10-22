@@ -1016,7 +1016,7 @@ void mpi_internal_comm_create_internal(MPID_Comm *comm, MPID_Comm *parent_comm, 
         __DEBUG_EPILOG_MPI_LAYER__
         return;
     }
-    const MPI_Comm parent_handle = mpi_internal_get_comm_handle_from_comm(parent_comm);
+    const MPI_Comm parent_handle = MPI_COMM_NULL; //mpi_internal_get_comm_handle_from_comm(parent_comm);
     const MPI_Comm comm_handle = mpi_internal_get_comm_handle_from_comm(comm);
     pid_t peek_tid_in;
     peat_get_time_tid(&peek_tid_in);
@@ -1032,7 +1032,7 @@ void mpi_internal_comm_create_internal(MPID_Comm *comm, MPID_Comm *parent_comm, 
 //    pmpi_internal_comm_create(comm, parent_comm, kind); //its no-op at least now
 #endif
 #define __write_comms__ \
-    event->comms.comm = mpi_internal_get_comm_handle_from_comm(parent_comm); \
+    /*event->comms.comm = mpi_internal_get_comm_handle_from_comm(parent_comm);*/ \
     event->comms.newcomm = mpi_internal_get_comm_handle_from_comm(comm);
 #include "mpi_layer_comm_begin.epilog.h"
 #undef __write_comms__
