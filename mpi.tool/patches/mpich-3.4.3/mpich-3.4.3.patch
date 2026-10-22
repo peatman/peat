@@ -647,7 +647,7 @@
 +}
 --- a/src/mpi/group/group_translate_ranks.c
 +++ b/src/mpi/group/group_translate_ranks.c
-@@ -214,3 +214,259 @@
+@@ -214,3 +214,261 @@
      goto fn_exit;
      /* --END ERROR HANDLING-- */
  }
@@ -899,12 +899,14 @@
 +
 +MPI_Comm mpi_internal_get_top_comm_handle_from_comm(MPIR_Comm *comm)
 +{
++    if (comm == NULL) return MPI_COMM_NULL;
 +    if (comm->parent_comm) return mpi_internal_get_top_comm_handle_from_comm(comm->parent_comm);
 +    return comm->handle;
 +}
 +
 +MPI_Comm mpi_internal_get_comm_handle_from_comm(MPIR_Comm *comm)
 +{
++    if (comm == NULL) return MPI_COMM_NULL;
 +    return comm->handle;
 +}
 --- a/src/mpid/common/sched/mpidu_sched.c

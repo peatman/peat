@@ -1989,7 +1989,7 @@
  #include "group.h"
  
  /* -- Begin Profiling Symbol Block for routine MPI_Group_translate_ranks */
-@@ -224,3 +225,330 @@
+@@ -224,3 +225,332 @@
      /* --END ERROR HANDLING-- */
  }
  
@@ -2307,6 +2307,7 @@
 +
 +MPI_Comm mpi_internal_get_top_comm_handle_from_comm(MPID_Comm *comm)
 +{
++    if (comm == NULL) return MPI_COMM_NULL;
 +    if (comm->parent_comm) return mpi_internal_get_top_comm_handle_from_comm(comm->parent_comm);
 +    return comm->handle;
 +}
@@ -2318,6 +2319,7 @@
 +
 +MPI_Comm mpi_internal_get_comm_handle_from_comm(MPID_Comm *comm)
 +{
++    if (comm == NULL) return MPI_COMM_NULL;
 +    return comm->handle;
 +}
 --- a/src/mpi/pt2pt/mpir_request.c
