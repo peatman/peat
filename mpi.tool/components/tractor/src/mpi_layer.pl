@@ -185,7 +185,7 @@ if ($properties=~/INPUT_REQUEST_SINGLE/) {
 }
 
 if ($properties=~/MSTATUSES/) {
-   $event_sbuf="event->requests.statuses.virt_addr=status;event->requests.statuses.size=inum*sizeof(MPI_Status);" if $print_extended_stuff;
+   $event_sbuf="event->requests.statuses.virt_addr=statuses;event->requests.statuses.size=inum*sizeof(MPI_Status);" if $print_extended_stuff;
    if ($properties=~/INDICES/) {   # wait/test SOME
     $event_status="
     if (*onum!=MPI_UNDEFINED) {
