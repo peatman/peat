@@ -89,7 +89,7 @@
  
  void MPIR_MAXF  ( void *, void *, int *, MPI_Datatype * ) ;
  void MPIR_MINF  ( void *, void *, int *, MPI_Datatype * ) ;
---- a/src/mpi/coll/helper_fns.c
+--- /dev/null
 +++ b/src/mpi/coll/helper_fns.c
 @@ -0,0 +1,1009 @@
 +/* -*- Mode: C; c-basic-offset:4 ; indent-tabs-mode:nil ; -*- */
