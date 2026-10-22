@@ -34,11 +34,11 @@ The remainder of this file is legacy documentation, kept for historical referenc
    ../../common/mpifuncids.h
         /src
 		Makefile
-                addr_entry.h, records.h, t_defines.h, t_extradef.h, t_mpidef.h, t_time.h
+                records.h, t_defines.h, t_extradef.h, t_mpidef.h, t_time.h
                 tractor.cpp/.h        - main interception library entry point
                 t_comm.cpp/.h         - communicator tracking
                 t_fab.cpp/.h          - fabric-level (PSM2/Verbs) event profiling
-                t_alloc.cpp/.h        - internal allocator/memory tracking
+                t_alloc.h              - internal allocator/memory tracking
                 t_base_event.cpp/.h   - base trace-event/statistic record types
                 t_stat.cpp/.h         - statistics collection
                 t_globals.cpp         - global state
@@ -46,9 +46,6 @@ The remainder of this file is legacy documentation, kept for historical referenc
                 t_topo.cpp            - node/CPU topology capture (hwloc)
                 t_signals.cpp/.h      - signal handling for clean trace flushing
                 elf_parser.cpp/.h     - ELF/debug-info symbol resolution
-                hwcounter.cpp/.h      - PAPI hardware performance counter sampling
-                memprofile.cpp/.h     - memory allocation profiling hooks
-                virt2phys.cpp         - virtual-to-physical address resolution
                 src-ptpd.cpp          - the PTP Daemon (PTPD) executable
                 mpi_layer.cpp.in(.end), mpi_layer.pl - templated/generated MPI interception layer
                 mpi_layer_comm_begin/end.prolog/epilog.h

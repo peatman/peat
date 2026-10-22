@@ -25,13 +25,7 @@
 #include "t_comm.h"
 #include "t_stat.h"
 #include "zlib.h"
-#ifdef _HWCOUNTERS_ENABLED_
-#include "hwcounter.h"
-#endif
 
-#ifdef _MEMPROFILE_
-#include "memprofile.h"
-#endif
 #include "t_base_event.h"
 
 #include <iomanip>
@@ -45,9 +39,6 @@
 
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
 extern "C" {
-#endif
-#if (defined(_TRACTOR_PASSTHROUGH_) && defined(_TRACTOR_VIRT2PHYS_))
-#error "VIRT2PHYS  is not available without trace collection"
 #endif
 /*
 static int get_ra_inc(void) {
@@ -118,9 +109,6 @@ struct tractor : t_base_event {
     PEAT_Clock *start_sync, *stop_sync;
     std::map<int, int> pc_levels;
 
-#ifdef _MEMPROFILE_
-    t_memory_profiler mprof;
-#endif
 
 #ifdef _T_OMPT_
     int parse_openmp;
@@ -173,10 +161,6 @@ struct tractor : t_base_event {
     int write_on_finalize;
     t_nodes_info *gt_ninfo;
 
-#ifdef _TRACTOR_VIRT2PHYS_
-    int pmfile;
-    int pffile;
-#endif
 
     int rank_smp, size_smp;
     int rank_master, size_master;
@@ -252,17 +236,11 @@ struct tractor : t_base_event {
     const std::string get_binary_by_addr(PEAT_Addr addr, PEAT_Addr &base, PEAT_Addr &low, PEAT_Addr &high);
     PEAT_Clock find_ELF_symbols(void);
     void get_topo(void);
-#ifdef _TRACTOR_EXTRA_FIELDS_
-    void print_address(gzFile fp, addr_entry *entry);
-#endif
 
 #ifdef GPUPARSE
     void print_gpu_stat(void);
 #endif
 
-#ifdef _TRACTOR_VIRT2PHYS_
-    void translate_virt2phys(msl_event *event);
-#endif
 };
 struct tractor_debug {
     tractor_debug(void);

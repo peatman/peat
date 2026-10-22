@@ -49,9 +49,6 @@ pid_t *t_base_event::tid2t_tid = NULL;
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
 extern "C" {
 #endif
-#if (defined(_TRACTOR_PASSTHROUGH_) && defined(_TRACTOR_VIRT2PHYS_))
-#error "PTHREAD and VIRT2PHYS  are not available without trace collection"
-#endif
 
 #ifdef _TRACTOR_DIAG_
 FILE *debug_fp;
@@ -212,10 +209,6 @@ tractor::tractor(void)
     compression_level = Z_DEFAULT_COMPRESSION;
     fps_events = fps_extras = NULL;
 
-#ifdef _TRACTOR_VIRT2PHYS_
-    pmfile = 0;
-    pffile = 0;
-#endif
 
     rank_smp = -1, size_smp = -1;
     rank_master = -1, size_master = -1;
@@ -256,18 +249,12 @@ tractor::tractor(void)
        of MPI_COMM_WORLD via our mpi_internal_comm_create hook while still inside PMPI_Init */
     if (t_mpi_rank >= 0)
         local_comms = new t_local_comms;
-#ifdef _HWCOUNTERS_ENABLED_
-    num_hwcs = hwc.get_num_counters();
-#endif
     map_file_parse();
     debug_printf("HIGHLOWBIN parsed values: %llx %llx %llx\n", binval, lowval, highval);
     debug_printf("HIGHLOWBIN fortran parsed values: %llx %llx\n", lowfort, highfort);
     debug_printf("HIGHLOWBIN Tractor parsed values: %llx %llx\n", lowtrac, hightrac);
     debug_printf("HIGHLOWBIN HEAP parsed values: %llx %llx\n", lowheap, highheap);
     debug_printf("HIGHLOWBIN STACK parsed values: %llx %llx\n", lowstack, highstack);
-#ifdef _MEM_HOOKS_
-    mprof.set_add_vars(lowheap, highheap, lowstack, highstack);
-#endif
     //    if (t_mpi_rank<0) {
     init();
     //    }
@@ -349,22 +336,6 @@ static double calc_ratio(void)
 #endif
 }
 
-#ifdef _TRACTOR_EXTRA_FIELDS_
-void tractor::print_address(gzFile fp, addr_entry *entry)
-{
-#ifdef _TRACTOR_VIRT2PHYS_
-    t_gzprintf(fp, ":%llx:%lld:%llx:%llx",
-               entry->virt_addr,
-               entry->size,
-               entry->phys_entry,
-               entry->flags);
-#else
-    t_gzprintf(fp, ":%llx:%lld",
-               entry->virt_addr,
-               entry->size);
-#endif
-}
-#endif
 
 #if 1
 long long g_bounds[] = {0, 16, 64, 256, 16384, 262144, LLONG_MAX};
@@ -511,56 +482,6 @@ int tractor::parse_levels(char *levels)
     return t_o_levels;
 }
 
-#ifdef _TRACTOR_VIRT2PHYS_
-void tractor::translate_virt2phys(msl_event *event)
-{
-    const short func_base = mpi_func_ids_trans[event->func_id];
-    __DEBUG_PROLOG_TRACTOR_LAYER__
-    // walk through all possible pointers and translate their addresses
-    if (func_base >= MPI_START_FILE_GROUP && func_base < MPI_END_FILE_GROUP) {
-        if (event->mpi_fio.buf.virt_addr)
-            __msl_virt2phys(pmfile, pffile, &event->mpi_fio.buf);
-    }
-
-    if (func_base >= MPI_START_BUFFERED_LOCAL_GROUP && func_base < MPI_END_BUFFERED_LOCAL_GROUP) {
-        if (event->buf_local.buf[0].virt_addr)
-            __msl_virt2phys(pmfile, pffile, &event->collective.buf[0]);
-        if (event->buf_local.buf[1].virt_addr)
-            __msl_virt2phys(pmfile, pffile, &event->collective.buf[1]);
-    }
-
-    if (func_base >= MPI_START_GENERAL_COLLECTIVE_GROUP && func_base < MPI_END_GENERAL_COLLECTIVE_GROUP) {
-        if (event->collective.buf[0].virt_addr)
-            __msl_virt2phys(pmfile, pffile, &event->collective.buf[0]);
-        if (event->collective.buf[1].virt_addr)
-            __msl_virt2phys(pmfile, pffile, &event->collective.buf[1]);
-    }
-
-    if (func_base >= MPI_P2P_TRANSFER_START && func_base < MPI_P2P_TRANSFER_END ||
-        func_base >= MPI_P2P_PERSISTENT_INIT_START && func_base < MPI_P2P_PERSISTENT_INIT_END ||
-        func_base >= MPI_PROBE_START && func_base < MPI_PROBE_END) {
-        if (event->p2p_pr_pb.buf.virt_addr)
-            __msl_virt2phys(pmfile, pffile, &event->p2p_pr_pb.buf);
-    }
-    if (func_base >= MPI_START_OSC_GROUP && func_base < MPI_END_OSC_GROUP) {
-        if (event->one_sided_comm.buf.virt_addr)
-            __msl_virt2phys(pmfile, pffile, &event->one_sided_comm.buf);
-        if (event->one_sided_comm.rbuf.virt_addr)
-            __msl_virt2phys(pmfile, pffile, &event->one_sided_comm.rbuf);
-        if (event->one_sided_comm.cbuf.virt_addr)
-            __msl_virt2phys(pmfile, pffile, &event->one_sided_comm.cbuf);
-    }
-
-    if (func_base >= MPI_REQUEST_START && func_base < MPI_REQUEST_END) {
-        if (event->requests.requests.virt_addr)
-            __msl_virt2phys(pmfile, pffile, &event->requests.requests);
-        if (event->requests.statuses.virt_addr)
-            __msl_virt2phys(pmfile, pffile, &event->requests.statuses);
-    }
-
-    __DEBUG_EPILOG_TRACTOR_LAYER__
-}
-#endif
 
 void tractor::parse_env_vars(void)
 {
@@ -945,9 +866,6 @@ void tractor::init(void)
     char pid[16];
     msl_event *event;
     debug_printf("Rank %d: Tractor pre_initialization started...\n", t_mpi_rank);
-#ifdef _MEM_HOOKS_
-    mprof.enable_memory_profiling();
-#endif
     //__msl_getenv("LD_PRELOAD");
     debug_printf("Rank %d: Tractor Constructor started...\n", t_mpi_rank);
     // unsetenv("LD_PRELOAD");
@@ -1012,17 +930,6 @@ void tractor::init(void)
         }
     }
 
-#ifdef _TRACTOR_VIRT2PHYS_
-    {
-        char tbuf[MAX_PATH];
-        sprintf(tbuf, "/proc/%u/pagemap", t_pid);
-        pmfile = __msl_open_pfile(tbuf);
-        sprintf(tbuf, "/proc/kpageflags");
-        pffile = __msl_open_pfile(tbuf);
-        if (pmfile <= 0)
-            abort(); // abort if error
-    }
-#endif
 #if defined(_INTELCOMPILER_)
     int cpu_info[4] = {0, 0, 0, 0};
     __cpuid(cpu_info, 0);
@@ -1363,11 +1270,6 @@ void tractor::finalize(void)
     if (tractor_initialized < 1)
         return;
     so_walker(g_shared_objects);
-#ifdef _MEM_HOOKS_
-    map_file_parse(); // parse it once again since heap and stack might be changed
-    mprof.set_add_vars(lowheap, highheap, lowstack, highstack);
-    mprof.initialize_object_addresses(g_shared_objects);
-#endif
     /*
         write_trace(fps_mpi, fps_hwc,fps_com,fps_app);
         for (i=0;i<t_tid_counter;i++) {
@@ -1380,9 +1282,6 @@ void tractor::finalize(void)
     */
     debug_printf("Rank %d: Epilog finished...\n", t_mpi_rank);
     // end();
-#ifdef _MEM_HOOKS_
-    mprof.disable_memory_profiling();
-#endif
 #ifdef USE_NANO_TIMER
     last_tsc = peat_get_nano_sec();
 #else
@@ -1406,14 +1305,6 @@ void tractor::abort(void)
     if (tractor_initialized < 1)
         return;
     so_walker(g_shared_objects);
-#ifdef _MEM_HOOKS_
-    map_file_parse(); // parse it once again since heap and stack might be changed
-    mprof.set_add_vars(lowheap, highheap, lowstack, highstack);
-    mprof.initialize_object_addresses(g_shared_objects);
-#endif
-#ifdef _MEM_HOOKS_
-    mprof.disable_memory_profiling();
-#endif
 #ifdef USE_NANO_TIMER
     last_tsc = peat_get_nano_sec();
 #else
@@ -1441,11 +1332,6 @@ void tractor::end(void)
         ompt_finalize_tool();
 #endif
 
-#ifdef _MEMPROFILE_
-    PEAT_LNum max_memory_application_rss = mprof.get_max_memory_RSS_in_KB(); // in kibibytes
-    PEAT_LNum tractor_allocated = bytes_allocated;
-    PEAT_LNum max_memory_application_rs_scorrected = max_memory_application_rss - ((tractor_allocated /* + (mprof.get_total_events() * sizeof(memory_profiler_event))*/) / 1024); // in kibibytes
-#endif
     tractor_initialized = 0;
     if (global_mpi_time > 0)
         write_trace(); // in case LD_PRELOAD was used with 'wrong' app (like mpiexec.hydra etc)
@@ -1453,14 +1339,6 @@ void tractor::end(void)
         delete gt_ninfo;
     if (local_comms)
         delete local_comms;
-#ifdef _TRACTOR_VIRT2PHYS_
-    {
-        if (pmfile > 0)
-            __msl_close_pfile(pmfile);
-        if (pffile > 0)
-            __msl_close_pfile(pffile);
-    }
-#endif
 
     double p2dratio, m2pratio, t2pratio, g2pratio;
     PEAT_Clock init_tool_overhead = overall_tool_overhead[MPI_INIT_ID_THROUGH] + overall_tool_overhead[MPI_INIT_THREAD_ID_THROUGH] + overall_tool_overhead[MPI_FINALIZE_ID_THROUGH];
@@ -1511,13 +1389,6 @@ void tractor::end(void)
 #endif
     }
 
-#ifdef _MEMPROFILE_
-    if (fps_com)
-        gzprintf(fps_com, "%d:Memory allocated  by application maximum RSS(KB). Raw(whole): %ld, Tractor: %ld, corrected (-Tractor): %ld\n", PEAT_RT_Remark,
-                 max_memory_application_rss,
-                 tractor_allocated / 1024,
-                 max_memory_application_rs_scorrected);
-#endif
 
     if (start_sync)
         t_free(start_sync, size_cw * sizeof(PEAT_Clock));
@@ -1782,11 +1653,6 @@ int tractor::write_trace(void)
     PEAT_Clock time_symbols_search = 0;
     // apply_shared_object_info_to_regions(l_user_region_store);
     time_symbols_search = find_ELF_symbols();
-#ifdef _MEM_HOOKS_
-    char filename[MAX_PATH];
-    sprintf(filename, "%d.memprf%s", t_mpi_rank, gz_ext);
-    PEAT_Clock memory_profiler_trace_write_len = mprof.fill_common_statistic(filename, gz_mode);
-#endif
     write_com_file(events_num, /* l_user_region_store,*/ time_symbols_search);
     write_app_file(gt_ninfo);
     __DEBUG_EPILOG_TRACTOR_LAYER__
@@ -2021,13 +1887,6 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
     std::vector<void **> current_addrs_array(slots, (void **)NULL);
     std::vector<msl_extra_info *> current_extras_array(slots, (msl_extra_info *)NULL);
     std::vector<long long> record_counter(slots, 0), max_events(slots, 0), max_extras(slots, 0), extras_counter(slots, 0);
-#ifdef _HWCOUNTERS_ENABLED_
-    std::vector<long long *> current_hwc_array(slots, (long long *)NULL);
-    long long hwc_counter[t_max_threads][num_hwcs];
-#endif
-#ifdef _MEMPROFILE_STORE_
-    std::vector<t_memory_event *> current_mems_array(slots, (t_memory_event *)NULL);
-#endif
 
     long long uniq_index = 0;
     long max_thread_id = 0;
@@ -2059,12 +1918,6 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                 rewind(fp);
                 current_array[idx] = (msl_event *)t_malloc((onetimealloc + 1) * sizeof(msl_event), 128);
                 current_addrs_array[idx] = (void **)t_malloc((onetimealloc + 1) * sizeof(void *) * num_addrs, 128);
-#ifdef _HWCOUNTERS_ENABLED_
-                current_hwc_array[idx] = (long long *)t_malloc((onetimealloc + 1) * sizeof(long long) * num_hwcs * 2, 128);
-#endif
-#ifdef _MEMPROFILE_STORE_
-                current_mems_array[idx] = (t_memory_event *)t_malloc((onetimealloc + 1) * t_memory_event_size * 2, 128);
-#endif
             }
             if (fread(&max_events[idx], 4, 1, fp) != 1) {
                 max_events[idx] = 0;
@@ -2076,16 +1929,6 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
             tmp_mi = fread(current_addrs_array[idx], sizeof(void *) * num_addrs, max_events[idx], fp);
             if (tmp_mi != max_events[idx])
                 debug_printf("TID %d level %d, %ld!=%ld events read count mismatch.\n", tid, level, max_events[idx], tmp_mi);
-#ifdef _HWCOUNTERS_ENABLED_
-            tmp_mi = fread(current_hwc_array[idx], sizeof(long long) * num_hwcs * 2, max_events[idx], fp);
-            if (tmp_mi != max_events[idx])
-                debug_printf("TID %d level %d, %ld!=%ld events read count mismatch.\n", tid, level, max_events[idx], tmp_mi);
-#endif
-#ifdef _MEMPROFILE_STORE_
-            tmp_mi = fread(current_mems_array[idx], t_memory_event_size * 2, max_events[idx], fp);
-            if (tmp_mi != max_events[idx])
-                debug_printf("TID %d level %d, %ld!=%ld events read count mismatch.\n", tid, level, max_events[idx], tmp_mi);
-#endif
             debug_printf("TID %d level %d, %ld events read back.\n", tid, level, max_events[idx]);
         } else {
             if (first) {
@@ -2100,21 +1943,10 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
             max_events[idx] = (current_chain[idx]->next == NULL) ? event_index[tid][level] : onetimealloc;
             current_array[idx] = (msl_event *)current_chain[idx]->events_array;
             current_addrs_array[idx] = (void **)current_chain[idx]->addr_array;
-#ifdef _HWCOUNTERS_ENABLED_
-            current_hwc_array[idx] = (long long *)current_chain[idx]->hwc_array;
-#endif
-#ifdef _MEMPROFILE_STORE_
-            current_mems_array[idx] = (t_memory_event *)current_chain[idx]->mem_array;
-#endif
         }
     };
 
     for (int i = 0; i < t_tid_counter; i++) {
-#ifdef _HWCOUNTERS_ENABLED_
-        for (int hwcs_ind = 0; hwcs_ind < num_hwcs; hwcs_ind++) {
-            hwc_counter[i][hwcs_ind] = 0;
-        }
-#endif
         for (int level = 0; level < levels; level++) {
             const int idx = i * levels + level;
             load_block(i, level, true);
@@ -2154,12 +1986,6 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
         const long long rc = record_counter[idx];
         msl_event &rec = current_array[idx][rc];
         void **cur_addrs = current_addrs_array[idx];
-#ifdef _HWCOUNTERS_ENABLED_
-        long long *cur_hwc = current_hwc_array[idx];
-#endif
-#ifdef _MEMPROFILE_STORE_
-        t_memory_event *cur_mems = current_mems_array[idx];
-#endif
         const short func_base = mpi_func_ids_trans[rec.func_id];
         const long long children = second_line ? 0 : rec.num_children;
         processed_events++;
@@ -2206,29 +2032,6 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                 }
             }
 
-    #ifdef _HWCOUNTERS_ENABLED_
-            for (int hwcs_ind = 0; hwcs_ind < num_hwcs * 2; hwcs_ind++) {
-                long long chwc = cur_hwc[rc * num_hwcs * 2 + hwcs_ind];
-                t_gzprintf(fps_hwc, ":%lld", chwc
-    #if 1
-                                                 - hwc_counter[tid][hwcs_ind % num_hwcs]
-    #endif
-                );
-                if (hwcs_ind < num_hwcs)
-                    hwc_counter[tid][hwcs_ind] = cur_hwc[rc * num_hwcs * 2 + hwcs_ind];
-            }
-    #endif
-    #ifdef _MEMPROFILE_STORE_
-            t_gzprintf(fps_hwc, ":%ld:%ld:%ld:%ld:%ld:%ld:%ld:%ld",
-                       cur_mems[rc * 2].vm_size,
-                       cur_mems[rc * 2].vm_RSS,
-                       cur_mems[rc * 2].ru_maxrss,
-                       cur_mems[rc * 2].mem_used_by_tractor,
-                       cur_mems[rc * 2 + 1].vm_size,
-                       cur_mems[rc * 2 + 1].vm_RSS,
-                       cur_mems[rc * 2 + 1].ru_maxrss,
-                       cur_mems[rc * 2 + 1].mem_used_by_tractor);
-    #endif
             PEAT_Clock tsc_mpi_entry = rec.tscs[1];
             PEAT_Clock tsc_mpi_exit = rec.tscs[2];
             long long *ext_count = &extras_counter[idx];
@@ -2722,35 +2525,6 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
     #endif // _T_PER_INTERVAL_STAT_WRITE_
     #endif
 
-    #ifdef _TRACTOR_EXTRA_FIELDS_
-            if (func_base >= MPI_START_FILE_GROUP && func_base < MPI_END_FILE_GROUP) {
-                print_address(fps_hwc, &rec.mpi_fio.buf);
-            }
-
-            if (func_base >= MPI_START_BUFFERED_LOCAL_GROUP && func_base < MPI_END_BUFFERED_LOCAL_GROUP) {
-                print_address(fps_hwc, &rec.buf_local.buf[0]);
-                print_address(fps_hwc, &rec.buf_local.buf[1]);
-            }
-            if (func_base >= MPI_P2P_TRANSFER_START && func_base < MPI_P2P_TRANSFER_END ||
-                func_base >= MPI_P2P_PERSISTENT_INIT_START && func_base < MPI_P2P_PERSISTENT_INIT_END ||
-                func_base >= MPI_PROBE_START && func_base < MPI_PROBE_END) {
-                print_address(fps_hwc, &rec.p2p_pr_pb.buf);
-            }
-            if (func_base >= MPI_START_OSC_GROUP && func_base < MPI_END_OSC_GROUP) {
-                print_address(fps_hwc, &rec.one_sided_comm.buf);
-                print_address(fps_hwc, &rec.one_sided_comm.rbuf);
-                print_address(fps_hwc, &rec.one_sided_comm.cbuf);
-            }
-
-            if (func_base >= MPI_REQUEST_START && func_base < MPI_REQUEST_END) {
-                print_address(fps_hwc, &rec.requests.requests);
-                print_address(fps_hwc, &rec.requests.statuses);
-            }
-            if (func_base >= MPI_START_GENERAL_COLLECTIVE_GROUP && func_base < MPI_END_GENERAL_COLLECTIVE_GROUP) {
-                print_address(fps_hwc, &rec.collective.buf[0]);
-                print_address(fps_hwc, &rec.collective.buf[1]);
-            }
-    #endif
         t_gzprintf(fps_hwc, "\n");
         t_gzprintf(fps_mpi, "\n");
         return children;
@@ -2841,14 +2615,6 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                     t_free(current_array[idx], (onetimealloc + 1) * sizeof(msl_event));
                 if (current_addrs_array[idx])
                     t_free(current_addrs_array[idx], (onetimealloc + 1) * sizeof(void *) * num_addrs);
-#ifdef _HWCOUNTERS_ENABLED_
-                if (current_hwc_array[idx])
-                    t_free(current_hwc_array[idx], (onetimealloc + 1) * sizeof(long long) * num_hwcs * 2);
-#endif
-#ifdef _MEMPROFILE_STORE_
-                if (current_mems_array[idx])
-                    t_free(current_mems_array[idx], (onetimealloc + 1) * t_memory_event_size * 2);
-#endif
                 if (current_extras_array[idx])
                     t_free(current_extras_array[idx], (onetimealloc + 1) * sizeof(msl_extra_info));
             }
@@ -3101,9 +2867,6 @@ void tractor::write_com_file(const num_processed_events &num_of_events, /*user_r
 #endif
     if (local_comms)
         local_comms->print_comms_report(fps_com, PEAT_RT_Local_Communicators_Report);
-#ifdef _MEM_HOOKS_
-    mprof.print_memory_profile_report(fps_com, PEAT_RT_Memory_Profile_Report, PEAT_RT_Memory_Profile_Report_Total);
-#endif
 
     gzprintf(fps_com, "%d:%d:%x:%x:%x:%x:%d:%d:%d:%x:%d\n", PEAT_RT_MPI_Predefined, MPI_SUCCESS, MPI_UNDEFINED, MPI_COMM_WORLD, MPI_COMM_SELF, MPI_COMM_NULL, MPI_PROC_NULL, MPI_ANY_TAG, MPI_ANY_SOURCE, MPI_REQUEST_NULL, MPI_ROOT);
     write_stat_com_file();
@@ -3158,11 +2921,7 @@ void tractor::write_app_file(t_nodes_info *ninfo)
         }
         gzprintf(fps_app, "%d:%d\n", PEAT_RT_Frame_Marker, TMPIfunc_id_Size); // Need ID that is not overlapped by func_id in *.rnk to get "frame handling" in trace file
         // print main IDs table stop
-#ifdef _HWCOUNTERS_ENABLED_
-        int __num_hwcs = hwc.get_num_counters();
-#else
         int __num_hwcs = 0;
-#endif
 
         gzprintf(fps_app, "%d:%d:%d", PEAT_RT_Var_Block_Info, num_addrs, __num_hwcs);
         for (int i = 0; i < num_addrs; i++) {
@@ -3289,12 +3048,6 @@ void tractor::dump_events(pid_t tid, int level, msl_adv_chain **chain)
         fwrite(&(*chain)->num_events, 4, 1, *fp);
         fwrite((*chain)->events_array, (*chain)->events_size, (*chain)->num_events, *fp);
         fwrite((*chain)->addr_array, (*chain)->addr_size, (*chain)->num_events, *fp);
-#ifdef _HWCOUNTERS_ENABLED_
-        fwrite((*chain)->hwc_array, (*chain)->hwc_size, (*chain)->num_events, *fp);
-#endif
-#ifdef _MEMPROFILE_STORE_
-        fwrite((*chain)->mem_array, (*chain)->mem_size, (*chain)->num_events, *fp);
-#endif
         debug_printf("Dumping %ld events.\n", (*chain)->num_events);
         destroy_shift_start((msl_base_chain **)chain);
     }

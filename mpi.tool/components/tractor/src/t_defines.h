@@ -226,15 +226,8 @@ struct t_memory_event {
 
 struct msl_extras_counters {
     PEAT_Addr *addrs;
-#ifdef _HWCOUNTERS_ENABLED_
-    long long *hwcs;
-#endif
-#ifdef _MEMPROFILE_STORE_
-    t_memory_event *mems;
-#endif
 };
 
-#include "addr_entry.h"
 struct msl_event {
     PEAT_Clock tscs[4];
     short func_id;      /* through id; the base id comes from mpi_func_ids_trans[] when writing */
@@ -258,9 +251,6 @@ struct msl_event {
 #else
             int message; /* fake value */
 #endif
-#ifdef _TRACTOR_EXTRA_FIELDS_
-            addr_entry buf;
-#endif
         } __attribute__((packed)) __attribute__((aligned(4))) p2p_pr_pb;
 
         /*          Completion (WAIT/TEST) and persistent request start (START) */
@@ -269,10 +259,6 @@ struct msl_event {
             int input_request_num;
             int triggered_request_num;
             int flag;
-#ifdef _TRACTOR_EXTRA_FIELDS_
-            addr_entry requests;
-            addr_entry statuses;
-#endif
         } __attribute__((packed)) __attribute__((aligned(4))) requests;
 
         /*          Collective functions     */
@@ -281,9 +267,6 @@ struct msl_event {
             int root;
             MPI_Comm comm;
             MPI_Request request; /* actual request or "0" if no request */
-#ifdef _TRACTOR_EXTRA_FIELDS_
-            addr_entry buf[2];
-#endif
         } __attribute__((packed)) __attribute__((aligned(4))) collective;
         /*          Communicators functions     */
         struct {
@@ -296,9 +279,6 @@ struct msl_event {
         /*          Buffered Local functions     */
         struct {
             long long count, size;
-#ifdef _TRACTOR_EXTRA_FIELDS_
-            addr_entry buf[2];
-#endif
         } __attribute__((packed)) __attribute__((aligned(4))) buf_local;
         /*          One sided communication     */
         struct { // 8 + 4 + 4 + 4 + 4 + 4
@@ -310,11 +290,6 @@ struct msl_event {
             MPI_Comm comm;
             MPI_Win window;
             MPI_Request request; /* actual request or "0" if no request */
-#ifdef _TRACTOR_EXTRA_FIELDS_
-            addr_entry buf;
-            addr_entry rbuf;
-            addr_entry cbuf;
-#endif
         } __attribute__((packed)) __attribute__((aligned(4))) one_sided_comm;
         /*          File IO     */
         struct { // 8 + 8 + 4 + 4
@@ -323,9 +298,6 @@ struct msl_event {
             MPI_Comm comm;
             MPI_File fh;
             MPI_Request request; /* actual request or "0" if no request */
-#ifdef _TRACTOR_EXTRA_FIELDS_
-            addr_entry buf;
-#endif
         } __attribute__((packed)) __attribute__((aligned(4))) mpi_fio;
 
         /*          Other local      */
@@ -398,10 +370,5 @@ extern  ompt_finalize_tool_t ompt_finalize_tool;
 #define __msl_record_longs(tid, level, value, nums) gt_info(record_longs(tid, level, value, nums))
 #define __msl_record_low_longs(tid, level, value, nums) gt_info(record_low_longs(tid, level, value, nums))
 
-#ifdef _TRACTOR_VIRT2PHYS_
-bool __msl_virt2phys(int pmfile, int pffile, addr_entry *entry);
-int __msl_open_pfile(char *ppath);
-void __msl_close_pfile(int pfile);
-#endif //_TRACTOR_VIRT2PHYS_
 
 #endif //__T_DEFINES_H__

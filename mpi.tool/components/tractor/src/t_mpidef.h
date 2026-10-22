@@ -251,12 +251,6 @@ void T_MPID_Request_release(MPID_Request *request)
         __msl_allocate_event(tid, level, 1, &event, &counters);
         mpi_req = __msl_record_drequest(tid, level, (const MPID_Request *)request);
         if (mpi_req != 0) PMPI_Request_get_status(mpi_req, &flag, &status);
-#ifdef _HWCOUNTERS_ENABLED_
-        gt_info(hwc).get_all_counters(&counters.hwcs[0]);
-#endif
-#ifdef _MEMPROFILE_STORE_
-        gt_info(mprof).get_mem_status(&counters.mems[0]);
-#endif
         tsc_mpi_entry = peat_get_time();
     } // if(__builtin_expect((counting_permission[MPID_REQUEST_RELEASE_ID_THROUGH]>0 && !l_skip_parse),1))
 #else
@@ -279,12 +273,6 @@ void T_MPID_Request_release(MPID_Request *request)
 
         event->tscs[0] = tsc_entry;
         event->tscs[1] = tsc_mpi_entry;
-#ifdef _HWCOUNTERS_ENABLED_
-        gt_info(hwc).get_all_counters(&counters.hwcs[gt_info(num_hwcs)]);
-#endif
-#ifdef _MEMPROFILE_STORE_
-        gt_info(mprof).get_mem_status(&counters.mems[1]);
-#endif
 
         event->requests.flag = flag;
         if (event->requests.flag) { 

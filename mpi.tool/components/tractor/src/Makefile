@@ -30,17 +30,13 @@ FUNCID=mpi_func_ids_through.h # can pick any of 3 above
 shell=bash
 SUFFIX=
 PTPD=on
-MEMPROFILE=off
 TARGET=impi
 PARSE_MPI_INTERNAL=off
 PARSE_GPU=off
 OVERALLSTATONLY=off
-VIRT2PHYS=off
 DIAG=off
-HWCOUNTERS=off
 USE_PRAGMA_WEAK=on #enabled by default
 USE_SIGNALS=on
-PRINT_EXTENDED_STUFF=off #on# to enable
 MAXMPI=3
 OMPT=on
 
@@ -139,7 +135,7 @@ endif
 #LIBS+= -L../../../misc -lmpiif 
 
 ifeq "$(TARGET)" "openmpi5"
-CONTROLS+=-D_USE_PROTORYPES_WITH_CONST_ -D_MPI_MESSAGE_DEFINED_ -D_NO_C_VR -D_OPENMPI_=5  -fms-extensions -Wno-int-to-pointer-cast #-D_TRACTOR_EXTRA_FIELDS_ 
+CONTROLS+=-D_USE_PROTORYPES_WITH_CONST_ -D_MPI_MESSAGE_DEFINED_ -D_NO_C_VR -D_OPENMPI_=5  -fms-extensions -Wno-int-to-pointer-cast
 cpp_input=-D_OPENMPI_=5
 MAXMPI=3
 endif
@@ -179,33 +175,6 @@ ifeq "$(PTPD)" "on"
 CMISC+=-D_TRACTOR_USE_PTPD_ 
 endif
 
-ifeq "$(MPIBUFFERS)" "on"
-CMISC+= -D_TRACTOR_EXTRA_FIELDS_ 
-EXTRANAMELIB:=$(EXTRANAMELIB).mbs
-PRINT_EXTENDED_STUFF=on
-endif
-
-
-ifeq "$(VIRT2PHYS)" "on"
-CONTROLS+=-D_TRACTOR_VIRT2PHYS_ -D_TRACTOR_EXTRA_FIELDS_ 
-OBJECTS+=virt2phys.o
-EXTRANAMELIB:=$(EXTRANAMELIB).v2p
-PRINT_EXTENDED_STUFF=on
-endif
-
-ifneq "$(MEMPROFILE)" "off"
-
-MEM_PROFILE=$(shell echo $(MEMPROFILE) | tr a-z A-Z )
-
-OBJECTS+=memprofile.o #t_alloc.o
-EXTRANAMELIB:=$(EXTRANAMELIB).mem$(MEMPROFILE)
-CONTROLS+=-D_MEMPROFILE_ -D_MEMPROFILE_$(MEM_PROFILE)_ -D_TRACTOR_ZERO_ON_ALLOCATE_
-ifeq "$(MEM_PROFILE)" "HOOKS"
-CONTROLS+=-D_MEM_HOOKS_ -D_MEMPROFILE_STORE_
-OBJECTS+=t_alloc.o
-endif
-endif
-
 ifeq "$(OMPT)" "on"
 OBJECTS+=t_ompt.o
 ifeq "$(COMPILER)" "intel"
@@ -215,13 +184,6 @@ OMP+=-fopenmp
 endif
 #EXTRANAMELIB:=$(EXTRANAMELIB).ompt
 CONTROLS+=-D_T_OMPT_
-endif
-
-ifneq "$(HWCOUNTERS)" "off"
-HW_COUNTERS=$(shell echo $(HWCOUNTERS) | tr a-z A-Z )
-CONTROLS+=-D_HWCOUNTERS_ENABLED_ -D_HWCOUNTERS_$(HW_COUNTERS)_
-OBJECTS+=hwcounter.o
-EXTRANAMELIB:=$(EXTRANAMELIB).$(HWCOUNTERS)
 endif
 
 
@@ -246,7 +208,7 @@ $(FUNCID): mpi_func.inc ../../common/mpi_func_ids.h
 	../../common/mpi_func_ids.pl -i ../../common/mpi_func_ids.h mpi_func.inc -o mpi_func_ids_through.h mpi_func_names.h mpi_func_ids_trans.h  
 
 mpi_layer.cpp: mpi_layer.cpp.in mpi_layer.cpp.in.end $(FUNCID)
-	./mpi_layer.pl -p $(USE_PRAGMA_WEAK) -e $(PRINT_EXTENDED_STUFF) -m $(MAXMPI) -t $(PCT) -c $(PARSE_GPU) -i mpi_func.inc -o mpi_layer.cpp 
+	./mpi_layer.pl -p $(USE_PRAGMA_WEAK) -m $(MAXMPI) -t $(PCT) -c $(PARSE_GPU) -i mpi_func.inc -o mpi_layer.cpp 
 
 $(OBJECTS):   $(FUNCID)
 

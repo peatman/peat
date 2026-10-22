@@ -27,14 +27,6 @@ __write_comms__
 memcpy(counters.addrs, p_entrys, sizeof(void *) * gt_info(num_addrs));
 //    } // if (__builtin_expect((counting_permission[fidc]>0 && !l_skip_parse),1))
 gt_info(local_comms)->comm_begin(event->comms.newcomm, tsc_entry,is_internal);
-#ifdef _HWCOUNTERS_ENABLED_
-memcpy(counters.hwcs, l_hwcs, num_hwcs * sizeof(l_hwcs[0]));
-gt_info(hwc).get_all_counters(&counters.hwcs[num_hwcs]);
-#endif
-#ifdef _MEMPROFILE_STORE_
-counters.mems[0] = l_mem;
-gt_info(mprof).get_mem_status(&counters.mems[1]);
-#endif
 event->tscs[0] = tsc_entry;
 event->tscs[1] = tsc_mpi_entry;
 event->tscs[2] = tsc_mpi_exit;

@@ -38,7 +38,6 @@ if ($funcpars eq 'void' || $funcpars eq '') {
 }
 }
 
-my $print_extended_stuff=0;
 my $use_pragma_weak=0;
 my $parse_mpi_internal=0;
 my $mpifuncs;
@@ -83,8 +82,6 @@ my $event_request;
 my $event_status;
 my $record_input_request;
 my $event_record_input_request;
-my $event_rbuf;
-my $event_sbuf;
 my $event_record_input_request_addr;
 my $mpi_internal="mpi_internal_" if $properties =~/MPI_INTERNAL/; # MPI-internal helper variants (T_Type_size_mpi_internal, mpi_internal_get_rank_from_req, stack_unwind_mpi_internal)
 my $global_mpi_time;
@@ -94,7 +91,6 @@ $global_mpi_time="global_mpi_time+=tsc_mpi_exit-tsc_mpi_entry;" if !($properties
 #   $record_input_request="__msl_record_requests(tid,*requests,inum);";
 #   $record_input_request="__msl_record_drequests(tid,*requests,inum);" if $properties =~/MPI_INTERNAL/;
 #   $event_record_input_request="event->requests.input_request_num=inum;";
-#   $event_rbuf="event->requests.requests.virt_addr=*requests;event->requests.requests.size=inum*sizeof(MPI_Request);" if $print_extended_stuff;
 #   $event_record_input_request_addr="event->requests.request_addr=(PEAT_Addr)*requests;";
 #}
 my $declare_local_comms;
@@ -126,7 +122,6 @@ if ($properties=~/INPUT_REQUEST_MULTIPLE/) {
    $record_input_request="__msl_record_requests(tid,level,t_req,inum);";
 
    $event_record_input_request="event->requests.input_request_num=inum;";
-   $event_rbuf="event->requests.requests.virt_addr=requests;event->requests.requests.size=inum*sizeof(MPI_Request);" if $print_extended_stuff;
    $event_record_input_request_addr="event->requests.request_addr=(PEAT_Addr)requests;";
    $declare_local_comms="
    #ifndef _OPENMPI_ 
@@ -173,16 +168,13 @@ if ($properties=~/INPUT_REQUEST_SINGLE/) {
    $record_input_request="__msl_record_request(tid,level,t_req);";
 
    $event_record_input_request="event->requests.input_request_num=1;";
-   $event_rbuf="event->requests.requests.virt_addr=request;event->requests.requests.size=sizeof(MPI_Request);" if $print_extended_stuff;
    $event_record_input_request_addr="event->requests.request_addr=(PEAT_Addr)request;";
    if ($properties =~/PEAT_PROP_REQUEST_DIRECT/) { # MPI_Request by value (MPI_Pready/MPI_Parrived): no address to record, keep the handle value
-       $event_rbuf="event->requests.requests.virt_addr=(void *)(intptr_t)request;event->requests.requests.size=sizeof(MPI_Request);" if $print_extended_stuff;
        $event_record_input_request_addr="event->requests.request_addr=(PEAT_Addr)(intptr_t)request;";
    }
 }
 
 if ($properties=~/MSTATUSES/) {
-   $event_sbuf="event->requests.statuses.virt_addr=status;event->requests.statuses.size=inum*sizeof(MPI_Status);" if $print_extended_stuff;
    if ($properties=~/INDICES/) {   # wait/test SOME
     $event_status="
     if (*onum!=MPI_UNDEFINED) {
@@ -217,7 +209,6 @@ if ($properties=~/MSTATUSES/) {
 } else {
     if ($properties=~/STATUS/ ) { # wait test, ANY
         my $lcomm=($properties=~/INPUT_REQUEST_SINGLE/) ? "local_comm" : "local_comms[temp_index]";
-        $event_sbuf="event->requests.statuses.virt_addr=status;event->requests.statuses.size=sizeof(MPI_Status);" if $print_extended_stuff;
         $event_status="
         if (event->requests.flag) { 
             event->requests.triggered_request_num=1;
@@ -281,7 +272,6 @@ my $prototype=$c_prototype;
 my $funcid_through="$line[0]_THROUGH";
 my $funcid="$line[0]";
 my $datasize;
-my $event_buf;
 my $internal_comm_tracking;
 
 my $mpi_internal="mpi_internal_" if $properties =~/MPI_INTERNAL/; # MPI-internal helper variants
@@ -306,21 +296,9 @@ my $sbuf_bottom;
 my $rbuf_bottom;
 if ($funcid=~/REPLACE/) {
     $datasize="${mpi_internal}T_Type_size(type,&s_data_size);r_data_size=s_data_size;s_count=r_count=count;";
-    $event_buf="
-        event[1]->p2p_pr_pb.buf.virt_addr=buf;
-        event[1]->p2p_pr_pb.buf.size=event[1]->p2p_pr_pb.transfer_bytes;
-        event[0]->p2p_pr_pb.buf.virt_addr=buf;
-        event[0]->p2p_pr_pb.buf.size=event[0]->p2p_pr_pb.transfer_bytes;
-    " if $print_extended_stuff;
 
 } else {
     $datasize="${mpi_internal}T_Type_size(stype,&s_data_size);${mpi_internal}T_Type_size(rtype,&r_data_size);s_count=scount;r_count=rcount;";
-    $event_buf="
-        event[1]->p2p_pr_pb.buf.virt_addr=rbuf;
-        event[1]->p2p_pr_pb.buf.size=event[1]->p2p_pr_pb.transfer_bytes;
-        event[0]->p2p_pr_pb.buf.virt_addr=sbuf;
-        event[0]->p2p_pr_pb.buf.size=event[0]->p2p_pr_pb.transfer_bytes;
-    " if $print_extended_stuff;
 }
 my $status_peer="src >=0 ? src : status->MPI_SOURCE";
 
@@ -365,8 +343,6 @@ my $offset;
 my $buf_bottom;
 my $rbuf_bottom;
 my $cbuf_bottom;
-my $event_rbuf;
-my $event_cbuf;
 my $event_status_begin="{";
 my $event_status_end="}";
 
@@ -403,20 +379,8 @@ $get_datasize="${mpi_internal}T_Type_size(type,&data_size);"if $properties=~/BYT
 $transfer_bytes="event->$basic_struct.transfer_bytes=(count*data_size);"if $properties=~/BYTES/;
 $transfer_bytes="event->$basic_struct.transfer_bytes=((long long)partitions*(long long)count*data_size);" if $properties=~/BYTES/ && $properties=~/PARTITIONS/; 
 $transfer_bytes="event->$basic_struct.transfer_bytes=size;"if $properties=~/SIZE/;
-$event_buf="
-        event->$basic_struct.buf.virt_addr=buf;
-        event->$basic_struct.buf.size=event->$basic_struct.transfer_bytes;
-" if $print_extended_stuff && ($properties=~/DATA_TX/ || $properties=~/DATA_RX/|| $properties=~/DATA_TXRX/ || $properties=~/BUF/  );
 
-$event_rbuf="
-        event->$basic_struct.rbuf.virt_addr=rbuf;
-        event->$basic_struct.rbuf.size=event->$basic_struct.transfer_bytes;
-" if $print_extended_stuff && $properties=~/RBUF/;
 
-$event_cbuf="
-        event->$basic_struct.cbuf.virt_addr=cbuf;
-        event->$basic_struct.cbuf.size=event->$basic_struct.transfer_bytes;
-" if $print_extended_stuff && $properties=~/CBUF/;
 
 if ($properties=~/STATUS/) {
     $event_status_begin="if (*flag) {" if $properties=~/FLAG/;
@@ -477,8 +441,6 @@ my $type="T_Type_size(type,&data_size);";
 my $size="event->buf_local.size=size;";
 my $sbuf_bottom;
 my $rbuf_bottom;
-my $event_sbuf="event->buf_local.buf[0].virt_addr=buf;event->buf_local.buf[0].size=event->buf_local.count;" if $print_extended_stuff;
-my $event_rbuf="event->buf_local.buf[1].virt_addr=outbuf;event->buf_local.buf[1].size=event->buf_local.size;" if $print_extended_stuff;
 my $print_code=`cat pinc/buf_local.code.inc`;
 eval $print_code;
 print STDERR "Function $prototype:$@ generated\n";
@@ -536,8 +498,6 @@ my $r_type_size;
 my $buf_in_place;
 my $sbuf_bottom;
 my $rbuf_bottom;
-my $event_sbuf;
-my $event_rbuf;
 
 if ($properties=~/DATA_COLLECTIVE/) {
 if ($properties=~/TYPEMATCH/) {
@@ -565,9 +525,6 @@ if ($properties=~/VECTOR/) {
             long long s_bytes[comm_size]; 
             for (i=0;i<comm_size;i++) { 
                 s_bytes[i]=(long long)counts[i]*(long long)s_type_size; 
-#ifdef _TRACTOR_EXTRA_FIELDS_
-                ts_bytes+=s_bytes[i]; 
-#endif
             }
             __msl_record_longs(tid,level,s_bytes,comm_size);
         }" if $properties=~/VECTOR_SEND/;
@@ -595,9 +552,6 @@ if ($properties=~/VECTOR/) {
                 long long s_bytes[comm_size]; 
                 for (i=0;i<comm_size;i++) {
                     $s_type_size_v s_bytes[i]=(long long)scounts[i]*(long long)s_type_size;
-#ifdef _TRACTOR_EXTRA_FIELDS_
-                    ts_bytes+=s_bytes[i]; 
-#endif
                 } 
                 __msl_record_longs(tid,level,s_bytes,comm_size);
             }
@@ -610,9 +564,6 @@ if ($properties=~/VECTOR/) {
             long long s_bytes[comm_size]; 
             for (i=0;i<comm_size;i++) {
                 $s_type_size_v s_bytes[i]=(long long)scounts[i]*(long long)s_type_size;
-#ifdef _TRACTOR_EXTRA_FIELDS_
-                ts_bytes+=s_bytes[i]; 
-#endif
             } 
             __msl_record_longs(tid,level,s_bytes,comm_size);
         }" if $properties=~/VECTOR_SEND/;
@@ -626,9 +577,6 @@ if ($properties=~/VECTOR/) {
                 long long r_bytes[comm_rsize]; 
                 for (i=0;i<comm_rsize;i++) {
                     $r_type_size_v r_bytes[i]=(long long)rcounts[i]*(long long)r_type_size;
-#ifdef _TRACTOR_EXTRA_FIELDS_
-                    tr_bytes+=r_bytes[i]; 
-#endif
                 } 
                 __msl_record_longs(tid,level,r_bytes,comm_rsize);
             }
@@ -640,9 +588,6 @@ if ($properties=~/VECTOR/) {
             long long r_bytes[comm_rsize]; 
             for (i=0;i<comm_rsize;i++) {
                 $r_type_size_v r_bytes[i]=(long long)rcounts[i]*(long long)r_type_size;
-#ifdef _TRACTOR_EXTRA_FIELDS_
-                tr_bytes+=r_bytes[i]; 
-#endif
             } 
             __msl_record_longs(tid,level,r_bytes,comm_rsize);
         }" if $properties=~/VECTOR_RECV/;
@@ -677,18 +622,10 @@ if ($properties=~/VECTOR/) {
     }
 }
 if ($properties=~/SAMEBUF/) {
-    $event_sbuf="event->collective.buf[0].virt_addr=buf;event->collective.buf[0].size=((long long)count*(long long)s_type_size);" if $print_extended_stuff;
-    $event_rbuf="event->collective.buf[1].virt_addr=buf;event->collective.buf[1].size=((long long)count*(long long)s_type_size);" if $print_extended_stuff;
 } else {
     if ($properties=~/COUNTMATCH/) {
-        $event_sbuf="event->collective.buf[0].virt_addr=sbuf;event->collective.buf[0].size=((long long)count*(long long)s_type_size);" if $print_extended_stuff && $properties=~/SCALAR_SEND/;
-        $event_rbuf="event->collective.buf[1].virt_addr=rbuf;event->collective.buf[1].size=((long long)count*(long long)r_type_size);" if $print_extended_stuff && $properties=~/SCALAR_RECV/;
     } else {
-        $event_sbuf="event->collective.buf[0].virt_addr=sbuf;event->collective.buf[0].size=((long long)scount*(long long)s_type_size);" if $print_extended_stuff && $properties=~/SCALAR_SEND/;
-        $event_rbuf="event->collective.buf[1].virt_addr=rbuf;event->collective.buf[1].size=((long long)rcount*(long long)r_type_size);" if $print_extended_stuff && $properties=~/SCALAR_RECV/;
     }
-    $event_sbuf="event->collective.buf[0].virt_addr=sbuf;event->collective.buf[0].size=ts_bytes;" if $print_extended_stuff && $properties=~/VECTOR_SEND/;
-    $event_rbuf="event->collective.buf[1].virt_addr=rbuf;event->collective.buf[1].size=tr_bytes;" if $print_extended_stuff && $properties=~/VECTOR_RECV/;
 }
 }
 my $print_code=`cat pinc/collective.code.inc`;
@@ -720,8 +657,6 @@ my $Preturn="rv";
 my $prototype=$c_prototype;
 my $basic_struct="one_sided_comm";
 my $event_handle="event->one_sided_comm.window=*win;";
-my $event_buf="event->one_sided_comm.buf.virt_addr=buf;event->one_sided_comm.buf.size=size;" if $print_extended_stuff && !($properties=~/IMP_ADDRESS/);
-my $event_buf="MPI_Aint addr;PMPI_Get_address(MPI_BOTTOM,&addr);event->one_sided_comm.buf.virt_addr=(void *)addr;event->one_sided_comm.buf.size=0;" if $print_extended_stuff && ($properties=~/IMP_ADDRESS/);
 my $print_code=`cat pinc/create_alloc.code.inc`;
 
 eval $print_code;
@@ -752,7 +687,6 @@ my $Preturn="rv";
 my $prototype=$c_prototype;
 my $basic_struct="mpi_fio";
 my $event_handle="event->mpi_fio.fh=*fh;";
-my $event_buf;
 
 my $print_code=`cat pinc/create_alloc.code.inc`;
 eval $print_code;
@@ -1055,7 +989,6 @@ sub parse_command_line {
          case "-m" {$mpilevel=$ARGV[$i+1]; $i++}
          case "-t" {$parse_mpi_internal=1 if $ARGV[$i+1] eq "on"; $i++}
          case "-c" {$parse_gpu=1 if $ARGV[$i+1] eq "on"; $i++}
-         case "-e" {$print_extended_stuff=1 if $ARGV[$i+1] eq "on"; $i++}
          case "-p" {$use_pragma_weak=1 if $ARGV[$i+1] eq "on";$i++}
          else {print "Unknown switch $ARGV[$i]\n";die;}
       }

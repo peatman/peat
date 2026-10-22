@@ -73,12 +73,6 @@ static int MPI_Init_internal(int *argc, char ***argv, void **p_entrys)
     event->collective.comm = last_coll_comm = MPI_COMM_WORLD;
     event->collective.root = -1;
     memcpy(counters.addrs, p_entrys, sizeof(void *) * gt_info(num_addrs));
-#ifdef _HWCOUNTERS_ENABLED_
-    gt_info(hwc).get_all_counters(&counters.hwcs[0]);
-#endif
-#ifdef _MEMPROFILE_STORE_
-    gt_info(mprof).get_mem_status(&counters.mems[0]);
-#endif
     tsc_mpi_entry = peat_get_time();
     //    } // if (counting_permission[fidc]>0 )
     debug_printf("Rank %d: before mpi_init...\n", t_mpi_rank);
@@ -101,12 +95,6 @@ static int MPI_Init_internal(int *argc, char ***argv, void **p_entrys)
     tsc_exit = peat_get_time();
     event->tscs[0] = tsc_entry;
     event->tscs[1] = tsc_mpi_entry;
-#ifdef _HWCOUNTERS_ENABLED_
-    gt_info(hwc).get_all_counters(&counters.hwcs[gt_info(num_hwcs)]);
-#endif
-#ifdef _MEMPROFILE_STORE_
-    gt_info(mprof).get_mem_status(&counters.mems[1]);
-#endif
     // PMPI_Barrier(gt_info(TRACTOR_COMM_WORLD));
     gt_info(post_ptpd_init());
     event->tscs[2] = tsc_mpi_exit;
@@ -163,12 +151,6 @@ static int MPI_Init_thread_internal(int *argc, char ***argv, int requested, int 
     event->collective.comm = last_coll_comm = MPI_COMM_WORLD;
     event->collective.root = -1;
     memcpy(counters.addrs, p_entrys, sizeof(void *) * gt_info(num_addrs));
-#ifdef _HWCOUNTERS_ENABLED_
-    gt_info(hwc).get_all_counters(&counters.hwcs[0]);
-#endif
-#ifdef _MEMPROFILE_STORE_
-    gt_info(mprof).get_mem_status(&counters.mems[0]);
-#endif
     tsc_mpi_entry = peat_get_time();
     //    } // if (__builtin_expect((counting_permission[fidc]>0),1))
     debug_printf("Rank %d: before mpi_init_thread...\n", t_mpi_rank);
@@ -191,12 +173,6 @@ static int MPI_Init_thread_internal(int *argc, char ***argv, int requested, int 
     tsc_exit = peat_get_time();
     event->tscs[0] = tsc_entry;
     event->tscs[1] = tsc_mpi_entry;
-#ifdef _HWCOUNTERS_ENABLED_
-    gt_info(hwc).get_all_counters(&counters.hwcs[gt_info(num_hwcs)]);
-#endif
-#ifdef _MEMPROFILE_STORE_
-    gt_info(mprof).get_mem_status(&counters.mems[1]);
-#endif
     // PMPI_Barrier(gt_info(TRACTOR_COMM_WORLD));
     gt_info(post_ptpd_init());
     event->tscs[2] = tsc_mpi_exit;
@@ -252,12 +228,6 @@ static int MPI_Finalize_internal(void **p_entrys)
     event->func_id = fidc;
     event->collective.root = -1;
     event->collective.comm = last_coll_comm = MPI_COMM_WORLD;
-#ifdef _HWCOUNTERS_ENABLED_
-    gt_info(hwc).get_all_counters(&counters.hwcs[0]);
-#endif
-#ifdef _MEMPROFILE_STORE_
-    gt_info(mprof).get_mem_status(&counters.mems[0]);
-#endif
     memcpy(counters.addrs, p_entrys, sizeof(void *) * gt_info(num_addrs));
     //    } // if (__builtin_expect((counting_permission[fidc]>0),1))
     gt_info(pre_finalize(0));
@@ -278,12 +248,6 @@ static int MPI_Finalize_internal(void **p_entrys)
     tsc_exit = peat_get_time();
     event->tscs[0] = tsc_entry;
     event->tscs[1] = tsc_mpi_entry;
-#ifdef _HWCOUNTERS_ENABLED_
-    gt_info(hwc).get_all_counters(&counters.hwcs[gt_info(num_hwcs)]);
-#endif
-#ifdef _MEMPROFILE_STORE_
-    gt_info(mprof).get_mem_status(&counters.mems[1]);
-#endif
     event->tscs[2] = tsc_mpi_exit;
     event->tscs[3] = tsc_exit;
 #ifdef _TRACTOR_COLLECT_STAT_
@@ -341,12 +305,6 @@ static int MPI_Abort_internal(MPI_Comm comm, int errorcode, void **p_entrys)
     event->func_id = fidc;
     event->collective.root = -1;
     event->collective.comm = last_coll_comm = MPI_COMM_WORLD;
-#ifdef _HWCOUNTERS_ENABLED_
-    gt_info(hwc).get_all_counters(&counters.hwcs[0]);
-#endif
-#ifdef _MEMPROFILE_STORE_
-    gt_info(mprof).get_mem_status(&counters.mems[0]);
-#endif
     memcpy(counters.addrs, p_entrys, sizeof(void *) * gt_info(num_addrs));
 //    } // if (__builtin_expect((counting_permission[fidc]>0),1))
 #ifdef _TRACTOR_USE_PTPD_
@@ -365,12 +323,6 @@ static int MPI_Abort_internal(MPI_Comm comm, int errorcode, void **p_entrys)
     tsc_exit = peat_get_time();
     event->tscs[0] = tsc_entry;
     event->tscs[1] = tsc_mpi_entry;
-#ifdef _HWCOUNTERS_ENABLED_
-    gt_info(hwc).get_all_counters(&counters.hwcs[gt_info(num_hwcs)]);
-#endif
-#ifdef _MEMPROFILE_STORE_
-    gt_info(mprof).get_mem_status(&counters.mems[1]);
-#endif
     event->tscs[2] = tsc_mpi_exit;
     event->tscs[3] = tsc_exit;
 #ifdef _TRACTOR_COLLECT_STAT_
@@ -428,12 +380,6 @@ int MPI_Pcontrol_internal(const int ctl, void **p_entrys)
     level = __msl_enter_call(tid);
     children_base = __msl_child_base(tid, level);
     __msl_allocate_event(tid, level, 0, &event, &counters);
-#ifdef _HWCOUNTERS_ENABLED_
-    gt_info(hwc).get_all_counters(&counters.hwcs[0]);
-#endif
-#ifdef _MEMPROFILE_STORE_
-    gt_info(mprof).get_mem_status(&counters.mems[0]);
-#endif
     tsc_mpi_entry = peat_get_time();
 //    }//if(__builtin_expect((counting_permission[MPI_PCONTROL_ID_THROUGH]>0 && !l_skip_parse),1))
 #endif
@@ -448,12 +394,6 @@ int MPI_Pcontrol_internal(const int ctl, void **p_entrys)
     event->pcontrol.ctl = ctl;
     event->tscs[0] = tsc_entry;
     event->tscs[1] = tsc_mpi_entry;
-#ifdef _HWCOUNTERS_ENABLED_
-    gt_info(hwc).get_all_counters(&counters.hwcs[gt_info(num_hwcs)]);
-#endif
-#ifdef _MEMPROFILE_STORE_
-    gt_info(mprof).get_mem_status(&counters.mems[1]);
-#endif
     // counting_permit-=2;
     tsc_exit = peat_get_time();
     event->tscs[2] = tsc_mpi_exit;

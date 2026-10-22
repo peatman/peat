@@ -55,9 +55,6 @@ t_base_event::t_base_event()
     use_realtime_dump = 0;
     compress_events = 0;
     t_pid = getpid();
-#ifdef _MEMPROFILE_STORE_
-    t_memory_event_size = sizeof(t_memory_event);
-#endif
 
     onetimealloc = defonetimealloc;
     t_max_threads = 6;
@@ -77,12 +74,6 @@ t_base_event::t_base_event()
 
     extras_array = NULL;
     events_array = NULL;
-#ifdef _HWCOUNTERS_ENABLED_
-    hwc_array = NULL;
-#endif
-#ifdef _MEMPROFILE_STORE_
-    mems_array = NULL;
-#endif
 
     addrs_array = NULL;
     uniq_index = NULL;
@@ -175,12 +166,6 @@ long long t_base_event::child_base(int tid, int level)
 static inline msl_adv_chain *t_new_adv_chain(t_base_event *b, msl_adv_chain *prev, long long start_index)
 {
     return new msl_adv_chain(prev, sizeof(msl_event), b->num_addrs,
-#ifdef _HWCOUNTERS_ENABLED_
-                             b->num_hwcs * 2,
-#endif
-#ifdef _MEMPROFILE_STORE_
-                             b->t_memory_event_size * 2,
-#endif
                              start_index);
 }
 
@@ -191,12 +176,6 @@ void t_base_event::init_level_storage(int t_tid, int level)
         events_start_chain[t_tid][level] = events_chain[t_tid][level];
         events_array[t_tid][level] = (msl_event *)events_chain[t_tid][level]->events_array;
         addrs_array[t_tid][level] = (void **)events_chain[t_tid][level]->addr_array;
-#ifdef _HWCOUNTERS_ENABLED_
-        hwc_array[t_tid][level] = (long long *)events_chain[t_tid][level]->hwc_array;
-#endif
-#ifdef _MEMPROFILE_STORE_
-        mems_array[t_tid][level] = (t_memory_event *)events_chain[t_tid][level]->mem_array;
-#endif
         memset(&events_array[t_tid][level][0], 0, sizeof(msl_event));
         event_index[t_tid][level] = 0;
     }
@@ -238,12 +217,6 @@ int t_base_event::reuse_event(int tid, int level, msl_event **event, msl_extras_
             *event = last;
             int idx = event_index[tid][level] - 1;
             counters->addrs = &addrs_array[tid][level][idx * num_addrs];
-#ifdef _HWCOUNTERS_ENABLED_
-            counters->hwcs = &hwc_array[tid][level][idx * num_hwcs * 2];
-#endif
-#ifdef _MEMPROFILE_STORE_
-            counters->mems = &mems_array[tid][level][idx * 2];
-#endif
             __DEBUG_EPILOG_TRACTOR_LAYER__
             return 1;
         }
@@ -265,12 +238,6 @@ void t_base_event::allocate_event(int tid, int level, int skip_dump, msl_event *
             temp->num_events = event_index[tid][level];
             events_array[tid][level] = (msl_event *)events_chain[tid][level]->events_array;
             addrs_array[tid][level] = (void **)events_chain[tid][level]->addr_array;
-#ifdef _HWCOUNTERS_ENABLED_
-            hwc_array[tid][level] = (long long *)events_chain[tid][level]->hwc_array;
-#endif
-#ifdef _MEMPROFILE_STORE_
-            mems_array[tid][level] = (t_memory_event *)events_chain[tid][level]->mem_array;
-#endif
             event_index[tid][level] = 0;
             if (use_realtime_dump && !skip_dump)
                 dump_events(tid, level, &events_start_chain[tid][level]);
@@ -279,12 +246,6 @@ void t_base_event::allocate_event(int tid, int level, int skip_dump, msl_event *
         int idx = event_index[tid][level];
         msl_event *store_event = &events_array[tid][level][idx];
         counters->addrs = &addrs_array[tid][level][idx * num_addrs];
-#ifdef _HWCOUNTERS_ENABLED_
-        counters->hwcs = &hwc_array[tid][level][idx * num_hwcs * 2];
-#endif
-#ifdef _MEMPROFILE_STORE_
-        counters->mems = &mems_array[tid][level][idx * 2];
-#endif
 #ifndef _TRACTOR_ZERO_ON_ALLOCATE_
         memset(store_event, 0, sizeof(msl_event));
 #endif
@@ -300,12 +261,6 @@ void t_base_event::allocate_event(int tid, int level, int skip_dump, msl_event *
     } else {
         *event = &fake_event;
         counters->addrs = (PEAT_Addr *)fake_addrs;
-#ifdef _HWCOUNTERS_ENABLED_
-        counters->hwcs = (long long *)fake_addrs;
-#endif
-#ifdef _MEMPROFILE_STORE_
-        counters->mems = (t_memory_event *)fake_addrs;
-#endif
     }
     __DEBUG_EPILOG_TRACTOR_LAYER__
     return;
@@ -439,12 +394,6 @@ void t_base_event::init(int max_threads, int max_nesting_levels)
     events_chain = T_ALLOC_2D(msl_adv_chain *, t_max_threads, t_max_nesting_levels);
     events_array = T_ALLOC_2D(msl_event *, t_max_threads, t_max_nesting_levels);
     addrs_array = T_ALLOC_2D(void **, t_max_threads, t_max_nesting_levels);
-#ifdef _HWCOUNTERS_ENABLED_
-    hwc_array = T_ALLOC_2D(long long *, t_max_threads, t_max_nesting_levels);
-#endif
-#ifdef _MEMPROFILE_STORE_
-    mems_array = T_ALLOC_2D(t_memory_event *, t_max_threads, t_max_nesting_levels);
-#endif
     event_index = T_ALLOC_2D(int, t_max_threads, t_max_nesting_levels);
     if (extras) {
         extras_start_chain = T_ALLOC_2D(msl_base_chain *, t_max_threads, t_max_nesting_levels);
@@ -494,12 +443,6 @@ void t_base_event::end()
     T_FREE_2D(events_chain, t_max_threads, t_max_nesting_levels);
     T_FREE_2D(events_array, t_max_threads, t_max_nesting_levels);
     T_FREE_2D(addrs_array, t_max_threads, t_max_nesting_levels);
-#ifdef _HWCOUNTERS_ENABLED_
-    T_FREE_2D(hwc_array, t_max_threads, t_max_nesting_levels);
-#endif
-#ifdef _MEMPROFILE_STORE_
-    T_FREE_2D(mems_array, t_max_threads, t_max_nesting_levels);
-#endif
     T_FREE_2D(event_index, t_max_threads, t_max_nesting_levels);
     if (extras) {
         T_FREE_2D(extras_start_chain, t_max_threads, t_max_nesting_levels);

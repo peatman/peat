@@ -35,13 +35,6 @@ $prototype {
     msl_event* event[2];
     bool l_skip_parse=mpi_skip_parse;
 
-#ifdef _HWCOUNTERS_ENABLED_
-    int num_hwcs=gt_info(num_hwcs);
-    long long l_hwcs[num_hwcs];
-#endif
-#ifdef _MEMPROFILE_STORE_
-    t_memory_event l_mem;
-#endif
 
     $declare_status
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
@@ -54,12 +47,6 @@ $prototype {
         children_base=__msl_child_base(tid,level);
         __msl_allocate_event(tid,level,1,&event[0],&counters[0]);
         __msl_allocate_event(tid,level,1,&event[1],&counters[1]);
-#ifdef _HWCOUNTERS_ENABLED_
-        gt_info(hwc).get_all_counters(l_hwcs);
-#endif
-#ifdef _MEMPROFILE_STORE_
-        gt_info(mprof).get_mem_status(&l_mem);
-#endif
         tsc_mpi_entry=peat_get_time();
     } //if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1))
 #else
@@ -88,23 +75,10 @@ $prototype {
         event[1]->p2p_pr_pb.peer=$recv_peer;
         event[1]->p2p_pr_pb.transfer_bytes=$recv_bytes;
         $event_request
-#ifdef _TRACTOR_EXTRA_FIELDS_
-        $event_buf
-#endif
         $internal_comm_tracking
         event[0]->tscs[0] = tsc_entry;
         event[0]->tscs[1] = tsc_mpi_entry;
 
-#ifdef _HWCOUNTERS_ENABLED_
-        memcpy(counters[0].hwcs,l_hwcs,num_hwcs*sizeof(l_hwcs[0]));
-        gt_info(hwc).get_all_counters(&counters[0].hwcs[num_hwcs]);
-        memcpy(counters[1].hwcs,counters[0].hwcs,gt_info(num_hwcs)*sizeof(long long)*2);
-#endif
-#ifdef _MEMPROFILE_STORE_
-        counters[0].mems[0]=l_mem;
-        gt_info(mprof).get_mem_status(&counters[0].mems[1]);
-        memcpy(counters[1].mems,counters[0].mems,sizeof(t_memory_event)*2);
-#endif
         // counting_permit-=4*counting_permission_pcontrol[$funcid_through];
         tsc_exit = peat_get_time();
         event[0]->tscs[2] = tsc_mpi_exit;

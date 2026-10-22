@@ -21,13 +21,7 @@
 #include "mpi.h"
 #include <assert.h>
 
-#ifdef _HWCOUNTERS_ENABLED_
-#include "hwcounter.h"
-#endif
 
-#ifdef _MEMPROFILE_
-#include "memprofile.h"
-#endif
 #include "t_alloc.h"
 #include "t_defines.h"
 
@@ -80,21 +74,7 @@ struct msl_adv_chain : msl_base_chain {
 
     void *addr_array;
     int addr_size;
-#ifdef _HWCOUNTERS_ENABLED_
-    void *hwc_array;
-    int hwc_size;
-#endif
-#ifdef _MEMPROFILE_STORE_
-    void *mem_array;
-    int mem_size;
-#endif
     msl_adv_chain(msl_base_chain *prev_chain, int s, int addr_num,
-#ifdef _HWCOUNTERS_ENABLED_
-                  int hwc_num,
-#endif
-#ifdef _MEMPROFILE_STORE_
-                  int mprof_size,
-#endif
                   long long _start_index_ = 0) : msl_base_chain(prev_chain, s, _start_index_)
     {
         addr_size = sizeof(void *) * addr_num;
@@ -103,34 +83,10 @@ struct msl_adv_chain : msl_base_chain {
         } else {
             addr_array = NULL;
         }
-#ifdef _HWCOUNTERS_ENABLED_
-        hwc_size = sizeof(long long) * hwc_num;
-        if (hwc_size > 0) {
-            hwc_array = t_malloc((onetimealloc + 1) * sizeof(long long) * hwc_num, 128);
-        } else {
-            hwc_array = NULL;
-        }
-#endif
-#ifdef _MEMPROFILE_STORE_
-        mem_size = mprof_size;
-        if (mem_size > 0) {
-            mem_array = t_malloc((onetimealloc + 1) * mprof_size, 128);
-        } else {
-            mem_array = NULL
-        };
-#endif
 
 #ifdef _TRACTOR_ZERO_ON_ALLOCATE_
         if (addr_size > 0)
             memset(addr_array, 0, (onetimealloc + 1) * sizeof(void *) * addr_num);
-#ifdef _HWCOUNTERS_ENABLED_
-        if (hwc_size > 0)
-            memset(hwc_array, 0, (onetimealloc + 1) * sizeof(long long) * hwc_num);
-#endif
-#ifdef _MEMPROFILE_STORE_
-        if (mem_size > 0)
-            memset(mem_array, 0, (onetimealloc + 1) * mprof_size);
-#endif
 #endif
     }
 
@@ -140,16 +96,6 @@ struct msl_adv_chain : msl_base_chain {
         if (addr_array) {
             t_free(addr_array, (onetimealloc + 1) * addr_size);
         }
-#ifdef _HWCOUNTERS_ENABLED_
-        if (hwc_array) {
-            t_free(hwc_array, (onetimealloc + 1) * hwc_size);
-        }
-#endif
-#ifdef _MEMPROFILE_STORE_
-        if (mem_array) {
-            t_free(mem_array, (onetimealloc + 1) * mem_size);
-        }
-#endif
     }
 };
 
@@ -209,16 +155,7 @@ struct t_base_event {
 
     int num_addrs;
     unsigned long long calls_limit, num_allocated;
-#ifdef _HWCOUNTERS_ENABLED_
-    long long ***hwc_array; /* [tid][level] */
-    int num_hwcs;
-    HW_counter hwc;
-#endif
 
-#ifdef _MEMPROFILE_STORE_
-    int t_memory_event_size;
-    t_memory_event ***mems_array; /* [tid][level] */
-#endif
     int use_realtime_dump;
 
     msl_event fake_event;

@@ -47,8 +47,9 @@ export I_MPI_FABRICS=shm
 #export I_MPI_SPIN_COUNT=1
 export HYDRA_TOPO_DEBUG=1
 export MPICH_POSIX_NUM_COLLS_THRESHOLD=9999 # should be quite big but this one is enought for the example
+export MPICH_FORTRAN_MPI_REDIRECT=1
 
 mpiexec.hydra -launcher ssh -genvall -bind-to hwthread -map-by core  $LD_PRELOAD $PBS_NF -ppn $ppn -np $ranks ./alltoall $nnodes $ppn 4194304 10 #24
 
-
+rm -f alltoall 
 

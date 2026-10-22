@@ -13,15 +13,12 @@ See [doc/README.md](doc/README.md) for older build/usage/trace-format documentat
 
 - `src/tractor.cpp`/`.h` - main entry point of the interception library.
 - `src/t_comm.cpp`/`.h` - communicator tracking.
-- `src/t_alloc.cpp`/`.h` - internal allocator/memory tracking used by the library itself.
+- `src/t_alloc.h` - internal allocator/memory tracking used by the library itself.
 - `src/t_base_event.cpp`/`.h`, `src/t_stat.cpp`/`.h` - base trace-event and statistic record types.
 - `src/t_ompt.cpp` - OpenMP (OMPT) callback hooks for combined MPI+OpenMP tracing.
 - `src/t_topo.cpp` - node/CPU topology capture via `hwloc`.
 - `src/t_signals.cpp`/`.h` - signal handling for clean trace flushing on crash/termination.
 - `src/elf_parser.cpp`/`.h` - ELF/debug-info symbol resolution for call-site addresses.
-- `src/hwcounter.cpp`/`.h` - PAPI hardware performance counter sampling.
-- `src/memprofile.cpp`/`.h` - memory allocation profiling hooks.
-- `src/virt2phys.cpp` - virtual-to-physical address resolution engine.
 - `src/src-ptpd.cpp` - the PTP Daemon (PTPD) used to synchronise clocks across nodes.
 - `src/mpi_layer.cpp.in`(`.end`), `src/mpi_layer.pl`, `src/mpi_layer_comm_begin/end.prolog/epilog.h` - templated/generated MPI interception layer.
 - `src/pinc/` - per-call-category C++ code snippets included by the generated MPI layer (collectives, requests, local/buffer handling, GPU).

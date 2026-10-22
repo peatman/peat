@@ -19,9 +19,6 @@
 print <<EOF
 $prototype {
     __DEBUG_PROLOG_MPI_LAYER__
-#ifdef _TRACTOR_EXTRA_FIELDS_
-    long long ts_bytes=0,tr_bytes=0;
-#endif
     $buf_in_place
     $sbuf_bottom
     $rbuf_bottom
@@ -39,13 +36,6 @@ $prototype {
     msl_event *event;
     bool l_skip_parse=mpi_skip_parse;
 
-#ifdef _HWCOUNTERS_ENABLED_
-    int num_hwcs=gt_info(num_hwcs);
-    long long l_hwcs[num_hwcs];
-#endif
-#ifdef _MEMPROFILE_STORE_
-    t_memory_event l_mem;
-#endif
 
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
         tsc_entry = peat_get_time_tid(&tid_in);
@@ -54,12 +44,6 @@ $prototype {
         level=__msl_enter_call(tid);
         children_base=__msl_child_base(tid,level);
         __msl_allocate_event(tid,level,1,&event,&counters);
-#ifdef _HWCOUNTERS_ENABLED_
-        gt_info(hwc).get_all_counters(l_hwcs);
-#endif
-#ifdef _MEMPROFILE_STORE_
-        gt_info(mprof).get_mem_status(&l_mem);
-#endif
         $amiroot
         tsc_mpi_entry=peat_get_time();
     }//if(__builtin_expect((counting_permission[$funcid_through && !l_skip_parse]>0),1))
@@ -83,21 +67,9 @@ $prototype {
         $r_type_size
         $s_count
         $r_count
-#ifdef _TRACTOR_EXTRA_FIELDS_
-        $event_sbuf
-        $event_rbuf
-#endif
         $event_request
         event->tscs[0] = tsc_entry;
         event->tscs[1] = tsc_mpi_entry;
-#ifdef _HWCOUNTERS_ENABLED_
-        memcpy(counters.hwcs,l_hwcs,num_hwcs*sizeof(l_hwcs[0]));
-        gt_info(hwc).get_all_counters(&counters.hwcs[num_hwcs]);
-#endif
-#ifdef _MEMPROFILE_STORE_
-        counters.mems[0]=l_mem;
-        gt_info(mprof).get_mem_status(&counters.mems[1]);
-#endif
         // counting_permit-=2*counting_permission_pcontrol[$funcid_through];
         tsc_exit = peat_get_time();
         event->tscs[2] = tsc_mpi_exit;

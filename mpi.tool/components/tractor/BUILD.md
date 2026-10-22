@@ -33,7 +33,6 @@
 | Feature flag | Extra dependency | Notes |
 |---|---|---|
 | `PARSE_GPU=on` | OpenCL (`-lOpenCL`) + Level Zero loader (`-lze_loader`) | GPU call interception |
-| `HWCOUNTERS=RDPMC` | Linux kernel headers (`linux/perf_event.h`) | no PAPI needed - uses `perf_event_open` directly |
 
 ## 5. MPI implementation - build first
 
@@ -100,8 +99,8 @@ export HWLOC_PATH=/usr                         # or your hwloc prefix
 ./BuildAlli.sh     # Intel oneAPI toolchain
 
 # Option B: build one variant directly
-#              mpi_type[:version]   TARGET   MEMPROFILE DIAG PARSE_GPU HWCOUNTERS MPIBUFFERS VIRT2PHYS
-compiler=gcc COMPILER=gnu ./Build.sh mpich:4.3.2g-mt-ofi mpich4 off off off off off off
+#              mpi_type[:version]   TARGET   DIAG PARSE_GPU
+compiler=gcc COMPILER=gnu ./Build.sh mpich:4.3.2g-mt-ofi mpich4 off off
 ```
 
 Output: `mpi.tool/lib/<COMPILER>/libtractor<suffix>.so` and `mpi.tool/bin/<COMPILER>/ptpd<suffix>`.
@@ -119,9 +118,6 @@ Pass as `make` vars, or positional args to `Build.sh`.
 | `DIAG` | `off*, on` | debug build (`-O0`, `_dbg` suffix) |
 | `PARSE_GPU` | `off*, on` | OpenCL/Level Zero interception |
 | `PARSE_COLT` | `off*, on` | collective-timeline engine ("engineering" build, needs patched MPI) |
-| `HWCOUNTERS` | `off*, RDPMC` | hardware counters via `perf_event_open` |
-| `MEMPROFILE` | `off*, ...` | allocation profiling |
-| `VIRT2PHYS` | `off*, on` | virtual->physical address resolution |
 
 Run `make install TARGET=... DIAG=on ...` directly from `src/` if you don't
 want to go through `Build.sh`'s temp-directory copy dance.

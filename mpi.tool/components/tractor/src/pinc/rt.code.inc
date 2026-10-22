@@ -36,13 +36,6 @@ $prototype {
     msl_event *event=NULL;
     bool l_skip_parse=mpi_skip_parse;
 
-#ifdef _HWCOUNTERS_ENABLED_
-    int num_hwcs=gt_info(num_hwcs);
-    long long l_hwcs[num_hwcs];
-#endif
-#ifdef _MEMPROFILE_STORE_
-    t_memory_event l_mem;
-#endif
 
     $declare_ignore_status
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
@@ -56,12 +49,6 @@ $prototype {
         $pre_event_message
         $pre_handle
         counting_permit+=2*counting_permission_pcontrol[$funcid_through];
-#ifdef _HWCOUNTERS_ENABLED_
-        gt_info(hwc).get_all_counters(l_hwcs);
-#endif
-#ifdef _MEMPROFILE_STORE_
-        gt_info(mprof).get_mem_status(&l_mem);
-#endif
         tsc_mpi_entry=peat_get_time();
     } //if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1))
 #else
@@ -91,24 +78,11 @@ $prototype {
         $event_status_end
         $post_event_message
         $internal_comm_tracking
-#ifdef _TRACTOR_EXTRA_FIELDS_
-        $event_buf
-        $event_rbuf
-        $event_cbuf
-#endif
 
         if (!reused) {
             event->tscs[0] = tsc_entry;
             event->tscs[1] = tsc_mpi_entry;
         }
-#ifdef _HWCOUNTERS_ENABLED_
-        memcpy(counters.hwcs,l_hwcs,num_hwcs*sizeof(l_hwcs[0]));
-        gt_info(hwc).get_all_counters(&counters.hwcs[num_hwcs]);
-#endif
-#ifdef _MEMPROFILE_STORE_
-        counters.mems[0]=l_mem;
-        gt_info(mprof).get_mem_status(&counters.mems[1]);
-#endif
         // counting_permit-=2*counting_permission_pcontrol[$funcid_through];
         tsc_exit = peat_get_time();
         event->tscs[2] = tsc_mpi_exit;
