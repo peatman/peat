@@ -23,9 +23,4 @@ Performance Estimation & Analysing Toolkit (PEAT): a collection of tools to coll
 
 ## Acknowledgements
 
-The following classes/functions are partially based on implementations by Sergey Shalnov ([https://github.com/shssf](https://github.com/shssf)):
-Model_ID (model_id.cpp)
-Func_ID (func_id.cpp)
-String_Split (utils.cpp)
-File_Storage_GZ (file_io.cpp)
-some general functions in util.h
+Some common classes and low level routines are partially based on implementations by Sergey Shalnov ([https://github.com/shssf](https://github.com/shssf)):
