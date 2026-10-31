@@ -175,7 +175,14 @@ void GPU::enqueue_cl(const PEAT_Rank rank, const Tractor_Event &event, bool is_t
         }
     }
     if (blocking) {
+        // the call returns when the command is finished: so are the events it waited for and, in an in-order queue,
+        // everything enqueued before it
+        PEAT_Reduced_Event_Info completion = cmd.init;
+        std::vector<PEAT_Handle> deps(cmd.waits.begin(), cmd.waits.end());
+        finish_cl_before(rank, event, completion, pending, pending.end(), cmd.queue, deps);
         finish_cl(rank, cmd, cmd.init, NULL);
+        for (size_t d = 0; d < deps.size(); d++)
+            complete_cl_event(rank, event, deps[d]);
         return;
     }
     pending.push_back(cmd);
@@ -209,6 +216,34 @@ void GPU::finish_cl(const PEAT_Rank rank, const CL_Command &cmd, const PEAT_Redu
     }
 }
 
+// queues are in order unless they were created out of order (also when their creation was not seen)
+bool GPU::cl_in_order(const PEAT_Rank rank, PEAT_Handle queue) const
+{
+    std::map<PEAT_Rank, std::map<PEAT_Handle, bool>>::const_iterator rank_it = cl_out_of_order.find(rank);
+    if (rank_it == cl_out_of_order.end())
+        return true;
+    std::map<PEAT_Handle, bool>::const_iterator queue_it = rank_it->second.find(queue);
+    return queue_it == rank_it->second.end() || !queue_it->second;
+}
+
+// in an in-order queue everything enqueued before a finished command is finished too; what that waited for is
+// added to deps
+void GPU::finish_cl_before(const PEAT_Rank rank, const Tractor_Event &event, const PEAT_Reduced_Event_Info &completion, std::list<CL_Command> &pending,
+                           std::list<CL_Command>::iterator upto, PEAT_Handle queue, std::vector<PEAT_Handle> &deps)
+{
+    if (!cl_in_order(rank, queue))
+        return;
+    for (std::list<CL_Command>::iterator it = pending.begin(); it != upto;) {
+        if (it->queue == queue) {
+            deps.insert(deps.end(), it->waits.begin(), it->waits.end());
+            finish_cl(rank, *it, completion, &event);
+            it = pending.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 // the command that returned this event is finished, and so is everything it waited for
 void GPU::complete_cl_event(const PEAT_Rank rank, const Tractor_Event &event, PEAT_Handle handle)
 {
@@ -227,6 +262,7 @@ void GPU::complete_cl_event(const PEAT_Rank rank, const Tractor_Event &event, PE
         for (std::list<CL_Command>::iterator it = pending.begin(); it != pending.end(); ++it) {
             if (it->event == h) {
                 todo.insert(todo.end(), it->waits.begin(), it->waits.end());
+                finish_cl_before(rank, event, completion, pending, it, it->queue, todo);
                 finish_cl(rank, *it, completion, &event);
                 pending.erase(it);
                 break;
@@ -272,6 +308,7 @@ void GPU::flush_pending()
 // OpenCL ones are the enqueue calls (so for non-blocking calls the time is the submission, as in tractor's statistics).
 // OpenACC parameters: 0 device type, 1 parent construct, 2 async queue, 3 bytes, 4 host pointer, 5 device pointer,
 // 6 gangs*workers*vector length. OpenCL parameters are the call arguments in order.
+enum { CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE_BIT = 1 }; // (1 << 0) of cl_command_queue_properties; cl.h is not needed here
 enum { ACC_PARAM_ASYNC = 2, ACC_PARAM_BYTES = 3, ACC_PARAMS_NUM = 7 };
 
 void GPU::parse_GPU(const PEAT_Rank rank, const Tractor_Event &event)
@@ -305,6 +342,15 @@ void GPU::parse_GPU(const PEAT_Rank rank, const Tractor_Event &event)
     case CLENQUEUENATIVEKERNEL_ID: // (queue, user_func, ...): the host function plays the kernel
         if (np > 1)
             enqueue_cl(rank, event, false, 0, event.params.at(1), false);
+        break;
+    case CLCREATECOMMANDQUEUE_ID: // out: the queue, its properties bit field
+    case CLCREATECOMMANDQUEUEWITHPROPERTIES_ID:
+        if (event.out_params.size() > 1)
+            cl_out_of_order[rank][event.out_params.at(0)] = (event.out_params.at(1) & CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE_BIT) != 0;
+        break;
+    case CLRELEASECOMMANDQUEUE_ID: // the handle may be used again
+        if (np > 0)
+            cl_out_of_order[rank].erase(event.params.at(0));
         break;
     case CLWAITFOREVENTS_ID: // the event list is the extra parameters
         for (size_t e = 0; e < event.extra_params.size(); e++)

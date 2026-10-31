@@ -46,8 +46,14 @@ zcat $mpi | grep -q "clWaitForEvents:2:0:1:" || { echo "event list of clWaitForE
 if [ -n "$MAT" ] ; then
     mkdir -p $trace/mat
     $MAT -w $trace -i tractor_t -o $trace/mat > $trace/mat.log 2>&1
-    grep -q "clEnqueueWriteBuffer *clWaitForEvents" $trace/mat.log || { echo "mat: write not completed by clWaitForEvents"; status=1; }
-    grep -q "clEnqueueCopyBuffer *clFinish" $trace/mat.log || { echo "mat: copy not completed by clFinish"; status=1; }
+    # in-order queue: the blocking SVM copy finishes everything enqueued before it; a wait finishes the commands before its event
+    grep -q "clEnqueueCopyBuffer *clEnqueueSVMMemcpy *65536" $trace/mat.log || { echo "mat: in-order copy not finished by the blocking call after it"; status=1; }
+    grep -q "clEnqueueCopyBuffer *clWaitForEvents *16384" $trace/mat.log || { echo "mat: in-order copy not completed by the later wait"; status=1; }
+    # out-of-order queue: a wait finishes only the event and what it waits for
+    grep -q "clEnqueueNDRangeKernel *clWaitForEvents" $trace/mat.log || { echo "mat: wait list dependency not completed"; status=1; }
+    # out-of-order queue: the wait for the second command leaves the first one for clFinish
+    grep -q "clEnqueueCopyBuffer *clFinish *8192" $trace/mat.log || { echo "mat: out-of-order copy not left for clFinish"; status=1; }
+    grep -q "clEnqueueWriteBuffer *clWaitForEvents *512" $trace/mat.log || { echo "mat: out-of-order write not completed by its wait"; status=1; }
     grep -q "clEnqueueNDRangeKernel *clEnqueueNDRangeKernel" $trace/mat.log || { echo "mat: unwaited kernel not counted by its enqueue call"; status=1; }
     zcat $trace/mat/tractor_t.bind.0.gz | grep -q "clEnqueueTask:.*:clWaitForEvents:" || { echo "mat: no bind line for the task"; status=1; }
 fi

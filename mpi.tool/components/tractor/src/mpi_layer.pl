@@ -1100,6 +1100,8 @@ if ($parse_gpu == 1) {
   print "#ifdef GPUPARSE\n";
   print "#include \"CL/cl.h\"\n";
   print "#include \"level_zero/ze_api.h\"\n";
+  # clCreateCommandQueueWithProperties takes a zero-terminated list of name/value pairs; record the queue properties bit field
+  print "static long long t_cl_queue_properties(const cl_queue_properties *p) { if (p) for (; p[0]; p += 2) if (p[0] == CL_QUEUE_PROPERTIES) return (long long)p[1]; return 0; }\n";
 #  print "void init_gpu_syms(void);\n";
 
 #  print "int clv30=CL_VERSION_3_0;\n";

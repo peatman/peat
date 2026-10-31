@@ -62,3 +62,16 @@ cl_int clBuildProgram(cl_program p, cl_uint n, const cl_device_id *devs, const c
 {
     return NOTHING(500);
 }
+
+/* queues get distinct handles; the properties are ignored */
+cl_command_queue clCreateCommandQueueWithProperties(cl_context c, cl_device_id d, const cl_queue_properties *p, cl_int *err)
+{
+    static unsigned long queue_counter = 0x1000;
+    if (err)
+        *err = CL_SUCCESS;
+    return (cl_command_queue)(queue_counter += 0x100);
+}
+cl_int clReleaseCommandQueue(cl_command_queue q)
+{
+    return CL_SUCCESS;
+}

@@ -154,6 +154,9 @@ class GPU : public Outputs
     void finish_cl(const PEAT_Rank rank, const CL_Command &cmd, const PEAT_Reduced_Event_Info &completion, const Tractor_Event *by);
     void complete_cl_event(const PEAT_Rank rank, const Tractor_Event &event, PEAT_Handle handle);
     void complete_cl_queue(const PEAT_Rank rank, const Tractor_Event &event, PEAT_Handle queue);
+    bool cl_in_order(const PEAT_Rank rank, PEAT_Handle queue) const;
+    void finish_cl_before(const PEAT_Rank rank, const Tractor_Event &event, const PEAT_Reduced_Event_Info &completion, std::list<CL_Command> &pending,
+                          std::list<CL_Command>::iterator upto, PEAT_Handle queue, std::vector<PEAT_Handle> &deps);
 
     PEAT_Bool find_handle(PEAT_Rank rank, PEAT_MPI_Request request);
     PEAT_Bool update_handle(PEAT_Rank rank, PEAT_MPI_Request request, const Phase &phase);
@@ -173,6 +176,7 @@ class GPU : public Outputs
     std::map<PEAT_Rank, std::map<PEAT_Handle, Memory_Transfer>> transfers;
     std::map<PEAT_Rank, std::map<PEAT_Handle, Region_Exec>> executions;
     std::map<PEAT_Rank, std::list<CL_Command>> cl_pending;
+    std::map<PEAT_Rank, std::map<PEAT_Handle, bool>> cl_out_of_order; // queue -> created with CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE
 
   public:
     std::map<int, std::map<PEAT_GPUT_Record, PEAT_Single_Event_Clock>> printed_gpu_transfers;
