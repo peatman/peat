@@ -28,6 +28,14 @@
 #ifdef _T_OMPT_
 #include <omp-tools.h>
 #endif
+#ifdef _T_ACC_
+#include <acc_prof.h>
+#endif
+/* GPU-style records (parameter lists in the extras) and their transfer/execution statistics:
+   written for OpenCL/Level Zero (GPUPARSE) and for OpenACC */
+#if defined(GPUPARSE) || defined(_T_ACC_)
+#define _T_GPU_STAT_
+#endif
 
 #ifndef MAX_PATH
 #define MAX_PATH 2048
@@ -128,6 +136,15 @@ static void debug_printf(const char *format, ...) {};
 #else
 #define __DEBUG_PROLOG_OMPT_LAYER__
 #define __DEBUG_EPILOG_OMPT_LAYER__
+#endif
+
+#ifdef _TRACTOR_DEBUG_ACC_ENTRY_EXIT_
+#define _TRACTOR_DEBUG_ENTRY_EXIT_
+#define __DEBUG_PROLOG_ACC_LAYER__ __DEBUG_PROLOG__
+#define __DEBUG_EPILOG_ACC_LAYER__ __DEBUG_EPILOG__
+#else
+#define __DEBUG_PROLOG_ACC_LAYER__
+#define __DEBUG_EPILOG_ACC_LAYER__
 #endif
 
 #ifdef _TRACTOR_DEBUG_ENTRY_EXIT_

@@ -219,6 +219,7 @@ values embed one layer's interception into the core lib; for the standalone psm2
 set_property(CACHE TRANSPORT PROPERTY STRINGS off on PSM2 VERBS PSM3 UCX OFI)
 
 set(OMPT       ON  CACHE BOOL "OpenMP interception")
+set(ACC        OFF CACHE BOOL "OpenACC interception (profiling interface, needs acc_prof.h)")
 set(PTPD_BUILD ON  CACHE BOOL "build the ptpd PTP-daemon binary")
 
 set(PEAT_TIMER "tsc" CACHE STRING
@@ -457,6 +458,15 @@ if(OMPT)
   list(APPEND TRACTOR_CONTROLS _T_OMPT_)
 endif()
 
+if(ACC)
+  if(TRACTOR_COMPILER STREQUAL "intel")
+    message(FATAL_ERROR "tractor: ACC=ON is not supported with TRACTOR_COMPILER=intel (the Intel compilers have no OpenACC \
+profiling interface header); use -DTRACTOR_COMPILER=gnu or -DACC=OFF")
+  endif()
+  list(APPEND TRACTOR_SOURCES t_acc.cpp)
+  list(APPEND TRACTOR_CONTROLS _T_ACC_)
+endif()
+
 if(_timer_lower STREQUAL "nano")
   list(APPEND TRACTOR_CONTROLS USE_NANO_TIMER)
 endif()
@@ -502,7 +512,7 @@ if(DIAG)
   list(APPEND TRACTOR_CONTROLS
     _TRACTOR_DIAG_ _TRACTOR_DEBUG_TRACTOR_LAYER_ENTRY_EXIT_ _TRACTOR_DEBUG_TRANSPORT_LAYER_ENTRY_EXIT_
     _TRACTOR_DEBUG_MPI_LAYER_ENTRY_EXIT_ _TRACTOR_DEBUG_GPU_LAYER_ENTRY_EXIT_
-    _TRACTOR_DEBUG_OMPT_ENTRY_EXIT_ _TRACTOR_DEBUG_COMM_ENTRY_EXIT_)
+    _TRACTOR_DEBUG_OMPT_ENTRY_EXIT_ _TRACTOR_DEBUG_ACC_ENTRY_EXIT_ _TRACTOR_DEBUG_COMM_ENTRY_EXIT_)
 else()
   set(TRACTOR_DBG_SUFFIX "")
   set(TRACTOR_OPT -O3)

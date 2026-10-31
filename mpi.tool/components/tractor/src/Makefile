@@ -44,6 +44,7 @@ PRINT_EXTENDED_STUFF=off #on# to enable
 MAXMPI=3
 mpi_layer_skip_core=off
 OMPT=on
+ACC=off # OpenACC profiling interface; needs acc_prof.h (GCC >= 9, NVHPC)
 
 CPP:=/usr/bin/cpp -E
 
@@ -258,7 +259,7 @@ DEBUG_TESTS=-g -fno-inline
 
 ifeq "$(DIAG)" "on"
 DBG=_dbg
-DEBUG+= -fno-inline -D_TRACTOR_DIAG_ -D_TRACTOR_DEBUG_TRACTOR_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_TRANSPORT_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_MPI_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_GPU_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_OMPT_ENTRY_EXIT_  -D_TRACTOR_DEBUG_COMM_ENTRY_EXIT_ 
+DEBUG+= -fno-inline -D_TRACTOR_DIAG_ -D_TRACTOR_DEBUG_TRACTOR_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_TRANSPORT_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_MPI_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_GPU_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_OMPT_ENTRY_EXIT_ -D_TRACTOR_DEBUG_ACC_ENTRY_EXIT_ -D_TRACTOR_DEBUG_COMM_ENTRY_EXIT_ 
 OPT=-O0
 OBJECTS+=t_debug.o
 LIBS+=-lunwind
@@ -276,6 +277,12 @@ COMPILER=gnu #default
 CXXMISC=-Wno-write-strings
 CMISC=-fno-omit-frame-pointer -x c++ -fpermissive
 CONTROLS+=-D_GNUCOMPILER_
+endif
+
+ifeq "$(ACC)" "on"
+ifeq "$(COMPILER)" "intel"
+$(error ACC=on is not supported with COMPILER=intel (the Intel compilers have no OpenACC profiling interface header); use COMPILER=gnu or ACC=off)
+endif
 endif
 
 
@@ -322,6 +329,11 @@ OMP+=-fopenmp
 endif
 #EXTRANAMELIB:=$(EXTRANAMELIB).ompt
 CONTROLS+=-D_T_OMPT_
+endif
+
+ifeq "$(ACC)" "on"
+OBJECTS+=t_acc.o
+CONTROLS+=-D_T_ACC_
 endif
 
 ifneq "$(HWCOUNTERS)" "off"

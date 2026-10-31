@@ -78,13 +78,7 @@ directly in `env.sh`.
 
 ## 6. Environment setup (env.sh)
 
-`Build.sh` does `. env.sh` from the current directory, but `mpi.tool/components/tractor/` has **no `env.sh` of its own** - the real one
-lives at [../../scripts/env/env.sh](../../scripts/env/env.sh). Copy or symlink it in before building:
-
-```sh
-cd mpi.tool/components/tractor
-ln -sf ../../scripts/env/env.sh env.sh
-```
+`Build.sh` does `. env.sh` from the $PATH.  Copy or symlink it in before building.
 
 `env.sh` expects (adjust or export overrides before running `Build.sh`):
 - `HOMEINIT`/`WORKINIT` (default `$HOME`) - root under which it looks for   `gcc/<ver>`, `mpich/<ver>`, `mvapich/<ver>`, `openmpi/<ver>`, `libfabric`,
@@ -98,9 +92,6 @@ place those libraries there, or edit `Build.sh`.
 
 ## 7. Build steps
 
-```sh
-cd mpi.tool/components/tractor
-ln -sf ../../scripts/env/env.sh env.sh        # one-time
 export HWLOC_PATH=/usr                         # or your hwloc prefix
 
 # Option A: adapt and run the example "build everything" scripts
@@ -125,6 +116,7 @@ Pass as `make` vars, or positional args to `Build.sh`.
 | `TRANSPORT` | `on, off*` (mvapich2 also: `PSM2/PSM3/VERBS/UCX/OFI`, legacy) | transport-API interception |
 | `PTPD` | `on*, off` | build PTP daemon support |
 | `OMPT` | `on*, off` | OpenMP interception |
+| `ACC` | `on, off*` | OpenACC interception (profiling interface, needs `acc_prof.h`: GCC >= 9 or NVHPC); an error together with `COMPILER=intel` |
 | `DIAG` | `off*, on` | debug build (`-O0`, `_dbg` suffix) |
 | `PARSE_GPU` | `off*, on` | OpenCL/Level Zero interception |
 | `PARSE_COLT` | `off*, on` | collective-timeline engine ("engineering" build, needs patched MPI) |

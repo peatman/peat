@@ -596,6 +596,7 @@ void Mat::process()
     if (globals.comm_rank > 0)
         MPI_Recv(&perm, 1, MPI_INT, globals.comm_rank - 1, PROFILE_WRITE_PERMISSION, globals.comm_compute, &status);
 #endif
+    gpu_func_store->flush_pending();
     printf("Statistic block begins on rank:%d\n", globals.comm_rank);
     if (!pc_levels.empty()) {
         for (std::map<int, int>::iterator tm_it = pc_levels.begin(); tm_it != pc_levels.end(); ++tm_it) {

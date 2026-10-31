@@ -111,6 +111,18 @@ struct Region_Exec {
     PEAT_Reduced_Event_Info init, completion;
 };
 
+// An OpenCL enqueue call waiting for the call that completes it (clWaitForEvents on its event or on an event that
+// depends on it, clFinish on its queue). The event handles come from tractor: the returned event is the output
+// parameter, the wait list the extra parameters.
+struct CL_Command {
+    PEAT_Handle queue, event, kernel;
+    PEAT_Message_Size bytes;
+    bool is_transfer;
+    std::vector<PEAT_Handle> waits;
+    PEAT_Reduced_Event_Info init;
+    int pc_ctl;
+};
+
 class GPU : public Outputs
 {
     PEAT_Bool parse_gpu;
@@ -131,6 +143,17 @@ class GPU : public Outputs
     GPU &operator=(const GPU &) = delete;
     void initialize(PTP *p, Communicators *c, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
     void parse_GPU(const PEAT_Rank rank, const Tractor_Event &event);
+    // transfers and executions that are complete in one event (OpenACC and OpenCL calls), unlike the Level Zero ones
+    // which are matched with the event that signals their completion
+    void add_transfer(const Tractor_Event &event, PEAT_Message_Size bytes);
+    void add_execution(const Tractor_Event &event, PEAT_Handle handle);
+    // OpenCL: commands are kept until a wait completes them; the ones nobody waits for are counted by their enqueue
+    // call time when the statistic is printed
+    void flush_pending();
+    void enqueue_cl(const PEAT_Rank rank, const Tractor_Event &event, bool is_transfer, PEAT_Message_Size bytes, PEAT_Handle kernel, bool blocking);
+    void finish_cl(const PEAT_Rank rank, const CL_Command &cmd, const PEAT_Reduced_Event_Info &completion, const Tractor_Event *by);
+    void complete_cl_event(const PEAT_Rank rank, const Tractor_Event &event, PEAT_Handle handle);
+    void complete_cl_queue(const PEAT_Rank rank, const Tractor_Event &event, PEAT_Handle queue);
 
     PEAT_Bool find_handle(PEAT_Rank rank, PEAT_MPI_Request request);
     PEAT_Bool update_handle(PEAT_Rank rank, PEAT_MPI_Request request, const Phase &phase);
@@ -149,6 +172,7 @@ class GPU : public Outputs
     std::map<PEAT_Rank, std::map<PEAT_Addr, Memory_Region>> memory_regions;
     std::map<PEAT_Rank, std::map<PEAT_Handle, Memory_Transfer>> transfers;
     std::map<PEAT_Rank, std::map<PEAT_Handle, Region_Exec>> executions;
+    std::map<PEAT_Rank, std::list<CL_Command>> cl_pending;
 
   public:
     std::map<int, std::map<PEAT_GPUT_Record, PEAT_Single_Event_Clock>> printed_gpu_transfers;

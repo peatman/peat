@@ -534,7 +534,8 @@ enum PEAT_Property {
     PEAT_PROP_CLASS_CL,
     PEAT_PROP_CLASS_ZE,
     PEAT_PROP_CLASS_OMPT,
-    PEAT_PROP_CLASS_GPU, // CL and ZE
+    PEAT_PROP_CLASS_GPU, // CL, ZE and ACC
+    PEAT_PROP_CLASS_ACC, // OpenACC profiling interface functions; consumers see them as PEAT_PROP_CLASS_GPU
     PEAT_PROP_CLASS_END,
     PEAT_PROP_T_PREFIX,
     PEAT_PROP_MV2_PREFIX,
@@ -645,6 +646,8 @@ static const char *print_record_properties(PEAT_Property id)
         return "OMP Clauses";
     case PEAT_PROP_CLASS_GPU:
         return "GPU Related";
+    case PEAT_PROP_CLASS_ACC:
+        return "OpenACC Events";
     case PEAT_PROP_CODE_ALL:
         return "All Functions";
     default:

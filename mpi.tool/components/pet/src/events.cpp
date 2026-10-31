@@ -473,7 +473,7 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
         }
     } else if (func_id >= MPI_START_GENERAL_COLLECTIVE_GROUP && func_id < MPI_END_GENERAL_COLLECTIVE_GROUP) {
         event = new PET_Collective_Event(this);
-    } else if ((func_id >= CL_START_GROUP && func_id < CL_END_GROUP) || (func_id >= ZE_START_GROUP && func_id < ZE_END_GROUP)) {
+    } else if ((func_id >= CL_START_GROUP && func_id < CL_END_GROUP) || (func_id >= ZE_START_GROUP && func_id < ZE_END_GROUP) || (func_id >= ACC_START_GROUP && func_id < ACC_END_GROUP)) {
         event = new PET_GPU_Event(this);
     } else if (func_id >= OMPT_START_GROUP && func_id < OMPT_END_GROUP) {
         event = new PET_OMPT_Event(this);

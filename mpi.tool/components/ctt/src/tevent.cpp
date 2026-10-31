@@ -207,7 +207,7 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
 
         func_class = PEAT_PROP_CLASS_COLLECTIVE;
     }
-    if (((func_id >= CL_START_GROUP) && (func_id < CL_END_GROUP)) || ((func_id >= ZE_START_GROUP) && (func_id < ZE_END_GROUP))) {
+    if (((func_id >= CL_START_GROUP) && (func_id < CL_END_GROUP)) || ((func_id >= ZE_START_GROUP) && (func_id < ZE_END_GROUP)) || ((func_id >= ACC_START_GROUP) && (func_id < ACC_END_GROUP))) {
         func_class = PEAT_PROP_CLASS_GPU;
         size_t num_params = 0, num_out_params = 0, num_extra_params = 0;
         extract(num_params, line_mpi.at(b + 1));

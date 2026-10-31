@@ -303,9 +303,16 @@ bool Elements::get_message(const PEAT_Rank rank, File_Storage_GZ *input_bind, TV
                     case ZECOMMANDLISTAPPENDIMAGECOPYFROMMEMORY_ID:
                     case ZECOMMANDLISTAPPENDMEMORYPREFETCH_ID:
                     case ZECOMMANDLISTAPPENDMEMADVISE_ID:
+                    case CLENQUEUEWRITEBUFFER_ID:
+                    case CLENQUEUEREADBUFFER_ID:
+                    case CLENQUEUECOPYBUFFER_ID:
+                    case CLENQUEUESVMMEMCPY_ID:
                         add_message(from, to, TV_PEN_MESSAGE_TYPE_GPU_HD_TRANSFER, tp);
                         break;
                     case ZECOMMANDLISTAPPENDLAUNCHKERNEL_ID:
+                    case CLENQUEUENDRANGEKERNEL_ID:
+                    case CLENQUEUETASK_ID:
+                    case CLENQUEUENATIVEKERNEL_ID:
                         add_message(from, to, TV_PEN_MESSAGE_TYPE_GPU_EXEC, tp);
                         break;
 
@@ -2232,7 +2239,7 @@ PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, 
     } else if (func_id >= MPI_START_GENERAL_COLLECTIVE_GROUP && func_id < MPI_END_GENERAL_COLLECTIVE_GROUP) {
         *event = new TV_Collective_Event();
         // possible_colt_included = true;
-    } else if (func_id >= CL_START_GROUP && func_id < CL_END_GROUP || func_id >= ZE_START_GROUP && func_id < ZE_END_GROUP) {
+    } else if (func_id >= CL_START_GROUP && func_id < CL_END_GROUP || func_id >= ZE_START_GROUP && func_id < ZE_END_GROUP || func_id >= ACC_START_GROUP && func_id < ACC_END_GROUP) {
         *event = new TV_GPU_Event();
     } else if (func_id >= OMPT_START_GROUP && func_id < OMPT_END_GROUP) {
         *event = new TV_OMPT_Event();

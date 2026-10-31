@@ -59,7 +59,6 @@ $prototype {
         t_event->gpu.num_out_arguments=$num_out_params;
         t_event->gpu.num_extra_arguments=$num_extra_params;
         $record_params
-        $record_extra_params
         tsc_mpi_entry=peat_get_time();
     } //if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1))
 #else
@@ -76,6 +75,7 @@ $prototype {
         t_event->func_id = $funcid_through;
         t_event->num_children += (short)(__msl_child_base(tid,level) - children_base);
         $record_out_params
+        $record_extra_params
         t_event->tscs[0] = tsc_entry;
         t_event->tscs[1] = tsc_mpi_entry;
 #ifdef _HWCOUNTERS_ENABLED_

@@ -59,6 +59,9 @@ FILE *debug_fp;
 #ifdef _T_OMPT_
 extern ompt_finalize_tool_t ompt_finalize_tool;
 #endif
+#ifdef _T_ACC_
+extern "C" void t_acc_finalize();
+#endif
 
 int gettimeofday_counter = 0;
 int clock_gettime_counter = 0;
@@ -204,6 +207,9 @@ tractor::tractor(void)
     uniq_index = NULL;
 #ifdef _T_OMPT_
     parse_openmp = 1;
+#endif
+#ifdef _T_ACC_
+    parse_openacc = 1;
 #endif
     user_region_quality_range = 0.75;
     fps_mpi = fps_hwc = fps_com = NULL;
@@ -736,6 +742,9 @@ void tractor::parse_env_vars(void)
 
 #ifdef _T_OMPT_
     parse_openmp = is_true(__msl_getenv("PEAT_TRACTOR_PARSE_OPENMP"), parse_openmp);
+#endif
+#ifdef _T_ACC_
+    parse_openacc = is_true(__msl_getenv("PEAT_TRACTOR_PARSE_OPENACC"), parse_openacc);
 #endif
     write_on_finalize = is_true(__msl_getenv("PEAT_TRACTOR_WRITE_ON_FINALIZE"), write_on_finalize);
 
@@ -1480,6 +1489,9 @@ void tractor::end(void)
     if (ompt_finalize_tool)
         ompt_finalize_tool();
 #endif
+#ifdef _T_ACC_
+    t_acc_finalize();
+#endif
 
 #ifdef _MEMPROFILE_
     PEAT_LNum max_memory_application_rss = mprof.get_max_memory_RSS_in_KB(); // in kibibytes
@@ -1981,7 +1993,7 @@ void tractor::update_extras_pointers(int tid, int level, long long *max_ext_coun
     }
 }
 
-#ifdef GPUPARSE
+#ifdef _T_GPU_STAT_
 
 //    std::map<void *, T_LOC> addr_location;
 //    std::map<short,std::map<T_LOC,std::map<T_LOC,std::map<PEAT_Message_Size, T_Stat_Record>>>> gpu_transfers; // func,from,to,size,time
@@ -1996,7 +2008,8 @@ const char *directions[] = {
     "Device->Shared",
     "Shared->Host",
     "Shared->Device",
-    "Shared->Host"};
+    "Shared->Shared"};
+const char *locations[] = {"Host", "Device", "Shared"};
 void tractor::print_gpu_stat(void)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
@@ -2012,6 +2025,15 @@ void tractor::print_gpu_stat(void)
                     int index = ((int)from_it->first) * 3 + (int)(to_it->first);
                     gzprintf(fps_com, "%d:%34s|%16s|%16lld|%16lld|%16lld|\n", PEAT_RT_Remark, mpi_function_names[func_it->first], directions[index], message_it->first, message_it->second.occurences, message_it->second.duration);
                 }
+            }
+        }
+    }
+    for (std::map<short, std::map<T_LOC, std::map<PEAT_Message_Size, T_Stat_Record>>>::const_iterator func_it = gpu_fills.cbegin(); func_it != gpu_fills.cend(); ++func_it) {
+        for (std::map<T_LOC, std::map<PEAT_Message_Size, T_Stat_Record>>::const_iterator to_it = func_it->second.cbegin(); to_it != func_it->second.cend(); ++to_it) {
+            for (std::map<PEAT_Message_Size, T_Stat_Record>::const_iterator message_it = to_it->second.cbegin(); message_it != to_it->second.cend(); ++message_it) {
+                char fill_to[32];
+                snprintf(fill_to, sizeof(fill_to), "Fill %s", locations[(int)to_it->first]);
+                gzprintf(fps_com, "%d:%34s|%16s|%16lld|%16lld|%16lld|\n", PEAT_RT_Remark, mpi_function_names[func_it->first], fill_to, message_it->first, message_it->second.occurences, message_it->second.duration);
             }
         }
     }
@@ -2358,9 +2380,10 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
             }
     #endif
     /***********************************************************************************************************************************************************************************************/
-    #ifdef GPUPARSE
+    #ifdef _T_GPU_STAT_
             if (func_base >= CL_START_GROUP && func_base < CL_END_GROUP ||
-                func_base >= ZE_START_GROUP && func_base < ZE_END_GROUP) {
+                func_base >= ZE_START_GROUP && func_base < ZE_END_GROUP ||
+                func_base >= ACC_START_GROUP && func_base < ACC_END_GROUP) {
                 t_gzprintf(fps_mpi, ":%d:%d:%d",
                            rec.gpu.num_arguments,      //
                            rec.gpu.num_out_arguments,  //
@@ -2484,6 +2507,80 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                     // END OF TODO: Add handlers later
                 case ZEMODULECREATE_ID_THROUGH:
                     gpu_executions[func_id] += tsc_mpi_exit - tsc_mpi_entry;
+                    break;
+                    // OpenCL: the parameters are the call arguments in order (queue first). Transfers and fills are told apart
+                    // by the function, the size is an argument. Enqueue calls are asynchronous, so the duration is the
+                    // submission (plus the transfer itself for blocking ones). SVM memory is shared with the host.
+                case CLENQUEUEWRITEBUFFER_ID_THROUGH: // (queue, buffer, blocking, offset, size, ptr, ...)
+                    if (in_args_num > 4) {
+                        size = in_args[4];
+                        T_Stat_Record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
+                        gpu_transfers[func_id][T_LOC_HOST][T_LOC_DEVICE][size] += sr;
+                    }
+                    break;
+                case CLENQUEUEREADBUFFER_ID_THROUGH: // (queue, buffer, blocking, offset, size, ptr, ...)
+                    if (in_args_num > 4) {
+                        size = in_args[4];
+                        T_Stat_Record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
+                        gpu_transfers[func_id][T_LOC_DEVICE][T_LOC_HOST][size] += sr;
+                    }
+                    break;
+                case CLENQUEUECOPYBUFFER_ID_THROUGH: // (queue, src, dst, src_offset, dst_offset, size, ...)
+                    if (in_args_num > 5) {
+                        size = in_args[5];
+                        T_Stat_Record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
+                        gpu_transfers[func_id][T_LOC_DEVICE][T_LOC_DEVICE][size] += sr;
+                    }
+                    break;
+                case CLENQUEUESVMMEMCPY_ID_THROUGH: // (queue, blocking, dst, src, size, ...)
+                    if (in_args_num > 4) {
+                        size = in_args[4];
+                        T_Stat_Record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
+                        gpu_transfers[func_id][T_LOC_SHARED][T_LOC_SHARED][size] += sr;
+                    }
+                    break;
+                case CLENQUEUEFILLBUFFER_ID_THROUGH: // (queue, buffer, pattern, pattern_size, offset, size, ...)
+                    if (in_args_num > 5) {
+                        size = in_args[5];
+                        T_Stat_Record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
+                        gpu_fills[func_id][T_LOC_DEVICE][size] += sr;
+                    }
+                    break;
+                case CLENQUEUESVMMEMFILL_ID_THROUGH: // (queue, svm_ptr, pattern, pattern_size, size, ...)
+                    if (in_args_num > 4) {
+                        size = in_args[4];
+                        T_Stat_Record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
+                        gpu_fills[func_id][T_LOC_SHARED][size] += sr;
+                    }
+                    break;
+                case CLENQUEUENDRANGEKERNEL_ID_THROUGH:
+                case CLENQUEUETASK_ID_THROUGH:
+                case CLENQUEUENATIVEKERNEL_ID_THROUGH:
+                case CLBUILDPROGRAM_ID_THROUGH: // like zeModuleCreate
+                case CLCOMPILEPROGRAM_ID_THROUGH:
+                case CLLINKPROGRAM_ID_THROUGH:
+                    gpu_executions[func_id] += tsc_mpi_exit - tsc_mpi_entry;
+                    break;
+                case CLFINISH_ID_THROUGH:
+                case CLWAITFOREVENTS_ID_THROUGH:
+                    gpu_syncs[func_id] += tsc_mpi_exit - tsc_mpi_entry;
+                    break;
+                    // OpenACC: parameters are device type, parent construct, async queue, bytes, host ptr, device ptr, launch size
+                case ACC_ENQUEUE_UPLOAD_ID_THROUGH: {
+                    size = in_args[3];
+                    T_Stat_Record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
+                    gpu_transfers[func_id][T_LOC_HOST][T_LOC_DEVICE][size] += sr;
+                } break;
+                case ACC_ENQUEUE_DOWNLOAD_ID_THROUGH: {
+                    size = in_args[3];
+                    T_Stat_Record sr(tsc_mpi_exit - tsc_mpi_entry, 1);
+                    gpu_transfers[func_id][T_LOC_DEVICE][T_LOC_HOST][size] += sr;
+                } break;
+                case ACC_ENQUEUE_LAUNCH_ID_THROUGH:
+                    gpu_executions[func_id] += tsc_mpi_exit - tsc_mpi_entry;
+                    break;
+                case ACC_WAIT_ID_THROUGH:
+                    gpu_syncs[func_id] += tsc_mpi_exit - tsc_mpi_entry;
                     break;
                 case ZECOMMANDQUEUEEXECUTECOMMANDLISTS_ID_THROUGH:
                     gpu_executions[func_id] += tsc_mpi_exit - tsc_mpi_entry;
@@ -3027,7 +3124,7 @@ void tractor::write_stat_com_file(void)
                 if (f == OMPT_PARALLEL_ID_THROUGH) {
                     gzprintf(fps_com, "%d:%34s|\t%19lld|\t%19lld(%06.2f%)(%06.2f%)|\t%18lld(%07.2f%)|\n", PEAT_RT_Remark, mpi_function_names[f], overall_entries[f], overall_durations[f], fratio, (double)0.0, overall_tool_overhead[f], ratio);
                 } else {
-                    if (f >= CL_START_GROUP_THROUGH && f <= CL_END_GROUP_THROUGH || f >= ZE_START_GROUP_THROUGH && f <= ZE_END_GROUP_THROUGH) {
+                    if (f >= CL_START_GROUP_THROUGH && f <= CL_END_GROUP_THROUGH || f >= ZE_START_GROUP_THROUGH && f <= ZE_END_GROUP_THROUGH || f >= ACC_START_GROUP_THROUGH && f <= ACC_END_GROUP_THROUGH) {
                         double fratio_gpu = ((double)(overall_durations[f] * 100.0)) / ((double)(global_gpu_time));
                         gzprintf(fps_com, "%d:%34s|\t%19lld|\t%19lld(%06.2f%)(%06.2f%)|\t%18lld(%07.2f%)|\n", PEAT_RT_Remark, mpi_function_names[f], overall_entries[f], overall_durations[f], fratio, fratio_gpu, overall_tool_overhead[f], ratio);
                     } else {
@@ -3085,7 +3182,7 @@ void tractor::write_stat_com_file(void)
         }
     }
     SEPARATOR(38 * (gt_func_stat.bound_num - 1) + 35);
-#ifdef GPUPARSE
+#ifdef _T_GPU_STAT_
     print_gpu_stat();
 #endif
     __DEBUG_EPILOG_TRACTOR_LAYER__

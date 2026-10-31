@@ -81,7 +81,7 @@ struct num_processed_events {
     int nesting_levels = 1; /* achieved, number of id columns written */
 };
 
-#ifdef GPUPARSE
+#ifdef _T_GPU_STAT_
 enum T_LOC {
     T_LOC_HOST,
     T_LOC_DEVICE,
@@ -147,8 +147,11 @@ struct tractor : t_base_event {
 #ifdef _T_OMPT_
     int parse_openmp;
 #endif
+#ifdef _T_ACC_
+    int parse_openacc;
+#endif
 
-#ifdef GPUPARSE
+#ifdef _T_GPU_STAT_
     std::map<void *, T_LOC> addr_location;
     std::map<short, std::map<T_LOC, std::map<T_LOC, std::map<PEAT_Message_Size, T_Stat_Record>>>> gpu_transfers; // func,from,to,size,time
     std::map<short, std::map<T_LOC, std::map<PEAT_Message_Size, T_Stat_Record>>> gpu_fills;                      // func,from,to,size,time
@@ -283,7 +286,7 @@ struct tractor : t_base_event {
     void print_address(gzFile fp, addr_entry *entry);
 #endif
 
-#ifdef GPUPARSE
+#ifdef _T_GPU_STAT_
     void print_gpu_stat(void);
 #endif
 

@@ -878,8 +878,18 @@ my @funcpars=split(',',$funcpars);
 my @funcoutpars=split(',',$funcoutpars);
 my $num_params=@funcpars;
 my $num_out_params=@funcoutpars;
+# wait list: Level Zero numWaitEvents/phWaitEvents, OpenCL enqueue calls num_events_in_wait_list/event_wait_list,
+# clWaitForEvents num_events/event_list. Recorded as the extra parameters (their handles), counted as 0 for a NULL list.
+my ($extra_count,$extra_list);
+if ($funcpars =~ /\bnumWaitEvents\b/ && $funcpars =~ /\bphWaitEvents\b/) {
+  ($extra_count,$extra_list)=("numWaitEvents","phWaitEvents");
+} elsif ($funcpars =~ /\bnum_events_in_wait_list\b/ && $funcpars =~ /\bevent_wait_list\b/) {
+  ($extra_count,$extra_list)=("num_events_in_wait_list","event_wait_list");
+} elsif ($funcpars =~ /\bnum_events\b/ && $funcpars =~ /\bevent_list\b/) {
+  ($extra_count,$extra_list)=("num_events","event_list");
+}
 my $num_extra_params="0";
-   $num_extra_params="numWaitEvents" if $funcpars =~ /numWaitEvents/;
+   $num_extra_params="($extra_list ? (int)$extra_count : 0)" if $extra_count;
 my $record_params;
 if ($num_params>0) {
   if ($num_params==1) {
@@ -918,16 +928,11 @@ __msl_record_longs(tid,level,params,$num_out_params);
   }
 }
 
-my $record_extra_params;
-if ($num_extra_params eq "numWaitEvents") {
-    $record_extra_params="if (numWaitEvents >0) {
-long long extra_params[numWaitEvents];
-";
-    for (my $i=0;$i<$num_extra_params;$i++) {
-      $record_extra_params="$record_extra_params
-      extra_params[$i]=(long long) phWaitEvents[$i];";
-    }
-    $record_extra_params="$record_extra_params
+my $record_extra_params="";
+if ($extra_count) {
+  $record_extra_params="if ($num_extra_params > 0) {
+long long extra_params[$num_extra_params];
+for (int ex=0;ex<$num_extra_params;ex++) extra_params[ex]=(long long)$extra_list\[ex];
 __msl_record_longs(tid,level,extra_params,$num_extra_params);
 }
 ";
