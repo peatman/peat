@@ -11,7 +11,7 @@ rm -rf $src_tmp
 mkdir -p $src_tmp
 cd $src_tmp
 
-cmake -DCMAKE_CXX_COMPILER=$MPICXX -DPEAT_TIMER=nano \
+cmake -DCMAKE_C_COMPILER=$MPICC -DCMAKE_CXX_COMPILER=$MPICXX -DPEAT_TIMER=nano \
     ../src
 
 cmake --build .
@@ -21,7 +21,7 @@ exit
 
 rm -rf *
 
-cmake -DCMAKE_CXX_COMPILER=$MPICXX  -DTRACTOR_TARGET=transport_layers\
+cmake -DCMAKE_C_COMPILER=$MPICC -DCMAKE_CXX_COMPILER=$MPICXX  -DTRACTOR_TARGET=transport_layers\
     ../src
 
 cmake --build .

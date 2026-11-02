@@ -30,8 +30,16 @@
 #include <time.h>
 #include <unistd.h>
 #ifdef GPUPARSE
+#if !defined(GPUPARSE_CL) && !defined(GPUPARSE_ZE) // the Makefile build parses both APIs
+#define GPUPARSE_CL
+#define GPUPARSE_ZE
+#endif
+#ifdef GPUPARSE_ZE
 #include "level_zero/ze_api.h"
+#endif
+#ifdef GPUPARSE_CL
 #include <CL/cl.h>
+#endif
 #endif
 #include "tractor.h"
 
@@ -296,6 +304,27 @@ tractor::~tractor(void)
         restore_signals(t_mpi_rank);
 #endif
     __DEBUG_EPILOG_TRACTOR_LAYER__
+}
+
+// the compiler that built the library, for the "Build Date" remark of the com file; nvc++ and icpx also define
+// __GNUC__ / __clang__, so they come first
+static const char *t_compiler_id()
+{
+    static char id[80];
+#if defined(__NVCOMPILER)
+    snprintf(id, sizeof(id), "nvc++ %d.%d.%d", __NVCOMPILER_MAJOR__, __NVCOMPILER_MINOR__, __NVCOMPILER_PATCHLEVEL__);
+#elif defined(__INTEL_LLVM_COMPILER)
+    snprintf(id, sizeof(id), "icpx %d.%d.%d", __INTEL_LLVM_COMPILER / 10000, (__INTEL_LLVM_COMPILER / 100) % 100, __INTEL_LLVM_COMPILER % 100);
+#elif defined(__INTEL_COMPILER)
+    snprintf(id, sizeof(id), "icpc %d", __INTEL_COMPILER);
+#elif defined(__clang__)
+    snprintf(id, sizeof(id), "clang++ %d.%d.%d", __clang_major__, __clang_minor__, __clang_patchlevel__);
+#elif defined(__GNUC__)
+    snprintf(id, sizeof(id), "g++ %d.%d.%d", __GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__);
+#else
+    snprintf(id, sizeof(id), "unknown compiler");
+#endif
+    return id;
 }
 
 static int is_true(char *str, int previous_value)
@@ -1811,7 +1840,7 @@ PEAT_Clock tractor::find_ELF_symbols(void)
     return rdtsca() - time_start;
 }
 
-int tractor::write_trace(void)
+void tractor::write_trace(void)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
     // user_region_store l_user_region_store;
@@ -1939,7 +1968,7 @@ PEAT_MPI_Comm tractor::get_global_comm_id(MPI_Comm comm, PEAT_Clock tsc,int is_i
         return (PEAT_MPI_Comm)((PEAT_MPI_Long_Comm)comm);
         /*
         #ifndef OMPI_MPI_H
-                return (PEAT_MPI_Comm) comm;
+                return (PEAT_MPI_Comm)(intptr_t)comm;
         #else
                 PEAT_MPI_Comm *comm_ptr = (PEAT_MPI_Comm *) &comm;
                 return (PEAT_MPI_Comm) *comm_ptr;
@@ -3201,7 +3230,7 @@ void tractor::write_com_file(const num_processed_events &num_of_events, /*user_r
     PEAT_Clock com_write_len = rdtsca();
     long core_id = get_core_id(); // get proc id for further writing to com file
 
-    gzprintf(fps_com, "%d:---=== PEAT TRACTOR V%d.%d. Build Date %s(%s). ===---\n", PEAT_RT_Remark, _TRACTOR_MAJOR_VERSION_, _TRACTOR_MINOR_VERSION_, _TRACTOR_BUILD_DATE_, __DATE__);
+    gzprintf(fps_com, "%d:---=== PEAT TRACTOR V%d.%d. Build Date %s(%s) by %s. ===---\n", PEAT_RT_Remark, _TRACTOR_MAJOR_VERSION_, _TRACTOR_MINOR_VERSION_, _TRACTOR_BUILD_DATE_, __DATE__, t_compiler_id());
     gzprintf(fps_com, "%d:Application begins. Max Threads %d. Return Level %u.\n", PEAT_RT_Remark, t_max_threads, max_ret_level);
     gzprintf(fps_com, "%d:msl_event=%d : pp=%d,req=%d,coll=%d,comm=%d,bl=%d,osc=%d,fio=%d,l=%d,pc=%d,transport=%d\n", PEAT_RT_Remark, sizeof(msl_event),
              sizeof(msl_event::p2p_pr_pb), sizeof(msl_event::requests), sizeof(msl_event::collective),

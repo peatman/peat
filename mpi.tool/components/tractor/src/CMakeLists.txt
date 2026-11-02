@@ -29,7 +29,113 @@
 #   cmake -DCMAKE_CXX_COMPILER=mpicxx -DCMAKE_C_COMPILER=mpicc ..
 #
 cmake_minimum_required(VERSION 3.16...4.4)
+# The compiler test must not link: with an MPI wrapper as compiler the link fails when libmpi and libfabric do not match
+# (engineering vs stock), and the clear "version mismatch" error further down is wanted instead of a linker log.
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 project(tractor CXX C)
+unset(CMAKE_TRY_COMPILE_TARGET_TYPE)
+
+# libfabric: the system one unless OFIPATH (-DOFIPATH, or $OFIPATH / $OFI_PATH as env.sh sets them; libfabric_eng=-eng
+# selects the engineering one there) points to another installation
+if(NOT OFIPATH)
+  if(DEFINED ENV{OFIPATH})
+    set(OFIPATH "$ENV{OFIPATH}")
+  elseif(DEFINED ENV{OFI_PATH})
+    set(OFIPATH "$ENV{OFI_PATH}")
+  endif()
+endif()
+set(TRACTOR_OFI_INCLUDE_DIR "")
+if(OFIPATH)
+  set(TRACTOR_OFI_INCLUDE_DIR "${OFIPATH}/include")
+endif()
+
+# Engineering libfabric / MPI consistency. The engineering libfabric exports functions that the stock one only has as
+# "static inline" in its headers (fi_close, ...); the engineering libmpi references them as undefined symbols. The
+# two have to agree: an engineering MPI needs the engineering libfabric ($OFIPATH, libfabric_eng='-eng' in env.sh)
+# and the other way round. The transport_layers shims redefine those same functions, so they only compile against
+# the engineering libfabric (headers and library).
+find_program(TRACTOR_NM_EXE nm)
+find_program(TRACTOR_READELF_EXE readelf)
+if(OFIPATH)
+  find_library(TRACTOR_OFI_LIBRARY fabric HINTS ${OFIPATH}/lib ${OFIPATH}/lib64 NO_DEFAULT_PATH)
+else()
+  find_library(TRACTOR_OFI_LIBRARY fabric)
+endif()
+if(TRACTOR_TARGET STREQUAL "transport_layers")
+  if(TRACTOR_NM_EXE AND TRACTOR_OFI_LIBRARY)
+    execute_process(COMMAND ${TRACTOR_NM_EXE} -D --defined-only ${TRACTOR_OFI_LIBRARY}
+                    OUTPUT_VARIABLE _ofi_syms ERROR_QUIET)
+    if(NOT _ofi_syms MATCHES "(^|\n)[0-9a-f]+ [TtWw] fi_close(\n|$)")
+      message(FATAL_ERROR "tractor: TRACTOR_TARGET=transport_layers needs the engineering libfabric, but ${TRACTOR_OFI_LIBRARY} is "
+        "a stock build (fi_close is only an inline function there, the shims redefine it). Point OFIPATH to the engineering "
+        "libfabric (libfabric_eng='-eng' before env.sh).")
+    endif()
+    message(STATUS "tractor: engineering libfabric for the transport shims (${TRACTOR_OFI_LIBRARY})")
+  else()
+    message(STATUS "tractor: libfabric edition not checked (nm or libfabric not found)")
+  endif()
+else()
+  # FindMPI leaves the library list empty when the compiler already is the MPI wrapper, so ask the wrapper
+  # (MPICH style "-show": -L<dir>) and look next to it (<prefix>/bin/mpicc -> <prefix>/lib)
+  set(_mpi_hints "")
+  if(CMAKE_C_COMPILER) # the MPI wrapper
+    get_filename_component(_mpi_bin "${CMAKE_C_COMPILER}" DIRECTORY)
+    list(APPEND _mpi_hints ${_mpi_bin}/../lib ${_mpi_bin}/../lib64)
+    execute_process(COMMAND ${CMAKE_C_COMPILER} -show OUTPUT_VARIABLE _mpi_show ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+    string(REGEX MATCHALL "-L[^ ]+" _mpi_ldirs "${_mpi_show}")
+    foreach(_d ${_mpi_ldirs})
+      string(SUBSTRING "${_d}" 2 -1 _d)
+      list(APPEND _mpi_hints ${_d})
+    endforeach()
+  endif()
+  unset(TRACTOR_MPI_LIBRARY CACHE)
+  find_library(TRACTOR_MPI_LIBRARY NAMES mpi HINTS ${_mpi_hints} NO_DEFAULT_PATH)
+  set(_mpi_lib "${TRACTOR_MPI_LIBRARY}")
+  set(_mpi_needs_ofi ON)
+  if(TRACTOR_READELF_EXE AND _mpi_lib)
+    execute_process(COMMAND ${TRACTOR_READELF_EXE} -d ${_mpi_lib} OUTPUT_VARIABLE _mpi_dyn ERROR_QUIET)
+    if(NOT _mpi_dyn MATCHES "NEEDED[^\n]*libfabric")
+      set(_mpi_needs_ofi OFF)
+    endif()
+  endif()
+  if(NOT _mpi_needs_ofi)
+    # e.g. MVAPICH 2 (verbs) or a stock Open MPI: no libfabric dependency, so there is nothing to match
+    message(STATUS "tractor: ${_mpi_lib} does not link libfabric, engineering libfabric check skipped")
+  elseif(TRACTOR_NM_EXE AND TRACTOR_OFI_LIBRARY AND _mpi_lib)
+    execute_process(COMMAND ${TRACTOR_NM_EXE} -D --defined-only ${TRACTOR_OFI_LIBRARY}
+                    OUTPUT_VARIABLE _ofi_syms ERROR_QUIET)
+    execute_process(COMMAND ${TRACTOR_NM_EXE} -D --undefined-only ${_mpi_lib}
+                    OUTPUT_VARIABLE _mpi_syms ERROR_QUIET)
+    execute_process(COMMAND ${TRACTOR_NM_EXE} -D --defined-only ${_mpi_lib}
+                    OUTPUT_VARIABLE _mpi_defs ERROR_QUIET)
+    set(_ofi_eng OFF)
+    set(_mpi_ofi_eng OFF)
+    if(_ofi_syms MATCHES "(^|\n)[0-9a-f]+ [TtWw] fi_close(\n|$)")
+      set(_ofi_eng ON)
+    endif()
+    # engineering MPI: it needs fi_close & co from libfabric, or - when its libfabric use is limited to ordinary calls
+    # (the GNU Open MPI builds) - it is the patched one that defines mpi_internal_comm_translate_rank
+    if(_mpi_syms MATCHES "(^|\n) +[Uw] fi_close(\n|$)" OR _mpi_defs MATCHES "(^|\n)[0-9a-f]+ [TtWw] mpi_internal_comm_translate_rank(\n|$)")
+      set(_mpi_ofi_eng ON)
+    endif()
+    if(_ofi_eng AND _mpi_ofi_eng)
+      message(STATUS "tractor: engineering libfabric (${TRACTOR_OFI_LIBRARY}) and engineering MPI (${_mpi_lib})")
+    elseif(NOT _ofi_eng AND NOT _mpi_ofi_eng)
+      message(STATUS "tractor: stock libfabric (${TRACTOR_OFI_LIBRARY}) and stock MPI (${_mpi_lib})")
+    elseif(_mpi_ofi_eng)
+      message(FATAL_ERROR "tractor: version mismatch - the MPI library ${_mpi_lib} is an engineering build (it needs fi_close and "
+        "friends from libfabric) but ${TRACTOR_OFI_LIBRARY} is a stock libfabric. Point OFIPATH to the engineering libfabric "
+        "(libfabric_eng='-eng' before env.sh).")
+    else()
+      message(FATAL_ERROR "tractor: version mismatch - ${TRACTOR_OFI_LIBRARY} is an engineering libfabric but the MPI library "
+        "${_mpi_lib} is a stock build. Use the engineering MPI or point OFIPATH to the stock libfabric.")
+    endif()
+  else()
+    message(STATUS "tractor: libfabric/MPI engineering consistency not checked (nm, libfabric or libmpi not found)")
+  endif()
+endif()
+
+# (run before find_package(MPI): a libmpi/libfabric mismatch makes that link test fail with a linker log)
 
 set(TRACTOR_MAJOR 0)
 set(TRACTOR_MINOR 1)
@@ -45,23 +151,25 @@ find_package(MPI REQUIRED)
 message(STATUS "tractor: using Perl ${PERL_VERSION_STRING} (${PERL_EXECUTABLE})")
 
 # ---------------------------------------------------------------------------
-# 1. Compiler family: gnu / intel / pgi
-#    (override with -DTRACTOR_COMPILER=gnu|intel|pgi to skip auto-detection)
+# 1. Compiler family: gnu / intel / nvc / clang
+#    (override with -DTRACTOR_COMPILER=gnu|intel|nvc|clang to skip auto-detection; pgi = nvc)
 # ---------------------------------------------------------------------------
 if(NOT TRACTOR_COMPILER)
   if(CMAKE_CXX_COMPILER_ID STREQUAL "Intel" OR CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
     set(_tractor_compiler intel)
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "PGI" OR CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
-    set(_tractor_compiler pgi)
+    set(_tractor_compiler nvc)
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang") # Clang, AppleClang
+    set(_tractor_compiler clang)
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(_tractor_compiler gnu)
   else()
     message(WARNING "tractor: unrecognized CXX compiler id '${CMAKE_CXX_COMPILER_ID}', defaulting TRACTOR_COMPILER=gnu")
     set(_tractor_compiler gnu)
   endif()
-  set(TRACTOR_COMPILER ${_tractor_compiler} CACHE STRING "toolchain family: gnu|intel|pgi" FORCE)
+  set(TRACTOR_COMPILER ${_tractor_compiler} CACHE STRING "toolchain family: gnu|intel|nvc|clang" FORCE)
 endif()
-set_property(CACHE TRACTOR_COMPILER PROPERTY STRINGS gnu intel pgi)
+set_property(CACHE TRACTOR_COMPILER PROPERTY STRINGS gnu intel nvc clang)
 message(STATUS "tractor: COMPILER=${TRACTOR_COMPILER} (CXX compiler id: ${CMAKE_CXX_COMPILER_ID})")
 
 # ---------------------------------------------------------------------------
@@ -207,7 +315,15 @@ message(STATUS "tractor: MPI vendor=${TRACTOR_MPI_VENDOR} version=${TRACTOR_MPI_
 # ---------------------------------------------------------------------------
 set(MEM  "off" CACHE STRING "memory profiling tag: off|<value used as _MEMPROFILE_<MEM>_>, e.g. HOOKS")
 set(DIAG OFF   CACHE BOOL   "debug/diagnostic build (-O0, _dbg suffix, entry/exit tracing)")
-set(GPU  OFF   CACHE BOOL   "OpenCL/Level Zero call interception (PARSE_GPU)")
+set(GPU  OFF   CACHE BOOL   "GPU call interception (PARSE_GPU): OpenCL, Level Zero and OpenACC, each one only when found")
+# With GPU=ON every API below is looked for at configure time: AUTO enables it when its header (and library) are found,
+# ON makes a missing one an error, OFF skips it.
+set(OCL_PARSE "AUTO" CACHE STRING "OpenCL interception: AUTO|ON|OFF (needs CL/cl.h and libOpenCL)")
+set(LZE_PARSE "AUTO" CACHE STRING "Level Zero interception: AUTO|ON|OFF (needs level_zero/ze_api.h and libze_loader)")
+set(ACC_PARSE "AUTO" CACHE STRING "OpenACC interception: AUTO|ON|OFF (needs acc_prof.h, never built with the Intel compilers)")
+set_property(CACHE OCL_PARSE PROPERTY STRINGS AUTO ON OFF)
+set_property(CACHE LZE_PARSE PROPERTY STRINGS AUTO ON OFF)
+set_property(CACHE ACC_PARSE PROPERTY STRINGS AUTO ON OFF)
 set(BUF  OFF   CACHE BOOL   "extra MPI buffer fields (MPIBUFFERS)")
 set(V2P  OFF   CACHE BOOL   "virtual->physical address resolution (VIRT2PHYS)")
 set(HWC  "off" CACHE STRING "hardware counters tag: off|RDPMC")
@@ -219,7 +335,6 @@ values embed one layer's interception into the core lib; for the standalone psm2
 set_property(CACHE TRANSPORT PROPERTY STRINGS off on PSM2 VERBS PSM3 UCX OFI)
 
 set(OMPT       ON  CACHE BOOL "OpenMP interception")
-set(ACC        OFF CACHE BOOL "OpenACC interception (profiling interface, needs acc_prof.h)")
 set(PTPD_BUILD ON  CACHE BOOL "build the ptpd PTP-daemon binary")
 
 set(PEAT_TIMER "tsc" CACHE STRING
@@ -269,7 +384,8 @@ string(TOUPPER "${TRANSPORT}" _transport_upper)
 # ---------------------------------------------------------------------------
 find_package(ZLIB REQUIRED)
 
-# only used when TRANSPORT != off or TRACTOR_TARGET=transport_layers - defaults match Build.sh's
+# only used when TRANSPORT != off or TRACTOR_TARGET=transport_layers. VERBSPATH defaults to /usr; PSM2/PSM3/UCX use the
+# system installation unless a path is given (-D<NAME> or the environment variable, as env.sh and Build.sh export them)
 if(NOT VERBSPATH)
   if(DEFINED ENV{VERBSPATH})
     set(VERBSPATH "$ENV{VERBSPATH}")
@@ -277,35 +393,22 @@ if(NOT VERBSPATH)
     set(VERBSPATH "/usr")
   endif()
 endif()
-if(NOT PSM2PATH)
-  if(DEFINED ENV{PSM2PATH})
-    set(PSM2PATH "$ENV{PSM2PATH}")
-  else()
-    set(PSM2PATH "$ENV{HOME}/psm2")
-  endif()
+if(NOT PSM2PATH AND DEFINED ENV{PSM2PATH})
+  set(PSM2PATH "$ENV{PSM2PATH}")
 endif()
-if(NOT PSM3PATH)
-  if(DEFINED ENV{PSM3PATH})
-    set(PSM3PATH "$ENV{PSM3PATH}")
-  else()
-    set(PSM3PATH "$ENV{HOME}/psm3")
-  endif()
+if(NOT PSM3PATH AND DEFINED ENV{PSM3PATH})
+  set(PSM3PATH "$ENV{PSM3PATH}")
 endif()
-if(NOT UCXPATH)
-  if(DEFINED ENV{UCXPATH})
-    set(UCXPATH "$ENV{UCXPATH}")
-  else()
-    set(UCXPATH "$ENV{HOME}/ucx")
-  endif()
+if(NOT UCXPATH AND DEFINED ENV{UCXPATH})
+  set(UCXPATH "$ENV{UCXPATH}")
 endif()
-if(NOT OFIPATH)
-  if(DEFINED ENV{OFIPATH})
-    set(OFIPATH "$ENV{OFIPATH}")
-  elseif(DEFINED ENV{OFI_PATH})
-    set(OFIPATH "$ENV{OFI_PATH}")
-  else()
-    set(OFIPATH "$ENV{HOME}/libfabric")
-  endif()
+set(TRACTOR_PSM2_INCLUDE_DIR "")
+if(PSM2PATH)
+  set(TRACTOR_PSM2_INCLUDE_DIR "${PSM2PATH}/include")
+endif()
+set(TRACTOR_UCX_INCLUDE_DIR "")
+if(UCXPATH)
+  set(TRACTOR_UCX_INCLUDE_DIR "${UCXPATH}/include")
 endif()
 
 find_program(TRACTOR_CPP_EXE NAMES cpp REQUIRED)
@@ -329,9 +432,101 @@ set(TRACTOR_LIBS ZLIB::ZLIB)
 set(TRACTOR_EXTRANAME "")
 set(_print_extended_stuff off)
 
+# GPU API detection: sets _gpu_cl / _gpu_ze / _gpu_acc (ON/OFF) for what is built
+set(_gpu_cl OFF)
+set(_gpu_ze OFF)
+set(_gpu_acc OFF)
+set(TRACTOR_GPU_INCLUDE_DIRS "")
 if(GPU)
+  foreach(_opt OCL_PARSE LZE_PARSE ACC_PARSE)
+    string(TOUPPER "${${_opt}}" ${_opt})
+    if(NOT ${_opt} MATCHES "^(AUTO|ON|OFF)$")
+      message(FATAL_ERROR "tractor: -D${_opt}=${${_opt}} is not one of AUTO|ON|OFF")
+    endif()
+  endforeach()
+
+  # A header counts as present when the compiler can include it (that sees CPATH, the compiler's own include
+  # directories, ...). find_path only supplies an explicit -I for headers outside of that.
+  include(CheckIncludeFileCXX)
+  if(NOT OCL_PARSE STREQUAL "OFF")
+    # the oneAPI compiler ships its own OpenCL headers and loader (${CMPLR_ROOT}/include/CL/cl.h, ${CMPLR_ROOT}/lib)
+    if(TRACTOR_COMPILER STREQUAL "intel")
+      find_path(TRACTOR_OPENCL_INCLUDE_DIR CL/cl.h HINTS ENV CMPLR_ROOT PATH_SUFFIXES include)
+      find_library(TRACTOR_OPENCL_LIBRARY OpenCL HINTS ENV CMPLR_ROOT PATH_SUFFIXES lib)
+    else()
+      find_path(TRACTOR_OPENCL_INCLUDE_DIR CL/cl.h)
+      find_library(TRACTOR_OPENCL_LIBRARY OpenCL)
+    endif()
+    set(CMAKE_REQUIRED_QUIET ON)
+    set(CMAKE_REQUIRED_INCLUDES ${TRACTOR_OPENCL_INCLUDE_DIR})
+    check_include_file_cxx(CL/cl.h TRACTOR_HAVE_CL_H)
+    unset(CMAKE_REQUIRED_INCLUDES)
+    unset(CMAKE_REQUIRED_QUIET)
+    if(TRACTOR_HAVE_CL_H AND TRACTOR_OPENCL_LIBRARY)
+      set(_gpu_cl ON)
+      if(TRACTOR_OPENCL_INCLUDE_DIR)
+        list(APPEND TRACTOR_GPU_INCLUDE_DIRS ${TRACTOR_OPENCL_INCLUDE_DIR})
+      endif()
+      list(APPEND TRACTOR_LIBS ${TRACTOR_OPENCL_LIBRARY})
+    elseif(OCL_PARSE STREQUAL "ON")
+      message(FATAL_ERROR "tractor: OCL_PARSE=ON but CL/cl.h or libOpenCL was not found (set CMAKE_PREFIX_PATH or -DOCL_PARSE=AUTO|OFF)")
+    endif()
+  endif()
+
+  if(NOT LZE_PARSE STREQUAL "OFF")
+    find_path(TRACTOR_LZE_INCLUDE_DIR level_zero/ze_api.h)
+    find_library(TRACTOR_LZE_LIBRARY ze_loader)
+    set(CMAKE_REQUIRED_QUIET ON)
+    set(CMAKE_REQUIRED_INCLUDES ${TRACTOR_LZE_INCLUDE_DIR})
+    check_include_file_cxx(level_zero/ze_api.h TRACTOR_HAVE_ZE_API_H)
+    unset(CMAKE_REQUIRED_INCLUDES)
+    unset(CMAKE_REQUIRED_QUIET)
+    if(TRACTOR_HAVE_ZE_API_H AND TRACTOR_LZE_LIBRARY)
+      set(_gpu_ze ON)
+      if(TRACTOR_LZE_INCLUDE_DIR)
+        list(APPEND TRACTOR_GPU_INCLUDE_DIRS ${TRACTOR_LZE_INCLUDE_DIR})
+      endif()
+      list(APPEND TRACTOR_LIBS ${TRACTOR_LZE_LIBRARY})
+    elseif(LZE_PARSE STREQUAL "ON")
+      message(FATAL_ERROR "tractor: LZE_PARSE=ON but level_zero/ze_api.h or libze_loader was not found (set CMAKE_PREFIX_PATH or -DLZE_PARSE=AUTO|OFF)")
+    endif()
+  endif()
+
+  # acc_prof.h comes with the compiler (GCC >= 9, NVHPC); the Intel compilers do not have it
+  if(NOT ACC_PARSE STREQUAL "OFF")
+    if(TRACTOR_COMPILER STREQUAL "intel")
+      if(ACC_PARSE STREQUAL "ON")
+        message(WARNING "tractor: ACC_PARSE=ON ignored, the Intel compilers have no OpenACC profiling interface header")
+      endif()
+    else()
+      check_include_file_cxx(acc_prof.h TRACTOR_HAVE_ACC_PROF_H)
+      if(TRACTOR_HAVE_ACC_PROF_H)
+        set(_gpu_acc ON)
+      elseif(ACC_PARSE STREQUAL "ON")
+        message(FATAL_ERROR "tractor: ACC_PARSE=ON but acc_prof.h was not found (GCC >= 9 or NVHPC needed; or -DACC_PARSE=AUTO|OFF)")
+      endif()
+    endif()
+  endif()
+
+  message(STATUS "tractor: GPU parsing: OpenCL=${_gpu_cl} LevelZero=${_gpu_ze} OpenACC=${_gpu_acc}")
+  if(NOT (_gpu_cl OR _gpu_ze OR _gpu_acc))
+    message(WARNING "tractor: GPU=ON but no GPU API (OpenCL, Level Zero, OpenACC) was found, GPU parsing is off")
+  endif()
+endif()
+
+set(_gpu_apis "")
+if(_gpu_cl)
+  list(APPEND _gpu_apis cl)
+  list(APPEND TRACTOR_CONTROLS GPUPARSE_CL)
+endif()
+if(_gpu_ze)
+  list(APPEND _gpu_apis ze)
+  list(APPEND TRACTOR_CONTROLS GPUPARSE_ZE)
+endif()
+if(_gpu_apis)
   list(APPEND TRACTOR_CONTROLS GPUPARSE)
-  list(APPEND TRACTOR_LIBS OpenCL ze_loader)
+endif()
+if(_gpu_apis OR _gpu_acc)
   set(TRACTOR_EXTRANAME "${TRACTOR_EXTRANAME}.gpu")
 endif()
 
@@ -458,11 +653,8 @@ if(OMPT)
   list(APPEND TRACTOR_CONTROLS _T_OMPT_)
 endif()
 
-if(ACC)
-  if(TRACTOR_COMPILER STREQUAL "intel")
-    message(FATAL_ERROR "tractor: ACC=ON is not supported with TRACTOR_COMPILER=intel (the Intel compilers have no OpenACC \
-profiling interface header); use -DTRACTOR_COMPILER=gnu or -DACC=OFF")
-  endif()
+# OpenACC interception (profiling interface, needs acc_prof.h): part of the GPU parsing, see the detection above
+if(_gpu_acc)
   list(APPEND TRACTOR_SOURCES t_acc.cpp)
   list(APPEND TRACTOR_CONTROLS _T_ACC_)
 endif()
@@ -485,13 +677,15 @@ if(TRACTOR_COMPILER STREQUAL "intel")
   list(APPEND TRACTOR_CONTROLS _INTELCOMPILER_)
   set(TRACTOR_CXX_MISC -std=c++11 -fno-omit-frame-pointer -w)
   set(TRACTOR_OMP_FLAG -qopenmp)
-elseif(TRACTOR_COMPILER STREQUAL "pgi")
-  list(APPEND TRACTOR_CONTROLS _PGICOMPILER_)
-  set(TRACTOR_CXX_MISC -Wno-write-strings)
+elseif(TRACTOR_COMPILER STREQUAL "nvc" OR TRACTOR_COMPILER STREQUAL "pgi")
+  # nvc takes the GCC options (it has no OMPT, the OpenMP tools interface is simply unused)
+  list(APPEND TRACTOR_CONTROLS _PGICOMPILER_ _GNUCOMPILER_)
+  set(TRACTOR_CXX_MISC -Wno-write-strings -fno-omit-frame-pointer)
   set(TRACTOR_OMP_FLAG -mp)
-else()
+else() # gnu and clang
   list(APPEND TRACTOR_CONTROLS _GNUCOMPILER_)
-  set(TRACTOR_CXX_MISC -Wno-write-strings)
+  # the stack unwinder walks frame pointers: without this flag -O3 code crashes at start
+  set(TRACTOR_CXX_MISC -Wno-write-strings -fno-omit-frame-pointer)
   set(TRACTOR_OMP_FLAG -fopenmp)
 endif()
 
@@ -534,8 +728,8 @@ list(TRANSFORM _tractor_defs PREPEND "-D")
 # so they must execute with CMAKE_CURRENT_BINARY_DIR as their working directory)
 # ---------------------------------------------------------------------------
 set(_common_dir ${CMAKE_CURRENT_SOURCE_DIR}/../../common)
-if(GPU)
-  set(_parse_gpu_flag on)
+if(_gpu_apis)
+  string(REPLACE ";" "," _parse_gpu_flag "${_gpu_apis}") # mpi_layer.pl -c cl,ze
 else()
   set(_parse_gpu_flag off)
 endif()
@@ -620,9 +814,9 @@ if(TRACTOR_TARGET STREQUAL "transport_layers")
       OUTPUT ${_obj}
       COMMAND ${CMAKE_CXX_COMPILER} -o ${_obj} -c
               -I${CMAKE_CURRENT_SOURCE_DIR} -I${_common_dir} -I${CMAKE_CURRENT_BINARY_DIR}
-              -I${VERBSPATH}/include -I${PSM2PATH}/include
+              -I${VERBSPATH}/include $<$<BOOL:${TRACTOR_PSM2_INCLUDE_DIR}>:-I${TRACTOR_PSM2_INCLUDE_DIR}>
               -I${CMAKE_CURRENT_SOURCE_DIR}/../../contrib/psm3/include
-              -I${UCXPATH}/include -I${OFIPATH}/include
+              $<$<BOOL:${TRACTOR_UCX_INCLUDE_DIR}>:-I${TRACTOR_UCX_INCLUDE_DIR}> $<$<BOOL:${TRACTOR_OFI_INCLUDE_DIR}>:-I${TRACTOR_OFI_INCLUDE_DIR}>
               ${_tractor_defs} -D_TRANSPORT_PROFILE_ ${TRACTOR_CXX_MISC} ${TRACTOR_OPT} -fPIC ${_src}
       DEPENDS ${_src}
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
@@ -669,12 +863,12 @@ else()
   target_compile_definitions(tractor PRIVATE ${TRACTOR_CONTROLS})
   target_compile_options(tractor PRIVATE ${TRACTOR_OPT} ${TRACTOR_CXX_MISC} ${TRACTOR_OMP_FLAG})
   target_link_options(tractor PRIVATE ${TRACTOR_OMP_FLAG})
-  target_include_directories(tractor PRIVATE . ${_common_dir} ${hwloc_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
+  target_include_directories(tractor PRIVATE . ${_common_dir} ${hwloc_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR} ${TRACTOR_GPU_INCLUDE_DIRS})
   target_link_libraries(tractor PRIVATE ${TRACTOR_LIBS} hwloc::hwloc)
   if(NOT _transport_upper STREQUAL "OFF")
     target_include_directories(tractor PRIVATE
-      ${VERBSPATH}/include ${PSM2PATH}/include
-      ${CMAKE_CURRENT_SOURCE_DIR}/../../contrib/psm3/include ${UCXPATH}/include ${OFIPATH}/include)
+      ${VERBSPATH}/include ${TRACTOR_PSM2_INCLUDE_DIR}
+      ${CMAKE_CURRENT_SOURCE_DIR}/../../contrib/psm3/include ${TRACTOR_UCX_INCLUDE_DIR} ${TRACTOR_OFI_INCLUDE_DIR})
   endif()
 
   if(PTPD_BUILD)

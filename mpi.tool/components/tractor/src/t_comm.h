@@ -19,6 +19,7 @@
 #ifndef __T_COMM_H__
 #define __T_COMM_H__
 
+#include <stdint.h>
 #include <iostream>
 #include <list>
 #include <map>
@@ -192,13 +193,13 @@ struct t_local_comms {
                 return result->gid;
             }
             __DEBUG_EPILOG_COMM_LAYER__
-            return (PEAT_MPI_Comm)comm;
+            return (PEAT_MPI_Comm)(intptr_t)comm;
         } else {
             __DEBUG_EPILOG_COMM_LAYER__
-            return (PEAT_MPI_Comm) comm;
+            return (PEAT_MPI_Comm)(intptr_t)comm;
         }
       __DEBUG_EPILOG_COMM_LAYER__
-      return (PEAT_MPI_Comm) comm;
+      return (PEAT_MPI_Comm)(intptr_t)comm;
     }
     int user_index,internal_index;
     int comm_world_size;

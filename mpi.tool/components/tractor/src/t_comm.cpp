@@ -269,8 +269,8 @@ bool t_local_comms::get_local_comm_id_in_store(const MPI_Comm comm, const PEAT_C
 bool t_local_comms::get_local_comm_id(const MPI_Comm comm, const PEAT_Clock cur_time, int is_internal, std::list<t_comm>::iterator &result)
 {
     __DEBUG_PROLOG_COMM_LAYER__
-    debug_printf("Obtaining global communicator for %x after TSC time %lld at rank %d (commstore %p)\n", (int) comm, cur_time, t_mpi_rank,(void *) &comm_store);
-    debug_printf("Obtaining global communicator for %x after TSC time %lld at rank %d (commstore size is %d)\n", (int) comm, cur_time, t_mpi_rank,comm_store.size());
+    debug_printf("Obtaining global communicator for %x after TSC time %lld at rank %d (commstore %p)\n", (int)(intptr_t)comm, cur_time, t_mpi_rank,(void *) &comm_store);
+    debug_printf("Obtaining global communicator for %x after TSC time %lld at rank %d (commstore size is %d)\n", (int)(intptr_t)comm, cur_time, t_mpi_rank,comm_store.size());
     if (comm != 0 && comm != MPI_COMM_NULL && comm != MPI_COMM_SELF && comm != MPI_COMM_WORLD) {
         if (is_internal) {
             if (find_comm_in_map(mpi_internal_comm_store, comm, cur_time, result)) {
@@ -284,7 +284,7 @@ bool t_local_comms::get_local_comm_id(const MPI_Comm comm, const PEAT_Clock cur_
             }
         }
         std::cerr << "Error in communicator t_comm::get_local_comm_id function. Can't find communicator " << std::hex << comm << " after TSC time " << std::dec << cur_time << " at rank " << t_mpi_rank << ".\n";
-        debug_printf("Error in communicator t_comm::get_local_comm_id function. Can't find communicator %x after TSC time %lld at rank %d internal %d.\n", (int) comm, cur_time, t_mpi_rank, is_internal);
+        debug_printf("Error in communicator t_comm::get_local_comm_id function. Can't find communicator %x after TSC time %lld at rank %d internal %d.\n", (int)(intptr_t)comm, cur_time, t_mpi_rank, is_internal);
         // print_backtrace();
         // assert(!"Can't find communicator");
     }

@@ -112,13 +112,12 @@ Pass as `make` vars, or positional args to `Build.sh`.
 | Switch | Values | Meaning |
 |---|---|---|
 | `TARGET` | `impi*, mpich4, mpich5, mvapich2, mvapich4, openmpi, transport_layers` | MPI flavor |
-| `COMPILER` | `gnu*, intel` | toolchain |
+| `COMPILER` | `gnu*, intel, nvc, clang` | toolchain (the directory name under `lib/` and `bin/`). `nvc` and `clang` take the GCC options; with `nvc` the `.c` sources are built with `nvc++` (done by the Makefile) |
 | `TRANSPORT` | `on, off*` (mvapich2 also: `PSM2/PSM3/VERBS/UCX/OFI`, legacy) | transport-API interception |
 | `PTPD` | `on*, off` | build PTP daemon support |
 | `OMPT` | `on*, off` | OpenMP interception |
-| `ACC` | `on, off*` | OpenACC interception (profiling interface, needs `acc_prof.h`: GCC >= 9 or NVHPC); an error together with `COMPILER=intel` |
 | `DIAG` | `off*, on` | debug build (`-O0`, `_dbg` suffix) |
-| `PARSE_GPU` | `off*, on` | OpenCL/Level Zero interception |
+| `PARSE_GPU` | `off*, on` | OpenCL/Level Zero and OpenACC interception (OpenACC uses the profiling interface and needs `acc_prof.h`: GCC >= 9 or NVHPC; it is not built with `COMPILER=intel`) |
 | `PARSE_COLT` | `off*, on` | collective-timeline engine ("engineering" build, needs patched MPI) |
 | `HWCOUNTERS` | `off*, RDPMC` | hardware counters via `perf_event_open` |
 | `MEMPROFILE` | `off*, ...` | allocation profiling |
@@ -126,6 +125,28 @@ Pass as `make` vars, or positional args to `Build.sh`.
 
 Run `make install TARGET=... DIAG=on ...` directly from `src/` if you don't
 want to go through `Build.sh`'s temp-directory copy dance.
+
+### Compilers with CMake
+
+CMake detects the compiler family from `CMAKE_CXX_COMPILER_ID` (`GNU` - gnu, `Intel`/`IntelLLVM` - intel, `NVHPC`/`PGI` - nvc,
+`Clang` - clang) and installs to `lib/<family>`; `-DTRACTOR_COMPILER=gnu|intel|nvc|clang` overrides it. Select the toolchain with
+`compiler=<name>` before sourcing `env.sh` (e.g. `compiler=nvc:12.9`, `compiler=clang`) and pass the MPI wrappers
+(`-DCMAKE_C_COMPILER=$MPICC -DCMAKE_CXX_COMPILER=$MPICXX`); `env.sh` points the wrappers to the selected compiler.
+
+### GPU APIs with CMake
+
+`-DGPU=ON` turns on the GPU parsing; CMake then looks for each API at configure time and builds only the ones it finds
+(the choice is printed as `tractor: GPU parsing: OpenCL=.. LevelZero=.. OpenACC=..`). Each API has its own switch:
+
+| Switch | Values | Needs |
+|---|---|---|
+| `OCL_PARSE` | `AUTO*, ON, OFF` | `CL/cl.h` and `libOpenCL` |
+| `LZE_PARSE` | `AUTO*, ON, OFF` | `level_zero/ze_api.h` and `libze_loader` |
+| `ACC_PARSE` | `AUTO*, ON, OFF` | `acc_prof.h` (GCC >= 9 or NVHPC); always off with the Intel compilers |
+
+`AUTO` enables an API when it is found, `ON` makes a missing one an error, `OFF` skips it. If nothing is found the
+GPU parsing is switched off with a warning. The `Makefile` build always builds OpenCL and Level Zero (and OpenACC with
+GNU) when `PARSE_GPU=on`.
 
 ## 9. Sanity check
 

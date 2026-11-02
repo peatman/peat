@@ -83,7 +83,7 @@ inline int is_all_empty(int inum, MPI_Status *status)
 
 int T_Type_size(MPI_Datatype datatype, MPI_Aint *size)
 {
-    debug_printf("T_Type_size called with %x %p\n", (int) datatype,size);
+    debug_printf("T_Type_size called with %x %p\n", (int)(intptr_t)datatype,size);
 
     if (datatype == MPI_DATATYPE_NULL)
         return 0;
@@ -132,7 +132,7 @@ static inline void determine_comm_size(MPI_Comm comm, int kind, int *send_size, 
             PMPI_Dist_graph_neighbors_count(comm, recv_size, send_size, &weighted);
             return;
         default: /* no topology: the MPI call itself is erroneous, record nothing */
-            debug_printf("determine_comm_size: neighbourhood collective on a communicator without topology (%x)\n", (int) comm);
+            debug_printf("determine_comm_size: neighbourhood collective on a communicator without topology (%x)\n", (int)(intptr_t)comm);
             *send_size = *recv_size = 0;
             return;
         }
@@ -409,7 +409,7 @@ int mpi_internal_T_Type_size(MPI_Datatype datatype, MPI_Aint *size)
 #else // openmpi
 int mpi_internal_T_Type_size(MPI_Datatype datatype, MPI_Aint *size)
 {
-    debug_printf("T_Type_size_mpi_internal (4) called with %x %p\n", (int) datatype, size);
+    debug_printf("T_Type_size_mpi_internal (4) called with %x %p\n", (int)(intptr_t)datatype, size);
 
     return PMPI_Type_size(datatype, (int *) size);
 }

@@ -176,8 +176,8 @@ int t_addr_in_fortran_lib(const void *addr); /* tractor.cpp: any of libmpi_mpifh
 
 #define stack_unwind_x(lev_num, store_addr, levels)                                                            \
     {                                                                                                         \
-        void **t_frame;                                                                                       \
-        asm("movq %%rbp, %0;" : "=r"(t_frame) :);                                                             \
+        /* the frame of the calling wrapper; a plain asm reading rbp may be scheduled by the compiler before the frame is set up */ \
+        void **t_frame = (void **)__builtin_frame_address(0);                                                 \
         void *ret_addr = t_frame[1];                                                                          \
         while (T_IN_FORTRAN_LIB(ret_addr)) {                                                                 \
             t_frame = (void **)t_frame[0];                                                                    \
@@ -194,8 +194,8 @@ int t_addr_in_fortran_lib(const void *addr); /* tractor.cpp: any of libmpi_mpifh
 
 #define stack_unwind0(lev_num, store_addr, levels)                                                            \
     {                                                                                                         \
-        void **t_frame;                                                                                       \
-        asm("movq %%rbp, %0;" : "=r"(t_frame) :);                                                             \
+        /* the frame of the calling wrapper; a plain asm reading rbp may be scheduled by the compiler before the frame is set up */ \
+        void **t_frame = (void **)__builtin_frame_address(0);                                                 \
         void *ret_addr = t_frame[1];                                                                          \
         while (T_IN_FORTRAN_LIB(ret_addr)) {                                                                 \
             t_frame = (void **)t_frame[0];                                                                    \

@@ -16,7 +16,7 @@ See [doc/README.md](doc/README.md) for older build/usage/trace-format documentat
 - `src/t_alloc.cpp`/`.h` - internal allocator/memory tracking used by the library itself.
 - `src/t_base_event.cpp`/`.h`, `src/t_stat.cpp`/`.h` - base trace-event and statistic record types.
 - `src/t_ompt.cpp` - OpenMP (OMPT) callback hooks for combined MPI+OpenMP tracing.
-- `src/t_acc.cpp` - OpenACC profiling-interface callback hooks for combined MPI+OpenACC tracing (build with `ACC=on`).
+- `src/t_acc.cpp` - OpenACC profiling-interface callback hooks for combined MPI+OpenACC tracing (built with `PARSE_GPU=on`, not with the Intel compilers).
 - `src/t_topo.cpp` - node/CPU topology capture via `hwloc`.
 - `src/t_signals.cpp`/`.h` - signal handling for clean trace flushing on crash/termination.
 - `src/elf_parser.cpp`/`.h` - ELF/debug-info symbol resolution for call-site addresses.
@@ -109,7 +109,7 @@ export PEAT_TRACTOR_MAX_ADDRESS=<max_adress>
 export PEAT_TRACTOR_USE_SIGNALS=1 - Install handlers for some system signals to catch exceptions or MPI daemon termination signals
 export PEAT_TRACTOR_MAX_THREADS=<value> maximum allowed threads (default 6, safe selection is OMP_NUM_THREADS+5)
 export PEAT_TRACTOR_FULL_OMPT_UNWIND full (1) or partial (1st caller) (0) unwind of OpenMP events
-export PEAT_TRACTOR_PARSE_OPENACC=0|1 record OpenACC events (default 1, only in builds with ACC=on); the library registers itself with the OpenACC runtime (it also appends itself to ACC_PROFLIB)
+export PEAT_TRACTOR_PARSE_OPENACC=0|1 record OpenACC events (default 1, only in GPU builds (PARSE_GPU=on) with the GNU compiler); the library registers itself with the OpenACC runtime (it also appends itself to ACC_PROFLIB)
 
 PTP Daemon can be executed either by hand using "&" or by tractor itself using values below
 

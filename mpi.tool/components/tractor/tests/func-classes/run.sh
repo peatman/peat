@@ -3,18 +3,33 @@
 #   ./run.sh [test|all] [iterations] [ranks]
 # e.g. ./run.sh p2p 20 4      ./run.sh all 5
 # Set TRACTOR=0 to run the plain tests without preloading the tractor library.
+# The toolchain is selected with TOOLCHAIN (default intel), the same script serves all of them:
+#   TOOLCHAIN=intel   oneAPI compilers, MPICH 5.0.2x, libraries from lib/intel
+#   TOOLCHAIN=gcc     GCC, MPICH 5.0.2g, libraries from lib/gnu
+#   TOOLCHAIN=nvc     NVHPC (NVC_COMPILER, default nvc:12.9), MPICH 5.0.2g, libraries from lib/nvc
+#   TOOLCHAIN=clang   system clang, MPICH 5.0.2g, libraries from lib/clang
+# e.g. TOOLCHAIN=gcc ./run.sh p2p 20 4. mpi_type overrides the MPICH, TRACTOR_LIBDIR=<dir> the library directory.
+# The tests are rebuilt when the toolchain or the MPI changes.
 
 test_name=${1:-all}
 iterations=${2:-10}
 ranks_arg=$3
 
-compiler=oneAPI:2026.1.0
-export mpi_type=${mpi_type:-mpich:5.0.2x-mt-ofi-eng}
+toolchain=${TOOLCHAIN:-intel}
+case $toolchain in
+    intel ) compiler=oneAPI:2026.1.0 ; mpi_default=mpich:5.0.2x-mt-ofi-eng ; libsubdir=intel ;;
+    gcc )   compiler=gcc ; mpi_default=mpich:5.0.2g-mt-ofi-eng ; libsubdir=gnu ;;
+    nvc )   compiler=${NVC_COMPILER:-nvc:12.9} ; mpi_default=mpich:5.0.2g-mt-ofi-eng ; libsubdir=nvc ;;
+    clang ) compiler=clang ; mpi_default=mpich:5.0.2g-mt-ofi-eng ; libsubdir=clang ;;
+    * )     echo "unknown TOOLCHAIN=$toolchain (intel, gcc, nvc or clang)" ; exit 2 ;;
+esac
+export compiler
+export mpi_type=${mpi_type:-$mpi_default}
 export libfabric_eng='-eng'
 . env.sh
 set -x
 #TRACTOR=0
-libdir=$(realpath ../../../../lib/intel)
+libdir=${TRACTOR_LIBDIR:-$(realpath ../../../../lib/$libsubdir)}
 if [ "${TRACTOR:-1}" != "0" ] ; then
 LD_PRELOAD=$libdir/libtractor.mpich5.eng.so
 LD_PRELOAD="$LD_PRELOAD:$libdir/libtractor_transport_ofi.so"
@@ -34,7 +49,13 @@ ldd "${_preload_libs[@]}"
 LD_PRELOAD=" -genv LD_PRELOAD $LD_PRELOAD "
 fi
 
+# the test programs depend on the compiler and the MPI, rebuild them when those change
+built_with="$toolchain $compiler $mpi_type $mpi_version"
+if [ "$(cat .built_with 2>/dev/null)" != "$built_with" ] ; then
+make clean
+fi
 make MPICC=$MPICC || exit 1
+echo "$built_with" > .built_with
 
 if [ -f "$PBS_NODEFILE" ]   ; then
 nnodes=`sort -u $PBS_NODEFILE | wc -l`

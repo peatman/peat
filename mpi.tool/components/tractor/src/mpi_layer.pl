@@ -46,6 +46,8 @@ my $mpilayer;
 my $mpilevel=1;
 my $funccount=0;
 my $parse_gpu=0;
+my $parse_gpu_cl=0; # OpenCL wrappers (-c on|cl|cl,ze)
+my $parse_gpu_ze=0; # Level Zero wrappers (-c on|ze|cl,ze)
 my $skip_core=0;
 sub make_dup;
 my @transport_layers; 
@@ -1037,8 +1039,8 @@ if ($properties =~/CLASS_COLLECTIVE/) { make_class_collective($lineref);return;}
 if ($properties =~/CLASS_BUF_LOCAL/) { make_class_buf_local($lineref);return;} 
 if ($properties =~/CLASS_OSC/) { make_class_osc($lineref);return;} 
 if ($properties =~/CLASS_FIO/) { make_class_fio($lineref);return;} 
-if ($properties =~/CLASS_CL/) { make_class_gpu($lineref);return;} 
-if ($properties =~/CLASS_ZE/) { make_class_gpu($lineref);return;} 
+if ($properties =~/CLASS_CL/) { make_class_gpu($lineref) if $parse_gpu_cl;return;} 
+if ($properties =~/CLASS_ZE/) { make_class_gpu($lineref) if $parse_gpu_ze;return;} 
 if ($properties =~/CLASS_PSM2/) { make_class_transport($lineref,$transport_layer);return;} 
 if ($properties =~/CLASS_PSM3/) { make_class_transport($lineref,$transport_layer);return;} 
 if ($properties =~/CLASS_VERBS/) { make_class_transport($lineref,$transport_layer);return;} 
@@ -1098,10 +1100,10 @@ if ($parse_gpu == 1) {
   }     
  
   print "#ifdef GPUPARSE\n";
-  print "#include \"CL/cl.h\"\n";
-  print "#include \"level_zero/ze_api.h\"\n";
+  print "#include \"CL/cl.h\"\n" if $parse_gpu_cl;
+  print "#include \"level_zero/ze_api.h\"\n" if $parse_gpu_ze;
   # clCreateCommandQueueWithProperties takes a zero-terminated list of name/value pairs; record the queue properties bit field
-  print "static long long t_cl_queue_properties(const cl_queue_properties *p) { if (p) for (; p[0]; p += 2) if (p[0] == CL_QUEUE_PROPERTIES) return (long long)p[1]; return 0; }\n";
+  print "static long long t_cl_queue_properties(const cl_queue_properties *p) { if (p) for (; p[0]; p += 2) if (p[0] == CL_QUEUE_PROPERTIES) return (long long)p[1]; return 0; }\n" if $parse_gpu_cl;
 #  print "void init_gpu_syms(void);\n";
 
 #  print "int clv30=CL_VERSION_3_0;\n";
@@ -1215,7 +1217,14 @@ sub parse_command_line {
          case "-o" {$mpilayer=$ARGV[$i+1]; $i++}
          case "-m" {$mpilevel=$ARGV[$i+1]; $i++}
          case "-t" {$parse_mpi_internal=1 if $ARGV[$i+1] eq "on"; $i++}
-         case "-c" {$parse_gpu=1 if $ARGV[$i+1] eq "on"; $i++}
+         case "-c" {
+           # on = OpenCL + Level Zero, off = none, or a comma separated list of cl and ze
+           my $apis=$ARGV[$i+1];
+           $apis="cl,ze" if $apis eq "on";
+           $parse_gpu_cl=1 if $apis=~/\bcl\b/;
+           $parse_gpu_ze=1 if $apis=~/\bze\b/;
+           $parse_gpu=1 if $parse_gpu_cl || $parse_gpu_ze;
+           $i++}
          case "-e" {$print_extended_stuff=1 if $ARGV[$i+1] eq "on"; $i++}
          case "-p" {$use_pragma_weak=1 if $ARGV[$i+1] eq "on";$i++}
          case "-l" {my $transport_layer = $ARGV[$i+1]; push (@transport_layers,$transport_layer); $i++} 

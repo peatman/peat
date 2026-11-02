@@ -17,6 +17,8 @@ popd
 pushd tractor 
 ./BuildAlli.sh
 ./BuildAllg.sh
+./BuildAlln.sh
+./BuildAllc.sh
 popd 
 
 pushd urpu/src 

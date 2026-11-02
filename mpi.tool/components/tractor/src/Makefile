@@ -44,7 +44,6 @@ PRINT_EXTENDED_STUFF=off #on# to enable
 MAXMPI=3
 mpi_layer_skip_core=off
 OMPT=on
-ACC=off # OpenACC profiling interface; needs acc_prof.h (GCC >= 9, NVHPC)
 
 CPP:=/usr/bin/cpp -E
 
@@ -77,10 +76,111 @@ CONTROLS+=-D_USE_SIGNALS_
 OBJECTS+=t_signals.o
 endif
 
+# GPU parsing (PARSE_GPU=on): OpenCL, Level Zero and OpenACC are each looked for with the compiler that builds the library
+# (header compiles, library links) and are built when found. OCL_PARSE / LZE_PARSE / ACC_PARSE: auto (default) = when
+# found, on = a missing one is an error, off = skip. The OpenACC profiling interface (acc_prof.h: GCC >= 9, NVHPC) does
+# not exist for the Intel compilers, so ACC is always off with COMPILER=intel.
+OCL_PARSE?=auto
+LZE_PARSE?=auto
+ACC_PARSE?=auto
+override ACC=off
+# -c argument of mpi_layer.pl: off or a list of cl,ze
+PARSE_GPU_APIS=off
 ifeq "$(PARSE_GPU)" "on"
-LIBS+=-lOpenCL -lze_loader
+HASH:=\#
+COMMA:=,
+EMPTY:=
+SPACE:=$(EMPTY) $(EMPTY)
+ifeq "$(COMPILER)" "intel"
+GPU_PROBE_FLAGS=-I$(CMPLR_ROOT)/include -L$(CMPLR_ROOT)/lib
+endif
+# $(call gpu_probe,<header>,<link flags>) -> yes|no
+gpu_probe=$(shell printf '$(HASH)include <$(1)>\nint main(){return 0;}\n' | $(MPICXX) $(GPU_PROBE_FLAGS) -x c++ - $(2) -o /dev/null >/dev/null 2>&1 && echo yes || echo no)
+
+$(foreach v,OCL_PARSE LZE_PARSE ACC_PARSE,$(if $(filter auto on off,$($(v))),,$(error $(v)=$($(v)) is not one of auto|on|off)))
+
+GPU_CL=off
+ifneq "$(OCL_PARSE)" "off"
+ifeq "$(call gpu_probe,CL/cl.h,-lOpenCL)" "yes"
+GPU_CL=on
+else ifeq "$(OCL_PARSE)" "on"
+$(error OCL_PARSE=on but CL/cl.h or libOpenCL was not found (compiler $(MPICXX)))
+endif
+endif
+
+GPU_ZE=off
+ifneq "$(LZE_PARSE)" "off"
+ifeq "$(call gpu_probe,level_zero/ze_api.h,-lze_loader)" "yes"
+GPU_ZE=on
+else ifeq "$(LZE_PARSE)" "on"
+$(error LZE_PARSE=on but level_zero/ze_api.h or libze_loader was not found (compiler $(MPICXX)))
+endif
+endif
+
+ifneq "$(ACC_PARSE)" "off"
+ifeq "$(COMPILER)" "intel"
+ifeq "$(ACC_PARSE)" "on"
+$(warning ACC_PARSE=on ignored: the Intel compilers have no OpenACC profiling interface header)
+endif
+else ifeq "$(call gpu_probe,acc_prof.h,)" "yes"
+override ACC=on
+else ifeq "$(ACC_PARSE)" "on"
+$(error ACC_PARSE=on but acc_prof.h was not found (GCC >= 9 or NVHPC needed))
+endif
+endif
+
+$(info tractor: GPU parsing: OpenCL=$(GPU_CL) LevelZero=$(GPU_ZE) OpenACC=$(ACC))
+ifeq "$(GPU_CL)" "on"
+LIBS+=-lOpenCL
+CONTROLS+=-DGPUPARSE_CL
+PARSE_GPU_APIS=cl
+endif
+ifeq "$(GPU_ZE)" "on"
+LIBS+=-lze_loader
+CONTROLS+=-DGPUPARSE_ZE
+PARSE_GPU_APIS:=$(if $(filter cl,$(PARSE_GPU_APIS)),cl$(COMMA)ze,ze)
+endif
+ifneq "$(PARSE_GPU_APIS)" "off"
 CONTROLS+=-DGPUPARSE
+endif
+ifneq "$(GPU_CL)$(GPU_ZE)$(ACC)" "offoffoff"
 EXTRANAMELIB:=$(EXTRANAMELIB).gpu
+else
+$(warning PARSE_GPU=on but no GPU API (OpenCL, Level Zero, OpenACC) was found, GPU parsing is off)
+endif
+endif
+
+# libfabric / MPI edition check (same rule as CMakeLists.txt): the engineering libfabric exports functions the stock one only
+# has as "static inline" (fi_close, ...), and the engineering libmpi references them as undefined symbols. The two have to
+# agree, and the transport_layers shims (which redefine those functions) only compile against the engineering libfabric.
+# libfabric is the system one unless OFIPATH points elsewhere (env.sh: libfabric_eng=-eng).
+ifneq "$(shell which nm readelf 2>/dev/null | wc -l)" "2"
+$(info tractor: libfabric edition not checked (nm or readelf not found))
+else
+ifneq "$(OFIPATH)" ""
+LIBFABRIC_LIB:=$(firstword $(wildcard $(OFIPATH)/lib/libfabric.so $(OFIPATH)/lib64/libfabric.so))
+else
+LIBFABRIC_LIB:=$(firstword $(wildcard $(shell $(MPICXX) -print-file-name=libfabric.so 2>/dev/null)))
+endif
+MPI_BINDIR:=$(dir $(shell which $(MPICXX) 2>/dev/null))
+MPI_LIB:=$(firstword $(wildcard $(MPI_BINDIR)../lib/libmpi.so $(MPI_BINDIR)../lib64/libmpi.so))
+ifeq "$(LIBFABRIC_LIB)" ""
+$(info tractor: libfabric edition not checked (libfabric not found))
+else
+LIBFABRIC_ENG:=$(if $(filter 0,$(shell nm -D --defined-only $(LIBFABRIC_LIB) | grep -c ' [TtWw] fi_close$$')),stock,engineering)
+ifeq "$(TARGET)" "transport_layers"
+ifeq "$(LIBFABRIC_ENG)" "stock"
+$(error TARGET=transport_layers needs the engineering libfabric, but $(LIBFABRIC_LIB) is a stock build (fi_close is only an inline function there). Point OFIPATH to the engineering libfabric (libfabric_eng=-eng before env.sh))
+endif
+else ifneq "$(MPI_LIB)" ""
+ifneq "$(shell readelf -d $(MPI_LIB) | grep -c 'NEEDED.*libfabric')" "0"
+MPI_ENG:=$(if $(filter-out 0,$(shell nm -D --undefined-only $(MPI_LIB) | grep -c ' [Uw] fi_close$$') $(shell nm -D --defined-only $(MPI_LIB) | grep -c ' [TtWw] mpi_internal_comm_translate_rank$$')),engineering,stock)
+ifneq "$(MPI_ENG)" "$(LIBFABRIC_ENG)"
+$(error libfabric version mismatch: the MPI library $(MPI_LIB) is a $(MPI_ENG) build but $(LIBFABRIC_LIB) is a $(LIBFABRIC_ENG) libfabric. Use matching ones (OFIPATH, libfabric_eng=-eng before env.sh))
+endif
+endif
+endif
+endif
 endif
 
 # TRANSPORT=on enables core-side transport support: profiling struct/T_TRANSPORT_LAYER parsing,
@@ -254,12 +354,13 @@ endif
 
 SHARED=-shared $(FPIC)
 
+NOINLINE=-fno-inline # nvc++ does not know it, see COMPILER=nvc below
 DEBUG=-g # -D_TRACTOR_PASSTHROUGH_
-DEBUG_TESTS=-g -fno-inline 
+DEBUG_TESTS=-g $(NOINLINE) 
 
 ifeq "$(DIAG)" "on"
 DBG=_dbg
-DEBUG+= -fno-inline -D_TRACTOR_DIAG_ -D_TRACTOR_DEBUG_TRACTOR_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_TRANSPORT_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_MPI_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_GPU_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_OMPT_ENTRY_EXIT_ -D_TRACTOR_DEBUG_ACC_ENTRY_EXIT_ -D_TRACTOR_DEBUG_COMM_ENTRY_EXIT_ 
+DEBUG+= $(NOINLINE) -D_TRACTOR_DIAG_ -D_TRACTOR_DEBUG_TRACTOR_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_TRANSPORT_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_MPI_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_GPU_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_OMPT_ENTRY_EXIT_ -D_TRACTOR_DEBUG_ACC_ENTRY_EXIT_ -D_TRACTOR_DEBUG_COMM_ENTRY_EXIT_ 
 OPT=-O0
 OBJECTS+=t_debug.o
 LIBS+=-lunwind
@@ -279,12 +380,14 @@ CMISC=-fno-omit-frame-pointer -x c++ -fpermissive
 CONTROLS+=-D_GNUCOMPILER_
 endif
 
-ifeq "$(ACC)" "on"
-ifeq "$(COMPILER)" "intel"
-$(error ACC=on is not supported with COMPILER=intel (the Intel compilers have no OpenACC profiling interface header); use COMPILER=gnu or ACC=off)
-endif
+ifeq "$(COMPILER)" "nvc"
+# nvc takes the GCC options above, but the C driver rejects "-x c++" (the .c files are C++): build them with nvc++,
+# i.e. through the MPI C++ wrapper (MPICH_CXX=nvc++ etc. are set by env.sh for compiler=nvc)
+override MPICC=$(MPICXX)
+NOINLINE=-Mnoinline
 endif
 
+# OpenACC interception (ACC, found by the PARSE_GPU detection above) is never set by hand
 
 FMISC= -fno-omit-frame-pointer 
 
@@ -392,7 +495,7 @@ $(FUNCID): mpi_func.inc ../../common/mpi_func_ids.h
 	../../common/mpi_func_ids.pl -i ../../common/mpi_func_ids.h mpi_func.inc -o mpi_func_ids_through.h mpi_func_names.h mpi_func_ids_trans.h  
 
 mpi_layer.cpp: mpi_layer.cpp.in mpi_layer.cpp.in.end $(FUNCID)
-	./mpi_layer.pl -p $(USE_PRAGMA_WEAK) -e $(PRINT_EXTENDED_STUFF) -m $(MAXMPI) -t $(PCT) -c $(PARSE_GPU) -s $(mpi_layer_skip_core) -i mpi_func.inc -o mpi_layer.cpp $(transport_func_layers)
+	./mpi_layer.pl -p $(USE_PRAGMA_WEAK) -e $(PRINT_EXTENDED_STUFF) -m $(MAXMPI) -t $(PCT) -c $(PARSE_GPU_APIS) -s $(mpi_layer_skip_core) -i mpi_func.inc -o mpi_layer.cpp $(transport_func_layers)
 
 # transport_func_layers with "=outfile" makes mpi_layer.cpp's recipe also emit these
 # as a side effect; own recipe (not merged suffix-rule) avoids a -j race where
