@@ -5,3 +5,4 @@ rma_test
 fio_test
 trace.*/
 fio_test.*.dat
+.built_with
