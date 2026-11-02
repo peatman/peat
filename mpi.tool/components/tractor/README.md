@@ -55,8 +55,12 @@ Tractor usage guideline:
 1.1. General 
 PEAT_ROOT=<PEAT_ROOT>
 
-for out of the box mpich based mpi in order to trace fortran calls custom libmpifort (which calls MPI_xxx instead of PMPI_xxx) has to be compiled (for Intel MPI mpich 3.4.2 is ok). For patched mpich based mpi and for openmpi it's not needed.
-export LD_LIBRARY_PATH=<PATH_TO_libmpifort.so_DIRECTORY>:$LD_LIBRARY_PATH
+Fortran calls: the Fortran bindings of an out of the box MPI call PMPI_xxx, which tractor does not wrap, so they are not traced.
+- MPICH, MVAPICH and Open MPI: apply the MPI's `<name>.fortran.patch` (see mpi.tool/patches and BUILD.md) and export its redirect variable at run time
+  (`MPICH_FORTRAN_MPI_REDIRECT`, `MV2_FORTRAN_MPI_REDIRECT`, `MVP_FORTRAN_MPI_REDIRECT` or `OMPI_FORTRAN_MPI_REDIRECT`):
+  the Fortran wrappers then call the C MPI_xxx entry points and every Fortran call is traced once.
+- Intel MPI (cannot be patched): a custom libmpifort (which calls MPI_xxx instead of PMPI_xxx) has to be compiled (for Intel MPI the one from mpich 3.4.2 is ok):
+  export LD_LIBRARY_PATH=<PATH_TO_libmpifort.so_DIRECTORY>:$LD_LIBRARY_PATH
 
 
 suffix={".impi","_dbg.impi",etc} 
