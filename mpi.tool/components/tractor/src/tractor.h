@@ -220,7 +220,7 @@ struct tractor : t_base_event {
     void get_rank_time(PEAT_Clock *start, PEAT_Clock *start_parallel, PEAT_Clock *end_parallel, PEAT_Clock *end, PEAT_Clock *overall_tool_overhead, PEAT_Clock *overall_MPI, PEAT_Clock *overall_GPU);
     int t_check_chain(pid_t tid, int level);
 
-    int write_trace(void);
+    void write_trace(void);
     PEAT_Rank get_real_rank(MPI_Comm comm, PEAT_Rank rank_in, PEAT_Clock tsc, int is_internal);
     PEAT_MPI_Comm get_global_comm_id(MPI_Comm comm, PEAT_Clock tsc, int is_internal);
     num_processed_events write_main_files(/*,user_region_store &user_region_store*/);

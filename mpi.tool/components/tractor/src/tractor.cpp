@@ -1628,7 +1628,7 @@ PEAT_Clock tractor::find_ELF_symbols(void)
     return rdtsca() - time_start;
 }
 
-int tractor::write_trace(void)
+void tractor::write_trace(void)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
     // user_region_store l_user_region_store;
