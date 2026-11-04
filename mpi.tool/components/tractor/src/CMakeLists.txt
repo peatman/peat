@@ -621,6 +621,31 @@ elseif(TRACTOR_TARGET STREQUAL "mvapich4")
   list(APPEND TRACTOR_CONTROLS _MPICH_=4 _MVAPICH_)
   set(_maxmpi 4)
 endif()
+# MPI 4.1 const-ness: early MPI 4.1 implementations (e.g. MPICH 4.2) declare MPI_Status_get_* and
+# MPI_Request_get_status_* without the standard's const; mpi_func.inc picks the matching prototypes.
+# Compile-only probes (C++ rejects the pointer assignment when mpi.h has const, or lacks the function).
+include(CheckCXXSourceCompiles)
+set(CMAKE_REQUIRED_QUIET ON)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+check_cxx_source_compiles("#include <mpi.h>
+int (*p)(int, MPI_Request*, int*, MPI_Status*) = MPI_Request_get_status_all;
+int main() { return 0; }" TRACTOR_MPI41_REQUEST_NONCONST)
+check_cxx_source_compiles("#include <mpi.h>
+int (*p)(MPI_Status*, int*) = MPI_Status_get_tag;
+int main() { return 0; }" TRACTOR_MPI41_STATUS_NONCONST)
+unset(CMAKE_TRY_COMPILE_TARGET_TYPE)
+unset(CMAKE_REQUIRED_QUIET)
+set(_req_const const)
+set(_st_const const)
+if(TRACTOR_MPI41_REQUEST_NONCONST)
+  list(APPEND _cpp_input -D_MPI41_REQUEST_NONCONST_)
+  set(_req_const non-const)
+endif()
+if(TRACTOR_MPI41_STATUS_NONCONST)
+  list(APPEND _cpp_input -D_MPI41_STATUS_NONCONST_)
+  set(_st_const non-const)
+endif()
+message(STATUS "tractor: MPI 4.1 prototypes: MPI_Request_get_status_*=${_req_const}, MPI_Status_get_*=${_st_const}")
 # _STATUS_LO_HI_ picks the MPICH-family status struct layout; OpenMPI uses its
 # own (_ucount) - applies to every other TARGET, including transport_layers
 if(NOT TRACTOR_TARGET STREQUAL "openmpi")
