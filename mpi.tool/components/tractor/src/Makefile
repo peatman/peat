@@ -86,11 +86,12 @@ ACC_PARSE?=auto
 override ACC=off
 # -c argument of mpi_layer.pl: off or a list of cl,ze
 PARSE_GPU_APIS=off
-ifeq "$(PARSE_GPU)" "on"
+# helpers for the compile probes (GPU below, MPI 4.1 const-ness further down)
 HASH:=\#
 COMMA:=,
 EMPTY:=
 SPACE:=$(EMPTY) $(EMPTY)
+ifeq "$(PARSE_GPU)" "on"
 ifeq "$(COMPILER)" "intel"
 GPU_PROBE_FLAGS=-I$(CMPLR_ROOT)/include -L$(CMPLR_ROOT)/lib
 endif
@@ -350,6 +351,20 @@ ifeq "$(TARGET)" "openmpi5"
 CONTROLS+=-D_USE_PROTORYPES_WITH_CONST_ -D_MPI_MESSAGE_DEFINED_ -D_NO_C_VR -D_OPENMPI_=5  -fms-extensions -Wno-int-to-pointer-cast #-D_TRACTOR_EXTRA_FIELDS_ 
 cpp_input=-D_OPENMPI_=5
 MAXMPI=3
+endif
+
+# MPI 4.1 const-ness: early MPI 4.1 implementations (e.g. MPICH 4.2) declare MPI_Status_get_* and
+# MPI_Request_get_status_* without the standard's const; mpi_func.inc picks the matching prototypes.
+# Compile-only probes (C++ rejects the pointer assignment when mpi.h has const, or lacks the function).
+# Placed after the TARGET blocks, which assign cpp_input with '='.
+mpi_proto_probe=$(shell printf '$(HASH)include <mpi.h>\n$(1)\nint main(){return 0;}\n' | $(MPICXX) -x c++ -c - -o /dev/null >/dev/null 2>&1 && echo yes || echo no)
+MPI41_REQUEST_NONCONST:=$(call mpi_proto_probe,int (*p)(int$(COMMA) MPI_Request*$(COMMA) int*$(COMMA) MPI_Status*) = MPI_Request_get_status_all;)
+MPI41_STATUS_NONCONST:=$(call mpi_proto_probe,int (*p)(MPI_Status*$(COMMA) int*) = MPI_Status_get_tag;)
+ifeq "$(MPI41_REQUEST_NONCONST)" "yes"
+cpp_input+=-D_MPI41_REQUEST_NONCONST_
+endif
+ifeq "$(MPI41_STATUS_NONCONST)" "yes"
+cpp_input+=-D_MPI41_STATUS_NONCONST_
 endif
 
 SHARED=-shared $(FPIC)
