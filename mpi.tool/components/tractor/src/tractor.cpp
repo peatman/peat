@@ -473,21 +473,20 @@ int tractor::parse_boundaries(char *boundaries)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
     int len = strlen(boundaries);
-    char t_string[len];
+    char t_string[len + 1];
     int t_o_bounds;
-    long long t_bounds[len];
+    long long t_bounds[len + 2]; // [0] = 0 plus at most len values
     char *endptr;
     int comma, start;
     t_bounds[0] = 0;
     for (comma = 0, start = 0, t_o_bounds = 1; comma <= len; comma++) {
         if (boundaries[comma] == ',' || boundaries[comma] == 0) {
-            memcpy(t_string, &boundaries[start], comma - start + 1);
-            t_string[comma - start + 1] = 0;
+            memcpy(t_string, &boundaries[start], comma - start); // the field without its ',' / NUL
+            t_string[comma - start] = 0;
             start = comma + 1;
             long long bound = strtoll(t_string, &endptr, 10);
             if (bound > 0) {
-                t_bounds[t_o_bounds] =
-                    t_o_bounds++;
+                t_bounds[t_o_bounds++] = bound;
             }
         }
     }
@@ -500,13 +499,13 @@ void tractor::parse_pc_levels(char *levels)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
     int len = strlen(levels);
-    char t_string[len];
+    char t_string[len + 1];
     char *endptr;
     int comma, start;
     for (comma = 0, start = 0; comma <= len; comma++) {
         if (levels[comma] == ',' || levels[comma] == 0) {
-            memcpy(t_string, &levels[start], comma - start + 1);
-            t_string[comma - start + 1] = 0;
+            memcpy(t_string, &levels[start], comma - start); // the field without its ',' / NUL
+            t_string[comma - start] = 0;
             start = comma + 1;
             int level = (int)strtol(t_string, &endptr, 10);
             pc_levels[level] = 1;
@@ -520,15 +519,15 @@ int tractor::parse_levels(char *levels)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
     int len = strlen(levels);
-    char t_string[len];
+    char t_string[len + 1];
     char *endptr;
     int comma, start;
     int t_levels[len + 1];
     int prev_level = -1, level = 0;
     for (comma = 0, start = 0, t_o_levels = 0; comma <= len; comma++) {
         if (levels[comma] == ',' || levels[comma] == 0) {
-            memcpy(t_string, &levels[start], comma - start + 1);
-            t_string[comma - start + 1] = 0;
+            memcpy(t_string, &levels[start], comma - start); // the field without its ',' / NUL
+            t_string[comma - start] = 0;
             start = comma + 1;
             level = strtol(t_string, &endptr, 10);
             if (level > prev_level) {

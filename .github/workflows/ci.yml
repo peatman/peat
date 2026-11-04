@@ -47,20 +47,28 @@ jobs:
           name: tools
           path: mpi.tool/bin/
 
-  # Trace collector via CMake against distro MPIs, then an end-to-end smoke test
-  # (tests/ci/smoke.sh: func-classes tests under tractor -> mat -> ctt).
+  # Trace collector via CMake, then an end-to-end smoke test (tests/ci/smoke.sh: func-classes tests
+  # under tractor -> mat -> ctt).
+  # Ubuntu 24.04's MPICH 4.2 is built --with-pmix, but its hydra mpiexec only serves PMI-1, so every
+  # "mpiexec -n 4" starts 4 singletons: that MPICH is only build-tested (it is the MPI 4.1 non-const
+  # prototype case). Smoke tests run on 22.04's MPICH 4.0 (plain PMI) and on MPICH built from source.
   tractor:
-    name: tractor (${{ matrix.target }}, diag=${{ matrix.diag }})
-    runs-on: ubuntu-24.04
+    name: tractor (${{ matrix.mpi }}, diag=${{ matrix.diag }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { mpi_pkg: libmpich-dev mpich,         target: mpich4,  diag: "OFF", smoke_tests: "p2p coll comm rma" }
-          - { mpi_pkg: libmpich-dev mpich,         target: mpich4,  diag: "ON",  smoke_tests: "p2p coll comm rma" }
+          - { os: ubuntu-22.04, mpi: mpich-4.0,   mpi_pkg: libmpich-dev mpich, target: mpich4, diag: "OFF", smoke: true, smoke_tests: "p2p coll comm rma" }
+          - { os: ubuntu-22.04, mpi: mpich-4.0,   mpi_pkg: libmpich-dev mpich, target: mpich4, diag: "ON",  smoke: true, smoke_tests: "p2p coll comm rma" }
+          - { os: ubuntu-24.04, mpi: mpich-4.3.2, mpich_src: "4.3.2",           target: mpich4, diag: "OFF", smoke: true, smoke_tests: "p2p coll comm rma" }
+          - { os: ubuntu-24.04, mpi: mpich-4.3.2, mpich_src: "4.3.2",           target: mpich4, diag: "ON",  smoke: true, smoke_tests: "p2p coll comm rma" }
+          - { os: ubuntu-24.04, mpi: mpich-4.2,   mpi_pkg: libmpich-dev mpich, target: mpich4, diag: "OFF", smoke: false }
           # Ubuntu 24.04 ships Open MPI 4.1; rma hangs under Open MPI even without tractor, so it is left out.
-          - { mpi_pkg: libopenmpi-dev openmpi-bin, target: openmpi, diag: "OFF", smoke_tests: "p2p coll comm", experimental: true }
+          - { os: ubuntu-24.04, mpi: openmpi-4.1, mpi_pkg: libopenmpi-dev openmpi-bin, target: openmpi, diag: "OFF", smoke: true, smoke_tests: "p2p coll comm", experimental: true }
     continue-on-error: ${{ matrix.experimental == true }}
+    env:
+      MPICH_PREFIX: ${{ github.workspace }}/../mpich-${{ matrix.mpich_src }}
     steps:
       - uses: actions/checkout@v4
       - name: Install deps
@@ -68,6 +76,37 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends g++ gfortran cmake ninja-build perl libswitch-perl \
             zlib1g-dev libhwloc-dev libunwind-dev libomp-dev ${{ matrix.mpi_pkg }}
+      - name: Cache MPICH ${{ matrix.mpich_src }}
+        if: matrix.mpich_src
+        id: mpich-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.MPICH_PREFIX }}
+          key: mpich-${{ matrix.mpich_src }}-ch3sock-gnu-${{ matrix.os }}-v1
+      - name: Build MPICH ${{ matrix.mpich_src }} from source
+        if: matrix.mpich_src && steps.mpich-cache.outputs.cache-hit != 'true'
+        # ch3:sock as in scripts/mpich-<ver>/Build-tcp-m.sh, without Fortran/Lustre to keep the build short
+        run: |
+          v=${{ matrix.mpich_src }}
+          cd "$RUNNER_TEMP"
+          curl -sSfL --retry 3 -o mpich.tar.gz "https://www.mpich.org/static/downloads/$v/mpich-$v.tar.gz"
+          tar -xzf mpich.tar.gz && cd "mpich-$v"
+          ./configure --prefix="$MPICH_PREFIX" --enable-silent-rules --enable-fast=O2 \
+            --with-device=ch3:sock --with-pm=hydra --enable-romio --enable-threads=multiple \
+            --enable-shared --disable-fortran --with-hwloc=embedded --without-ze --without-cuda \
+            CC=gcc CXX=g++ > configure.log 2>&1 || { tail -n 50 configure.log; exit 1; }
+          make -j"$(nproc)" > make.log 2>&1 || { tail -n 50 make.log; exit 1; }
+          make install > install.log 2>&1
+      - name: Use MPICH ${{ matrix.mpich_src }}
+        if: matrix.mpich_src
+        run: |
+          echo "$MPICH_PREFIX/bin" >> "$GITHUB_PATH"
+          echo "LD_LIBRARY_PATH=$MPICH_PREFIX/lib" >> "$GITHUB_ENV"
+      - name: Show MPI
+        run: |
+          which mpicc mpicxx mpiexec
+          mpicxx -show
+          mpiexec --version 2>/dev/null | head -5 || true
       - name: Provide omp-tools.h (OMPT=ON)
         # GCC's libgomp has no omp-tools.h; take only that header from LLVM's OpenMP so clang's other
         # headers (stddef.h, ...) don't end up on gcc's include path.
@@ -87,6 +126,7 @@ jobs:
           cmake --install $b
           ldd mpi.tool/lib/gnu/libtractor*.so
       - name: Build mat + ctt (for smoke test)
+        if: matrix.smoke
         run: |
           cmake -S mpi.tool/components/ctt/src -B build/ctt -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build/ctt && cmake --install build/ctt
@@ -94,6 +134,7 @@ jobs:
             -DCMAKE_CXX_COMPILER=g++
           cmake --build build/mat && cmake --install build/mat
       - name: Smoke test (tests under tractor -> mat -> ctt)
+        if: matrix.smoke
         env:
           MPICC: mpicc
           SMOKE_WORKDIR: ${{ runner.temp }}/smoke
@@ -101,15 +142,15 @@ jobs:
           lib=$(ls mpi.tool/lib/gnu/libtractor*.${{ matrix.target }}.so | head -1)
           mpi.tool/components/tractor/tests/ci/smoke.sh "$lib" 4 3 "${{ matrix.smoke_tests }}"
       - name: Upload smoke logs and traces
-        if: always()
+        if: always() && matrix.smoke
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-${{ matrix.target }}-diag-${{ matrix.diag }}
+          name: smoke-${{ matrix.mpi }}-diag-${{ matrix.diag }}
           path: ${{ runner.temp }}/smoke
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
-          name: tractor-${{ matrix.target }}-diag-${{ matrix.diag }}
+          name: tractor-${{ matrix.mpi }}-diag-${{ matrix.diag }}
           path: |
             mpi.tool/lib/gnu/
             mpi.tool/bin/gnu/
