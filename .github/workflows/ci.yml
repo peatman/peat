@@ -21,7 +21,7 @@ jobs:
     name: ctt + mat + pet + urpu
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install deps
         run: |
           sudo apt-get update
@@ -42,7 +42,7 @@ jobs:
         run: |
           cmake -S mpi.tool/components/urpu/src -B build/urpu -G Ninja -DCMAKE_BUILD_TYPE=Release -DURPU_TARGET=serial
           cmake --build build/urpu && cmake --install build/urpu
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: tools
           path: mpi.tool/bin/
@@ -76,7 +76,7 @@ jobs:
       MPICH_PREFIX: ${{ github.workspace }}/../mpich-${{ matrix.mpich_src }}
       OMPI_PREFIX: ${{ github.workspace }}/../openmpi-${{ matrix.ompi_src }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install deps
         run: |
           sudo apt-get update
@@ -85,7 +85,7 @@ jobs:
       - name: Cache MPICH ${{ matrix.mpich_src }}
         if: matrix.mpich_src
         id: mpich-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.MPICH_PREFIX }}
           key: mpich-${{ matrix.mpich_src }}-${{ matrix.mpich_dev }}-gnu-${{ matrix.os }}-v1
@@ -112,7 +112,7 @@ jobs:
       - name: Cache Open MPI ${{ matrix.ompi_src }}
         if: matrix.ompi_src
         id: ompi-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.OMPI_PREFIX }}
           key: openmpi-${{ matrix.ompi_src }}-internal-gnu-${{ matrix.os }}-v1
@@ -186,12 +186,12 @@ jobs:
           exit $status
       - name: Upload smoke logs and traces
         if: always() && matrix.smoke
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-${{ matrix.mpi }}
           path: ${{ runner.temp }}/smoke-diag-*
           if-no-files-found: ignore
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: tractor-${{ matrix.mpi }}
           path: |
@@ -203,7 +203,7 @@ jobs:
     name: qTV (Qt6)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install deps
         run: |
           sudo apt-get update
