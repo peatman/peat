@@ -17,7 +17,8 @@
     `CC=gcc CXX=g++ FC=gfortran` are on `PATH` and skip/edit that block.
   - **Intel oneAPI**: `icx`/`icpx`/`ifx` via `/opt/intel/oneapi/<version>/setvars.sh`.
 - **Perl** - required at build time to run the code generators (`mpi_layer.pl`,
-  `../../common/mpi_func_ids.pl`, `func_split`, etc.).
+  `../../common/mpi_func_ids.pl`, `func_split`, etc.). The generators need the `Switch` module, which is no longer
+  part of core Perl: `libswitch-perl` (Debian/Ubuntu), `perl-Switch` (Fedora/RHEL), or `cpan Switch`.
 - **GNU Make**, `cpp` (comes with gcc), `bash`/`sh`.
 
 ## 3. Required third-party libraries
