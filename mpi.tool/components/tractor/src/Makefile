@@ -529,7 +529,7 @@ mpi_layer_transport_%.o: mpi_layer.cpp
 $(OBJECTS):   $(FUNCID)
 
 $(PTPD): $(MTB) 
-	$(MPICC) -o $(PTPD) $(INCLUDE) $(CONTROLS) $(OPT) $(OMP) $(LDOPTMT) $(CXXMISC) src-ptpd.cpp t_globals.cpp $(DEBUG) $(PTPD_LIBS)
+	$(MPICXX) -o $(PTPD) $(INCLUDE) $(CONTROLS) $(OPT) $(OMP) $(LDOPTMT) $(CXXMISC) src-ptpd.cpp t_globals.cpp $(DEBUG) $(PTPD_LIBS)
 
 .c.o:
 	$(MPICC) -o $@ -c $(INCLUDE) $(CONTROLS) $(CMISC) $(DEBUG) $(OPT) $(OMP) $(FPIC) $*.c
