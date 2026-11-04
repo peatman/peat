@@ -230,7 +230,15 @@ static void neighborhood(int it)
     check_int(nrecv, M, left + it + 7, "Ineighbor_alltoallw(left)");
 }
 
-#if HAVE_MPI4
+/* MPICH 4.0's persistent collectives (MPI_Gather_init, MPI_Allgather_init, ...) give wrong results and fail
+   in MPI_Waitall even without tractor (fixed by MPICH 4.3.2), so they are only exercised with MPICH >= 4.1. */
+#if HAVE_MPI4 && !(defined(MPICH_NUMVERSION) && MPICH_NUMVERSION < 40100000)
+#define HAVE_PERSISTENT_COLL 1
+#else
+#define HAVE_PERSISTENT_COLL 0
+#endif
+
+#if HAVE_PERSISTENT_COLL
 #define NPERS 13
 static MPI_Request pers[NPERS];
 static int *pb[2 * NPERS];
@@ -333,7 +341,9 @@ static void persistent_free(void)
     for (i = 0; i < 2 * NPERS; i++)
         free(pb[i]);
 }
+#endif /* HAVE_PERSISTENT_COLL */
 
+#if HAVE_MPI4
 static void large_count(int it)
 {
     int root = it % g_size, i;
@@ -446,19 +456,21 @@ int main(int argc, char **argv)
     dims = g_size;
     MPI_Cart_create(MPI_COMM_WORLD, 1, &dims, &periods, 0, &cart);
 
-#if HAVE_MPI4
+#if HAVE_PERSISTENT_COLL
     persistent_init();
 #endif
     for (it = 0; it < iterations; it++) {
         blocking(it);
         nonblocking(it);
         neighborhood(it);
-#if HAVE_MPI4
+#if HAVE_PERSISTENT_COLL
         persistent_run(it);
+#endif
+#if HAVE_MPI4
         large_count(it);
 #endif
     }
-#if HAVE_MPI4
+#if HAVE_PERSISTENT_COLL
     persistent_free();
 #endif
 

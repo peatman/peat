@@ -82,17 +82,18 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.MPICH_PREFIX }}
-          key: mpich-${{ matrix.mpich_src }}-ch3sock-gnu-${{ matrix.os }}-v1
+          key: mpich-${{ matrix.mpich_src }}-ch4ofi-gnu-${{ matrix.os }}-v1
       - name: Build MPICH ${{ matrix.mpich_src }} from source
         if: matrix.mpich_src && steps.mpich-cache.outputs.cache-hit != 'true'
-        # ch3:sock as in scripts/mpich-<ver>/Build-tcp-m.sh, without Fortran/Lustre to keep the build short
+        # ch4:ofi with embedded libfabric as in scripts/mpich-<ver>/Build-ofi-m.sh, without Fortran/Lustre.
+        # (ch3 has no partitioned communication and returns a wrong count for MPI_Isendrecv.)
         run: |
           v=${{ matrix.mpich_src }}
           cd "$RUNNER_TEMP"
           curl -sSfL --retry 3 -o mpich.tar.gz "https://www.mpich.org/static/downloads/$v/mpich-$v.tar.gz"
           tar -xzf mpich.tar.gz && cd "mpich-$v"
           ./configure --prefix="$MPICH_PREFIX" --enable-silent-rules --enable-fast=O2 \
-            --with-device=ch3:sock --with-pm=hydra --enable-romio --enable-threads=multiple \
+            --with-device=ch4:ofi --with-libfabric=embedded --with-pm=hydra --enable-romio --enable-threads=multiple \
             --enable-shared --disable-fortran --with-hwloc=embedded --without-ze --without-cuda \
             CC=gcc CXX=g++ > configure.log 2>&1 || { tail -n 50 configure.log; exit 1; }
           make -j"$(nproc)" > make.log 2>&1 || { tail -n 50 make.log; exit 1; }
@@ -137,6 +138,7 @@ jobs:
         if: matrix.smoke
         env:
           MPICC: mpicc
+          FI_PROVIDER: tcp # libfabric (MPICH ch4:ofi): the provider that works on a plain VM
           SMOKE_WORKDIR: ${{ runner.temp }}/smoke
         run: |
           lib=$(ls mpi.tool/lib/gnu/libtractor*.${{ matrix.target }}.so | head -1)

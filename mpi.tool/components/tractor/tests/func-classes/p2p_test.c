@@ -282,10 +282,24 @@ static void mpi4_features(int it)
     fill_int(sbuf, N, g_rank + it);
 
     /* Isendrecv / Isendrecv_replace */
+    /* clear the status first: a status left over from earlier receives must not hide a wrong one */
+    memset(&st, 0, sizeof(st));
     MPI_Isendrecv(sbuf, N, MPI_INT, right, 90, rbuf, N, MPI_INT, left, 90, MPI_COMM_WORLD, &reqs[0]);
     MPI_Wait(&reqs[0], &st);
     MPI_Get_count(&st, MPI_INT, &icnt);
-    EXPECT(icnt == N, "Get_count wrong");
+    if (icnt != N || st.MPI_SOURCE != left || st.MPI_TAG != 90) {
+#ifdef MPICH_NUMVERSION
+        /* Known MPICH bug (stock 4.x/5.x, ch3 and ch4): the status of an MPI_Isendrecv request is not filled
+           from the receive (ch3 returns zeros, ch4 leaves the caller's status untouched). Fixed by the
+           mpi.tool/patches/mpich-* patches; report it on unpatched MPICH-based MPIs instead of failing. */
+        static int reported = 0;
+        if (!reported++ && g_rank == 0)
+            fprintf(stderr, "KNOWN MPICH BUG: MPI_Isendrecv status count=%d source=%d tag=%d, expected %d/%d/90 "
+                            "(unpatched MPICH, see mpi.tool/patches)\n", icnt, st.MPI_SOURCE, st.MPI_TAG, N, left);
+#else
+        FAIL("Isendrecv status wrong: count=%d source=%d tag=%d, expected %d/%d/90", icnt, st.MPI_SOURCE, st.MPI_TAG, N, left);
+#endif
+    }
     check_int(rbuf, N, left + it, "Isendrecv");
     memcpy(rbuf, sbuf, sizeof(rbuf));
     MPI_Isendrecv_replace(rbuf, N, MPI_INT, right, 91, left, 91, MPI_COMM_WORLD, &reqs[0]);
