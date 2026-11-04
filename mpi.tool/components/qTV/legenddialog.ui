@@ -41,9 +41,6 @@
    <property name="selectionMode">
     <enum>QAbstractItemView::SelectionMode::NoSelection</enum>
    </property>
-   <property name="supportedDragActions">
-    <set>Qt::DropAction::IgnoreAction</set>
-   </property>
   </widget>
   <widget class="QLabel" name="label">
    <property name="geometry">
