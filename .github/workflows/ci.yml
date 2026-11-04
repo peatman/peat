@@ -54,7 +54,16 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends g++ make perl libswitch-perl zlib1g-dev libhwloc-dev libunwind-dev ${{ matrix.mpi_pkg }}
+          sudo apt-get install -y --no-install-recommends g++ make perl libswitch-perl zlib1g-dev libhwloc-dev libunwind-dev libomp-dev ${{ matrix.mpi_pkg }}
+      - name: Provide omp-tools.h (OMPT=on)
+        # GCC's libgomp has no omp-tools.h; take only that header from LLVM's OpenMP so clang's other
+        # headers (stddef.h, ...) don't end up on gcc's include path.
+        run: |
+          hdr=$(find /usr/lib/llvm-* /usr/include -name omp-tools.h 2>/dev/null | head -1)
+          [ -n "$hdr" ] || { echo "omp-tools.h not found"; exit 1; }
+          echo "using $hdr"
+          mkdir -p "$RUNNER_TEMP/ompt" && cp "$hdr" "$RUNNER_TEMP/ompt/"
+          echo "CPATH=$RUNNER_TEMP/ompt" >> "$GITHUB_ENV"
       - name: Build tractor
         working-directory: mpi.tool/components/tractor/src
         env:
