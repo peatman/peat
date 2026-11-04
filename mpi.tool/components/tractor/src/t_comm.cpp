@@ -310,24 +310,37 @@ bool t_local_comms::find_by_idx(const int idx, int is_internal, std::list<t_comm
     return false;
 }
 
-void t_local_comms::comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, int is_internal)
+/* A member that doesn't translate to MPI_COMM_WORLD makes the binding in MPI_Finalize fail (find_local_comm);
+   report it where it is recorded instead. */
+static void warn_undefined_members(const MPI_Comm comm, const PEAT_Rank *world_ranks, const PEAT_Rank size)
+{
+    for (PEAT_Rank q = 0; q < size; q++) {
+        if (MPI_UNDEFINED == world_ranks[q]) {
+            std::cerr << "tractor: communicator " << std::hex << comm << std::dec << " at rank " << t_mpi_rank << ": member " << q
+                      << " is not in MPI_COMM_WORLD (MPI_UNDEFINED); communicator binding will fail\n";
+            return;
+        }
+    }
+}
+
+void t_local_comms::comm_begin(const MPI_Comm newcomm, const MPI_Comm group_comm, const PEAT_Clock begin, int is_internal)
 {
     __DEBUG_PROLOG_COMM_LAYER__
     if (MPI_COMM_NULL != newcomm) {
         init(); /* no-op once post_mpi_init() has run; needed here too since MPICH can create
                    internal sub-comms of MPI_COMM_WORLD while still inside PMPI_Init */
         int is_inter;
-        PMPI_Comm_test_inter(newcomm, &is_inter);
+        PMPI_Comm_test_inter(group_comm, &is_inter);
         if (is_inter) {
-            inter_comm_begin(newcomm, begin, is_internal);
+            inter_comm_begin(newcomm, group_comm, begin, is_internal);
         } else {
-            intra_comm_begin(newcomm, begin, is_internal);
+            intra_comm_begin(newcomm, group_comm, begin, is_internal);
         }
     }
     __DEBUG_EPILOG_COMM_LAYER__
 }
 
-void t_local_comms::intra_comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, int is_internal)
+void t_local_comms::intra_comm_begin(const MPI_Comm newcomm, const MPI_Comm group_comm, const PEAT_Clock begin, int is_internal)
 {
     __DEBUG_PROLOG_COMM_LAYER__
     if (MPI_COMM_NULL != newcomm) {
@@ -340,10 +353,11 @@ void t_local_comms::intra_comm_begin(const MPI_Comm newcomm, const PEAT_Clock be
 
         PEAT_Rank newcomm_size;
         MPI_Group newcomm_group;
-        PMPI_Comm_size(newcomm, &newcomm_size);
-        PMPI_Comm_group(newcomm, &newcomm_group);
+        PMPI_Comm_size(group_comm, &newcomm_size);
+        PMPI_Comm_group(group_comm, &newcomm_group);
         PEAT_Rank newcomm_ranks[comm_world_size];
         PMPI_Group_translate_ranks(newcomm_group, newcomm_size, comm_world_ranks, comm_world_group, newcomm_ranks);
+        warn_undefined_members(newcomm, newcomm_ranks, newcomm_size);
         comm_elem.l_comm2world_ranks.resize(newcomm_size, -1);
         memcpy(comm_elem.l_comm2world_ranks.data(), newcomm_ranks, newcomm_size * sizeof(PEAT_Rank));
         newcomm_lock.lock();
@@ -361,7 +375,7 @@ void t_local_comms::intra_comm_begin(const MPI_Comm newcomm, const PEAT_Clock be
     __DEBUG_EPILOG_COMM_LAYER__
 }
 
-void t_local_comms::inter_comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, int is_internal)
+void t_local_comms::inter_comm_begin(const MPI_Comm newcomm, const MPI_Comm group_comm, const PEAT_Clock begin, int is_internal)
 {
     __DEBUG_PROLOG_COMM_LAYER__
     t_comm comm_elem;
@@ -375,14 +389,16 @@ void t_local_comms::inter_comm_begin(const MPI_Comm newcomm, const PEAT_Clock be
         MPI_Group newcomm_l_group;
         PEAT_Rank newcomm_r_size;
         MPI_Group newcomm_r_group;
-        PMPI_Comm_size(newcomm, &newcomm_l_size);
-        PMPI_Comm_group(newcomm, &newcomm_l_group);
-        PMPI_Comm_remote_size(newcomm, &newcomm_r_size);
-        PMPI_Comm_remote_group(newcomm, &newcomm_r_group);
+        PMPI_Comm_size(group_comm, &newcomm_l_size);
+        PMPI_Comm_group(group_comm, &newcomm_l_group);
+        PMPI_Comm_remote_size(group_comm, &newcomm_r_size);
+        PMPI_Comm_remote_group(group_comm, &newcomm_r_group);
         PEAT_Rank newcomm_l_ranks[comm_world_size];
         PEAT_Rank newcomm_r_ranks[comm_world_size];
         PMPI_Group_translate_ranks(newcomm_l_group, newcomm_l_size, comm_world_ranks, comm_world_group, newcomm_l_ranks);
         PMPI_Group_translate_ranks(newcomm_r_group, newcomm_r_size, comm_world_ranks, comm_world_group, newcomm_r_ranks);
+        warn_undefined_members(newcomm, newcomm_l_ranks, newcomm_l_size);
+        warn_undefined_members(newcomm, newcomm_r_ranks, newcomm_r_size);
         comm_elem.l_comm2world_ranks.resize(newcomm_l_size, -1);
         comm_elem.r_comm2world_ranks.resize(newcomm_r_size, -1);
         memcpy(comm_elem.l_comm2world_ranks.data(), newcomm_l_ranks, newcomm_l_size * sizeof(PEAT_Rank));

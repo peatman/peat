@@ -79,7 +79,7 @@ long long cpu_proc_freq[2]={0,0};
 static int MPI_Check_dummy_failed = 0;
 MPI_Request MPI_Check_dummy(MPI_Request request)
 {
-    if (!MPI_Check_dummy_prev == NULL && !MPI_Check_dummy_failed) {
+    if (MPI_Check_dummy_prev == NULL && !MPI_Check_dummy_failed) {
         MPI_Check_dummy_prev = (MPI_Request (*)(MPI_Request request))(dlsym(RTLD_NEXT, "MPI_Check_dummy"));
         if (MPI_Check_dummy_prev == NULL)
             MPI_Check_dummy_failed = 1;

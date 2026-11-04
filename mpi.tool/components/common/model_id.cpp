@@ -20,6 +20,8 @@
 #include "file_io.h"
 #include "func_id.h"
 #include <cassert>
+#include <set>
+#include <sstream>
 
 Model_ID::Model_ID()
 {
@@ -235,4 +237,29 @@ PEAT_Record_Type Model_ID::translate_record_type(PEAT_Record_Type tag) const
     if (model_main_tags.count(tag) == 1)
         return model_main_tags.at(tag);
     return PEAT_RT_Non_Existent;
+}
+
+PEAT_MPI_Func_ID Model_ID::translate_function_id(const char *field) const
+{
+    assert(field);
+    long long trace_id = 0;
+    extract(trace_id, field, 10, false);
+    if (trace_id == 0) { // not a number: the collector wrote the function name
+        return global_func_id.idx_by_name(field);
+    }
+    // a number is the collector's own id: always translate it through the trace's name/ID table
+    std::map<PEAT_MPI_Func_ID, PEAT_MPI_Func_ID>::const_iterator it = model_function_tags.find((PEAT_MPI_Func_ID)trace_id);
+    if (it != model_function_tags.end()) {
+        return it->second;
+    }
+    static std::set<long long> reported; // warn once per unknown id
+    bool first_time;
+#pragma omp critical(peat_translate_function_id_warning)
+    first_time = reported.insert(trace_id).second;
+    if (first_time) {
+        std::ostringstream errTxt;
+        errTxt << "Trace function id " << trace_id << " is not in the trace's function name/ID table (" << print_record_type(PEAT_RT_MPI_Function_Name_ID) << ")\n";
+        peat_warning(errTxt.str().c_str());
+    }
+    return TMPI_FUNC_ID_NONE;
 }

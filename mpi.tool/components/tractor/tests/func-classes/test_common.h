@@ -16,6 +16,14 @@
 #define HAVE_MPI4 0
 #endif
 
+/* MPI-1 functions removed in MPI-3.0 (MPI_Type_extent, ...). MPICH still provides them; Open MPI 5 only
+   when built with --enable-mpi1-compatibility. Build with -DNO_MPI1_REMOVED to leave them out. */
+#if !defined(NO_MPI1_REMOVED) && !(defined(OMPI_OMIT_MPI1_COMPAT_DECLS) && OMPI_OMIT_MPI1_COMPAT_DECLS)
+#define HAVE_MPI1_REMOVED 1
+#else
+#define HAVE_MPI1_REMOVED 0
+#endif
+
 static int g_rank = -1;
 static int g_size = 0;
 static int g_errors = 0;

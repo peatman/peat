@@ -538,7 +538,7 @@ int main(int argc, char **argv)
         double ratio = estimator.analyze(glob_param.input_path + DIR_DELIMITER + "0.profile");
         estimator.write_trace_info(trace_info_file);
         time_t tend = time(0) - tbegin;
-        printf("Ratio( original / estimated ) : %.2lf.\nFinished.  Processing took %lld seconds.\n", ratio, tend);
+        printf("Ratio( original / estimated ) : %.2lf.\nFinished.  Processing took %lld seconds.\n", ratio, static_cast<long long>(tend));
 
 #endif
     }

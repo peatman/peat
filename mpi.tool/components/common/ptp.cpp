@@ -32,7 +32,7 @@
     std::cerr
 #define rankANDnode(x) "rank " << x << " on node " << getHostName(x)
 
-PTP::PTP(const Global_Parameters &glob) : globals(glob), cvt_to_ns(false)
+PTP::PTP(const Global_Parameters &glob) : cvt_to_ns(false), globals(glob)
 {
     global_start = 0;
     master_node = 0;

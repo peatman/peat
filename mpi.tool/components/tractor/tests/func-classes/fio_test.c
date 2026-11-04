@@ -380,7 +380,12 @@ static void shared_pointer(MPI_File fh, int it)
 static int extent_fn(MPI_Datatype dt, MPI_Aint *extent, void *state)
 {
     (void)state;
+#if HAVE_MPI1_REMOVED
     return MPI_Type_extent(dt, extent);
+#else
+    MPI_Aint lb;
+    return MPI_Type_get_extent(dt, &lb, extent);
+#endif
 }
 
 int main(int argc, char **argv)

@@ -534,8 +534,8 @@ double Wtime(void)
 
 char *peat_strupr(char *str)
 {
-    while (*str)
-        *str++ = toupper(*str);
+    for (char *p = str; *p; ++p)
+        *p = static_cast<char>(toupper(static_cast<unsigned char>(*p)));
     return str;
 }
 

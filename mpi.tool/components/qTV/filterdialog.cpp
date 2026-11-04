@@ -22,7 +22,7 @@
 #include <QTableWidgetItem>
 
 FilterDialog::FilterDialog(QWidget *parent)
-    : QDialog(parent), ui(new Ui::FilterDialog), comms_filled(false), redraw(false)
+    : QDialog(parent), comms_filled(false), redraw(false), ui(new Ui::FilterDialog)
 {
     ui->setupUi(this);
     ui->tabWidget->setTabEnabled(ui->tabWidget->indexOf(ui->tabCommunicators), false);

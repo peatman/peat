@@ -20,7 +20,7 @@
 
 Func_ID global_func_id;
 
-TV_Event::TV_Event() : ids(2, -1), addrs(NULL), func_id(TMPI_FUNC_ID_NONE)
+TV_Event::TV_Event() : func_id(TMPI_FUNC_ID_NONE), ids(1, -1), addrs(NULL) // ids: unset top-level id; read_event() sets the trace's id path (1+ columns)
 {
 }
 
@@ -72,9 +72,7 @@ PEAT_Bool TV_Local_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_s
     extract(funcid, mpi_string.at(hdr.payload), 10, false);
     if (funcid == 0) {
         func_id = global_func_id.idx_by_name(mpi_string.at(hdr.payload));
-    } /*else {
-        func_id = get_core()->model_id.modelFunctionTags.at((PEAT_MPI_Func_ID)funcid);
-    }*/
+    } // else: a numeric id is the collector's own; Elements has already set func_id through Model_ID::translate_function_id()
     TV_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs, hdr);
     if (func_id == MPI_PCONTROL_ID) {
         extract(p_control_id, mpi_string.at(hdr.payload + 1), 10, false);

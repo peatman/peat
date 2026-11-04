@@ -47,7 +47,7 @@
 #define PCDELIM '|'
 #define SEC_OUTPUT(x) fixed << std::setprecision(0) << x << " ( " << std::setprecision(2) << x / freq << " sec)"
 
-PET_Core::PET_Core(const Global_Parameters &glob, const Model_ID &model_id_storage) : globals(glob), model_id(model_id_storage), e_timeline_state_changed(false), useless_iterations(0), useful_iterations(0), collectives_bound(0), event_processed(0), event_processed_delta(0)
+PET_Core::PET_Core(const Global_Parameters &glob, const Model_ID &model_id_storage) : e_timeline_state_changed(false), collectives_bound(0), useless_iterations(0), useful_iterations(0), event_processed(0), event_processed_delta(0), globals(glob), model_id(model_id_storage)
 {
     ptp = 0;
     user_region_file = 0;

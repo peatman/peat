@@ -32,7 +32,7 @@
 #include <vector>
 
 struct GPU_Event { // tsc_u_time is for debugging purposes only!
-    GPU_Event() : ids(2, -1), request(0) {}
+    GPU_Event() : ids(1, -1), request(0) {} // ids: unset top-level id
     PEAT_Event_IDs ids;
     PEAT_Collective_Bytes send_bytes, recv_bytes;
     // std::vector<PEAT_Addr> addrs;

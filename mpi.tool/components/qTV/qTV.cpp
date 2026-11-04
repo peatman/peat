@@ -37,7 +37,7 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-TV::TV(QScrollArea *a, QStatusBar *s, QProgressBar *p, QScrollBar *sl, TV_TraceParts *swn, QWidget *parent) : sa(a), sb(s), pb(p), sr(sl), shown(swn), ctrl_pressed(false), alt_pressed(false), shift_pressed(false), QWidget(parent)
+TV::TV(QScrollArea *a, QStatusBar *s, QProgressBar *p, QScrollBar *sl, TV_TraceParts *swn, QWidget *parent) : QWidget(parent), ctrl_pressed(false), alt_pressed(false), shift_pressed(false), pb(p), sb(s), sa(a), sr(sl), shown(swn)
 {
     ptp = 0;
     elements = 0;

@@ -16,6 +16,11 @@
  * along with PEAT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+/* __comm_membership_from__: communicator the new one's groups are read from. Default: the new comm itself;
+   MPI_Comm_idup* define it to their parent comm (newcomm may not be used before its request completes) */
+#ifndef __comm_membership_from__
+#define __comm_membership_from__ event->comms.newcomm
+#endif
 #ifndef _TRACTOR_PASSTHROUGH_
 //    if (__builtin_expect((counting_permission[fidc]>0 && !l_skip_parse),1)) {
 tsc_mpi_exit = peat_get_time();
@@ -26,7 +31,7 @@ event->num_children += (short)(__msl_child_base(tid, level) - children_base);
 __write_comms__
 memcpy(counters.addrs, p_entrys, sizeof(void *) * gt_info(num_addrs));
 //    } // if (__builtin_expect((counting_permission[fidc]>0 && !l_skip_parse),1))
-gt_info(local_comms)->comm_begin(event->comms.newcomm, tsc_entry,is_internal);
+gt_info(local_comms)->comm_begin(event->comms.newcomm, __comm_membership_from__, tsc_entry, is_internal);
 #ifdef _HWCOUNTERS_ENABLED_
 memcpy(counters.hwcs, l_hwcs, num_hwcs * sizeof(l_hwcs[0]));
 gt_info(hwc).get_all_counters(&counters.hwcs[num_hwcs]);
@@ -52,3 +57,4 @@ overall_tool_overhead[fidc] += local_tool_overhead;
 //    } // if (__builtin_expect((counting_permission[fidc]>0 && !l_skip_parse),1))
 #endif
 #endif
+#undef __comm_membership_from__

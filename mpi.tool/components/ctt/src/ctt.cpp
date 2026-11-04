@@ -46,10 +46,12 @@ PEAT_Bool CTT::parse_single_event(const int rank, String_Split &line_mpi, String
     }
     PEAT_Record_Header hdr; // ids, thread and nesting of the record
     user_region_store->parse_record_header(hdr, line_mpi, rank);
-    std::string mpi_func = line_mpi.at(hdr.payload);
+    // report/filter by function name also when the collector wrote numeric ids
+    const PEAT_MPI_Func_ID func_id = model_id.translate_function_id(line_mpi.at(hdr.payload));
+    std::string mpi_func = (func_id != TMPI_FUNC_ID_NONE) ? global_func_id.name_by_idx(func_id) : line_mpi.at(hdr.payload);
     if (globals.func_set.count(mpi_func) < 1 && (!globals.func_set.empty()))
         return true;
-    Tractor_Event t_event(rank, line_mpi, line_hwc, model_id.num_hwcs, model_id.num_addrs, user_region_store, com_store);
+    Tractor_Event t_event(rank, line_mpi, line_hwc, model_id.num_hwcs, model_id.num_addrs, user_region_store, com_store, model_id);
     Tractor_Event send_line, recv_line;
     if(!second_line && (t_event.ids.size()<2 || t_event.ids[1] < 0)) { //count only 'user' events
 #pragma omp atomic
@@ -132,7 +134,7 @@ PEAT_Bool CTT::parse_single_event(const int rank, String_Split &line_mpi, String
     }
     return true;
 }
-CTT::CTT(Global_Parameters &glob, Model_ID &model_id_storage) :  globals(glob), model_id(model_id_storage), events_processed(0), input_HWC(NULL), input_MPI(NULL)
+CTT::CTT(Global_Parameters &glob, Model_ID &model_id_storage) :  input_HWC(NULL), input_MPI(NULL), globals(glob), model_id(model_id_storage), events_processed(0)
 {
     // Open *com* files
     std::map<PEAT_Rank, std::string> file_input_com_names = get_file_names(globals.input_path, globals.trace_files, globals.com_ext, globals.rank_set, true);
@@ -240,15 +242,15 @@ void CTT::process()
                         break;
                     case PEAT_PROP_CLASS_COLLECTIVE: {
                         std::map<PEAT_Rank, PEAT_Rank> comm = com_store->get_ranks_map_from_comm(func_it->coll.comm_id);
-                        printf("\t\tComm: ID:%x Ranks:%lld ", func_it->coll.comm_id, comm.size());
+                        printf("\t\tComm: ID:%x Ranks:%zu ", func_it->coll.comm_id, comm.size());
                         printf("Message Sizes: %lld %lld\n\t\t", func_it->coll.aggr_send_size, func_it->coll.aggr_recv_size);
                         for (std::map<PEAT_Rank, PEAT_Rank>::const_iterator rank_it = comm.cbegin(); rank_it != comm.cend(); ++rank_it) {
-                            printf("%ld:%d ", rank_it->second, rank_it->first);
+                            printf("%d:%d ", rank_it->second, rank_it->first);
                         }
                         printf("\n");
                     } break;
                     case PEAT_PROP_CLASS_REQUEST:
-                        printf("Requests num:%I64d\n", func_it->req.reqs.size());
+                        printf("Requests num:%zu\n", func_it->req.reqs.size());
                         break;
                     default:
                         printf("\n");

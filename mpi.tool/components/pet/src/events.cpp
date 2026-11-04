@@ -437,11 +437,7 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
 
     PEAT_Record_Header hdr; // ids, thread and nesting of the record
     user_region_file->parse_record_header(hdr, trace_line_MPI, rank);
-    PEAT_MPI_Func_ID func_id = TMPI_FUNC_ID_NONE;
-    extract(func_id, trace_line_MPI.at(hdr.payload), 10, false);
-    if (func_id == 0) {
-        func_id = global_func_id.idx_by_name(trace_line_MPI.at(hdr.payload));
-    }
+    const PEAT_MPI_Func_ID func_id = model_id.translate_function_id(trace_line_MPI.at(hdr.payload)); // names and the collector's numeric ids
 
     if (func_id >= MPI_START_FILE_GROUP && func_id < MPI_END_FILE_GROUP) {
         event = new PET_Local_Event(this);
@@ -672,10 +668,7 @@ PEAT_Bool PET_Core::read_transport_events(PET_Event *event)
         PET_Transport_Event evt;
         extract(evt.id, trace_line_f.at(0), 10);
         extract(evt.thread, trace_line_f.at(1), 10);
-        extract(evt.func_id, trace_line_f.at(2), 10, false);
-        if (evt.func_id == TMPI_FUNC_ID_NONE) {
-            evt.func_id = global_func_id.idx_by_name(trace_line_f.at(2));
-        }
+        evt.func_id = model_id.translate_function_id(trace_line_f.at(2)); // names and the collector's numeric ids
         /*        event->tscs[0]=tsc_entry;
                 event->tscs[1]=tsc_mpi_entry-tsc_entry; //pre tractor overhead
                 event->psm2.num_calls=1;
@@ -717,10 +710,7 @@ PEAT_Bool PET_Core::read_transport_events(PET_Event *event)
             continue;
         PET_Transport_Event evt, tmp_evt;
         extract(evt.id, trace_line_f.at(0), 10);
-        extract(evt.func_id, trace_line_f.at(2), 10, false);
-        if (evt.func_id == TMPI_FUNC_ID_NONE) {
-            evt.func_id = global_func_id.idx_by_name(trace_line_f.at(2));
-        }
+        evt.func_id = model_id.translate_function_id(trace_line_f.at(2)); // names and the collector's numeric ids
 
         /*        event->tscs[0]=tsc_entry;
                 event->tscs[1]=tsc_mpi_entry-tsc_entry; //pre tractor overhead

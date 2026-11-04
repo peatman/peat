@@ -25,7 +25,7 @@
 #include <string>
 #include <vector>
 struct Phase {
-    Phase() : func_id(TMPI_FUNC_ID_NONE), ids(2, -1), thread_id(-1) {}
+    Phase() : func_id(TMPI_FUNC_ID_NONE), ids(1, -1), thread_id(-1) {} // ids: unset top-level id
     ~Phase()
     {
         addrs.clear();

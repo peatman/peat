@@ -71,11 +71,13 @@ static bool event_shown(const TV_TraceParts &tp, const TV_Event *e, double pix_i
     }
 }
 #define MAX_SIZE 100
-Elements::Elements(QFileInfo &name, TV_TraceParts *swn) : trace_info_file(name), shown(swn), ptp(NULL), model_id(NULL), user_regions(NULL)
+Elements::Elements(QFileInfo &name, TV_TraceParts *swn) : ptp(NULL), model_id(NULL), user_regions(NULL)
 #ifdef _OPENMP
                                                           ,
                                                           locks(NULL)
 #endif
+                                                          ,
+                                                          trace_info_file(name), shown(swn)
 {
     model_time_stop = 0;
     model_time_start = LLONG_MAX;
@@ -2170,11 +2172,9 @@ PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, 
     user_regions->parse_record_header(hdr, trace_line_MPI, rank);
     const int b = hdr.payload;      // function name on the .mpi line
     const int hb = hdr.hwc_payload; // first tsc on the .hwc line
-    PEAT_MPI_Func_ID func_id = TMPI_FUNC_ID_NONE;
-    extract(func_id, trace_line_MPI.at(b), 10, false);
-    if (func_id == 0) {
-        func_id = global_func_id.idx_by_name(trace_line_MPI.at(b));
-    }
+    // raw traces: names or the collector's numeric ids (translated via the .app name/ID table);
+    // mat's processed .mpi (read when model_id isn't loaded) always carries names
+    const PEAT_MPI_Func_ID func_id = model_id ? model_id->translate_function_id(trace_line_MPI.at(b)) : global_func_id.idx_by_name(trace_line_MPI.at(b));
     PEAT_Time evt_time;
     PEAT_Clock func_start = 0, func_stop = 0;
     if (ptp) {
@@ -2247,6 +2247,7 @@ PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, 
         *event = new TV_Local_Event();
     }
 
+    (*event)->func_id = func_id; // read_event() re-reads only names; numeric ids need the trace's name/ID table
     if (!(*event)->read_event(rank, trace_line_MPI, trace_line_HWC, evt_time, trace_info.num_addrs, hdr)) {
         delete *event;
         *event = NULL;

@@ -32,7 +32,7 @@ struct PEAT_MPI_R4Status {
     PEAT_MPI_Tag tag = 0;
     PEAT_Rank src = 0;
     PEAT_Message_Size transfer_bytes = 0;
-    PEAT_MPI_R4Status() : index(0), src(0), tag(0), transfer_bytes(0) {}
+    PEAT_MPI_R4Status() : index(0), tag(0), src(0), transfer_bytes(0) {}
     /*
     PEAT_MPI_R4Status& operator=(int v) {
         index = v; tag = v; src = v; transfer_bytes = v;

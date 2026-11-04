@@ -43,13 +43,7 @@ PEAT_Bool PET_Local_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_
     node = get_core()->get_ptp()->get_tgt_node(rank);
     ids = hdr.ids;
     thread_id = hdr.thread_id;
-    int funcid;
-    extract(funcid, mpi_string.at(hdr.payload), 10, false);
-    if (funcid == 0) {
-        func_id = global_func_id.idx_by_name(mpi_string.at(hdr.payload));
-    } else {
-        func_id = get_core()->model_id.model_function_tags.at((PEAT_MPI_Func_ID)funcid);
-    }
+    func_id = get_core()->model_id.translate_function_id(mpi_string.at(hdr.payload)); // names and the collector's numeric ids
     parent_func_id = func_id;
     PET_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
     if (func_id == MPI_PCONTROL_ID) {

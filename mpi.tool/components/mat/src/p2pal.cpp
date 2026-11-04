@@ -43,10 +43,11 @@ P2PAL::P2PAL(File_Storage_GZ *f, int s, int pos,
              std::list<PEAT_Event_Delivery> *ad, const std::vector<PEAT_Rank> &wR, const std::vector<PEAT_Rank> &mRs, const MPI_Comm mat_cc, const PEAT_Rank m_r,
 #endif
              int v, const std::string &bl, const char dl) :
+                                                            skip_locals(s), print_on_send(pos), verbose(v)
 #ifdef PEAT_MPI
-                                                            active_deliveries(ad), whole_ranks(wR), my_ranks(mRs), mat_compute_comm(mat_cc), my_rank(m_r),
+                                                            , active_deliveries(ad), mat_compute_comm(mat_cc), whole_ranks(wR), my_ranks(mRs), my_rank(m_r)
 #endif
-                                                            skip_locals(s), print_on_send(pos), verbose(v) //, adaptive_blocking_threshold(INITIAL_ABF)
+                                                            //, adaptive_blocking_threshold(INITIAL_ABF)
 
 {
     q_name_s[qt_send] = "Send";

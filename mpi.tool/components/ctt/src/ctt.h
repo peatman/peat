@@ -33,7 +33,7 @@ struct CTT_Event {
     std::vector<PEAT_UID> addrs;
     struct p2p_properties {
         PEAT_Message_Size size;
-        PEAT_Bool operator!=(const p2p_properties &s)
+        PEAT_Bool operator!=(const p2p_properties &s) const
         {
             return false;
         }
@@ -42,7 +42,7 @@ struct CTT_Event {
     struct coll_properties {
         PEAT_Message_Size aggr_send_size, aggr_recv_size;
         PEAT_MPI_Comm comm_id;
-        PEAT_Bool operator!=(const coll_properties &s)
+        PEAT_Bool operator!=(const coll_properties &s) const
         {
             if (comm_id != s.comm_id)
                 return true;
@@ -52,18 +52,18 @@ struct CTT_Event {
                 return true;
             return false;
         }
-        coll_properties() : comm_id(-1), aggr_send_size(-1), aggr_recv_size(-1) {};
+        coll_properties() : aggr_send_size(-1), aggr_recv_size(-1), comm_id(-1) {};
     } coll;
     struct req_properties {
         std::vector<PEAT_MPI_Request> reqs;
-        PEAT_Bool operator!=(const req_properties &s)
+        PEAT_Bool operator!=(const req_properties &s) const
         {
             if (reqs != s.reqs)
                 return true;
             return false;
         }
     } req;
-    PEAT_Bool operator==(const CTT_Event &s)
+    PEAT_Bool operator==(const CTT_Event &s) const
     {
         if (rank != s.rank)
             return false;
@@ -82,7 +82,7 @@ struct CTT_Event {
         duration += time;
         occurences++;
     }
-    PEAT_Bool operator<(const CTT_Event &s)
+    PEAT_Bool operator<(const CTT_Event &s) const
     {
         if (duration > s.duration)
             return true; // I need reverse order
