@@ -47,6 +47,7 @@ jobs:
         include:
           - { os: ubuntu-22.04, mpi: mpich-4.0,   mpi_pkg: libmpich-dev mpich, target: mpich4, diags: "off on", smoke: true, smoke_tests: "p2p coll comm rma" }
           - { os: ubuntu-24.04, mpi: mpich-4.3.2, mpich_src: "4.3.2", mpich_dev: "ch4:ofi",           target: mpich4, diags: "off on", smoke: true, smoke_tests: "p2p coll comm rma" }
+          - { os: ubuntu-24.04, mpi: mpich-5.0.2, mpich_src: "5.0.2", mpich_dev: "ch4:ofi",           target: mpich5, diags: "off on", smoke: true, smoke_tests: "p2p coll comm rma" }
           # latest MPICH 3 (MPI 3.1; tractor builds it with the mpich4 target, MPI 4 wrappers are compiled out)
           - { os: ubuntu-24.04, mpi: mpich-3.4.3, mpich_src: "3.4.3", mpich_dev: "ch3:sock",           target: mpich4, diags: "off on", smoke: true, smoke_tests: "p2p coll comm rma" }
           - { os: ubuntu-24.04, mpi: mpich-4.2,   mpi_pkg: libmpich-dev mpich, target: mpich4, diags: "off", smoke: false }
