@@ -239,13 +239,13 @@ static void persistent(int it)
         MPI_Startall(2, &reqs[6]);
         MPI_Waitall(8, reqs, stats);
         for (i = 0; i < 4; i++) {
-#if defined(OPEN_MPI) && OMPI_MAJOR_VERSION < 5
-            /* Known Open MPI 4.x bug: a restarted MPI_Bsend_init request delivers wrong data (also without
-               tractor; Open MPI 5 is fine). Report it instead of failing. */
+#if defined(OPEN_MPI) && (OMPI_MAJOR_VERSION < 5 || (OMPI_MAJOR_VERSION == 5 && OMPI_MINOR_VERSION == 0 && OMPI_RELEASE_VERSION < 11))
+            /* Known Open MPI bug (4.x and 5.0.0-5.0.10): a restarted MPI_Bsend_init request delivers wrong data
+               (also without tractor; Open MPI 5.0.11 is fine). Report it instead of failing. */
             if (i == 1) {
                 static int reported = 0;
                 if (rbuf[1][0] != left + it + 1 && !reported++ && g_rank == 0)
-                    fprintf(stderr, "KNOWN OPEN MPI 4.x BUG: restarted persistent MPI_Bsend_init delivers wrong data\n");
+                    fprintf(stderr, "KNOWN OPEN MPI BUG (< 5.0.11): restarted persistent MPI_Bsend_init delivers wrong data\n");
                 continue;
             }
 #endif
