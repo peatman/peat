@@ -61,8 +61,9 @@ jobs:
           - { os: ubuntu-24.04, mpi: openmpi-5.0.11, ompi_src: "5.0.11", target: openmpi5, diags: "off", smoke: true, smoke_tests: "p2p coll comm" }
     continue-on-error: ${{ matrix.experimental == true }}
     env:
-      MPICH_PREFIX: ${{ github.workspace }}/../mpich-${{ matrix.mpich_src }}
-      OMPI_PREFIX: ${{ github.workspace }}/../openmpi-${{ matrix.ompi_src }}
+      # inside the workspace: actions/cache rejects paths with a '..' segment (and then silently saves nothing)
+      MPICH_PREFIX: ${{ github.workspace }}/.ci-mpi/mpich-${{ matrix.mpich_src }}
+      OMPI_PREFIX: ${{ github.workspace }}/.ci-mpi/openmpi-${{ matrix.ompi_src }}
     steps:
       - uses: actions/checkout@v7
       - name: Install deps
