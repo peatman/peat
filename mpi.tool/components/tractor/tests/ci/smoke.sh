@@ -77,9 +77,9 @@ trace_and_analyse() {
         [ -s "tractor_t.mpi.$r.gz" ] || fail "$t/$mode: missing tractor_t.mpi.$r.gz"
     done
 
-    timeout 300 "$bin/mat" -o out > mat.log 2>&1 || { tail -20 mat.log ; fail "$t/$mode: mat" ; }
+    timeout 300 "$bin/mat" -o out > mat.log 2>&1 || { tail -n 20 mat.log ; fail "$t/$mode: mat" ; }
     # ctt: report on stdout, progress on stderr - keep them apart so progress can't split report lines
-    timeout 300 "$bin/ctt" > ctt.log 2> ctt.err || { tail -20 ctt.log ctt.err ; fail "$t/$mode: ctt" ; }
+    timeout 300 "$bin/ctt" > ctt.log 2> ctt.err || { tail -n 20 ctt.log ctt.err ; fail "$t/$mode: ctt" ; }
     grep -q "End processing" ctt.log ctt.err    || fail "$t/$mode: ctt did not finish"
     if grep -h "not in the trace's function name/ID table" mat.log ctt.log ctt.err ; then
         fail "$t/$mode: function ids missing from the .app name/ID table"
