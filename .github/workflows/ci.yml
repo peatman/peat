@@ -53,22 +53,24 @@ jobs:
   # "mpiexec -n 4" starts 4 singletons: that MPICH is only build-tested (it is the MPI 4.1 non-const
   # prototype case). Smoke tests run on 22.04's MPICH 4.0 (plain PMI) and on MPICH built from source.
   tractor:
-    name: tractor (${{ matrix.mpi }}, diag=${{ matrix.diag }})
+    name: tractor (${{ matrix.mpi }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-22.04, mpi: mpich-4.0,   mpi_pkg: libmpich-dev mpich, target: mpich4, diag: "OFF", smoke: true, smoke_tests: "p2p coll comm rma" }
-          - { os: ubuntu-22.04, mpi: mpich-4.0,   mpi_pkg: libmpich-dev mpich, target: mpich4, diag: "ON",  smoke: true, smoke_tests: "p2p coll comm rma" }
-          - { os: ubuntu-24.04, mpi: mpich-4.3.2, mpich_src: "4.3.2",           target: mpich4, diag: "OFF", smoke: true, smoke_tests: "p2p coll comm rma" }
-          - { os: ubuntu-24.04, mpi: mpich-4.3.2, mpich_src: "4.3.2",           target: mpich4, diag: "ON",  smoke: true, smoke_tests: "p2p coll comm rma" }
-          - { os: ubuntu-24.04, mpi: mpich-4.2,   mpi_pkg: libmpich-dev mpich, target: mpich4, diag: "OFF", smoke: false }
+          - { os: ubuntu-22.04, mpi: mpich-4.0,   mpi_pkg: libmpich-dev mpich, target: mpich4, diags: "OFF ON", smoke: true, smoke_tests: "p2p coll comm rma" }
+          - { os: ubuntu-24.04, mpi: mpich-4.3.2, mpich_src: "4.3.2",           target: mpich4, diags: "OFF ON", smoke: true, smoke_tests: "p2p coll comm rma" }
+          - { os: ubuntu-24.04, mpi: mpich-4.2,   mpi_pkg: libmpich-dev mpich, target: mpich4, diags: "OFF", smoke: false }
           # Ubuntu 24.04 ships Open MPI 4.1; rma hangs under Open MPI even without tractor, so it is left out.
-          - { os: ubuntu-24.04, mpi: openmpi-4.1, mpi_pkg: libopenmpi-dev openmpi-bin, target: openmpi, diag: "OFF", smoke: true, smoke_tests: "p2p coll comm", experimental: true }
+          - { os: ubuntu-24.04, mpi: openmpi-4.1, mpi_pkg: libopenmpi-dev openmpi-bin, target: openmpi, diags: "OFF", smoke: true, smoke_tests: "p2p coll comm", experimental: true }
+          # Open MPI 5 built from source (as tractor's Open MPI target expects); rma hangs under Open MPI 5
+          # even without tractor, so it is left out.
+          - { os: ubuntu-24.04, mpi: openmpi-5.0.10, ompi_src: "5.0.10", target: openmpi, diags: "OFF", smoke: true, smoke_tests: "p2p coll comm" }
     continue-on-error: ${{ matrix.experimental == true }}
     env:
       MPICH_PREFIX: ${{ github.workspace }}/../mpich-${{ matrix.mpich_src }}
+      OMPI_PREFIX: ${{ github.workspace }}/../openmpi-${{ matrix.ompi_src }}
     steps:
       - uses: actions/checkout@v4
       - name: Install deps
@@ -103,6 +105,31 @@ jobs:
         run: |
           echo "$MPICH_PREFIX/bin" >> "$GITHUB_PATH"
           echo "LD_LIBRARY_PATH=$MPICH_PREFIX/lib" >> "$GITHUB_ENV"
+      - name: Cache Open MPI ${{ matrix.ompi_src }}
+        if: matrix.ompi_src
+        id: ompi-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.OMPI_PREFIX }}
+          key: openmpi-${{ matrix.ompi_src }}-internal-gnu-${{ matrix.os }}-v1
+      - name: Build Open MPI ${{ matrix.ompi_src }} from source
+        if: matrix.ompi_src && steps.ompi-cache.outputs.cache-hit != 'true'
+        # bundled hwloc/libevent/PMIx/PRRTE so nothing depends on the distro's Open MPI 4.1 packages; no Fortran
+        run: |
+          v=${{ matrix.ompi_src }}
+          cd "$RUNNER_TEMP"
+          curl -sSfL --retry 3 -o openmpi.tar.bz2 "https://download.open-mpi.org/release/open-mpi/v${v%.*}/openmpi-$v.tar.bz2"
+          tar -xjf openmpi.tar.bz2 && cd "openmpi-$v"
+          ./configure --prefix="$OMPI_PREFIX" --enable-silent-rules --disable-mpi-fortran \
+            --with-hwloc=internal --with-libevent=internal --with-pmix=internal --with-prrte=internal \
+            CC=gcc CXX=g++ > configure.log 2>&1 || { tail -n 50 configure.log; exit 1; }
+          make -j"$(nproc)" > make.log 2>&1 || { tail -n 50 make.log; exit 1; }
+          make install > install.log 2>&1
+      - name: Use Open MPI ${{ matrix.ompi_src }}
+        if: matrix.ompi_src
+        run: |
+          echo "$OMPI_PREFIX/bin" >> "$GITHUB_PATH"
+          echo "LD_LIBRARY_PATH=$OMPI_PREFIX/lib" >> "$GITHUB_ENV"
       - name: Show MPI
         run: |
           which mpicc mpicxx mpiexec
@@ -117,14 +144,17 @@ jobs:
           echo "using $hdr"
           mkdir -p "$RUNNER_TEMP/ompt" && cp "$hdr" "$RUNNER_TEMP/ompt/"
           echo "CPATH=$RUNNER_TEMP/ompt" >> "$GITHUB_ENV"
-      - name: Build tractor
+      - name: Build tractor (DIAG = ${{ matrix.diags }})
+        # every DIAG variant in this one job: they share the deps install and the MPI build/cache
         run: |
-          b=build/tractor
-          cmake -S mpi.tool/components/tractor/src -B $b -G Ninja \
-            -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
-            -DTRACTOR_TARGET=${{ matrix.target }} -DDIAG=${{ matrix.diag }}
-          cmake --build $b
-          cmake --install $b
+          for d in ${{ matrix.diags }}; do
+            b=build/tractor-$d
+            cmake -S mpi.tool/components/tractor/src -B $b -G Ninja \
+              -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
+              -DTRACTOR_TARGET=${{ matrix.target }} -DDIAG=$d
+            cmake --build $b
+            cmake --install $b
+          done
           ldd mpi.tool/lib/gnu/libtractor*.so
       - name: Build mat + ctt (for smoke test)
         if: matrix.smoke
@@ -139,20 +169,27 @@ jobs:
         env:
           MPICC: mpicc
           FI_PROVIDER: tcp # libfabric (MPICH ch4:ofi): the provider that works on a plain VM
-          SMOKE_WORKDIR: ${{ runner.temp }}/smoke
         run: |
-          lib=$(ls mpi.tool/lib/gnu/libtractor*.${{ matrix.target }}.so | head -1)
-          mpi.tool/components/tractor/tests/ci/smoke.sh "$lib" 4 3 "${{ matrix.smoke_tests }}"
+          status=0
+          for d in ${{ matrix.diags }}; do
+            case $d in [Oo][Nn]) lib=mpi.tool/lib/gnu/libtractor_dbg.${{ matrix.target }}.so ;;
+                       *)        lib=mpi.tool/lib/gnu/libtractor.${{ matrix.target }}.so ;; esac
+            echo "::group::smoke DIAG=$d ($lib)"
+            SMOKE_WORKDIR=$RUNNER_TEMP/smoke-diag-$d \
+              mpi.tool/components/tractor/tests/ci/smoke.sh "$lib" 4 3 "${{ matrix.smoke_tests }}" || { status=1; echo "::error::smoke DIAG=$d failed"; }
+            echo "::endgroup::"
+          done
+          exit $status
       - name: Upload smoke logs and traces
         if: always() && matrix.smoke
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-${{ matrix.mpi }}-diag-${{ matrix.diag }}
-          path: ${{ runner.temp }}/smoke
+          name: smoke-${{ matrix.mpi }}
+          path: ${{ runner.temp }}/smoke-diag-*
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
-          name: tractor-${{ matrix.mpi }}-diag-${{ matrix.diag }}
+          name: tractor-${{ matrix.mpi }}
           path: |
             mpi.tool/lib/gnu/
             mpi.tool/bin/gnu/
