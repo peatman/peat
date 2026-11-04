@@ -50,7 +50,7 @@ PEAT_Bool Mat::parse_single_event(const int rank)
     if (line_mpi.size() < 2) {
         return false;
     }
-    Tractor_Event t_event(rank, line_mpi, line_hwc, model_id.num_hwcs, model_id.num_addrs, user_region_store, comm_store);
+    Tractor_Event t_event(rank, line_mpi, line_hwc, model_id.num_hwcs, model_id.num_addrs, user_region_store, comm_store, model_id);
     PEAT_MPI_Func_ID mpifunc = t_event.func_id;
     const bool nested_record = t_event.level > 0;
     PEAT_Clock mpi_time = 0, uc_time = 0, t_time = 0, occ_inc = 0;
@@ -368,7 +368,7 @@ PEAT_Num Mat::process_outgoing_messages()
     // return p2p_func_store->check_completions() + coll_func_store->check_completions() + request_func_store->check_completions();
 }
 #endif
-Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : globals(glob), model_id(model_id_storage), events_processed(0), ptp(NULL), input_MPI(NULL), input_HWC(NULL), all_finished(0), total_completed_ranks(0)
+Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : all_finished(0), total_completed_ranks(0), ptp(NULL), input_MPI(NULL), input_HWC(NULL), events_processed(0), globals(glob), model_id(model_id_storage)
 {
     // output_model = 0;
     // output_model_message = 0;

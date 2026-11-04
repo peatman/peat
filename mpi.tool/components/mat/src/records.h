@@ -26,7 +26,7 @@
 #include <vector>
 struct Tractor_Event;
 struct Phase {
-    Phase() : func_id(TMPI_FUNC_ID_NONE), thread_id(-1) {}
+    Phase() : func_id(TMPI_FUNC_ID_NONE), ids(1, -1), thread_id(-1) {} // ids: unset top-level id
     ~Phase()
     {
         addrs.clear();
@@ -83,6 +83,7 @@ struct Phase {
 struct MAT_Record {
     MAT_Record() : rank(0), pc_level(0) {}
     MAT_Record(const MAT_Record& s) : rank(s.rank), pc_level(s.pc_level) {}
+    virtual ~MAT_Record() {}
     PEAT_Rank rank;
     int pc_level;
     virtual int record_type() = 0;
@@ -150,7 +151,7 @@ struct MAT_Collectives_Record : public MAT_Record {
 };
 
 struct MAT_Request_Record {
-    MAT_Request_Record() : request(0), peer(-1), ids(2, -1), pc_level(0) {}
+    MAT_Request_Record() : request(0), peer(-1), ids(1, -1), pc_level(0) {} // ids: unset top-level id
     PEAT_MPI_Request request;
     PEAT_Rank peer;
     PEAT_Event_IDs ids;

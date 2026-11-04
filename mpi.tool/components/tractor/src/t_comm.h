@@ -165,9 +165,11 @@ struct t_local_comms {
         PMPI_Group_free(&comm_world_group);
         __DEBUG_EPILOG_COMM_LAYER__
     }
-    void comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, int is_internal);
-    void intra_comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, int is_internal);
-    void inter_comm_begin(const MPI_Comm newcomm, const PEAT_Clock begin, int is_internal);
+    /* newcomm: handle the communicator is stored under; group_comm: communicator its size/groups/kind are read from -
+       newcomm itself, except for MPI_Comm_idup*, whose newcomm may not be used before its request completes (it copies its parent) */
+    void comm_begin(const MPI_Comm newcomm, const MPI_Comm group_comm, const PEAT_Clock begin, int is_internal);
+    void intra_comm_begin(const MPI_Comm newcomm, const MPI_Comm group_comm, const PEAT_Clock begin, int is_internal);
+    void inter_comm_begin(const MPI_Comm newcomm, const MPI_Comm group_comm, const PEAT_Clock begin, int is_internal);
     void comm_end(const MPI_Comm comm, const PEAT_Clock end, int is_internal);
     bool get_local_comm_id(const MPI_Comm comm, const PEAT_Clock cur_time, int is_internal, std::list<t_comm>::iterator &result);
     bool get_local_comm_id_in_store(const MPI_Comm comm, const PEAT_Clock cur_time, int is_internal, std::list<t_comm>::iterator &result);

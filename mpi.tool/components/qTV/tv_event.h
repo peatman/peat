@@ -214,7 +214,7 @@ struct TV_Local_Event : public TV_Event {
   public:
     virtual int get_event_group() const { return 0; }
     virtual TV_Event_Type get_event_type() const { return TV_EVENT_TYPE_LOCAL; }
-    TV_Local_Event() : p_control_id(0), TV_Event() {}
+    TV_Local_Event() : TV_Event(), p_control_id(0) {}
     virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr);
 };
 
@@ -261,12 +261,12 @@ struct TV_ToR_Event : public TV_Local_Event {
         c = comm;
         return true;
     }
-    TV_ToR_Event() : TV_Local_Event(), comm(0), t_bytes(0), peer_rank(-1), tag(-1), request(0), message(0),
+    TV_ToR_Event() : TV_Local_Event(), t_bytes(0), peer_rank(-1), tag(-1), comm(0), request(0), message(0),
                      aux_event(NULL), aux_event_2(NULL)
     {
     }
 
-    TV_ToR_Event(const TV_ToR_Event &s) : TV_Local_Event(), comm(s.comm), t_bytes(s.t_bytes), peer_rank(s.peer_rank), tag(s.tag),
+    TV_ToR_Event(const TV_ToR_Event &s) : TV_Local_Event(), t_bytes(s.t_bytes), peer_rank(s.peer_rank), tag(s.tag), comm(s.comm),
                                           request(s.request), message(s.message), aux_event(s.aux_event), aux_event_2(s.aux_event_2)
     {
         func_id = s.func_id;
@@ -299,13 +299,13 @@ struct TV_TaR_Event : public TV_ToR_Event {
     PEAT_MPI_Func_ID peer_func_id_2, peer_parent_func_id_2;
 
   public:
-    TV_TaR_Event() : TV_ToR_Event(), process_second_line(false),
-                     peer_primary_id_2(-1), peer_func_id_2(TMPI_FUNC_ID_NONE), peer_parent_func_id_2(TMPI_FUNC_ID_NONE),
-                     t_bytes_2(0), peer_rank_2(-1), tag_2(-1)
+    TV_TaR_Event() : TV_ToR_Event(), t_bytes_2(0),
+                     tag_2(-1), process_second_line(false), peer_rank_2(-1),
+                     peer_primary_id_2(-1), peer_func_id_2(TMPI_FUNC_ID_NONE), peer_parent_func_id_2(TMPI_FUNC_ID_NONE)
     {
     }
-    TV_TaR_Event(const TV_TaR_Event &s) : TV_ToR_Event(), peer_primary_id_2(s.peer_primary_id_2),
-                                          peer_func_id_2(s.peer_func_id_2), peer_parent_func_id_2(s.peer_parent_func_id_2), tag_2(s.tag_2), peer_rank_2(s.peer_rank_2), process_second_line(s.process_second_line), t_bytes_2(s.t_bytes_2)
+    TV_TaR_Event(const TV_TaR_Event &s) : TV_ToR_Event(), t_bytes_2(s.t_bytes_2),
+                                          tag_2(s.tag_2), process_second_line(s.process_second_line), peer_rank_2(s.peer_rank_2), peer_primary_id_2(s.peer_primary_id_2), peer_func_id_2(s.peer_func_id_2), peer_parent_func_id_2(s.peer_parent_func_id_2)
     {
     }
     virtual TV_Event_Type get_event_type() const { return TV_EVENT_TYPE_TAR; }
@@ -330,7 +330,7 @@ struct TV_Coll_Event : public TV_Local_Event {
         c = comm;
         return true;
     }
-    TV_Coll_Event() : TV_Local_Event(), comm(0), int_event_index(0) {}
+    TV_Coll_Event() : TV_Local_Event(), int_event_index(0), comm(0) {}
     virtual ~TV_Coll_Event();
 };
 struct TV_Collective_Bytes {
@@ -356,7 +356,7 @@ struct TV_Collective_Event : public TV_Coll_Event {
     std::map<PEAT_Rank, PEAT_Rank> ranks;
 
   public:
-    TV_Collective_Event() : TV_Coll_Event(), root(-1), request(0), message(0), completion_event(NULL), msg_bytes(NULL) { p_control_id = 0; /* for MPI_INIT/FINALIZE */ }
+    TV_Collective_Event() : TV_Coll_Event(), root(-1), request(0), message(0), msg_bytes(NULL), completion_event(NULL) { p_control_id = 0; /* for MPI_INIT/FINALIZE */ }
     TV_Collective_Event(const TV_Collective_Event &s) : TV_Coll_Event(), root(s.root),
                                                         request(s.request), message(s.message), completion_event(s.completion_event)
     {
@@ -427,7 +427,7 @@ struct TV_Comm_Event : public TV_Coll_Event {
     PEAT_MPI_Request request;
 
   public:
-    TV_Comm_Event() : TV_Coll_Event(), request(0), newcomm(0), remotecomm(0) {}
+    TV_Comm_Event() : TV_Coll_Event(), newcomm(0), remotecomm(0), request(0) {}
     virtual TV_Event_Type get_event_type() const { return TV_EVENT_TYPE_COMM; }
     virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr);
 };
@@ -506,7 +506,7 @@ struct TV_Message {
     PEAT_Rank rank;
     PEAT_UID index;
     TV_Pen_Message_Type msg_type;
-    TV_Message() : from(NULL), to(NULL), msg_type(TV_PEN_MESSAGE_TYPE_NONE), rank(-1), index(-1) {};
+    TV_Message() : from(NULL), to(NULL), rank(-1), index(-1), msg_type(TV_PEN_MESSAGE_TYPE_NONE) {};
 };
 
 #endif

@@ -15,19 +15,20 @@ ranks_arg=$3
 
 toolchain=${TOOLCHAIN:-intel}
 case $toolchain in
-    intel ) compiler=oneAPI:2026.1.0 ; mpi_default=mpich:5.0.2x-mt-ofi-eng ; libsubdir=intel ;;
-    gcc )   compiler=gcc ; mpi_default=mpich:5.0.2g-mt-ofi-eng ; libsubdir=gnu ;;
+    intel ) compiler=oneAPI:2026.1.0 ; mpi_default=mpich:4.3.2x-mt-ofi ; libsubdir=intel ;;
+    gcc )   compiler=gcc ; mpi_default=mpich:5.0.2g-mt-ofi ; libsubdir=gnu ;;
     * )     echo "unknown TOOLCHAIN=$toolchain (intel or gcc)" ; exit 2 ;;
 esac
 export compiler
 export mpi_type=${mpi_type:-$mpi_default}
-export libfabric_eng='-eng'
+#export libfabric_eng='-eng'
 . env.sh
 set -x
 #TRACTOR=0
 libdir=${TRACTOR_LIBDIR:-$(realpath ../../../../lib/$libsubdir)}
 if [ "${TRACTOR:-1}" != "0" ] ; then
-LD_PRELOAD=$libdir/libtractor.mpich5.eng.so
+#LD_PRELOAD=$libdir/libtractor.mpich5.eng.so
+LD_PRELOAD=$libdir/libtractor_dbg.mpich4.so
 fi
 
 export PEAT_TRACTOR_PRINT_FUNC_NAMES=1

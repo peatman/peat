@@ -35,6 +35,9 @@ struct Model_ID {
     PEAT_Record_Type find_estimator_main_id(const char *modelNameId) const;
     PEAT_MPI_Func_ID find_estimator_function_id(const char *modelFunctionId) const;
     PEAT_Record_Type translate_record_type(PEAT_Record_Type tag) const;
+    // Function field of a .mpi record -> PEAT function ID. A name is looked up in global_func_id; a number is the
+    // collector's own ID and is always translated through the trace's PEAT_RT_MPI_Function_Name_ID table (.app file).
+    PEAT_MPI_Func_ID translate_function_id(const char *field) const;
 
     PEAT_Bool is_smp(const PEAT_Rank rank1, const PEAT_Rank rank2) const;
 

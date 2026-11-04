@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Serial analysis tools: no MPI needed. (mat TARGET=openmp is not functional yet, so it is not built.)
+  tools:
+    name: ctt + mat
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends g++ make zlib1g-dev
+      - name: Build ctt
+        working-directory: mpi.tool/components/ctt/src
+        run: make -j"$(nproc)" && make install
+      - name: Build mat
+        working-directory: mpi.tool/components/mat/src
+        run: make -j"$(nproc)" TARGET=serial && make install TARGET=serial
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tools
+          path: mpi.tool/bin/
+
+  # Trace collector, built against distro MPIs. Calls make directly instead of
+  # Build.sh/env.sh, because those expect MPIs installed under $HOME/<mpi>/<ver>.
+  tractor:
+    name: tractor (${{ matrix.target }}, diag=${{ matrix.diag }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, mpi_pkg: libmpich-dev mpich,         target: mpich4,   diag: off, smoke_tests: "p2p coll comm rma" }
+          - { os: ubuntu-24.04, mpi_pkg: libmpich-dev mpich,         target: mpich4,   diag: on,  smoke_tests: "p2p coll comm rma" }
+          # Ubuntu 24.04 ships Open MPI 4.1; tractor's openmpi5 target expects 5.x.
+          # Switch to an image that has Open MPI 5 (or build it and cache it) when one is available.
+          # rma_test hangs under Open MPI 5 even without tractor, so it is left out here.
+          - { os: ubuntu-24.04, mpi_pkg: libopenmpi-dev openmpi-bin, target: openmpi5, diag: off, smoke_tests: "p2p coll comm", experimental: true }
+    continue-on-error: ${{ matrix.experimental == true }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ make perl zlib1g-dev libhwloc-dev libunwind-dev ${{ matrix.mpi_pkg }}
+      - name: Build tractor
+        working-directory: mpi.tool/components/tractor/src
+        env:
+          MPICC: mpicc
+          MPICXX: mpicxx
+          MPIFC: mpif90
+          HWLOC_PATH: /usr
+        run: |
+          make -j"$(nproc)" all     COMPILER=gnu TARGET=${{ matrix.target }} DIAG=${{ matrix.diag }}
+          make              install COMPILER=gnu TARGET=${{ matrix.target }} DIAG=${{ matrix.diag }}
+          ldd ../../../lib/gnu/libtractor*.so
+      - name: Build mat + ctt (for smoke test)
+        run: |
+          make -C mpi.tool/components/ctt/src -j"$(nproc)" && make -C mpi.tool/components/ctt/src install
+          make -C mpi.tool/components/mat/src -j"$(nproc)" TARGET=serial && make -C mpi.tool/components/mat/src install TARGET=serial
+      - name: Smoke test (tests under tractor -> mat -> ctt)
+        env:
+          MPICC: mpicc
+          SMOKE_WORKDIR: ${{ runner.temp }}/smoke
+        run: |
+          lib=$(ls mpi.tool/lib/gnu/libtractor*.${{ matrix.target }}.so | head -1)
+          mpi.tool/components/tractor/tests/ci/smoke.sh "$lib" 4 3 "${{ matrix.smoke_tests }}"
+      - name: Upload smoke logs and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-${{ matrix.target }}-diag-${{ matrix.diag }}
+          path: ${{ runner.temp }}/smoke
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tractor-${{ matrix.target }}-diag-${{ matrix.diag }}
+          path: |
+            mpi.tool/lib/gnu/
+            mpi.tool/bin/gnu/
+
+  # Qt trace viewer.
+  qtv:
+    name: qTV (Qt6)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ cmake ninja-build zlib1g-dev \
+            qt6-base-dev qt6-svg-dev libgl-dev
+      - name: Configure and build
+        working-directory: mpi.tool/components/qTV
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/../../.."
+          cmake --build build
+          cmake --install build

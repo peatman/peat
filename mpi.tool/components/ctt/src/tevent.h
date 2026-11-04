@@ -25,6 +25,8 @@
 #include <map>
 #include <string>
 #include <vector>
+
+struct Model_ID;
 #ifndef _DEBUG
 #define USE_LOCAL_PARSE
 #endif
@@ -84,7 +86,7 @@ struct Tractor_Event : public Phase {
     std::vector<PEAT_MPI_Memory_Buffer> buffers;
 
     Tractor_Event() : func_class(PEAT_PROPERTY_NONE), rank(-1), num_children(0), level(0) {}
-    Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, const String_Split &line_hwc, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file, const Communicators *com_store);
+    Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, const String_Split &line_hwc, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file, const Communicators *com_store, const Model_ID &model_id);
     void get_extra_txrx(const String_Split &line, const Communicators *com_store);
     ~Tractor_Event()
     {

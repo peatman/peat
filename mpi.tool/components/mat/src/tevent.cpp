@@ -18,13 +18,14 @@
 
 #include "tevent.h"
 #include "communicators.h"
+#include "model_id.h"
 #include "utils.h"
 
 #include <assert.h>
 #include <sstream>
 #include <stdexcept>
 
-Phase::Phase(Tractor_Event& t) : func_id(t.func_id), thread_id(t.thread_id), tsc_time(t.tsc_time), tsc_u_time(t.tsc_u_time), addrs(t.addrs), ids(t.ids) {}
+Phase::Phase(Tractor_Event& t) : func_id(t.func_id), ids(t.ids), thread_id(t.thread_id), addrs(t.addrs), tsc_u_time(t.tsc_u_time), tsc_time(t.tsc_time) {}
 
 void Tractor_Event::get_extra_txrx(const String_Split &line, const Communicators *comm_store)
 {
@@ -41,7 +42,7 @@ void Tractor_Event::get_extra_txrx(const String_Split &line, const Communicators
     extract(P2P.bytes, line.at(block_auxiliary_start+3), 16);
     */
 }
-Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, const String_Split &line_hwc, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file, const Communicators *comm_store) : rank(r), num_children(0), level(0)
+Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, const String_Split &line_hwc, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file, const Communicators *comm_store, const Model_ID &model_id) : rank(r), num_children(0), level(0)
 {
     // no need to check line.size() due line.at() throw an exception
     //  First read the record header (ids, thread, nesting)
@@ -53,10 +54,7 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
     num_children = hdr.num_children;
     const int b = hdr.payload;     // first payload field on the .mpi line
     const int h = hdr.hwc_payload; // first tsc on the .hwc line
-    extract(func_id, line_mpi.at(b), 10, false);
-    if (func_id == TMPI_FUNC_ID_NONE) {
-        func_id = global_func_id.idx_by_name(line_mpi.at(b));
-    }
+    func_id = model_id.translate_function_id(line_mpi.at(b)); // names and the collector's numeric ids
 
     if (!line_hwc.empty()) { // line_hwc is empty when hwc files aren't read (matching_only on)
         assert(hdr.same_ids(line_hwc));

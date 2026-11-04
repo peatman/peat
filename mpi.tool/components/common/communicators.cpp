@@ -26,7 +26,7 @@
 #include "communicators.h"
 #include "utils.h"
 
-Communicators::Communicators(const Global_Parameters &glob) : globals(glob), m_id(NULL)
+Communicators::Communicators(const Global_Parameters &glob) : m_id(NULL), globals(glob)
 {
     CMPI_SUCCESS = -1;
     CMPI_UNDEFINED = -1;

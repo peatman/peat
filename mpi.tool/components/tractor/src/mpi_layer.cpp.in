@@ -593,6 +593,7 @@ static int MPI_Comm_idup_internal(MPI_Comm comm, MPI_Comm *newcomm, MPI_Request 
     event->comms.request = *request; \
     event->comms.comm = comm;        \
     event->comms.newcomm = *newcomm;
+#define __comm_membership_from__ comm /* newcomm may not be used until the request completes; it copies comm */
 #include "mpi_layer_comm_begin.epilog.h"
 #undef __write_comms__
     __DEBUG_EPILOG_MPI_LAYER__
@@ -892,6 +893,7 @@ static int MPI_Comm_idup_with_info_internal(MPI_Comm comm, MPI_Info info, MPI_Co
     event->comms.request = *request; \
     event->comms.comm = comm; \
     event->comms.newcomm = *newcomm;
+#define __comm_membership_from__ comm /* newcomm may not be used until the request completes; it copies comm */
 #include "mpi_layer_comm_begin.epilog.h"
 #undef __write_comms__
     __DEBUG_EPILOG_MPI_LAYER__
