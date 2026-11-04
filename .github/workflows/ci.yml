@@ -42,6 +42,11 @@ jobs:
         run: |
           cmake -S mpi.tool/components/urpu/src -B build/urpu -G Ninja -DCMAKE_BUILD_TYPE=Release -DURPU_TARGET=serial
           cmake --build build/urpu && cmake --install build/urpu
+      - name: Build ctt + mat + pet + urpu (GNU make)
+        # the Makefiles too, not only CMake (in-tree objects; the CMake builds above are out of tree)
+        run: |
+          for c in ctt pet; do make -C mpi.tool/components/$c/src -j"$(nproc)"; done
+          for c in mat urpu; do make -C mpi.tool/components/$c/src -j"$(nproc)" TARGET=serial; done
       - uses: actions/upload-artifact@v7
         with:
           name: tools
@@ -65,12 +70,12 @@ jobs:
           - { os: ubuntu-24.04, mpi: mpich-3.4.3, mpich_src: "3.4.3", mpich_dev: "ch3:sock", target: mpich4, diags: "OFF ON", smoke: true, smoke_tests: "p2p coll comm rma" }
           - { os: ubuntu-24.04, mpi: mpich-4.2,   mpi_pkg: libmpich-dev mpich, target: mpich4, diags: "OFF", smoke: false }
           # Ubuntu 24.04 ships Open MPI 4.1; rma hangs under Open MPI even without tractor, so it is left out.
-          - { os: ubuntu-24.04, mpi: openmpi-4.1, mpi_pkg: libopenmpi-dev openmpi-bin, target: openmpi, diags: "OFF", smoke: true, smoke_tests: "p2p coll comm", experimental: true }
+          - { os: ubuntu-24.04, mpi: openmpi-4.1, mpi_pkg: libopenmpi-dev openmpi-bin, target: openmpi, make_target: openmpi5, diags: "OFF", smoke: true, smoke_tests: "p2p coll comm", experimental: true }
           # Open MPI 5 built from source (as tractor's Open MPI target expects); rma hangs under Open MPI 5
           # even without tractor, so it is left out.
-          - { os: ubuntu-24.04, mpi: openmpi-5.0.10, ompi_src: "5.0.10", target: openmpi, diags: "OFF", smoke: true, smoke_tests: "p2p coll comm" }
+          - { os: ubuntu-24.04, mpi: openmpi-5.0.10, ompi_src: "5.0.10", target: openmpi, make_target: openmpi5, diags: "OFF", smoke: true, smoke_tests: "p2p coll comm" }
           # 5.0.11 fixes the restarted MPI_Bsend_init bug, so p2p_test checks it strictly there
-          - { os: ubuntu-24.04, mpi: openmpi-5.0.11, ompi_src: "5.0.11", target: openmpi, diags: "OFF", smoke: true, smoke_tests: "p2p coll comm" }
+          - { os: ubuntu-24.04, mpi: openmpi-5.0.11, ompi_src: "5.0.11", target: openmpi, make_target: openmpi5, diags: "OFF", smoke: true, smoke_tests: "p2p coll comm" }
     continue-on-error: ${{ matrix.experimental == true }}
     env:
       MPICH_PREFIX: ${{ github.workspace }}/../mpich-${{ matrix.mpich_src }}
@@ -160,6 +165,25 @@ jobs:
             cmake --install $b
           done
           ldd mpi.tool/lib/gnu/libtractor*.so
+      - name: Build tractor with GNU make (DIAG = ${{ matrix.diags }})
+        # the Makefile builds in the source tree and installs to the same mpi.tool/lib/gnu names as CMake,
+        # so its libraries are only copied aside (make clean between the variants would delete them)
+        working-directory: mpi.tool/components/tractor/src
+        env:
+          MPICC: mpicc
+          MPICXX: mpicxx
+          MPIFC: mpif90
+          HWLOC_PATH: /usr
+        run: |
+          t=${{ matrix.make_target || matrix.target }}
+          mkdir -p "$RUNNER_TEMP/make-lib"
+          for d in ${{ matrix.diags }}; do
+            d=${d,,}
+            make clean COMPILER=gnu TARGET=$t DIAG=$d > /dev/null
+            make -j"$(nproc)" all COMPILER=gnu TARGET=$t DIAG=$d
+            cp -v libtractor*.$t.so.[0-9]*.[0-9]* "$RUNNER_TEMP/make-lib/"
+          done
+          ldd "$RUNNER_TEMP"/make-lib/libtractor*.so.*
       - name: Build mat + ctt (for smoke test)
         if: matrix.smoke
         run: |
@@ -175,13 +199,16 @@ jobs:
           FI_PROVIDER: tcp # libfabric (MPICH ch4:ofi): the provider that works on a plain VM
         run: |
           status=0
-          for d in ${{ matrix.diags }}; do
-            case $d in [Oo][Nn]) lib=mpi.tool/lib/gnu/libtractor_dbg.${{ matrix.target }}.so ;;
-                       *)        lib=mpi.tool/lib/gnu/libtractor.${{ matrix.target }}.so ;; esac
-            echo "::group::smoke DIAG=$d ($lib)"
-            SMOKE_WORKDIR=$RUNNER_TEMP/smoke-diag-$d \
-              mpi.tool/components/tractor/tests/ci/smoke.sh "$lib" 4 3 "${{ matrix.smoke_tests }}" || { status=1; echo "::error::smoke DIAG=$d failed"; }
-            echo "::endgroup::"
+          for b in cmake make; do
+            for d in ${{ matrix.diags }}; do
+              case $d in [Oo][Nn]) dbg=_dbg ;; *) dbg= ;; esac
+              if [ $b = cmake ]; then lib=mpi.tool/lib/gnu/libtractor$dbg.${{ matrix.target }}.so
+              else lib=$(ls "$RUNNER_TEMP"/make-lib/libtractor$dbg.${{ matrix.make_target || matrix.target }}.so.* | head -1); fi
+              echo "::group::smoke $b DIAG=$d ($lib)"
+              SMOKE_WORKDIR=$RUNNER_TEMP/smoke-$b-diag-$d \
+                mpi.tool/components/tractor/tests/ci/smoke.sh "$lib" 4 3 "${{ matrix.smoke_tests }}" || { status=1; echo "::error::smoke $b DIAG=$d failed"; }
+              echo "::endgroup::"
+            done
           done
           exit $status
       - name: Upload smoke logs and traces
@@ -189,7 +216,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: smoke-${{ matrix.mpi }}
-          path: ${{ runner.temp }}/smoke-diag-*
+          path: ${{ runner.temp }}/smoke-*-diag-*
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v7
         with:
