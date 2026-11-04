@@ -140,6 +140,30 @@ cpp_input=-D_OPENMPI_=5
 MAXMPI=3
 endif
 
+# MPI 4.x prototype probes: some MPI 4.x implementations declare a few functions without the standard's
+# const (MPICH 4.0: MPI_Psend_init, MPI_Pready_list; MPICH 4.2/MVAPICH 4.1/Intel MPI 2021: MPI_Status_get_*,
+# MPI_Request_get_status_*) or lack them (MPICH 4.0: MPI_Status_set_elements_c); mpi_func.inc picks the
+# matching entries. Compile-only: C++ rejects the pointer assignment when the prototype differs or is missing.
+# Placed after the TARGET blocks, which assign cpp_input with '='.
+HASH:=\#
+COMMA:=,
+mpi_proto_probe=$(shell printf '$(HASH)include <mpi.h>\n$(1);\nint main(){return 0;}\n' | $(MPICXX) -x c++ -c - -o /dev/null >/dev/null 2>&1 && echo yes || echo no)
+ifeq "$(call mpi_proto_probe,int (*p)(int$(COMMA) MPI_Request*$(COMMA) int*$(COMMA) MPI_Status*) = MPI_Request_get_status_all)" "yes"
+cpp_input+=-D_MPI41_REQUEST_NONCONST_
+endif
+ifeq "$(call mpi_proto_probe,int (*p)(MPI_Status*$(COMMA) int*) = MPI_Status_get_tag)" "yes"
+cpp_input+=-D_MPI41_STATUS_NONCONST_
+endif
+ifeq "$(call mpi_proto_probe,int (*p)(void*$(COMMA) int$(COMMA) MPI_Count$(COMMA) MPI_Datatype$(COMMA) int$(COMMA) int$(COMMA) MPI_Comm$(COMMA) MPI_Info$(COMMA) MPI_Request*) = MPI_Psend_init)" "yes"
+cpp_input+=-D_MPI4_PSEND_INIT_NONCONST_
+endif
+ifeq "$(call mpi_proto_probe,int (*p)(int$(COMMA) int*$(COMMA) MPI_Request) = MPI_Pready_list)" "yes"
+cpp_input+=-D_MPI4_PREADY_LIST_NONCONST_
+endif
+ifeq "$(call mpi_proto_probe,int (*p)(MPI_Status*$(COMMA) MPI_Datatype$(COMMA) MPI_Count) = MPI_Status_set_elements_c)" "no"
+cpp_input+=-D_MPI4_NO_STATUS_SET_ELEMENTS_C_
+endif
+
 SHARED=-shared $(FPIC)
 
 DEBUG=-g # -D_TRACTOR_PASSTHROUGH_

@@ -128,7 +128,7 @@ The remainder of this file is legacy documentation, kept for historical referenc
 
        Next switches are for special purposes and not intended for ordinary usage
 
-       export PEAT_TRACTOR_RETURN_LEVELS=<comma_separated_values>             - set level(s) for return address capture
+       export PEAT_TRACTOR_RETURN_LEVELS=<comma_separated_values>             - set level(s) for return address capture, levels > 0 need the application compiled with -fno-omit-frame-pointer (frame-pointer stack walk) 
        export PEAT_TRACTOR_PC_LEVELS=X                                        - set level(s) for PControl
        export PEAT_TRACTOR_MIN_ADDRESS=<hexadecimal_value>
        export PEAT_TRACTOR_MAX_ADDRESS=<hexadecimal_value>

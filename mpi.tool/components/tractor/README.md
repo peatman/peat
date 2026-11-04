@@ -69,6 +69,8 @@ export PEAT_TRACTOR_USE_REALTIME_DUMP=1 dump events once the buffer is full. Dec
 intrusiveness.
 export PEAT_TRACTOR_RETURN_LEVELS={comma separated list} (no spaces or other delimiters allowed), Return levels for stack unwind 
     recording. Example: "0,3,7" will save 3 levels 0-th, 3-rd and 7-th. Default "0".
+    Levels > 0 walk the frame-pointer chain, so the application (and any library between it and MPI) must be
+    compiled with -fno-omit-frame-pointer; without it the stack walk crashes.
 export PEAT_TRACTOR_INCLUDE_EVENTS={comma separated list} (no spaces or other delimiters allowed) a list of mpi functions with will be 
     traced other will be ignored (MPI_Init, MPI_Init_thread, MPI_Finalize  and MPI_Pcontrol are included anyway). 
 export PEAT_TRACTOR_EXCLUDE_EVENTS={comma separated list} (no spaces or other delimiters allowed) a list of mpi functions with won't be 
