@@ -34,6 +34,16 @@ cmake_minimum_required(VERSION 3.16...4.4)
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 project(tractor CXX C)
 unset(CMAKE_TRY_COMPILE_TARGET_TYPE)
+# Without a linking compiler test CMake detects no implicit link dirs and no CMAKE_LIBRARY_ARCHITECTURE, so on
+# multiarch distros (Debian/Ubuntu) find_library misses /usr/lib/<triplet> (libz, libhwloc, ...). Ask the compiler.
+if(NOT CMAKE_LIBRARY_ARCHITECTURE)
+  execute_process(COMMAND ${CMAKE_CXX_COMPILER} -print-multiarch
+                  OUTPUT_VARIABLE _tractor_multiarch OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET RESULT_VARIABLE _rc)
+  if(_rc EQUAL 0 AND _tractor_multiarch MATCHES "^[A-Za-z0-9_]+-[A-Za-z0-9_-]+$")
+    set(CMAKE_LIBRARY_ARCHITECTURE ${_tractor_multiarch})
+    message(STATUS "tractor: CMAKE_LIBRARY_ARCHITECTURE=${CMAKE_LIBRARY_ARCHITECTURE} (from -print-multiarch)")
+  endif()
+endif()
 
 # libfabric: the system one unless OFIPATH (-DOFIPATH, or $OFIPATH / $OFI_PATH as env.sh sets them; libfabric_eng=-eng
 # selects the engineering one there) points to another installation
