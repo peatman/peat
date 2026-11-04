@@ -561,14 +561,8 @@ bool get_file_info(const QString &user_file, QFileInfo &trace_file)
     QString corrected_user_file = user_file;
     // corrected_user_file.replace( '\\', "/" );
     // QFileInfo user_file_info( corrected_user_file );
-    for (QString::reverse_iterator char_it = corrected_user_file.rbegin(); char_it != corrected_user_file.rend();) {
-        if (*char_it == ' ') {
-            std::advance(char_it, 1);
-            corrected_user_file.erase(char_it.base());
-            continue;
-        }
-        break;
-    }
+    // strip trailing spaces (QString::erase(const_iterator) needs Qt >= 6.5; chop works everywhere)
+    while (corrected_user_file.endsWith(' ')) corrected_user_file.chop(1);
     QFileInfo user_file_info(corrected_user_file);
     if (!user_file_info.exists()) {
         return false;

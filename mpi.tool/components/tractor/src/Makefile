@@ -237,7 +237,9 @@ mpi_layer.cpp: mpi_layer.cpp.in mpi_layer.cpp.in.end $(FUNCID)
 $(OBJECTS):   $(FUNCID)
 
 $(PTPD): $(MTB) 
-	$(MPICC) -o $(PTPD) $(INCLUDE) $(CONTROLS) $(OPT) $(OMP) $(LDOPTMT) $(PTPD_LIBS) $(CXXMISC) src-ptpd.cpp t_globals.cpp  $(DEBUG) 
+# C++ sources: compile and link with the C++ wrapper (mpicc does not link libstdc++, and Open MPI 4's mpi.h
+# pulls in its C++ bindings, which need libstdc++ and libmpi_cxx)
+	$(MPICXX) -o $(PTPD) $(INCLUDE) $(CONTROLS) $(OPT) $(OMP) $(LDOPTMT) $(CXXMISC) src-ptpd.cpp t_globals.cpp $(DEBUG) $(PTPD_LIBS)
 
 .c.o:
 	$(MPICC) -o $@ -c $(INCLUDE) $(CONTROLS) $(CMISC) $(DEBUG) $(OPT) $(OMP) $(FPIC) $*.c
