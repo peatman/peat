@@ -22,7 +22,8 @@ use strict;
 use Env;
 use Switch;
 #use List::Util qw(min);
-use lib("../../common");
+use FindBin;
+use lib("$FindBin::RealBin/../../common"); # relative to this script, not the cwd (CMake runs it in the build dir)
 use t_comm_func;
 
 ####################################################################################

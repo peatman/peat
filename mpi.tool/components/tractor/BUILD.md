@@ -22,7 +22,11 @@
   - **Clang/LLVM** (`clang`/`clang++`): the system-wide installation, one version. There is no Fortran front end, `gfortran`
     is used for Fortran. Clang has no OpenACC runtime or `acc_prof.h`, so OpenACC is never built with it.
 - **Perl** - required at build time to run the code generators (`mpi_layer.pl`,
-  `../../common/mpi_func_ids.pl`, `func_split`, etc.).
+  `../../common/mpi_func_ids.pl`, `func_split`, etc.). The generators need the `Switch` module, which is no longer
+  part of core Perl: `libswitch-perl` (Debian/Ubuntu), `perl-Switch` (Fedora/RHEL), or `cpan Switch`.
+- **`omp-tools.h`** (OpenMP Tools/OMPT header) - needed with `OMPT=on` (the default). GCC's libgomp does not ship it;
+  it comes with LLVM's OpenMP (`openmp` on Arch, `libomp-dev` on Debian/Ubuntu, under `/usr/lib/llvm-*`). If it is not
+  on the default include path, point `CPATH` at a directory containing it, or build with `OMPT=off`.
 - **GNU Make**, `cpp` (comes with gcc), `bash`/`sh`.
 
 ## 3. Required third-party libraries

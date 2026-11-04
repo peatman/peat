@@ -79,9 +79,7 @@ jobs:
           echo "CPATH=$RUNNER_TEMP/ompt" >> "$GITHUB_ENV"
       - name: Build tractor
         run: |
-          # The build dir must be tractor/src-build (as in Build-cmake.sh): the codegen perl scripts
-          # find their modules via "../../common" relative to the build dir.
-          b=mpi.tool/components/tractor/src-build
+          b=build/tractor
           cmake -S mpi.tool/components/tractor/src -B $b -G Ninja \
             -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
             -DTRACTOR_TARGET=${{ matrix.target }} -DDIAG=${{ matrix.diag }}
