@@ -1,6 +1,6 @@
 --- a/src/mpid/ch3/channels/common/src/affinity/hwloc_bind.c
 +++ b/src/mpid/ch3/channels/common/src/affinity/hwloc_bind.c
-@@ -3102,6 +3102,8 @@
+@@ -2802,6 +2802,8 @@
  #define FUNCNAME mv2_generate_implicit_cpu_mapping
  #undef FCNAME
  #define FCNAME MPL_QUOTE(FUNCNAME)
@@ -9,7 +9,7 @@
  static int mv2_generate_implicit_cpu_mapping (int local_procs, int num_app_threads)
  {
      hwloc_obj_t obj;
-@@ -3190,11 +3192,11 @@
+@@ -2888,11 +2890,11 @@
          for (i = 0; i < local_procs; i++) {
              curr = count;
              for (k = 0; k < num_app_threads; k++) {
@@ -23,7 +23,7 @@
              count = (count + hw_threads_per_core) % num_pu;
          }
      } else if (mv2_hybrid_binding_policy == HYBRID_LINEAR) {
-@@ -3203,14 +3205,14 @@
+@@ -2901,14 +2903,14 @@
           * resources  */
          for (i = 0; i < local_procs; i++) {
              for (k = 0; k < num_app_threads; k++) {
@@ -40,7 +40,7 @@
          }    
      } else if (mv2_hybrid_binding_policy == HYBRID_SPREAD) {
  #if defined(CHANNEL_MRAIL)
-@@ -3232,12 +3234,12 @@
+@@ -2930,12 +2932,12 @@
              for (i = 0; i < local_procs; i++) {
                   for (k = curr; k < curr+chunk; k++) {
                       for (l = 0; l < hw_threads_per_core; l++) {
@@ -55,7 +55,7 @@
                   curr = (curr + chunk) % size;
              } 
          } else {
-@@ -3252,11 +3254,11 @@
+@@ -2950,11 +2952,11 @@
              for (i = 0; i < num_sockets; i++) {
                  for (k = curr; k < curr+ranks_per_sock; k++) {
                      for (l = 0; l < hw_threads_per_core; l++) {
@@ -69,7 +69,7 @@
                  }
                  curr = (curr + ((num_pu_per_socket/hw_threads_per_core)  * chunk)) % size;
              }
-@@ -3265,7 +3267,7 @@
+@@ -2963,7 +2965,7 @@
          /* Bunch mapping: Bind each MPI rank to a single phyical core of first
           * socket followed by second secket */
          for (i = 0; i < local_procs; i++) {
@@ -78,7 +78,7 @@
              k = (k + hw_threads_per_core) % size;
          } 
      } else if (mv2_hybrid_binding_policy == HYBRID_SCATTER) {
-@@ -3283,7 +3285,7 @@
+@@ -2981,7 +2983,7 @@
              return MPI_ERR_OTHER;
          }
          for (i = 0; i < local_procs; i++) {
@@ -87,7 +87,7 @@
              k = (i % num_sockets == 0) ?
                      (k + num_pu_per_socket) % size :
                      (k + num_pu_per_socket + hw_threads_per_core) % size;
-@@ -3315,10 +3317,10 @@
+@@ -3013,10 +3015,10 @@
          /* NUMA mapping: Bind consecutive MPI ranks to different NUMA domains in
           * round-robin fashion. */
          for (i = 0; i < local_procs; i++) {
@@ -100,3 +100,30 @@
              node_base_pu = (node_base_pu + num_pu_per_numanode) % size;
              node_offset = (node_base_pu == 0) ? 
                              (node_offset + ((hw_threads_per_core > 0) ? hw_threads_per_core : 1)) : 
+--- a/src/mpid/ch3/channels/common/src/util/error_handling.c
++++ b/src/mpid/ch3/channels/common/src/util/error_handling.c
+@@ -69,7 +69,7 @@
+ // Signal handler for errors
+ void error_sighandler(int sig, siginfo_t *info, void *secret) {
+     // Always print error
+-    PRINT_ERROR( "Caught error: %s (signal %d)\n", sys_siglist[sig], sig );
++    PRINT_ERROR( "Caught error: %s (signal %d)\n", strsignal(sig), sig );
+     // Show backtrace if required
+     if (show_backtrace) print_backtrace();
+     // Raise the signal again with default handler
+--- a/src/mpid/ch3/channels/psm/src/psm_queue.c
++++ b/src/mpid/ch3/channels/psm/src/psm_queue.c
+@@ -425,9 +425,13 @@
+ #define FCNAME MPL_QUOTE(FUNCNAME)
+ void psm_pe_yield()
+ {
++#if (MPICH_THREAD_LEVEL == MPI_THREAD_MULTIPLE)
+     pthread_mutex_unlock((pthread_mutex_t *)&(MPIR_ThreadInfo.global_mutex));
++#endif
+     sched_yield();
++#if (MPICH_THREAD_LEVEL == MPI_THREAD_MULTIPLE)
+     pthread_mutex_lock((pthread_mutex_t *)&(MPIR_ThreadInfo.global_mutex));
++#endif
+ }
+ 
+ #undef FUNCNAME

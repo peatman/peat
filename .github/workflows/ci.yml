@@ -93,16 +93,18 @@ jobs:
           # collective's Waitall (coll), so those two are left out; it runs on libfabric's shm provider (mvapich-4.1.shm.patch)
           # (its embedded libfabric's ucr provider includes <infiniband/ib.h>: verbs headers needed to build)
           - { os: ubuntu-24.04, mpi: mvapich-4.1-eng,    src: mvapich,  ver: "4.1",     dev: "ch4:ofi",  patch: mvapich-4.1,     target: mvapich4, diags: "OFF ON", smoke: true, smoke_tests: "p2p rma", fi_provider: shm, mpi_pkg: libibverbs-dev librdmacm-dev }
-          # MVAPICH2 on its PSM2 device (ch3:psm, libpsm2 from libpsm2-dev): runs on one node without an Omni-Path HFI with
+          # MVAPICH2 on its PSM2 device (ch3:psm, libpsm2 12.0.1 built from source by tests/ci/build_psm2.sh - Ubuntu's 11.2
+          # fails psm2_init without an HFI even shm-only): runs on one node without an Omni-Path HFI with
           # PSM2_DEVICES=self,shm (set in the smoke step, as is MV2_USE_SHMEM_COLL=0); the verbs headers are still
           # needed for the transport patch's verbs proxy
-          - { os: ubuntu-24.04, mpi: mvapich2-2.3.7-1-eng, src: mvapich2, ver: "2.3.7-1", dev: "ch3:psm", patch: mvapich-2.3.7-1, target: mvapich2, diags: "OFF ON", smoke: true, smoke_tests: "p2p coll comm rma", mpi_pkg: libpsm2-dev libibverbs-dev librdmacm-dev libibumad-dev }
+          - { os: ubuntu-24.04, mpi: mvapich2-2.3.7-1-eng, src: mvapich2, ver: "2.3.7-1", dev: "ch3:psm", patch: mvapich-2.3.7-1, target: mvapich2, diags: "OFF ON", smoke: true, smoke_tests: "p2p coll comm rma", psm2: "12.0.1", mpi_pkg: libnuma-dev libibverbs-dev librdmacm-dev libibumad-dev }
           - { os: ubuntu-24.04, mpi: openmpi-5.0.10-eng, src: openmpi,  ver: "5.0.10",                   patch: openmpi-5.0.10,  target: openmpi,  make_target: openmpi5, diags: "OFF", smoke: true, smoke_tests: "p2p coll comm" }
           - { os: ubuntu-24.04, mpi: openmpi-5.0.11-eng, src: openmpi,  ver: "5.0.11",                   patch: openmpi-5.0.11,  target: openmpi,  make_target: openmpi5, diags: "OFF", smoke: true, smoke_tests: "p2p coll comm" }
     continue-on-error: ${{ matrix.experimental == true }}
     env:
       # inside the workspace: actions/cache rejects paths with a '..' segment (and then silently saves nothing)
       MPI_PREFIX: ${{ github.workspace }}/.ci-mpi/${{ matrix.src }}-${{ matrix.ver }}${{ matrix.patch && '-eng' || '' }}
+      PSM2_PREFIX: ${{ github.workspace }}/.ci-mpi/psm2-${{ matrix.psm2 }}
       # engineering tractor: lib name suffix of the GNU make build (CMake keeps the plain name)
       ENG_SUFFIX: ${{ matrix.patch && '.eng' || '' }}
     steps:
@@ -113,6 +115,19 @@ jobs:
           sudo apt-get install -y --no-install-recommends g++ gfortran cmake ninja-build perl libswitch-perl \
             zlib1g-dev libhwloc-dev libunwind-dev libomp-dev ${{ matrix.mpi_pkg }} \
             ${{ matrix.patch && 'autoconf automake libtool m4 python3' || '' }}
+      - name: Cache PSM2 ${{ matrix.psm2 }}
+        if: matrix.psm2
+        id: psm2-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.PSM2_PREFIX }}
+          key: psm2-${{ matrix.psm2 }}-gnu-${{ matrix.os }}-v1
+      - name: Build PSM2 ${{ matrix.psm2 }} from source
+        if: matrix.psm2 && steps.psm2-cache.outputs.cache-hit != 'true'
+        run: mpi.tool/components/tractor/tests/ci/build_psm2.sh ${{ matrix.psm2 }} "$PSM2_PREFIX"
+      - name: Use PSM2 ${{ matrix.psm2 }}
+        if: matrix.psm2
+        run: echo "PSM2PATH=$PSM2_PREFIX/usr" >> "$GITHUB_ENV"
       - name: Cache ${{ matrix.mpi }}
         if: matrix.src
         id: mpi-cache
@@ -123,7 +138,8 @@ jobs:
           key: >-
             ${{ matrix.src }}-${{ matrix.ver }}-${{ matrix.dev || 'internal' }}-gnu-${{ matrix.os }}-v1${{
             matrix.patch && '-eng-' || '' }}${{
-            matrix.patch && hashFiles(format('mpi.tool/patches/{0}/*.patch', matrix.patch || 'none')) || '' }}
+            matrix.patch && hashFiles(format('mpi.tool/patches/{0}/*.patch', matrix.patch || 'none')) || '' }}${{
+            matrix.psm2 && format('-psm2-{0}', matrix.psm2) || '' }}
       - name: Build ${{ matrix.mpi }} from source${{ matrix.patch && ' (apply patches)' || '' }}
         if: matrix.src && steps.mpi-cache.outputs.cache-hit != 'true'
         run: |
@@ -133,7 +149,7 @@ jobs:
         if: matrix.src
         run: |
           echo "$MPI_PREFIX/bin" >> "$GITHUB_PATH"
-          echo "LD_LIBRARY_PATH=$MPI_PREFIX/lib" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$MPI_PREFIX/lib${{ matrix.psm2 && ':$PSM2_PREFIX/usr/lib64' || '' }}" >> "$GITHUB_ENV"
       - name: Check the MPI is patched
         if: matrix.patch
         # every hook patch exports mpi_internal_comm_create; a stock libmpi never defines it
