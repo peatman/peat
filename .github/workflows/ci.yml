@@ -91,7 +91,8 @@ jobs:
           - { os: ubuntu-24.04, mpi: mpich-5.0.2-eng,    src: mpich,    ver: "5.0.2",   dev: "ch4:ofi",  patch: mpich-5.0.2,     target: mpich5,   diags: "OFF ON", smoke: true, smoke_tests: "p2p coll comm rma" }
           # MVAPICH 4.1 itself (stock too, without tractor) hangs in MPI_Dist_graph_create (comm) and fails a persistent
           # collective's Waitall (coll), so those two are left out; it runs on libfabric's shm provider (mvapich-4.1.shm.patch)
-          - { os: ubuntu-24.04, mpi: mvapich-4.1-eng,    src: mvapich,  ver: "4.1",     dev: "ch4:ofi",  patch: mvapich-4.1,     target: mvapich4, diags: "OFF ON", smoke: true, smoke_tests: "p2p rma", fi_provider: shm }
+          # (its embedded libfabric's ucr provider includes <infiniband/ib.h>: verbs headers needed to build)
+          - { os: ubuntu-24.04, mpi: mvapich-4.1-eng,    src: mvapich,  ver: "4.1",     dev: "ch4:ofi",  patch: mvapich-4.1,     target: mvapich4, diags: "OFF ON", smoke: true, smoke_tests: "p2p rma", fi_provider: shm, mpi_pkg: libibverbs-dev librdmacm-dev }
           # MVAPICH2 on its PSM2 device (ch3:psm, libpsm2 from libpsm2-dev): runs on one node without an Omni-Path HFI with
           # PSM2_DEVICES=self,shm (set in the smoke step, as is MV2_USE_SHMEM_COLL=0); the verbs headers are still
           # needed for the transport patch's verbs proxy
