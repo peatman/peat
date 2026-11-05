@@ -546,23 +546,6 @@ diff -ru a/src/mpid/ch3/channels/mrail/src/rdma/ch3_smp_progress.c b/src/mpid/ch
  
  #undef FUNCNAME
  #define FUNCNAME MPIDI_CH3I_SMP_write_progress
-diff -ru a/src/mpid/ch3/channels/psm/src/psm_queue.c b/src/mpid/ch3/channels/psm/src/psm_queue.c
---- a/src/mpid/ch3/channels/psm/src/psm_queue.c
-+++ b/src/mpid/ch3/channels/psm/src/psm_queue.c
-@@ -425,9 +425,13 @@
- #define FCNAME MPL_QUOTE(FUNCNAME)
- void psm_pe_yield()
- {
-+#if (MPICH_THREAD_LEVEL == MPI_THREAD_MULTIPLE)
-     pthread_mutex_unlock((pthread_mutex_t *)&(MPIR_ThreadInfo.global_mutex));
-+#endif
-     sched_yield();
-+#if (MPICH_THREAD_LEVEL == MPI_THREAD_MULTIPLE)
-     pthread_mutex_lock((pthread_mutex_t *)&(MPIR_ThreadInfo.global_mutex));
-+#endif
- }
- 
- #undef FUNCNAME
 diff -ru a/src/mpid/common/sched/mpid_sched.c b/src/mpid/common/sched/mpid_sched.c
 --- /dev/null
 +++ b/src/mpid/ch3/channels/common/include/verbs-proxy.h
