@@ -17,7 +17,8 @@ ranks_arg=$3
 
 toolchain=${TOOLCHAIN:-intel}
 case $toolchain in
-    intel ) compiler=oneAPI:2026.1.0 ; mpi_default=mpich:5.0.2x-mt-ofi-eng ; libsubdir=intel ;;
+#    intel ) compiler=oneAPI:2026.1.0 ; mpi_default=mpich:5.0.2x-mt-ofi-eng ; libsubdir=intel ;;
+    intel ) compiler=oneAPI:2026.1.0 ; mpi_default=mvapich:4.1x-mt-ofi-eng ; libsubdir=intel ;;
     gcc )   compiler=gcc ; mpi_default=mpich:5.0.2g-mt-ofi-eng ; libsubdir=gnu ;;
     nvc )   compiler=${NVC_COMPILER:-nvc:12.9} ; mpi_default=mpich:5.0.2g-mt-ofi-eng ; libsubdir=nvc ;;
     clang ) compiler=clang ; mpi_default=mpich:5.0.2g-mt-ofi-eng ; libsubdir=clang ;;
@@ -31,7 +32,7 @@ set -x
 #TRACTOR=0
 libdir=${TRACTOR_LIBDIR:-$(realpath ../../../../lib/$libsubdir)}
 if [ "${TRACTOR:-1}" != "0" ] ; then
-LD_PRELOAD=$libdir/libtractor.mpich5.eng.so
+LD_PRELOAD=$libdir/libtractor.mvapich4.eng.so
 LD_PRELOAD="$LD_PRELOAD:$libdir/libtractor_transport_ofi.so"
 fi
 
@@ -69,7 +70,8 @@ ranks=$((nnodes * ppn))
 
 export I_MPI_DEBUG=3
 export I_MPI_FABRICS=shm
-export FI_PROVIDER=shm
+#export FI_PROVIDER=shm
+export FI_PROVIDER=tcp
 export HYDRA_TOPO_DEBUG=1
 export MPICH_POSIX_NUM_COLLS_THRESHOLD=9999
 

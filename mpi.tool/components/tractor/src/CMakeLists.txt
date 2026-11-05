@@ -19,8 +19,8 @@
 # CMake build for tractor (mirrors src/Makefile), including the
 # TARGET=transport_layers standalone shim build and the legacy single-layer
 # TRANSPORT=PSM2/VERBS/PSM3/UCX/OFI modes. BUILD_TRACTOR_ENGINEERING_VERSION=auto
-# detects a patched MPI by trying to link against mpi_internal_comm_translate_rank
-# (an MPICH_API_PUBLIC symbol every ../../patches/* patch adds) - see its
+# detects a patched MPI by trying to link against mpi_internal_comm_create
+# (the exported communicator hook every ../../patches/* hook patch adds) - see its
 # definition below for the reasoning and caveats.
 #
 # CMAKE_CXX_COMPILER/CMAKE_C_COMPILER are expected to already be the MPI
@@ -124,8 +124,8 @@ else()
       set(_ofi_eng ON)
     endif()
     # engineering MPI: it needs fi_close & co from libfabric, or - when its libfabric use is limited to ordinary calls
-    # (the GNU Open MPI builds) - it is the patched one that defines mpi_internal_comm_translate_rank
-    if(_mpi_syms MATCHES "(^|\n) +[Uw] fi_close(\n|$)" OR _mpi_defs MATCHES "(^|\n)[0-9a-f]+ [TtWw] mpi_internal_comm_translate_rank(\n|$)")
+    # (the GNU Open MPI builds) - it is the patched one that defines mpi_internal_comm_create
+    if(_mpi_syms MATCHES "(^|\n) +[Uw] fi_close(\n|$)" OR _mpi_defs MATCHES "(^|\n)[0-9a-f]+ [TtWw] mpi_internal_comm_create(\n|$)")
       set(_mpi_ofi_eng ON)
     endif()
     if(_ofi_eng AND _mpi_ofi_eng)
@@ -185,24 +185,24 @@ message(STATUS "tractor: COMPILER=${TRACTOR_COMPILER} (CXX compiler id: ${CMAKE_
 # ---------------------------------------------------------------------------
 # 2. MPI vendor + version -> Makefile-style TARGET
 #    -DTRACTOR_TARGET=auto (default) probes CMAKE_CXX_COMPILER to detect the
-#    vendor/version; set it to impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|
+#    vendor/version; set it to impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|
 #    cray|transport_layers to skip probing and use that flavor directly ('cray' is
 #    just an alias that normalizes to mpich4 - same MPICH-family struct layout).
 # ---------------------------------------------------------------------------
 set(TRACTOR_TARGET "auto" CACHE STRING
-  "MPI flavor: auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers. \
+  "MPI flavor: auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers. \
 'auto' detects the vendor/version from CMAKE_CXX_COMPILER; any other value is used \
 directly and skips probing.")
-set_property(CACHE TRACTOR_TARGET PROPERTY STRINGS auto impi mpich4 mpich5 mvapich2 mvapich4 openmpi cray transport_layers)
+set_property(CACHE TRACTOR_TARGET PROPERTY STRINGS auto impi mpich3 mpich4 mpich5 mvapich2 mvapich4 openmpi cray transport_layers)
 string(TOLOWER "${TRACTOR_TARGET}" _tractor_target_lower)
 
 if(_tractor_target_lower STREQUAL "cray")
   set(_tractor_target_lower mpich4) # Cray MPICH builds like stock MPICH 4.x
-  set(TRACTOR_TARGET mpich4 CACHE STRING "MPI flavor: auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers" FORCE)
+  set(TRACTOR_TARGET mpich4 CACHE STRING "MPI flavor: auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers" FORCE)
 endif()
 
-if(NOT _tractor_target_lower MATCHES "^(auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|transport_layers)$")
-  message(FATAL_ERROR "tractor: invalid TRACTOR_TARGET='${TRACTOR_TARGET}' (expected auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers)")
+if(NOT _tractor_target_lower MATCHES "^(auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|transport_layers)$")
+  message(FATAL_ERROR "tractor: invalid TRACTOR_TARGET='${TRACTOR_TARGET}' (expected auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers)")
 endif()
 
 if(NOT _tractor_target_lower STREQUAL "auto" AND NOT _tractor_target_lower STREQUAL "transport_layers")
@@ -301,6 +301,8 @@ if(_tractor_target_lower STREQUAL "auto")
   elseif(_mpi_vendor MATCHES "^(mpich|cray)$")
     if(_mpi_version MATCHES "^5\\.")
       set(_tractor_target mpich5)
+    elseif(_mpi_version MATCHES "^3\\.")
+      set(_tractor_target mpich3)
     else()
       set(_tractor_target mpich4) # covers MPICH 4.x and unversioned/Cray MPICH
     endif()
@@ -316,7 +318,7 @@ if(_tractor_target_lower STREQUAL "auto")
 
   set(TRACTOR_MPI_VENDOR  ${_mpi_vendor}  CACHE STRING "detected MPI vendor (mpich|mvapich|openmpi|impi|cray)" FORCE)
   set(TRACTOR_MPI_VERSION "${_mpi_version}" CACHE STRING "detected MPI version" FORCE)
-  set(TRACTOR_TARGET ${_tractor_target} CACHE STRING "MPI flavor: auto|impi|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers" FORCE)
+  set(TRACTOR_TARGET ${_tractor_target} CACHE STRING "MPI flavor: auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers" FORCE)
 endif()
 message(STATUS "tractor: MPI vendor=${TRACTOR_MPI_VENDOR} version=${TRACTOR_MPI_VERSION} -> TARGET=${TRACTOR_TARGET}")
 
@@ -366,20 +368,19 @@ if(_eng_lower STREQUAL "auto")
     message(STATUS "tractor: BUILD_TRACTOR_ENGINEERING_VERSION=auto -> 'off' (not applicable to TARGET=transport_layers)")
     set(_eng_lower off)
   else()
-    # every patch under ../../patches (mpich-3.4.3, mpich-4.3.2, mpich-5.0.1, mpich-5.0.2, mvapich-2.3.5,
-    # mvapich-4.1) adds the same MPICH_API_PUBLIC (exported) symbol
-    # mpi_internal_comm_translate_rank(); a stock/unpatched MPI never defines it, so
+    # every hook patch under ../../patches (MPICH, MVAPICH, Open MPI) adds the same exported communicator
+    # hook mpi_internal_comm_create(); a stock/unpatched MPI never defines it, so
     # trying to link a program that references it tells us the install is patched
     # - this assumes CMAKE_C_COMPILER is the MPI wrapper (mpicc), same as elsewhere
     include(CheckFunctionExists)
     set(CMAKE_REQUIRED_QUIET ON)
-    check_function_exists(mpi_internal_comm_translate_rank TRACTOR_MPI_PATCHED)
+    check_function_exists(mpi_internal_comm_create TRACTOR_MPI_PATCHED)
     unset(CMAKE_REQUIRED_QUIET)
     if(TRACTOR_MPI_PATCHED)
-      message(STATUS "tractor: BUILD_TRACTOR_ENGINEERING_VERSION=auto -> 'on' (mpi_internal_comm_translate_rank found: patched/engineering MPI)")
+      message(STATUS "tractor: BUILD_TRACTOR_ENGINEERING_VERSION=auto -> 'on' (mpi_internal_comm_create found: patched/engineering MPI)")
       set(_eng_lower on)
     else()
-      message(STATUS "tractor: BUILD_TRACTOR_ENGINEERING_VERSION=auto -> 'off' (mpi_internal_comm_translate_rank not found: stock MPI)")
+      message(STATUS "tractor: BUILD_TRACTOR_ENGINEERING_VERSION=auto -> 'off' (mpi_internal_comm_create not found: stock MPI)")
       set(_eng_lower off)
     endif()
   endif()
@@ -432,7 +433,7 @@ set(TRACTOR_CONTROLS
   _TRACTOR_MAJOR_VERSION_=${TRACTOR_MAJOR} _TRACTOR_MINOR_VERSION_=${TRACTOR_MINOR}
   _TRACTOR_BUILD_DATE_="${TRACTOR_BUILD_DATE}"
   _USE_SIGNALS_
-  _MPI_MESSAGE_DEFINED_ _USE_PROTORYPES_WITH_CONST_ _NO_C_VR
+  _MPI_MESSAGE_DEFINED_ _NO_C_VR
 )
 set(TRACTOR_SOURCES
   t_base_event.cpp tractor.cpp t_stat.cpp t_comm.cpp elf_parser.cpp t_topo.cpp t_globals.cpp t_signals.cpp
@@ -602,9 +603,13 @@ set(_cpp_input)
 # additionally guarded by MPI_VERSION/MPI_SUBVERSION from the mpi.h in use
 set(_maxmpi 3)
 if(TRACTOR_TARGET STREQUAL "impi")
-  list(APPEND _cpp_input -D_MPICH_=3 -D_IMPI_)
-  list(APPEND TRACTOR_CONTROLS _MPICH_=3 _IMPI_ _I_MPI_WEAK_EXPORTS_ I_MPI_BUILD)
+  # Intel MPI goes by _IMPI_ alone (no _MPICH_): its MPI-internal helpers differ from MPICH 3's
+  list(APPEND _cpp_input -D_IMPI_)
+  list(APPEND TRACTOR_CONTROLS _IMPI_ _I_MPI_WEAK_EXPORTS_ I_MPI_BUILD)
   set(_maxmpi 4)
+elseif(TRACTOR_TARGET STREQUAL "mpich3")
+  list(APPEND _cpp_input -D_MPICH_=3)
+  list(APPEND TRACTOR_CONTROLS _MPICH_=3)
 elseif(TRACTOR_TARGET STREQUAL "mpich4")
   list(APPEND _cpp_input -D_MPICH_=4)
   list(APPEND TRACTOR_CONTROLS _MPICH_=4)
@@ -620,6 +625,11 @@ elseif(TRACTOR_TARGET STREQUAL "mvapich4")
   list(APPEND _cpp_input -D_MPICH_=4 -D_MVAPICH_)
   list(APPEND TRACTOR_CONTROLS _MPICH_=4 _MVAPICH_)
   set(_maxmpi 4)
+elseif(TRACTOR_TARGET STREQUAL "openmpi")
+  # same as the Makefile's TARGET=openmpi5: the headers and mpi_layer.pl pick the Open MPI branches (pointer handles,
+  # the Open MPI flavour of the MPI-internal hooks) by _OPENMPI_
+  list(APPEND _cpp_input -D_OPENMPI_=5)
+  list(APPEND TRACTOR_CONTROLS _OPENMPI_=5)
 endif()
 # MPI 4.x prototype probes: some MPI 4.x implementations declare a few functions without the standard's
 # const (MPICH 4.0: MPI_Psend_init, MPI_Pready_list; MPICH 4.2/MVAPICH 4.1/Intel MPI 2021: MPI_Status_get_*,
@@ -668,6 +678,8 @@ endif()
 
 if(_eng_lower STREQUAL "on")
   list(APPEND TRACTOR_CONTROLS _PARSE_MPI_INTERNAL_ )
+  # mpi_func.inc's MPI-internal entries (MPIC_*, MPID_Request_*) are under #ifdef _PARSE_MPI_INTERNAL_ too
+  list(APPEND _cpp_input -D_PARSE_MPI_INTERNAL_)
   set(_pct on)
 else()
   set(_pct off)
@@ -739,7 +751,7 @@ else() # gnu and clang
 endif()
 
 if(TRACTOR_TARGET STREQUAL "openmpi")
-  list(APPEND TRACTOR_CXX_MISC -fms-extensions)
+  list(APPEND TRACTOR_CXX_MISC -fms-extensions -Wno-int-to-pointer-cast) # as the Makefile (openmpi5)
 endif()
 
 if(NOT OMPT)

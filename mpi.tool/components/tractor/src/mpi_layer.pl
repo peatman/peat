@@ -300,7 +300,6 @@ if ($properties =~/DATA_TXRX/) {
 my $comm="comm";
 #$comm="MPI_COMM_WORLD" if $properties =~/MPI_INTERNAL/;
 #$comm="(long long) comm" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/ ;
-#$comm="mpi_internal_get_top_comm_handle_from_comm(comm)" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/;
 $comm="mpi_internal_get_comm_handle_from_comm(comm)" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/;
 #$comm="last_coll_comm" if $properties =~/MPI_INTERNAL/;
 my $stag="stag";
@@ -401,7 +400,6 @@ $comm="event->$basic_struct.comm=comm;" if $properties=~/COMM/;
 #$comm="event->$basic_struct.comm=(long long) comm;" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/ ;
 #$comm="event->$basic_struct.comm=MPI_COMM_WORLD;" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/;
 
-#$comm="event->$basic_struct.comm=mpi_internal_get_top_comm_handle_from_comm(comm);" if $properties=~/COMM/ && $mpi_internal_mpid_comm;
 $comm="event->$basic_struct.comm=mpi_internal_get_comm_handle_from_comm(comm);" if $properties=~/COMM/ && $mpi_internal_mpid_comm;
 
 #$comm="event->$basic_struct.comm=last_coll_comm;" if $properties=~/COMM/ && $properties=~/MPI_INTERNAL/;
@@ -441,12 +439,10 @@ if ($properties=~/STATUS/) {
 #    if (event->$basic_struct.peer<0 ) {
 #        fprintf(stderr,\"Incorrect rank translation: %d->%d on comm %lx\\n\",peer_rank, event->$basic_struct.peer,comm);
 #        event->$basic_struct.peer=mpi_internal_get_rank_from_comm_v(comm,peer_rank>=0 ? peer_rank : status->MPI_SOURCE);
-#        mpi_internal_print_comm_tree(comm,0);
 #        //MPI_Abort(MPI_COMM_WORLD,0);
 #    } else {
 #        fprintf(stderr,\"Correct rank translation: %d->%d on comm %lx\\n\",peer_rank, event->$basic_struct.peer,comm);
 #        event->$basic_struct.peer=mpi_internal_get_rank_from_comm_v(comm,peer_rank>=0 ? peer_rank : status->MPI_SOURCE);
-#        mpi_internal_print_comm_tree(comm,0);
 #    }
 #    }
 #    " if $funcid=~/MPIC_RECV_ID/;# ||  $funcid=~/MPIC_SEND_ID/; 
