@@ -41,15 +41,16 @@
 ## 5. MPI implementation - build first
 
 `tractor` is built *against* one MPI at a time
-(`TARGET=impi|mpich4|mpich5|mvapich2|mvapich4|openmpi`). Build/install the MPI(s) you need before building tractor:
+(`TARGET=impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi`). Build/install the MPI(s) you need before building tractor:
 
 | MPI | Build script | Notes |
 |---|---|---|
 | Intel MPI | n/a (use oneAPI installer) | `TARGET=impi`, no source patch needed |
 | Open MPI 5.0.x | build/install normally (not provided here) | `TARGET=openmpi`, no patch |
 | MPICH 4.3.2 | [../../scripts/mpich-4.3.2/Build-{ofi,tcp,ucx}-m.sh](../../scripts/mpich-4.3.2) | `TARGET=mpich4`; optional patch [../../patches/mpich-4.3.2/mpich-4.3.2.patch](../../patches/mpich-4.3.2/mpich-4.3.2.patch) for the "engineering" (`PARSE_COLT`) build |
-| MPICH 5.0.1 | [../../scripts/mpich-5.0.1](../../scripts/mpich-5.0.1) | `TARGET=mpich5` |
-| MVAPICH2 2.3.5 | [../../scripts/mvapich-2.3.5/Build-ibv-m.sh](../../scripts/mvapich-2.3.5/Build-ibv-m.sh) | `TARGET=mvapich2`; patch [../../patches/mvapich-2.3.5/mvapich2-2.3.5.patch](../../patches/mvapich-2.3.5/mvapich2-2.3.5.patch) (+ `src/` collective-call interceptor sources) |
+| MPICH 3.x | build/install normally (not provided here) | `TARGET=mpich3`, no patch on this branch |
+| MPICH 5.0.1 / 5.0.2 | [../../scripts/mpich-5.0.1](../../scripts/mpich-5.0.1) | `TARGET=mpich5`; patches in [../../patches/mpich-5.0.2](../../patches/mpich-5.0.2) ([../../patches/mpich-5.0.1](../../patches/mpich-5.0.1) is deprecated) |
+| MVAPICH2 2.3.7-1 | [../../scripts/mvapich-2.3.5/Build-ibv-m.sh](../../scripts/mvapich-2.3.5/Build-ibv-m.sh) (2.3.5 example: change the version) | `TARGET=mvapich2`; patches in [../../patches/mvapich-2.3.7-1](../../patches/mvapich-2.3.7-1): `.patch` (hooks), `.fortran.patch`, `.misc.patch` (stock fixes) ([../../patches/mvapich-2.3.5](../../patches/mvapich-2.3.5) is deprecated) |
 | MVAPICH 4.1 | [../../scripts/mvapich-4.1](../../scripts/mvapich-4.1) | `TARGET=mvapich4`; patch [../../patches/mvapich-4.1/mvapich-4.1.patch](../../patches/mvapich-4.1/mvapich-4.1.patch) |
 
 These `Build-*.sh` scripts are examples - edit `--prefix=$HOME/<mpi>/<version>` paths for your system.
@@ -115,7 +116,7 @@ Pass as `make` vars, or positional args to `Build.sh`.
 
 | Switch | Values | Meaning |
 |---|---|---|
-| `TARGET` | `impi*, mpich4, mpich5, mvapich2, mvapich4, openmpi` | MPI flavor |
+| `TARGET` | `impi*, mpich3, mpich4, mpich5, mvapich2, mvapich4, openmpi` | MPI flavor |
 | `COMPILER` | `gnu*, intel` | toolchain |
 | `PTPD` | `on*, off` | build PTP daemon support |
 | `OMPT` | `on*, off` | OpenMP interception |

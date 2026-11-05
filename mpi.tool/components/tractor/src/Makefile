@@ -75,19 +75,29 @@ CONTROLS+=-DGPUPARSE
 EXTRANAMELIB:=$(EXTRANAMELIB).gpu
 endif
 
+# Intel MPI goes by _IMPI_ alone (no _MPICH_): its MPI-internal helpers differ from MPICH 3's
 ifeq "$(TARGET)" "impi"
-CONTROLS+=-D_MPICH_=3 -D_IMPI_
-cpp_input=-D_MPICH_=3 -D_IMPI_
+CONTROLS+=-D_IMPI_
+cpp_input=-D_IMPI_
 
-CONTROLS+=-D_STATUS_LO_HI_ -D_MPI_MESSAGE_DEFINED_ -D_USE_PROTORYPES_WITH_CONST_ -D_I_MPI_WEAK_EXPORTS_ -DI_MPI_BUILD 
+CONTROLS+=-D_STATUS_LO_HI_ -D_MPI_MESSAGE_DEFINED_ -D_I_MPI_WEAK_EXPORTS_ -DI_MPI_BUILD 
 MAXMPI=4
+endif
+
+# MPICH 3.x (MPI 3.1)
+ifeq "$(TARGET)" "mpich3"
+CONTROLS+=-D_MPICH_=3 
+cpp_input=-D_MPICH_=3 
+
+CONTROLS+=-D_STATUS_LO_HI_ -D_MPI_MESSAGE_DEFINED_ 
+MAXMPI=3
 endif
 
 ifeq "$(TARGET)" "mpich4"
 CONTROLS+=-D_MPICH_=4 
 cpp_input=-D_MPICH_=4 
 
-CONTROLS+=-D_STATUS_LO_HI_ -D_MPI_MESSAGE_DEFINED_ -D_USE_PROTORYPES_WITH_CONST_ 
+CONTROLS+=-D_STATUS_LO_HI_ -D_MPI_MESSAGE_DEFINED_ 
 MAXMPI=4
 endif
 
@@ -95,7 +105,7 @@ ifeq "$(TARGET)" "mpich5"
 CONTROLS+=-D_MPICH_=5 
 cpp_input=-D_MPICH_=5 
 
-CONTROLS+=-D_STATUS_LO_HI_ -D_MPI_MESSAGE_DEFINED_ -D_USE_PROTORYPES_WITH_CONST_ 
+CONTROLS+=-D_STATUS_LO_HI_ -D_MPI_MESSAGE_DEFINED_ 
 MAXMPI=5
 endif
 
@@ -112,22 +122,15 @@ ifeq "$(filter openmpi%,$(TARGET))" ""
 CONTROLS+=-D_STATUS_LO_HI_
 endif
 
-CONTROLS+=-D_MPI_MESSAGE_DEFINED_ -D_USE_PROTORYPES_WITH_CONST_ -D_NO_C_VR
+CONTROLS+=-D_MPI_MESSAGE_DEFINED_ -D_NO_C_VR
 # MAXMPI is the default from the top of the file unless a TARGET block above/below overrides it
-
-ifeq "$(PARSE_MPI_INTERNAL)" "on" 
-CONTROLS+=-D_PARSE_MPI_INTERNAL_ #-D_TRACTOR_PASSTHROUGH_ #-D_TRACTOR_STORE_UNIQ_INDEX_
-PCT=on
-CT_SUFFIX=.eng
-cpp_input+=-D_PARSE_MPI_INTERNAL_
-endif
 
 ifeq "$(TARGET)" "mvapich4"
 
 CONTROLS+=-D_MPICH_=4 -D_MVAPICH_
 cpp_input=-D_MPICH_=4 -D_MVAPICH_
 
-CONTROLS+=-D_STATUS_LO_HI_  -D_MPI_MESSAGE_DEFINED_ -D_USE_PROTORYPES_WITH_CONST_ -D_NO_C_VR
+CONTROLS+=-D_STATUS_LO_HI_  -D_MPI_MESSAGE_DEFINED_ -D_NO_C_VR
 MAXMPI=4
 
 endif
@@ -135,9 +138,18 @@ endif
 #LIBS+= -L../../../misc -lmpiif 
 
 ifeq "$(TARGET)" "openmpi5"
-CONTROLS+=-D_USE_PROTORYPES_WITH_CONST_ -D_MPI_MESSAGE_DEFINED_ -D_NO_C_VR -D_OPENMPI_=5  -fms-extensions -Wno-int-to-pointer-cast
+CONTROLS+=-D_MPI_MESSAGE_DEFINED_ -D_NO_C_VR -D_OPENMPI_=5  -fms-extensions -Wno-int-to-pointer-cast
 cpp_input=-D_OPENMPI_=5
 MAXMPI=3
+endif
+
+# engineering build (patched MPI): after the TARGET blocks, which assign cpp_input with '=' - placed before them,
+# the mvapich4/openmpi5 blocks dropped -D_PARSE_MPI_INTERNAL_, and mpi_func.inc's MPI-internal entries with it
+ifeq "$(PARSE_MPI_INTERNAL)" "on"
+CONTROLS+=-D_PARSE_MPI_INTERNAL_ #-D_TRACTOR_PASSTHROUGH_ #-D_TRACTOR_STORE_UNIQ_INDEX_
+PCT=on
+CT_SUFFIX=.eng
+cpp_input+=-D_PARSE_MPI_INTERNAL_
 endif
 
 # MPI 4.x prototype probes: some MPI 4.x implementations declare a few functions without the standard's
@@ -253,8 +265,9 @@ $(PTPD): $(MTB)
 .f.o:   
 	$(MPIFC) -o $@ -c $(INCLUDE) $(CONTROLS) $(FMISC) $(DEBUG) $(OPT) $(OMP) $(FPIC) $*.f
 
+# mpi_func.inc and mpi_layer.cpp too: they depend on TARGET/PARSE_MPI_INTERNAL, which make cannot see
 clean:
-	rm -f mpi_func_ids_through.h mpi_func_names.h mpi_func_ids_trans.h $(OBJECTS) lib$(MTBL).so lib$(MTBL).so.$(MAJOR) $(MTB) $(PTPD) $(PTPDL) mpi_layer.c 
+	rm -f mpi_func_ids_through.h mpi_func_names.h mpi_func_ids_trans.h $(OBJECTS) lib$(MTBL).so lib$(MTBL).so.$(MAJOR) $(MTB) $(PTPD) $(PTPDL) mpi_layer.c mpi_func.inc mpi_layer.cpp
         
 
 all: $(MTB) $(PTPD)

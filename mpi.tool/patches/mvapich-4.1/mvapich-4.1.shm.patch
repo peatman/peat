@@ -1,0 +1,13 @@
+--- a/src/mpid/ch4/netmod/ofi/init_provider.c
++++ b/src/mpid/ch4/netmod/ofi/init_provider.c
+@@ -304,7 +304,9 @@
+     MPIDI_OFI_init_settings(&optimal_settings, MPIDI_OFI_SET_NAME_DEFAULT);
+     MPIDI_OFI_init_settings(&minimal_settings, MPIDI_OFI_SET_NAME_MINIMAL);
+ 
+-    int best_score = -1;
++    /* start below any reachable score (as MPICH does): with -1, shm/sm2 (score + pref -10 < -1) could never be
++     * picked, not even when the user forces it with FI_PROVIDER=shm as the comment in provider_preference says */
++    int best_score = INT_MIN;
+     struct fi_info *best_prov = NULL;
+     for (struct fi_info * prov = list; prov; prov = prov->next) {
+         /* Confirm the NIC backed by the provider is actually up. */

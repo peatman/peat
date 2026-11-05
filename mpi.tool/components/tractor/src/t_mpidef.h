@@ -44,27 +44,11 @@ static int __msl_record_requests(const int tid, const int level, const MPI_Reque
 #endif
 #endif
 
-#ifdef _USE_PROTORYPES_WITH_CONST_
-#define MTIconst const
-#ifdef OPEN_MPI
-#define MTIOMPIDconst
-#else
-#define MTIOMPIDconst const
-#endif
-#else
-#define MTIconst
-#define MTIOMPIDconst
-#endif
-
 #ifdef _TRACTOR_PASSTHROUGH_
 #define ptractor_status status
 #endif
 
 #define get_rank_from_comm(x, y) (y)
-// #define get_rank_from_req_mpi_internal(x,y) mpi_internal_request_translate_rank(x,y)
-// #define mpi_internal_get_rank_from_comm(x, y) mpi_internal_comm_translate_rank(x, y)
-// #define mpi_internal_get_rank_from_comm_v(x, y) mpi_internal_comm_translate_rank_verbose(x, y)
-
 #define mpi_internal_get_rank_from_comm(x, y) (y)
 #define mpi_internal_get_rank_from_comm_v(x, y) (y)
 
@@ -163,11 +147,7 @@ MPI_Comm mpi_internal_get_comm(MPI_Request request);
 MPI_Request mpi_internal_get_request(MPI_Request request);
 int mpi_internal_get_requests(int inum, MPI_Request *requests_in, MPI_Request *requests_out);
 MPI_Request __msl_get_drequest(MPI_Request request) {return mpi_internal_get_request(request);};
-MPI_Comm mpi_internal_get_top_comm_handle_from_comm(MPI_Comm comm) {return comm;};
 MPI_Comm mpi_internal_get_comm_handle_from_comm(MPI_Comm comm) {return comm;};
-int mpi_internal_comm_translate_rank(MPI_Comm comm, int rank); 
-int mpi_internal_comm_translate_rank_verbose(MPI_Comm comm, int rank);
-int mpi_internal_request_translate_rank(MPI_Request request, int rank);
 
 static MPI_Request __msl_record_drequest(const int tid, const int level, MPI_Request request)
 {
@@ -185,11 +165,7 @@ int mpi_internal_get_comms(int inum, MPID_Request **requests_in, MPID_Comm **com
 MPID_Comm *mpi_internal_get_comm(MPID_Request *request);
 int mpi_internal_get_requests(int inum, const MPID_Request **requests_in, MPI_Request *requests_out);
 MPI_Request mpi_internal_get_request(const MPID_Request *request);
-MPI_Comm mpi_internal_get_top_comm_handle_from_comm(MPID_Comm *comm);
 MPI_Comm mpi_internal_get_comm_handle_from_comm(MPID_Comm *comm);
-int mpi_internal_comm_translate_rank(MPID_Comm *comm, int rank);
-int mpi_internal_comm_translate_rank_verbose(MPID_Comm *comm, int rank);
-int mpi_internal_request_translate_rank(MPID_Request *request, int rank);
 static MPI_Request __msl_get_drequest(const MPID_Request *value)
 {
     MPI_Request mpi_req = mpi_internal_get_request(value);
@@ -216,7 +192,6 @@ static void __msl_cvt_drequests(MPI_Request *out, const MPID_Request **values, c
 }
 
 #endif
-int mpi_internal_print_comm_tree(MPID_Comm *comm, int depth);
 
 
 #ifndef _OPENMPI_ // MPICH (based) specifics
@@ -305,9 +280,7 @@ void T_MPID_Request_release(MPID_Request *request)
 }
 #endif
 
-#ifdef _MPICH_
-
-#if (_MPICH_==3) //Intel MPI,mvapich2, mpich3
+#ifdef _IMPI_ // Intel MPI: its own MPI-internal helpers, _MPICH_ is not defined for it
 int PMPIC_Send(const void *buf, MPI_Aint count, MPI_Datatype datatype, int dest, int tag, MPID_Comm *comm, int *errflag);
 int PMPIC_Recv(void *buf, MPI_Aint count, MPI_Datatype datatype, int source, int tag, MPID_Comm *comm, MPI_Status *status, int *errflag);
 int PMPIC_Ssend(const void *buf, MPI_Aint count, MPI_Datatype datatype, int dest, int tag, MPID_Comm *comm, int *errflag);
@@ -318,6 +291,22 @@ int PMPIC_Irecv(void *buf, MPI_Aint count, MPI_Datatype datatype, int source, in
 
 int PMPIC_Probe(int source, int tag, MPI_Comm comm, MPI_Status *status); /* takes the MPI_Comm handle in every MPICH/MVAPICH, unlike the other MPIC_* helpers */
 int PMPIC_Wait(MPID_Request *request_ptr);
+int PMPIC_Waitall(int numreq, MPID_Request *requests[], MPI_Status statuses[], int *errflag);
+#endif
+
+#ifdef _MPICH_
+
+#if (_MPICH_==3) // mpich3, mvapich2
+int PMPIC_Send(const void *buf, MPI_Aint count, MPI_Datatype datatype, int dest, int tag, MPID_Comm *comm, int *errflag);
+int PMPIC_Recv(void *buf, MPI_Aint count, MPI_Datatype datatype, int source, int tag, MPID_Comm *comm, MPI_Status *status, int *errflag);
+int PMPIC_Ssend(const void *buf, MPI_Aint count, MPI_Datatype datatype, int dest, int tag, MPID_Comm *comm, int *errflag);
+int PMPIC_Sendrecv(const void *sendbuf, MPI_Aint sendcount, MPI_Datatype sendtype, int dest, int sendtag, void *recvbuf, MPI_Aint recvcount, MPI_Datatype recvtype, int source, int recvtag, MPID_Comm *comm, MPI_Status *status, int *errflag);
+int PMPIC_Sendrecv_replace(void *buf, MPI_Aint count, MPI_Datatype datatype, int dest, int sendtag, int source, int recvtag, MPID_Comm *comm, MPI_Status *status, int *errflag);
+int PMPIC_Isend(const void *buf, MPI_Aint count, MPI_Datatype datatype, int dest, int tag, MPID_Comm *comm, MPID_Request **request, int *errflag);
+int PMPIC_Irecv(void *buf, MPI_Aint count, MPI_Datatype datatype, int source, int tag, MPID_Comm *comm, MPID_Request **request);
+
+int PMPIC_Probe(int source, int tag, MPI_Comm comm, MPI_Status *status); /* takes the MPI_Comm handle in every MPICH/MVAPICH, unlike the other MPIC_* helpers */
+int PMPIC_Wait(MPID_Request *request_ptr, int *errflag);
 int PMPIC_Waitall(int numreq, MPID_Request *requests[], MPI_Status statuses[], int *errflag);
 int PMPIC_Waitany(int numreq, MPID_Request *requests[], int *index, MPI_Status *status, int *errflag);
 #endif
@@ -366,8 +355,8 @@ int Pompi_coll_p2p_free(MPI_Request *request);
 }
 #endif
 
-#ifdef _MPICH_
-#if  (_MPICH_>=5)  
+#if defined(_MPICH_) || defined(_IMPI_)
+#if defined(_MPICH_) && (_MPICH_>=5)
 
 #define MPIO_Request MPI_Request // mpich5 doesn't have separate MPIO_Request
 
@@ -379,7 +368,7 @@ int mpi_internal_T_Type_size(MPI_Datatype datatype, MPI_Aint *size)
 
     return mpi_internal_type_size(datatype, size);
 }
-#else //mpich based but not  mpich 5
+#else //mpich based (Intel MPI included) but not mpich 5
 int mpi_internal_T_Type_size(MPI_Datatype datatype, MPI_Aint *size)
 {
     debug_printf("T_Type_size_mpi_internal (4) called with %x %p\n", (int) datatype, size);
