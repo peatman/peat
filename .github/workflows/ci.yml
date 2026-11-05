@@ -217,6 +217,8 @@ jobs:
           MPICC: mpicc
           FI_PROVIDER: ${{ matrix.fi_provider || 'tcp' }} # libfabric (ch4:ofi): tcp works on a plain VM
           PSM2_DEVICES: self,shm  # MVAPICH2 ch3:psm without an Omni-Path HFI (other MPIs ignore it)
+          PSM2_KASSIST_MODE: none # PSM2 shm: no cross-memory attach (CMA) - the runner forbids process_vm_readv between the
+                                  # ranks, and PSM2 12.0.1 asserts instead of falling back when a CMA read fails
           MV2_USE_SHMEM_COLL: 0   # MVAPICH2: no shared-memory collectives (and their 2-level comms)
           SMOKE_ENGINEERING: ${{ matrix.patch && '1' || '0' }} # engineering build: MPI-internal functions must be traced
         run: |
