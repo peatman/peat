@@ -10,7 +10,7 @@
  	MPID_STATE_MPIDI_CH3I_ACCUMULATE,
 --- a/src/include/mpiimpl.h
 +++ b/src/include/mpiimpl.h
-@@ -1151,6 +1151,18 @@
+@@ -1151,6 +1151,17 @@
      MPID_HIERARCHY_NODE = 3,        /* is the subcomm for a node */
      MPID_HIERARCHY_SIZE             /* cardinality of this enum */
  } MPID_Comm_hierarchy_kind_t;
@@ -22,31 +22,13 @@
 +    MPI_INTERNAL_COMM__NODE_COMM,            /* comm->node_comm */
 +    MPI_INTERNAL_COMM__NODE_ROOTS_COMM,      /* comm->node_roots_comm */
 +    MPI_INTERNAL_COMM__BOOTSTRAP              /* a top-level comm committed outside any public
-+                                               * MPI_Comm_* entry point, so it has no parent_comm
-+                                               * of its own */
++                                               * MPI_Comm_* entry point */
 +};
 +
  /* Communicators */
  
  typedef enum {
-@@ -1283,6 +1295,7 @@
-     struct MPID_Comm *node_comm; /* Comm of processes in this comm that are on
-                                     the same node as this process. */
-     struct MPID_Comm *node_roots_comm; /* Comm of root processes for other nodes. */
-+    struct MPID_Comm *parent_comm;     /*  */
-     int *intranode_table;        /* intranode_table[i] gives the rank in
-                                     node_comm of rank i in this comm or -1 if i
-                                     is not in this process' node_comm.
-@@ -1290,6 +1303,8 @@
-     int *internode_table;        /* internode_table[i] gives the rank in
-                                     node_roots_comm of rank i in this comm.
-                                     It is of size 'local_size'. */
-+    int *intranode_table_rev;       
-+    int *internode_table_rev;       
- 
-     int           is_low_group;  /* For intercomms only, this boolean is
- 				    set for all members of one of the 
-@@ -3991,6 +4006,33 @@
+@@ -3991,6 +4002,33 @@
  int MPIR_Allgather_cuda_intra_MV2 (const void *, int, MPI_Datatype, void *,
              int, MPI_Datatype, MPID_Comm*, MPIR_Errflag_t*);
  #endif
@@ -1794,105 +1776,60 @@
 +/* Proxies called whenever an internal communicator is created/destroyed. mpi_internal_xxx
 + * are weak aliases of pmpi_internal_xxx (same scheme as MPI_xxx and PMPI_xxx), so a tool
 + * may override mpi_internal_xxx and chain to pmpi_internal_xxx.
-+ * comm->parent_comm is already set on the create call. */
-+void mpi_internal_comm_create(MPID_Comm *comm, MPID_Comm *parent_comm, int kind);
++ */
++void mpi_internal_comm_create(MPID_Comm *comm, int kind);
 +void mpi_internal_comm_free(MPID_Comm *comm);
-+void pmpi_internal_comm_create(MPID_Comm *comm, MPID_Comm *parent_comm, int kind);
++void pmpi_internal_comm_create(MPID_Comm *comm, int kind);
 +void pmpi_internal_comm_free(MPID_Comm *comm);
 +
  
  /* This is the utility file for comm that contains the basic comm items
     and storage management */
-@@ -110,8 +119,11 @@
-     comm_p->hierarchy_kind = MPID_HIERARCHY_FLAT;
-     comm_p->node_comm = NULL;
-     comm_p->node_roots_comm = NULL;
-+    comm_p->parent_comm = NULL;
-     comm_p->intranode_table = NULL;
-     comm_p->internode_table = NULL;
-+    comm_p->intranode_table_rev = NULL;
-+    comm_p->internode_table_rev = NULL;
- #ifdef _OSU_MVAPICH_
-     comm_p->dev.ch.shmem_coll_count = 0; 
-     comm_p->dev.ch.allgather_coll_count = 0; 
-@@ -270,6 +282,8 @@
-     /* FIXME  : No local functions for the topology routines */
- 
-     intercomm_ptr->local_comm = localcomm_ptr;
-+    localcomm_ptr->parent_comm = intercomm_ptr;
-+    mpi_internal_comm_create(localcomm_ptr, intercomm_ptr, MPI_INTERNAL_COMM__LOCALCOMM);
- #ifdef _OSU_MVAPICH_
-     localcomm_ptr->dev.ch.shmem_coll_ok = 0;
-     localcomm_ptr->dev.ch.topo_coll_ok = 0;
-@@ -642,6 +656,14 @@
-      * our hierarchy of communicators */
-     MPIU_Assert(comm->node_comm == NULL);
-     MPIU_Assert(comm->node_roots_comm == NULL);
-+    MPIU_Assert(comm->parent_comm == NULL);
-+
-+    /* report every genuine top-level comm the instant its handle is known, before any of its
-+     * own pre-commit internal traffic can reference it; the node_comm/node_roots_comm
-+     * creation below never recurses back into MPIR_Comm_commit, and LOCALCOMM already sets
-+     * parent_comm before calling commit, so neither is duplicated */
-+    if (!comm->parent_comm)
-+        mpi_internal_comm_create(comm, NULL, MPI_INTERNAL_COMM__BOOTSTRAP);
- 
-     mpi_errno = set_collops(comm);
+@@ -652,6 +661,12 @@
      if (mpi_errno)
-@@ -674,6 +696,11 @@
-             if (comm->internode_table)
-                 MPIU_Free(comm->internode_table);
+         MPIR_ERR_POP(mpi_errno);
  
-+            if (comm->intranode_table_rev)
-+                MPIU_Free(comm->intranode_table_rev);
-+            if (comm->internode_table_rev)
-+                MPIU_Free(comm->internode_table_rev);
++    /* report every committed comm (user-visible or not, an intercomm's local_comm included) once
++     * the device has turned its mapper into its VC table (just above; the hook queries the comm's
++     * group), before the node_comm/node_roots_comm hooks below and before any traffic on it; those
++     * comms never recurse back into MPIR_Comm_commit, they are reported where they are created */
++    mpi_internal_comm_create(comm, MPI_INTERNAL_COMM__BOOTSTRAP);
 +
-             mpi_errno = MPI_SUCCESS;
-             goto fn_exit;
-         }
-@@ -707,6 +734,8 @@
+     MPIR_Comm_map_free(comm);
  
-             comm->node_comm->local_size = num_local;
-             comm->node_comm->remote_size = num_local;
-+            comm->node_comm->parent_comm = comm;
-+            mpi_internal_comm_create(comm->node_comm, comm, MPI_INTERNAL_COMM__NODE_COMM);
+     if (comm->comm_kind == MPID_INTRACOMM) {
+@@ -719,6 +734,8 @@
+             mpi_errno = MPID_Dev_comm_create_hook(comm->node_comm);
+             if (mpi_errno)
+                 MPIR_ERR_POP(mpi_errno);
++            /* after the device hook: the hook (tractor) queries the communicator's group */
++            mpi_internal_comm_create(comm->node_comm, MPI_INTERNAL_COMM__NODE_COMM);
+             /* don't call MPIR_Comm_commit here */
  
-             MPIR_Comm_map_irregular(comm->node_comm, comm, local_procs,
-                                     num_local, MPIR_COMM_MAP_DIR_L2L, NULL);
-@@ -740,6 +769,8 @@
+             MPIR_Comm_map_free(comm->node_comm);
+@@ -752,6 +769,8 @@
+             mpi_errno = MPID_Dev_comm_create_hook(comm->node_roots_comm);
+             if (mpi_errno)
+                 MPIR_ERR_POP(mpi_errno);
++            /* after the device hook: the hook (tractor) queries the communicator's group */
++            mpi_internal_comm_create(comm->node_roots_comm, MPI_INTERNAL_COMM__NODE_ROOTS_COMM);
+             /* don't call MPIR_Comm_commit here */
  
-             comm->node_roots_comm->local_size = num_external;
-             comm->node_roots_comm->remote_size = num_external;
-+            comm->node_roots_comm->parent_comm = comm;
-+            mpi_internal_comm_create(comm->node_roots_comm, comm, MPI_INTERNAL_COMM__NODE_ROOTS_COMM);
- 
-             MPIR_Comm_map_irregular(comm->node_roots_comm, comm,
-                                     external_procs, num_external, MPIR_COMM_MAP_DIR_L2L, NULL);
-@@ -1057,6 +1088,10 @@
+             MPIR_Comm_map_free(comm->node_roots_comm);
+@@ -1057,6 +1076,12 @@
          if (MPIR_Process.comm_parent == comm_ptr)
              MPIR_Process.comm_parent = NULL;
  
-+        /* parent_comm is only ever set on internal comms (local_comm, node_comm, node_roots_comm) */
-+        if (comm_ptr->parent_comm)
++        /* internal comms only (user-visible ones are freed through MPI_Comm_free): the
++         * sub-communicators (SUBCOMM context field) and an intercomm's local_comm */
++        if (MPID_CONTEXT_READ_FIELD(SUBCOMM, comm_ptr->context_id) ||
++            MPID_CONTEXT_READ_FIELD(IS_LOCALCOMM, comm_ptr->recvcontext_id))
 +            mpi_internal_comm_free(comm_ptr);
 +
          /* Notify the device that the communicator is about to be
           * destroyed */
          mpi_errno = MPID_Dev_comm_destroy_hook(comm_ptr);
-@@ -1112,6 +1147,11 @@
-         if (comm_ptr->internode_table != NULL)
-             MPIU_Free(comm_ptr->internode_table);
- 
-+        if (comm_ptr->intranode_table_rev != NULL)
-+            MPIU_Free(comm_ptr->intranode_table_rev);
-+        if (comm_ptr->internode_table_rev != NULL)
-+            MPIU_Free(comm_ptr->internode_table_rev);
-+
-         /* Free the context value.  This should come after freeing the
-          * intra/inter-node communicators since those free calls won't
-          * release this context ID and releasing this before then could lead
-@@ -1278,3 +1318,45 @@
+@@ -1278,3 +1303,44 @@
      MPID_MPI_FUNC_EXIT(MPID_STATE_MPIR_COMM_REGISTER_HINT);
      return mpi_errno;
  }
@@ -1908,7 +1845,7 @@
 +#pragma _CRI duplicate mpi_internal_comm_create as pmpi_internal_comm_create
 +#pragma _CRI duplicate mpi_internal_comm_free as pmpi_internal_comm_free
 +#elif defined(HAVE_WEAK_ATTRIBUTE)
-+void mpi_internal_comm_create(MPID_Comm *comm, MPID_Comm *parent_comm, int kind)
++void mpi_internal_comm_create(MPID_Comm *comm, int kind)
 +                  __attribute__((weak,alias("pmpi_internal_comm_create")));
 +void mpi_internal_comm_free(MPID_Comm *comm)
 +                  __attribute__((weak,alias("pmpi_internal_comm_free")));
@@ -1924,10 +1861,9 @@
 +#define mpi_internal_comm_free pmpi_internal_comm_free
 +
 +/* default implementations are no-ops: the hooks exist only to be overridden by a tool */
-+void mpi_internal_comm_create(MPID_Comm *comm, MPID_Comm *parent_comm, int kind)
++void mpi_internal_comm_create(MPID_Comm *comm, int kind)
 +{
 +    (void) comm;
-+    (void) parent_comm;
 +    (void) kind;
 +}
 +
@@ -1938,6 +1874,48 @@
 +#undef mpi_internal_comm_create
 +#undef mpi_internal_comm_free
 +#endif
+--- a/src/mpi/comm/create_2level_comm.c
++++ b/src/mpi/comm/create_2level_comm.c
+@@ -152,7 +152,11 @@
+     fn_fail : goto fn_exit;
+ }
+ 
+-int free_domain_comm_shmem(MPID_Comm *comm_ptr) {
++/* release_group: the comm holds the extra reference of the group it was created from (PMPI_Group_incl +
++ * PMPI_Comm_create, the inter-domain leader comm); a PMPI_Comm_split comm (intra-domain) does not, and its
++ * local_group - only there if someone asked for the comm's group, e.g. a tool - is released by
++ * MPIR_Comm_release itself, so releasing it here too would drop it twice */
++int free_domain_comm_shmem(MPID_Comm *comm_ptr, int release_group) {
+     int mpi_errno = MPI_SUCCESS;
+ 
+     if (comm_ptr->dev.ch.shmem_info) {
+@@ -165,7 +169,7 @@
+         unlock_shmem_region();
+     }
+     comm_ptr->dev.ch.shmem_coll_ok = 0;
+-    if (comm_ptr->local_group != NULL) {
++    if (release_group && comm_ptr->local_group != NULL) {
+         MPIR_Group_release(comm_ptr->local_group);
+     }
+     mpi_errno = MPIR_Comm_release(comm_ptr);
+@@ -189,7 +193,7 @@
+     /* Free intra-domain comm */
+     MPID_Comm_get_ptr(shmem_comm_ptr->dev.ch.topo_comm[level], comm_ptr);
+     if (comm_ptr) {
+-        mpi_errno = free_domain_comm_shmem(comm_ptr);
++        mpi_errno = free_domain_comm_shmem(comm_ptr, 0);  /* PMPI_Comm_split */
+         if (mpi_errno) {
+             MPIR_ERR_POP(mpi_errno);
+         }
+@@ -198,7 +202,7 @@
+     /* Free inter-domain comm */
+     MPID_Comm_get_ptr(shmem_comm_ptr->dev.ch.topo_leader_comm[level], comm_ptr);
+     if (comm_ptr) {
+-        mpi_errno = free_domain_comm_shmem(comm_ptr);
++        mpi_errno = free_domain_comm_shmem(comm_ptr, 1);  /* PMPI_Group_incl + PMPI_Comm_create */
+         if (mpi_errno) {
+             MPIR_ERR_POP(mpi_errno);
+         }
 --- a/src/mpi/datatype/type_size.c
 +++ b/src/mpi/datatype/type_size.c
 @@ -124,3 +124,14 @@
@@ -1980,235 +1958,11 @@
  #include "group.h"
  
  /* -- Begin Profiling Symbol Block for routine MPI_Group_translate_ranks */
-@@ -224,3 +225,332 @@
+@@ -224,3 +225,96 @@
      /* --END ERROR HANDLING-- */
  }
  
 +/* -- Begin Profiling Symbol Block for routine MPI_Group_translate_ranks */
-+
-+#undef FUNCNAME
-+#define FUNCNAME mpi_internal_comm_translate_rank
-+#undef FCNAME
-+#define FCNAME MPL_QUOTE(FUNCNAME)
-+#if 0
-+int mpi_internal_comm_translate_rank(MPID_Comm *comm, int rank)
-+{
-+     if (rank ==  comm->rank) return rank;
-+     if (comm->comm_kind == MPID_INTRACOMM ) {
-+         if (rank > comm->local_size || rank < 0) return MPI_ANY_SOURCE;
-+         // return local_group[rank]->rank;
-+
-+     }
-+     if (comm->comm_kind == MPID_INTERCOMM ) {
-+         if (rank > comm->remote_size || rank < 0) return MPI_ANY_SOURCE;
-+         // return remote_group[rank]->rank;
-+     }
-+     int comm_index=comm->intranode_table[rank]>=0 ? comm->intranode_table[rank]:comm->internode_table[rank];
-+     if (comm_index>=0) return (comm->node_roots_comm[rank].rank); 
-+     return comm->node_comm[rank].rank;
-+}
-+#else
-+int mpi_internal_comm_translate_rank(MPID_Comm *comm, int rank)
-+{
-+    int  rank_out=MPI_UNDEFINED;
-+//    if (rank ==  comm->rank) return rank;
-+    if (rank < 0 ||  comm == NULL ) return MPI_UNDEFINED;
-+    if (comm->comm_kind == MPID_INTRACOMM ) {
-+        if (rank > comm->local_size || rank < 0) {
-+           // fprintf (stderr,"(intracom): rank_in %d is out of bounds 0-%d\n",rank,comm->local_size);
-+           return MPI_UNDEFINED;
-+           // return rank;
-+        }
-+        // return local_group[rank]->rank;
-+    }
-+    if (comm->comm_kind == MPID_INTERCOMM ) {
-+        if (rank > comm->remote_size || rank < 0) {
-+            // fprintf (stderr,"(intercom): rank_in %d is out of bounds 0-%d\n",rank,comm->remote_size);
-+            return MPI_UNDEFINED;
-+            // return rank;
-+        }
-+        // return remote_group[rank]->rank;
-+    }
-+    if (comm->local_group != NULL ) {
-+        MPIR_Group_translate_ranks_impl(comm->local_group, 1, &rank, MPIR_Process.comm_world->local_group,&rank_out);
-+        if (rank_out==MPI_UNDEFINED) {
-+        //     fprintf (stderr,"MPIR_Group_translate_ranks (local) failed %d,%d\n",rank,rank_out);
-+        }
-+    } else {
-+       MPID_Comm *parent_comm=comm->parent_comm;
-+       if (parent_comm !=NULL) {
-+           if(parent_comm->node_comm==comm) {
-+               if(parent_comm->intranode_table_rev==NULL) {
-+                   int i;
-+                   parent_comm->intranode_table_rev=(int *)MPIU_Malloc (sizeof(int) * parent_comm->local_size);
-+                   MPIU_Memset(parent_comm->intranode_table_rev,-1,sizeof(int) * parent_comm->local_size);
-+                   for (i=0;i<parent_comm->local_size;i++) {
-+                       if (parent_comm->intranode_table[i]>=0) {
-+                           if (parent_comm->intranode_table_rev[parent_comm->intranode_table[i]]<0) {
-+                               parent_comm->intranode_table_rev[parent_comm->intranode_table[i]]=i;
-+                           }
-+                       }
-+                   }
-+               }
-+               // fprintf (stderr,"Recursive node %d,%d\n",rank,parent_comm->intranode_table_rev[rank]);
-+               if (parent_comm->intranode_table_rev[rank] < 0) {
-+                  // fprintf (stderr,"Recursive node (intranode_table_rev) is not initialized for %d,%d\n",rank,parent_comm->intranode_table_rev[rank]);
-+               }
-+               return mpi_internal_comm_translate_rank(parent_comm,parent_comm->intranode_table_rev[rank]);
-+           }
-+           if(parent_comm->node_roots_comm==comm) {
-+               if(parent_comm->internode_table_rev==NULL) {
-+                   int i;
-+                   parent_comm->internode_table_rev=(int *)MPIU_Malloc (sizeof(int) * parent_comm->local_size);
-+                   MPIU_Memset(parent_comm->internode_table_rev,-1,sizeof(int) * parent_comm->local_size);
-+                   for (i=0;i<parent_comm->local_size;i++) {
-+                       if (parent_comm->internode_table[i]>=0) {
-+                           if (parent_comm->internode_table_rev[parent_comm->internode_table[i]]<0) {
-+                               parent_comm->internode_table_rev[parent_comm->internode_table[i]]=i;
-+                           }
-+                       }
-+                   }
-+               }
-+               // fprintf (stderr,"Recursive node roots %d,%d\n",rank,parent_comm->internode_table_rev[rank]);
-+               if (parent_comm->internode_table_rev[rank] < 0) {
-+                  // fprintf (stderr,"Recursive node roots (internode_table_rev) is not initialized for %d,%d\n",rank,parent_comm->internode_table_rev[rank]);
-+               }
-+               return mpi_internal_comm_translate_rank(parent_comm,parent_comm->internode_table_rev[rank]);
-+           }
-+       }
-+    }
-+
-+    if (rank_out==MPI_UNDEFINED) {
-+        if (comm->remote_group != NULL ) {
-+            MPIR_Group_translate_ranks_impl(comm->remote_group, 1, &rank, MPIR_Process.comm_world->local_group,&rank_out);
-+            if (rank_out==MPI_UNDEFINED) {
-+                // fprintf (stderr,"MPIR_Group_translate_ranks (remote) failed %d,%d\n",rank,rank_out);
-+            }
-+        }
-+    }
-+    return rank_out;
-+}
-+#undef FUNCNAME
-+#define FUNCNAME mpi_internal_print_comm_tree
-+#undef FCNAME
-+#define FCNAME MPL_QUOTE(FUNCNAME)
-+
-+int mpi_internal_print_comm_tree(MPID_Comm *comm, int depth) {
-+    if (depth==0) fprintf(stderr,"=========================================\n");
-+    fprintf(stderr,"%*s current comm %p-%x - parent comm %p\n",depth*8," ", comm, comm->handle, comm->parent_comm);
-+    if (comm->node_comm)  {
-+        fprintf(stderr,"%*s Node comm\n",depth*8," ");
-+        mpi_internal_print_comm_tree(comm->node_comm, depth+1);
-+    }
-+    if (comm->node_roots_comm) {
-+        fprintf(stderr,"%*s Node root comm\n",depth*8," ");
-+        mpi_internal_print_comm_tree(comm->node_roots_comm,depth+1);
-+    }
-+}
-+#undef FUNCNAME
-+#define FUNCNAME mpi_internal_comm_translate_rank_verbose
-+#undef FCNAME
-+#define FCNAME MPL_QUOTE(FUNCNAME)
-+
-+int mpi_internal_comm_translate_rank_verbose(MPID_Comm *comm, int rank)
-+{
-+    int  rank_out=MPI_UNDEFINED;
-+    fprintf (stderr,"Begin mpi_internal_comm_translate_rank_verbose for %x - %d\n",comm->handle, rank);
-+//    if (rank ==  comm->rank) return rank;
-+    if (comm->comm_kind == MPID_INTRACOMM ) {
-+        if (rank > comm->local_size || rank < 0) {
-+           fprintf (stderr,"(%lx intracom): rank_in %d is out of bounds 0-%d\n",comm->handle,rank,comm->local_size);
-+           return MPI_UNDEFINED;
-+           // return rank;
-+        }
-+        // return local_group[rank]->rank;
-+    }
-+    if (comm->comm_kind == MPID_INTERCOMM ) {
-+        if (rank > comm->remote_size || rank < 0) {
-+            fprintf (stderr,"(%x intercom): rank_in %d is out of bounds 0-%d\n",comm->handle,rank,comm->remote_size);
-+            return MPI_UNDEFINED;
-+            // return rank;
-+        }
-+        // return remote_group[rank]->rank;
-+    }
-+    if (comm->local_group != NULL ) {
-+        fprintf (stderr,"Doing MPIR_Group_translate_ranks (%x local) for %d\n",comm->handle,rank);
-+        MPIR_Group_translate_ranks_impl(comm->local_group, 1, &rank, MPIR_Process.comm_world->local_group,&rank_out);
-+        if (rank_out==MPI_UNDEFINED) {
-+            fprintf (stderr,"MPIR_Group_translate_ranks (%x local) failed %d,%d\n",comm->handle,rank,rank_out);
-+        }
-+    } else {
-+       MPID_Comm *parent_comm=comm->parent_comm;
-+       if (parent_comm !=NULL) {
-+           if(parent_comm->node_comm==comm) {
-+               if(parent_comm->intranode_table_rev==NULL) {
-+                   int i;
-+                   parent_comm->intranode_table_rev=(int *)MPIU_Malloc (sizeof(int) * parent_comm->local_size);
-+                   MPIU_Memset(parent_comm->intranode_table_rev,-1,sizeof(int) * parent_comm->local_size);
-+                   for (i=0;i<parent_comm->local_size;i++) {
-+                       if (parent_comm->intranode_table[i]>=0) {
-+                           if (parent_comm->intranode_table_rev[parent_comm->intranode_table[i]]<0) {
-+                               parent_comm->intranode_table_rev[parent_comm->intranode_table[i]]=i;
-+                           }
-+                       }
-+                   }
-+               }
-+               fprintf (stderr,"Recursive node %d,%d\n",rank,parent_comm->intranode_table_rev[rank]);
-+               if (parent_comm->intranode_table_rev[rank] < 0) {
-+                  fprintf (stderr,"Recursive node (intranode_table_rev) of %x is not initialized for %d,%d\n",comm->handle,rank,parent_comm->intranode_table_rev[rank]);
-+               }
-+               return mpi_internal_comm_translate_rank_verbose(parent_comm,parent_comm->intranode_table_rev[rank]);
-+           }
-+           if(parent_comm->node_roots_comm==comm) {
-+               if(parent_comm->internode_table_rev==NULL) {
-+                   int i;
-+                   parent_comm->internode_table_rev=(int *)MPIU_Malloc (sizeof(int) * parent_comm->local_size);
-+                   MPIU_Memset(parent_comm->internode_table_rev,-1,sizeof(int) * parent_comm->local_size);
-+                   for (i=0;i<parent_comm->local_size;i++) {
-+                       if (parent_comm->internode_table[i]>=0) {
-+                           if (parent_comm->internode_table_rev[parent_comm->internode_table[i]]<0) {
-+                               parent_comm->internode_table_rev[parent_comm->internode_table[i]]=i;
-+                           }
-+                       }
-+                   }
-+               }
-+               fprintf (stderr,"Recursive node roots %x %d,%d\n",comm->handle,rank,parent_comm->internode_table_rev[rank]);
-+               if (parent_comm->internode_table_rev[rank] < 0) {
-+                  fprintf (stderr,"Recursive node roots (internode_table_rev) for %x is not initialized for %d,%d\n",comm->handle,rank,parent_comm->internode_table_rev[rank]);
-+               }
-+               return mpi_internal_comm_translate_rank_verbose(parent_comm,parent_comm->internode_table_rev[rank]);
-+           }
-+       }
-+    }
-+
-+    if (rank_out==MPI_UNDEFINED) {
-+        if (comm->remote_group != NULL ) {
-+            fprintf (stderr,"Doing MPIR_Group_translate_ranks (%x remote) for %d\n",comm->handle,rank);
-+            MPIR_Group_translate_ranks_impl(comm->remote_group, 1, &rank, MPIR_Process.comm_world->local_group,&rank_out);
-+            if (rank_out==MPI_UNDEFINED) {
-+                fprintf (stderr,"MPIR_Group_translate_ranks (%x remote) failed %d,%d\n",comm->handle,rank,rank_out);
-+            }
-+        }
-+    }
-+    fprintf (stderr,"End mpi_internal_comm_translate_rank_verbose for %d->%d\n",rank,rank_out);
-+    if (rank_out==MPI_UNDEFINED) {
-+        fprintf (stderr,"Rank not found comm=%llx,%x. groups=%p,%p\n",comm,comm->handle,comm->local_group,comm->remote_group);
-+        mpi_internal_print_comm_tree(comm,0);
-+    } else {
-+        fprintf (stderr,"Rank found comm=%llx,%x. groups=%p,%p\n",comm,comm->handle,comm->local_group,comm->remote_group);
-+        mpi_internal_print_comm_tree(comm,0);
-+    }
-+    return rank_out;
-+}
-+#endif
-+#undef FUNCNAME
-+#define FUNCNAME mpi_internal_request_translate_rank
-+#undef FCNAME
-+#define FCNAME MPL_QUOTE(FUNCNAME)
-+int mpi_internal_request_translate_rank(MPID_Request *request, int rank)
-+{
-+    return mpi_internal_comm_translate_rank(request->comm,rank);
-+}
 +
 +#undef FUNCNAME
 +#define FUNCNAME mpi_internal_get_request
@@ -2289,18 +2043,6 @@
 +        }
 +    }
 +    return 0;
-+}
-+
-+#undef FUNCNAME
-+#define FUNCNAME mpi_internal_get_top_comm_handle_from_comm
-+#undef FCNAME
-+#define FCNAME MPL_QUOTE(FUNCNAME)
-+
-+MPI_Comm mpi_internal_get_top_comm_handle_from_comm(MPID_Comm *comm)
-+{
-+    if (comm == NULL) return MPI_COMM_NULL;
-+    if (comm->parent_comm) return mpi_internal_get_top_comm_handle_from_comm(comm->parent_comm);
-+    return comm->handle;
 +}
 +
 +#undef FUNCNAME

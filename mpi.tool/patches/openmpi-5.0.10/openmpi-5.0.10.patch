@@ -17,19 +17,18 @@
      }
  
      return rc;
-@@ -273,6 +274,11 @@
+@@ -273,6 +274,10 @@
              /* NTH: use internal idup function that takes a local group argument */
              ompi_comm_idup_internal (old_localcomm, newcomm->c_local_group, NULL, NULL,
                                       &newcomm->c_local_comm, req);
 +            /* reported by mpi_internal_comm_create() when it is activated */
 +            if (MPI_COMM_NULL != newcomm->c_local_comm) {
-+                newcomm->c_local_comm->c_internal_parent = newcomm;
 +                newcomm->c_local_comm->c_internal_kind = MPI_INTERNAL_COMM__LOCALCOMM;
 +            }
          } else {
              /* take ownership of the old communicator (it must be an intracommunicator) */
              assert (OMPI_COMM_IS_INTRA(oldcomm));
-@@ -1655,16 +1661,16 @@
+@@ -1655,16 +1660,16 @@
          MPI_Request req;
  
          /* local leader exchange group sizes lists */
@@ -50,7 +49,7 @@
          if ( rc != MPI_SUCCESS ) {
              return rc;
          }
-@@ -2054,50 +2060,50 @@
+@@ -2054,50 +2059,50 @@
          }
  
          for ( i=0; i<rsize; i++) {
@@ -113,11 +112,11 @@
  
   exit:
      if ( NULL != req ) {
-@@ -2123,6 +2129,13 @@
+@@ -2123,6 +2128,13 @@
      int cid = (*comm)->c_index;
      int is_extra_retain = OMPI_COMM_IS_EXTRA_RETAIN(*comm);
  
-+    /* an internal communicator, reported with a parent: tell the tool before anything is
++    /* an internal communicator, reported with an internal kind: tell the tool before anything is
 +     * released; the flag also keeps the EXTRA_RETAIN recursion below from reporting twice */
 +    if (OMPI_COMM_IS_INTERNAL_CHILD(*comm)) {
 +        (*comm)->c_flags &= ~OMPI_COMM_INTERNAL_CHILD;
@@ -127,7 +126,7 @@
      /* Release attributes.  We do this now instead of during the
         communicator destructor for 2 reasons:
  
-@@ -2254,19 +2267,19 @@
+@@ -2254,19 +2266,19 @@
          }
  
          /* send the remote_leader the length of the buffer */
@@ -152,7 +151,7 @@
          if ( OMPI_SUCCESS != rc ) {
              rlen = 0;  /* participate in the collective and then done */
          }
-@@ -2296,13 +2309,13 @@
+@@ -2296,13 +2308,13 @@
  
      if ( local_rank == local_leader ) {
          /* local leader exchange name lists */
@@ -170,7 +169,7 @@
  #if OPAL_ENABLE_FT_MPI
          /* let it flow even if there are errors */
          if ( OMPI_SUCCESS != rc && MPI_ERR_PROC_FAILED != rc && MPI_ERR_REVOKED != rc ) {
-@@ -2312,7 +2325,7 @@
+@@ -2312,7 +2324,7 @@
              goto err_exit;
          }
  
@@ -206,17 +205,16 @@
          rc = req->req_status.MPI_ERROR;
          ompi_comm_request_return ((ompi_comm_request_t *) req);
      }
-@@ -912,6 +914,37 @@
+@@ -912,6 +914,35 @@
      return OMPI_SUCCESS;
  }
  
 +/* Report a communicator that is about to be activated to mpi_internal_comm_create().
-+ * Who the parent is and what kind of communicator this is was recorded by the creator
-+ * (c_internal_parent/c_internal_kind) or, for the sub-communicators of coll/han, is carried
++ * What kind of communicator this is was recorded by the creator
++ * (c_internal_kind) or, for the sub-communicators of coll/han, is carried
 + * by the info keys han passes to ompi_comm_split_type()/ompi_comm_split_with_info(). */
 +static void ompi_comm_report_internal (ompi_communicator_t *newcomm, ompi_communicator_t *comm)
 +{
-+    ompi_communicator_t *parent = newcomm->c_internal_parent;
 +    int kind = newcomm->c_internal_kind;
 +
 +    if (0 == kind && NULL != comm && comm != newcomm && NULL != newcomm->super.s_info) {
@@ -227,24 +225,23 @@
 +        if (flag) {
 +            kind = (0 == strcmp (level->string, "INTER_NODE")) ? MPI_INTERNAL_COMM__NODE_ROOTS_COMM
 +                                                               : MPI_INTERNAL_COMM__NODE_COMM;
-+            parent = comm;
 +            OBJ_RELEASE(level);
 +        }
 +    }
 +
-+    if (0 == kind || NULL == parent) {
-+        mpi_internal_comm_create (newcomm, NULL, MPI_INTERNAL_COMM__BOOTSTRAP);
++    if (0 == kind) {
++        mpi_internal_comm_create (newcomm, MPI_INTERNAL_COMM__BOOTSTRAP);
 +        return;
 +    }
 +
 +    newcomm->c_flags |= OMPI_COMM_INTERNAL_CHILD;
-+    mpi_internal_comm_create (newcomm, parent, kind);
++    mpi_internal_comm_create (newcomm, kind);
 +}
 +
  int ompi_comm_activate_nb (ompi_communicator_t **newcomm, ompi_communicator_t *comm,
                             ompi_communicator_t *bridgecomm, const void *arg0,
                             const void *arg1, bool send_first, int mode, ompi_request_t **req)
-@@ -969,6 +1002,9 @@
+@@ -969,6 +1000,9 @@
              return ret;
          }
          OMPI_COMM_SET_PML_ADDED(*newcomm);
@@ -254,7 +251,7 @@
      }
  
      /* Step 1: the barrier, after which it is allowed to
-@@ -1002,7 +1038,7 @@
+@@ -1002,7 +1036,7 @@
      }
  
      if (&ompi_request_empty != req) {
@@ -263,7 +260,7 @@
          rc = req->req_status.MPI_ERROR;
          ompi_comm_request_return ((ompi_comm_request_t *) req);
      }
-@@ -1159,14 +1195,14 @@
+@@ -1159,14 +1193,14 @@
  
      /* local leader exchange their data and determine the overall result
         for both groups */
@@ -282,7 +279,7 @@
      if (OPAL_UNLIKELY(OMPI_SUCCESS != rc)) {
          return rc;
      }
-@@ -1237,15 +1273,15 @@
+@@ -1237,15 +1271,15 @@
      int rc;
  
      /* step 2: leader exchange */
@@ -303,7 +300,7 @@
      if (OPAL_UNLIKELY(OMPI_SUCCESS != rc)) {
          return rc;
      }
-@@ -1486,9 +1522,9 @@
+@@ -1486,9 +1520,9 @@
  
      for (int i = 0 ; i < 2 ; ++i) {
          if (MPI_PROC_NULL != context->peers_comm[i + 1]) {
@@ -316,7 +313,7 @@
              if (OMPI_SUCCESS != rc) {
                  return rc;
              }
-@@ -1515,15 +1551,15 @@
+@@ -1515,15 +1549,15 @@
  
      if (MPI_PROC_NULL != context->peers_comm[0]) {
          /* interior node */
@@ -337,7 +334,7 @@
          if (OMPI_SUCCESS != rc) {
              return rc;
          }
-@@ -1580,8 +1616,8 @@
+@@ -1580,8 +1614,8 @@
  
      for (int i = 0 ; i < 2 ; ++i) {
          if (MPI_PROC_NULL != context->peers_comm[i + 1]) {
@@ -354,7 +351,7 @@
  #define OMPI_COMM_EXTRA_RETAIN 0x00004000
  #define OMPI_COMM_MAPBY_NODE   0x00008000
  #define OMPI_COMM_GLOBAL_INDEX 0x00010000
-+#define OMPI_COMM_INTERNAL_CHILD 0x00020000 /* mpi_internal_comm_create() reported a parent: mpi_internal_comm_free() is due */
++#define OMPI_COMM_INTERNAL_CHILD 0x00020000 /* mpi_internal_comm_create() reported an internal kind: mpi_internal_comm_free() is due */
  
  /* some utility #defines */
  #define OMPI_COMM_IS_INTER(comm) ((comm)->c_flags & OMPI_COMM_INTER)
@@ -366,20 +363,19 @@
  
  #define OMPI_COMM_SET_DYNAMIC(comm) ((comm)->c_flags |= OMPI_COMM_DYNAMIC)
  #define OMPI_COMM_SET_INVALID(comm) ((comm)->c_flags |= OMPI_COMM_INVALID)
-@@ -307,6 +309,12 @@
+@@ -307,6 +309,11 @@
                                                   case the comm is an
                                                   inter-comm*/
  
 +    /* Set by the code that creates a library-internal communicator, before the
 +       communicator is activated, so that mpi_internal_comm_create() can report
-+       the parent and the kind (MPI_INTERNAL_COMM__*); NULL/0 otherwise */
-+    struct ompi_communicator_t *c_internal_parent;
++       the kind (MPI_INTERNAL_COMM__*); 0 otherwise */
 +    int c_internal_kind;
 +
      /* Attributes */
      struct opal_hash_table_t       *c_keyhash;
  
-@@ -1192,6 +1200,39 @@
+@@ -1192,6 +1199,37 @@
  
  void ompi_comm_assert_subscribe (ompi_communicator_t *comm, int32_t assert_flag);
  
@@ -394,7 +390,7 @@
 +    MPI_INTERNAL_COMM__SUB_NODE_COMM,        /* (MPICH only) */
 +    MPI_INTERNAL_COMM__INTRA_NODE_LEADS_COMM,/* (MPICH only) */
 +    MPI_INTERNAL_COMM__BOOTSTRAP             /* any other communicator: reported from
-+                                              * ompi_comm_activate_nb() with no parent, whether it
++                                              * ompi_comm_activate_nb() with no internal kind, whether it
 +                                              * was requested by the user or by the library
 +                                              * itself (osc, io, topo, ...) */
 +};
@@ -404,16 +400,14 @@
 + * PMPI_xxx), so a tool may override mpi_internal_xxx and chain to pmpi_internal_xxx.
 + * mpi_internal_comm_create() is called once per communicator, before the collective
 + * component is selected (so before any traffic on it), only on processes that are
-+ * members of the new communicator.  parent_comm is NULL for MPI_INTERNAL_COMM__BOOTSTRAP.
++ * members of the new communicator.
 + * mpi_internal_comm_free() is called from ompi_comm_free() only for communicators that
-+ * were created with a parent_comm, before anything of the communicator is released.
++ * were reported with an internal kind (not BOOTSTRAP), before anything of the communicator is released.
 + * NOTE: the local_comm of an intercommunicator is reported before the intercommunicator
 + * itself. */
-+OMPI_DECLSPEC void mpi_internal_comm_create(ompi_communicator_t *comm,
-+                                            ompi_communicator_t *parent_comm, int kind);
++OMPI_DECLSPEC void mpi_internal_comm_create(ompi_communicator_t *comm, int kind);
 +OMPI_DECLSPEC void mpi_internal_comm_free(ompi_communicator_t *comm);
-+OMPI_DECLSPEC void pmpi_internal_comm_create(ompi_communicator_t *comm,
-+                                             ompi_communicator_t *parent_comm, int kind);
++OMPI_DECLSPEC void pmpi_internal_comm_create(ompi_communicator_t *comm, int kind);
 +OMPI_DECLSPEC void pmpi_internal_comm_free(ompi_communicator_t *comm);
 +
  END_C_DECLS
@@ -421,16 +415,15 @@
  #endif /* OMPI_COMMUNICATOR_H */
 --- a/ompi/communicator/comm_init.c
 +++ b/ompi/communicator/comm_init.c
-@@ -426,6 +426,8 @@
+@@ -426,6 +426,7 @@
      comm->c_cube_dim     = 0;
      comm->c_local_group  = NULL;
      comm->c_remote_group = NULL;
-+    comm->c_internal_parent = NULL;
 +    comm->c_internal_kind   = 0;
      comm->error_handler  = NULL;
      comm->c_pml_comm     = NULL;
      comm->c_topo         = NULL;
-@@ -612,3 +614,35 @@
+@@ -612,3 +613,34 @@
          break;
      }
  }
@@ -443,10 +436,9 @@
 +/* -- End Profiling Symbol Block */
 +
 +/* default implementations are no-ops: the hooks exist only to be overridden by a tool */
-+void pmpi_internal_comm_create(ompi_communicator_t *comm, ompi_communicator_t *parent_comm, int kind)
++void pmpi_internal_comm_create(ompi_communicator_t *comm, int kind)
 +{
 +    (void) comm;
-+    (void) parent_comm;
 +    (void) kind;
 +}
 +
@@ -456,9 +448,9 @@
 +}
 +
 +#if !OPAL_HAVE_WEAK_SYMBOLS
-+void mpi_internal_comm_create(ompi_communicator_t *comm, ompi_communicator_t *parent_comm, int kind)
++void mpi_internal_comm_create(ompi_communicator_t *comm, int kind)
 +{
-+    pmpi_internal_comm_create(comm, parent_comm, kind);
++    pmpi_internal_comm_create(comm, kind);
 +}
 +
 +void mpi_internal_comm_free(ompi_communicator_t *comm)

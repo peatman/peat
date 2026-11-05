@@ -51,14 +51,14 @@
 ## 5. MPI implementation - build first
 
 `tractor` is built *against* one MPI at a time
-(`TARGET=impi|mpich4|mpich5|mvapich2|mvapich4|openmpi`). Build/install the MPI(s) you need before building tractor:
+(`TARGET=impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi`). Build/install the MPI(s) you need before building tractor:
 
 | MPI | Build script | Notes |
 |---|---|---|
 | Intel MPI | n/a (use oneAPI installer) | `TARGET=impi`; closed source, so there is no patch (Fortran calls: see "Fortran" below) |
 | Open MPI 5.0.10 | build/install normally (no build script here) | `TARGET=openmpi`; patches in [../../patches/openmpi-5.0.10](../../patches/openmpi-5.0.10): `openmpi-5.0.10.patch` (trace hooks, for the "engineering" build), `openmpi-5.0.10.fortran.patch` (Fortran interception), `openmpi-5.0.10.ze.patch` (Level Zero). Untested, experimental. The engineering features (`PARSE_MPI_INTERNAL`, `PARSE_COLT`) need the patched MPI; see [../../patches/README.md](../../patches/README.md) |
 | MPICH 4.3.2 | [../../scripts/mpich-4.3.2/Build-{ofi,tcp,ucx}-m.sh](../../scripts/mpich-4.3.2) | `TARGET=mpich4`; patches in [../../patches/mpich-4.3.2](../../patches/mpich-4.3.2): `mpich-4.3.2.patch` for the "engineering" (`PARSE_COLT`) build, `mpich-4.3.2.fortran.patch` for Fortran interception |
-| MPICH 5.0.1 / 5.0.2 | [../../scripts/mpich-5.0.1](../../scripts/mpich-5.0.1) | `TARGET=mpich5`; patches in [../../patches/mpich-5.0.1](../../patches/mpich-5.0.1) and [../../patches/mpich-5.0.2](../../patches/mpich-5.0.2): `.patch` for the "engineering" build, `.fortran.patch` for Fortran interception |
+| MPICH 5.0.1 / 5.0.2 | [../../scripts/mpich-5.0.1](../../scripts/mpich-5.0.1) | `TARGET=mpich5`; patches in [../../patches/mpich-5.0.2](../../patches/mpich-5.0.2) ([../../patches/mpich-5.0.1](../../patches/mpich-5.0.1) is deprecated): `.patch` for the "engineering" build, `.fortran.patch` for Fortran interception |
 | MVAPICH2 2.3.5 | [../../scripts/mvapich-2.3.5/Build-ibv-m.sh](../../scripts/mvapich-2.3.5/Build-ibv-m.sh) | `TARGET=mvapich2`; patch [../../patches/mvapich-2.3.5/mvapich2-2.3.5.patch](../../patches/mvapich-2.3.5/mvapich2-2.3.5.patch) (+ `src/` verbs interceptor sources) needed for verbs/smpi transport-API interception; also `mvapich2-2.3.5.fortran.patch` (Fortran) and `mvapich2-2.3.5.transport.patch` |
 | MVAPICH 4.1 | [../../scripts/mvapich-4.1](../../scripts/mvapich-4.1) | `TARGET=mvapich4`; patches in [../../patches/mvapich-4.1](../../patches/mvapich-4.1): `mvapich-4.1.patch`, `mvapich-4.1.fortran.patch` (Fortran interception) |
 
@@ -152,7 +152,7 @@ Pass as `make` vars, or positional args to `Build.sh`.
 
 | Switch | Values | Meaning |
 |---|---|---|
-| `TARGET` | `impi*, mpich4, mpich5, mvapich2, mvapich4, openmpi, transport_layers` | MPI flavor |
+| `TARGET` | `impi*, mpich3, mpich4, mpich5, mvapich2, mvapich4, openmpi, transport_layers` | MPI flavor |
 | `COMPILER` | `gnu*, intel, nvc, clang` | toolchain (the directory name under `lib/` and `bin/`). `nvc` and `clang` take the GCC options; with `nvc` the `.c` sources are built with `nvc++` (done by the Makefile) |
 | `TRANSPORT` | `on, off*` (mvapich2 also: `PSM2/PSM3/VERBS/UCX/OFI`, legacy) | transport-API interception |
 | `PTPD` | `on*, off` | build PTP daemon support |
@@ -198,7 +198,7 @@ and not with clang either (the probe fails); `ACC=` cannot be set by hand.
 The engineering libfabric exports functions (`fi_close`, ...) that the stock one only has as `static inline` in its headers,
 and an engineering `libmpi` references them as undefined symbols. Both `Makefile` and CMake read the editions with `nm` and
 stop with a "version mismatch" error when the MPI and `$OFIPATH` (system libfabric if unset) do not match. An MPI also counts as
-engineering when it defines the patched `mpi_internal_comm_translate_rank`. The check is skipped for an MPI that does not link
+engineering when it defines the patched `mpi_internal_comm_create`. The check is skipped for an MPI that does not link
 libfabric (stock Open MPI, MVAPICH 2 verbs). `TARGET=transport_layers` needs the engineering libfabric (the shims redefine those
 functions). The CMake check runs before `find_package(MPI)`, which is why the CMake call has to use the MPI compiler wrappers
 (`-DCMAKE_C_COMPILER=$MPICC -DCMAKE_CXX_COMPILER=$MPICXX`, `Build-cmake.sh` does that).

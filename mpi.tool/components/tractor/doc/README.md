@@ -69,7 +69,7 @@ The remainder of this file is legacy documentation, kept for historical referenc
          a. Assuming  that all paths(Compiler,MPI,PAPI) are properly set.  
          b. Go to src directory and execute 'make'. libtractor.<specifiers>so should be built. After make install all required library are installed into PEAT_ROOT/lib and all binaries are in PEAT_ROOT/bin.
       4.1.2 Build switches (specified after make command, * - indicates default value, see src/Makefile for the authoritative list)
-        TARGET=[impi*,mpich4,mpich5,mvapich2,mvapich4,openmpi] compile under/for a certain MPI flavor. TARGET=transport_layer builds special libraries which can be loaded in runtime depending on switch (see 4.2).
+        TARGET=[impi*,mpich3,mpich4,mpich5,mvapich2,mvapich4,openmpi] compile under/for a certain MPI flavor. TARGET=transport_layer builds special libraries which can be loaded in runtime depending on switch (see 4.2).
         COMPILER=[gnu*,intel] toolchain used to build.
         TRANSPORT=[on,off*] build in 'transport' interception (psm2,psm3,ucx,ofi).
         PTPD=[on*,off] build in support for the Precision Time Protocol Daemon (adds -D_TRACTOR_USE_PTPD_).

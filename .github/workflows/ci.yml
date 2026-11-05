@@ -57,6 +57,13 @@ jobs:
   # Ubuntu 24.04's MPICH 4.2 is built --with-pmix, but its hydra mpiexec only serves PMI-1, so every
   # "mpiexec -n 4" starts 4 singletons: that MPICH is only build-tested (it is the MPI 4.1 non-const
   # prototype case). Smoke tests run on 22.04's MPICH 4.0 (plain PMI) and on MPICH built from source.
+  #
+  # Source-built MPIs (src/ver/dev) come from tests/ci/build_mpi.sh and are cached in .ci-mpi/. Entries with "patch"
+  # are the engineering builds: every mpi.tool/patches/<patch>/*.patch is applied (MPICH family: then autogen.sh)
+  # and tractor is built with the MPI-internal parsing on (CMake BUILD_TRACTOR_ENGINEERING_VERSION=on, make
+  # PARSE_MPI_INTERNAL=on). Their cache key contains the hash of the patch files, so the MPI is patched and rebuilt
+  # only when a patch changes or there is no cached build yet; otherwise the cached MPI is used and only the tools
+  # are rebuilt and smoke-tested.
   tractor:
     name: tractor (${{ matrix.mpi }})
     runs-on: ${{ matrix.os }}
@@ -65,82 +72,73 @@ jobs:
       matrix:
         include:
           - { os: ubuntu-22.04, mpi: mpich-4.0,   mpi_pkg: libmpich-dev mpich, target: mpich4, diags: "OFF ON", smoke: true, smoke_tests: "p2p coll comm rma" }
-          - { os: ubuntu-24.04, mpi: mpich-4.3.2, mpich_src: "4.3.2", mpich_dev: "ch4:ofi",  target: mpich4, diags: "OFF ON", smoke: true, smoke_tests: "p2p coll comm rma" }
-          - { os: ubuntu-24.04, mpi: mpich-5.0.2, mpich_src: "5.0.2", mpich_dev: "ch4:ofi",  target: mpich5, diags: "OFF ON", smoke: true, smoke_tests: "p2p coll comm rma" }
-          # latest MPICH 3 (MPI 3.1; tractor builds it with the mpich4 target, MPI 4 wrappers are compiled out)
-          - { os: ubuntu-24.04, mpi: mpich-3.4.3, mpich_src: "3.4.3", mpich_dev: "ch3:sock", target: mpich4, diags: "OFF ON", smoke: true, smoke_tests: "p2p coll comm rma" }
+          - { os: ubuntu-24.04, mpi: mpich-4.3.2, src: mpich, ver: "4.3.2", dev: "ch4:ofi",  target: mpich4, diags: "OFF ON", smoke: true, smoke_tests: "p2p coll comm rma" }
+          - { os: ubuntu-24.04, mpi: mpich-5.0.2, src: mpich, ver: "5.0.2", dev: "ch4:ofi",  target: mpich5, diags: "OFF ON", smoke: true, smoke_tests: "p2p coll comm rma" }
+          # latest MPICH 3 (MPI 3.1): tractor's mpich3 target (MPICH 3 MPI-internal helper signatures)
+          - { os: ubuntu-24.04, mpi: mpich-3.4.3, src: mpich, ver: "3.4.3", dev: "ch3:sock", target: mpich3, diags: "OFF ON", smoke: true, smoke_tests: "p2p coll comm rma" }
           - { os: ubuntu-24.04, mpi: mpich-4.2,   mpi_pkg: libmpich-dev mpich, target: mpich4, diags: "OFF", smoke: false }
           # Ubuntu 24.04 ships Open MPI 4.1; rma hangs under Open MPI even without tractor, so it is left out.
           - { os: ubuntu-24.04, mpi: openmpi-4.1, mpi_pkg: libopenmpi-dev openmpi-bin, target: openmpi, make_target: openmpi5, diags: "OFF", smoke: true, smoke_tests: "p2p coll comm", experimental: true }
           # Open MPI 5 built from source (as tractor's Open MPI target expects); rma hangs under Open MPI 5
           # even without tractor, so it is left out.
-          - { os: ubuntu-24.04, mpi: openmpi-5.0.10, ompi_src: "5.0.10", target: openmpi, make_target: openmpi5, diags: "OFF", smoke: true, smoke_tests: "p2p coll comm" }
+          - { os: ubuntu-24.04, mpi: openmpi-5.0.10, src: openmpi, ver: "5.0.10", target: openmpi, make_target: openmpi5, diags: "OFF", smoke: true, smoke_tests: "p2p coll comm" }
           # 5.0.11 fixes the restarted MPI_Bsend_init bug, so p2p_test checks it strictly there
-          - { os: ubuntu-24.04, mpi: openmpi-5.0.11, ompi_src: "5.0.11", target: openmpi, make_target: openmpi5, diags: "OFF", smoke: true, smoke_tests: "p2p coll comm" }
+          - { os: ubuntu-24.04, mpi: openmpi-5.0.11, src: openmpi, ver: "5.0.11", target: openmpi, make_target: openmpi5, diags: "OFF", smoke: true, smoke_tests: "p2p coll comm" }
+          # engineering (patched) MPIs: one entry per mpi.tool/patches directory, except the deprecated mpich-5.0.1
+          # (superseded by 5.0.2) and mvapich-2.3.5 (superseded by 2.3.7-1)
+          - { os: ubuntu-24.04, mpi: mpich-3.4.3-eng,    src: mpich,    ver: "3.4.3",   dev: "ch3:sock", patch: mpich-3.4.3,     target: mpich3,   diags: "OFF ON", smoke: true, smoke_tests: "p2p coll comm rma" }
+          - { os: ubuntu-24.04, mpi: mpich-4.3.2-eng,    src: mpich,    ver: "4.3.2",   dev: "ch4:ofi",  patch: mpich-4.3.2,     target: mpich4,   diags: "OFF ON", smoke: true, smoke_tests: "p2p coll comm rma" }
+          - { os: ubuntu-24.04, mpi: mpich-5.0.2-eng,    src: mpich,    ver: "5.0.2",   dev: "ch4:ofi",  patch: mpich-5.0.2,     target: mpich5,   diags: "OFF ON", smoke: true, smoke_tests: "p2p coll comm rma" }
+          # MVAPICH 4.1 itself (stock too, without tractor) hangs in MPI_Dist_graph_create (comm) and fails a persistent
+          # collective's Waitall (coll), so those two are left out; it runs on libfabric's shm provider (mvapich-4.1.shm.patch)
+          - { os: ubuntu-24.04, mpi: mvapich-4.1-eng,    src: mvapich,  ver: "4.1",     dev: "ch4:ofi",  patch: mvapich-4.1,     target: mvapich4, diags: "OFF ON", smoke: true, smoke_tests: "p2p rma", fi_provider: shm }
+          # MVAPICH2 on its PSM2 device (ch3:psm, libpsm2 from libpsm2-dev): runs on one node without an Omni-Path HFI with
+          # PSM2_DEVICES=self,shm (set in the smoke step, as is MV2_USE_SHMEM_COLL=0); the verbs headers are still
+          # needed for the transport patch's verbs proxy
+          - { os: ubuntu-24.04, mpi: mvapich2-2.3.7-1-eng, src: mvapich2, ver: "2.3.7-1", dev: "ch3:psm", patch: mvapich-2.3.7-1, target: mvapich2, diags: "OFF ON", smoke: true, smoke_tests: "p2p coll comm rma", mpi_pkg: libpsm2-dev libibverbs-dev librdmacm-dev libibumad-dev }
+          - { os: ubuntu-24.04, mpi: openmpi-5.0.10-eng, src: openmpi,  ver: "5.0.10",                   patch: openmpi-5.0.10,  target: openmpi,  make_target: openmpi5, diags: "OFF", smoke: true, smoke_tests: "p2p coll comm" }
+          - { os: ubuntu-24.04, mpi: openmpi-5.0.11-eng, src: openmpi,  ver: "5.0.11",                   patch: openmpi-5.0.11,  target: openmpi,  make_target: openmpi5, diags: "OFF", smoke: true, smoke_tests: "p2p coll comm" }
     continue-on-error: ${{ matrix.experimental == true }}
     env:
       # inside the workspace: actions/cache rejects paths with a '..' segment (and then silently saves nothing)
-      MPICH_PREFIX: ${{ github.workspace }}/.ci-mpi/mpich-${{ matrix.mpich_src }}
-      OMPI_PREFIX: ${{ github.workspace }}/.ci-mpi/openmpi-${{ matrix.ompi_src }}
+      MPI_PREFIX: ${{ github.workspace }}/.ci-mpi/${{ matrix.src }}-${{ matrix.ver }}${{ matrix.patch && '-eng' || '' }}
+      # engineering tractor: lib name suffix of the GNU make build (CMake keeps the plain name)
+      ENG_SUFFIX: ${{ matrix.patch && '.eng' || '' }}
     steps:
       - uses: actions/checkout@v7
       - name: Install deps
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends g++ gfortran cmake ninja-build perl libswitch-perl \
-            zlib1g-dev libhwloc-dev libunwind-dev libomp-dev ${{ matrix.mpi_pkg }}
-      - name: Cache MPICH ${{ matrix.mpich_src }}
-        if: matrix.mpich_src
-        id: mpich-cache
+            zlib1g-dev libhwloc-dev libunwind-dev libomp-dev ${{ matrix.mpi_pkg }} \
+            ${{ matrix.patch && 'autoconf automake libtool m4 python3' || '' }}
+      - name: Cache ${{ matrix.mpi }}
+        if: matrix.src
+        id: mpi-cache
         uses: actions/cache@v6
         with:
-          path: ${{ env.MPICH_PREFIX }}
-          key: mpich-${{ matrix.mpich_src }}-${{ matrix.mpich_dev }}-gnu-${{ matrix.os }}-v1
-      - name: Build MPICH ${{ matrix.mpich_src }} from source
-        if: matrix.mpich_src && steps.mpich-cache.outputs.cache-hit != 'true'
+          path: ${{ env.MPI_PREFIX }}
+          # stock: <src>-<ver>-<dev|internal>-gnu-<os>-v1; engineering: + -eng-<hash of the patch files>
+          key: >-
+            ${{ matrix.src }}-${{ matrix.ver }}-${{ matrix.dev || 'internal' }}-gnu-${{ matrix.os }}-v1${{
+            matrix.patch && '-eng-' || '' }}${{
+            matrix.patch && hashFiles(format('mpi.tool/patches/{0}/*.patch', matrix.patch || 'none')) || '' }}
+      - name: Build ${{ matrix.mpi }} from source${{ matrix.patch && ' (apply patches)' || '' }}
+        if: matrix.src && steps.mpi-cache.outputs.cache-hit != 'true'
         run: |
-          v=${{ matrix.mpich_src }}
-          dev=${{ matrix.mpich_dev }}
-          extra=""; [ "$dev" = ch4:ofi ] && extra=--with-libfabric=embedded
-          cd "$RUNNER_TEMP"
-          curl -sSfL --retry 3 -o mpich.tar.gz "https://www.mpich.org/static/downloads/$v/mpich-$v.tar.gz"
-          tar -xzf mpich.tar.gz && cd "mpich-$v"
-          ./configure --prefix="$MPICH_PREFIX" --enable-silent-rules --enable-fast=O2 \
-            --with-device=$dev $extra --with-pm=hydra --enable-romio --enable-threads=multiple \
-            --enable-shared --disable-fortran --with-hwloc=embedded --without-ze --without-cuda \
-            CC=gcc CXX=g++ > configure.log 2>&1 || { tail -n 50 configure.log; exit 1; }
-          make -j"$(nproc)" > make.log 2>&1 || { tail -n 50 make.log; exit 1; }
-          make install > install.log 2>&1
-      - name: Use MPICH ${{ matrix.mpich_src }}
-        if: matrix.mpich_src
+          mpi.tool/components/tractor/tests/ci/build_mpi.sh ${{ matrix.src }} ${{ matrix.ver }} "$MPI_PREFIX" \
+            "${{ matrix.dev }}" ${{ matrix.patch && format('mpi.tool/patches/{0}', matrix.patch) || '' }}
+      - name: Use ${{ matrix.mpi }}
+        if: matrix.src
         run: |
-          echo "$MPICH_PREFIX/bin" >> "$GITHUB_PATH"
-          echo "LD_LIBRARY_PATH=$MPICH_PREFIX/lib" >> "$GITHUB_ENV"
-      - name: Cache Open MPI ${{ matrix.ompi_src }}
-        if: matrix.ompi_src
-        id: ompi-cache
-        uses: actions/cache@v6
-        with:
-          path: ${{ env.OMPI_PREFIX }}
-          key: openmpi-${{ matrix.ompi_src }}-internal-gnu-${{ matrix.os }}-v1
-      - name: Build Open MPI ${{ matrix.ompi_src }} from source
-        if: matrix.ompi_src && steps.ompi-cache.outputs.cache-hit != 'true'
-        # bundled hwloc/libevent/PMIx/PRRTE so nothing depends on the distro's Open MPI 4.1 packages; no Fortran
+          echo "$MPI_PREFIX/bin" >> "$GITHUB_PATH"
+          echo "LD_LIBRARY_PATH=$MPI_PREFIX/lib" >> "$GITHUB_ENV"
+      - name: Check the MPI is patched
+        if: matrix.patch
+        # every hook patch exports mpi_internal_comm_create; a stock libmpi never defines it
         run: |
-          v=${{ matrix.ompi_src }}
-          cd "$RUNNER_TEMP"
-          curl -sSfL --retry 3 -o openmpi.tar.bz2 "https://download.open-mpi.org/release/open-mpi/v${v%.*}/openmpi-$v.tar.bz2"
-          tar -xjf openmpi.tar.bz2 && cd "openmpi-$v"
-          ./configure --prefix="$OMPI_PREFIX" --enable-silent-rules --disable-mpi-fortran \
-            --with-hwloc=internal --with-libevent=internal --with-pmix=internal --with-prrte=internal \
-            CC=gcc CXX=g++ > configure.log 2>&1 || { tail -n 50 configure.log; exit 1; }
-          make -j"$(nproc)" > make.log 2>&1 || { tail -n 50 make.log; exit 1; }
-          make install > install.log 2>&1
-      - name: Use Open MPI ${{ matrix.ompi_src }}
-        if: matrix.ompi_src
-        run: |
-          echo "$OMPI_PREFIX/bin" >> "$GITHUB_PATH"
-          echo "LD_LIBRARY_PATH=$OMPI_PREFIX/lib" >> "$GITHUB_ENV"
+          nm -D --defined-only "$MPI_PREFIX"/lib/libmpi.so | grep -w mpi_internal_comm_create \
+            || { echo "::error::$MPI_PREFIX/lib/libmpi.so is not patched"; exit 1; }
       - name: Show MPI
         run: |
           which mpicc mpicxx mpiexec
@@ -162,7 +160,8 @@ jobs:
             b=build/tractor-$d
             cmake -S mpi.tool/components/tractor/src -B $b -G Ninja \
               -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
-              -DTRACTOR_TARGET=${{ matrix.target }} -DDIAG=$d
+              -DTRACTOR_TARGET=${{ matrix.target }} -DDIAG=$d \
+              -DBUILD_TRACTOR_ENGINEERING_VERSION=${{ matrix.patch && 'on' || 'auto' }}
             cmake --build $b
             cmake --install $b
           done
@@ -178,12 +177,13 @@ jobs:
           HWLOC_PATH: /usr
         run: |
           t=${{ matrix.make_target || matrix.target }}
+          eng=PARSE_MPI_INTERNAL=${{ matrix.patch && 'on' || 'off' }}
           mkdir -p "$RUNNER_TEMP/make-lib"
           for d in ${{ matrix.diags }}; do
             d=${d,,}
-            make clean COMPILER=gnu TARGET=$t DIAG=$d > /dev/null
-            make -j"$(nproc)" all COMPILER=gnu TARGET=$t DIAG=$d
-            cp -v libtractor*.$t.so.[0-9]*.[0-9]* "$RUNNER_TEMP/make-lib/"
+            make clean COMPILER=gnu TARGET=$t DIAG=$d $eng > /dev/null
+            make -j"$(nproc)" all COMPILER=gnu TARGET=$t DIAG=$d $eng
+            cp -v libtractor*.$t$ENG_SUFFIX.so.[0-9]*.[0-9]* "$RUNNER_TEMP/make-lib/"
           done
           ldd "$RUNNER_TEMP"/make-lib/libtractor*.so.*
       - name: Build mat + ctt (for smoke test)
@@ -198,14 +198,17 @@ jobs:
         if: matrix.smoke
         env:
           MPICC: mpicc
-          FI_PROVIDER: tcp # libfabric (MPICH ch4:ofi): the provider that works on a plain VM
+          FI_PROVIDER: ${{ matrix.fi_provider || 'tcp' }} # libfabric (ch4:ofi): tcp works on a plain VM
+          PSM2_DEVICES: self,shm  # MVAPICH2 ch3:psm without an Omni-Path HFI (other MPIs ignore it)
+          MV2_USE_SHMEM_COLL: 0   # MVAPICH2: no shared-memory collectives (and their 2-level comms)
+          SMOKE_ENGINEERING: ${{ matrix.patch && '1' || '0' }} # engineering build: MPI-internal functions must be traced
         run: |
           status=0
           for b in cmake make; do
             for d in ${{ matrix.diags }}; do
               case $d in [Oo][Nn]) dbg=_dbg ;; *) dbg= ;; esac
               if [ $b = cmake ]; then lib=mpi.tool/lib/gnu/libtractor$dbg.${{ matrix.target }}.so
-              else lib=$(ls "$RUNNER_TEMP"/make-lib/libtractor$dbg.${{ matrix.make_target || matrix.target }}.so.* | head -1); fi
+              else lib=$(ls "$RUNNER_TEMP"/make-lib/libtractor$dbg.${{ matrix.make_target || matrix.target }}$ENG_SUFFIX.so.* | head -1); fi
               echo "::group::smoke $b DIAG=$d ($lib)"
               SMOKE_WORKDIR=$RUNNER_TEMP/smoke-$b-diag-$d \
                 mpi.tool/components/tractor/tests/ci/smoke.sh "$lib" 4 3 "${{ matrix.smoke_tests }}" || { status=1; echo "::error::smoke $b DIAG=$d failed"; }
