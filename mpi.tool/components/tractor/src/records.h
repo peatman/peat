@@ -45,21 +45,7 @@
         }                                                                                             \
     }
 
-int t_base_event::record_ints(const int tid, const int level, const int *values, const int num)
-{
-    for (int i = 0; i < num; i++) {
-        __T_RECORD_BODY__(cur[idx].values[0] = values[i]; cur[idx].values[1] = -1;)
-    }
-    return 0;
-}
-
-int t_base_event::record_int(const int tid, const int level, const int value)
-{
-    __T_RECORD_BODY__(cur[idx].values[0] = value; cur[idx].values[1] = -1;)
-    return 0;
-}
-
-int t_base_event::record_longs(const int tid, const int level, const long long *values, const int num)
+int t_base_event::write_records(const int tid, const int level, const long long *values, const int num)
 {
     for (int i = 0; i < num; i++) {
         __T_RECORD_BODY__(cur[idx].value = values[i];)
@@ -67,15 +53,7 @@ int t_base_event::record_longs(const int tid, const int level, const long long *
     return 0;
 }
 
-int t_base_event::record_low_longs(const int tid, const int level, const long long *values, const int num)
-{
-    for (int i = 0; i < num; i++) {
-        __T_RECORD_BODY__(cur[idx].values[0] = (int)values[i]; cur[idx].values[1] = -1;)
-    }
-    return 0;
-}
-
-int t_base_event::record_long(const int tid, const int level, const long long value)
+int t_base_event::write_record(const int tid, const int level, const long long value)
 {
     __T_RECORD_BODY__(cur[idx].value = value;)
     return 0;

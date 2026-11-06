@@ -205,10 +205,7 @@ int t_addr_in_fortran_lib(const void *addr); /* tractor.cpp: any of libmpi_mpifh
 #endif
 
 struct msl_extra_info {
-    union {
-        long long value;
-        int values[2];
-    };
+    long long value; // every extra is written as 64 bits (write_record/write_records)
 };
 
 struct t_memory_event {
@@ -362,11 +359,8 @@ extern  ompt_finalize_tool_t ompt_finalize_tool;
 #define __msl_current_level(tid) gt_info(current_level(tid))
 #define __msl_uncount_event(tid, level) gt_info(uncount_event(tid, level))
 
-#define __msl_record_int(tid, level, value) gt_info(record_int(tid, level, value))
-#define __msl_record_long(tid, level, value) gt_info(record_long(tid, level, value))
-#define __msl_record_ints(tid, level, value, nums) gt_info(record_ints(tid, level, value, nums))
-#define __msl_record_longs(tid, level, value, nums) gt_info(record_longs(tid, level, value, nums))
-#define __msl_record_low_longs(tid, level, value, nums) gt_info(record_low_longs(tid, level, value, nums))
+#define __msl_write_record(tid, level, value) gt_info(write_record(tid, level, value))
+#define __msl_write_records(tid, level, value, nums) gt_info(write_records(tid, level, value, nums))
 
 
 #endif //__T_DEFINES_H__

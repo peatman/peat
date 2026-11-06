@@ -16,6 +16,16 @@
 #
 # SMOKE_ENGINEERING=1|0 says whether <libtractor.so> is an engineering build (CI sets it from the matrix); unset, it is
 # guessed: ".eng" in the library name (GNU make) or an exported MPIC_Send wrapper (MPICH family).
+#
+# mat runs in <test>.<names|ids>/serial, on its own copy of the raw trace, without switches (output in serial/out).
+# SMOKE_PMAT=<pmat binary> also runs parallel mat (pmat.<target>, built with the same MPI) once per rank count in
+# SMOKE_PMAT_RANKS (default "1 2 4"), each the same way in its own <test>.<names|ids>/pmat<N> (log pmat<N>/mat.log). It
+# must exit 0, finish processing, report ("Rank:<r> is handling rank <t>.", printed only by a PEAT_MPI build) every trace
+# rank exactly once from the right one of its N ranks (t % N) - a serial mat run under the launcher would not - and
+# write the same output as serial mat: .mpi/.hwc/.trace.info identical after unpacking, .bind the same records after
+# concatenating and sorting all bind files. Differences are printed and kept in pmat<N>/compare/.
+# pmat is experimental: its failures are reported ("PMAT FAIL", a ::warning:: annotation on GitHub Actions) but do not
+# change the exit status, unless SMOKE_PMAT_STRICT=1.
 
 set -u
 
@@ -36,6 +46,12 @@ work=${SMOKE_WORKDIR:-$(mktemp -d)}
 [ -f "$lib" ]     || { echo "no tractor library: $lib"; exit 2; }
 [ -x "$bin/mat" ] || { echo "no mat in $bin"; exit 2; }
 [ -x "$bin/ctt" ] || { echo "no ctt in $bin"; exit 2; }
+pmat=${SMOKE_PMAT:-}
+pmat_ranks=${SMOKE_PMAT_RANKS:-1 2 4}
+if [ -n "$pmat" ]; then
+    pmat=$(realpath "$pmat")
+    [ -x "$pmat" ] || { echo "no pmat: $pmat"; exit 2; }
+fi
 
 traceable=$work/traceable.txt   # MPI functions tractor can record
 mkdir -p "$work"
@@ -73,11 +89,85 @@ set_launch() {
     fi
 }
 
+# pmat runs without tractor: launcher with <n> ranks, no LD_PRELOAD
+pmat_launch() {
+    if [ $openmpi -eq 1 ] ; then
+        launch=(mpirun --oversubscribe -n "$1")
+    else
+        launch=(mpiexec -n "$1")
+    fi
+}
+
 echo "== tractor: $lib (engineering=$engineering)"
+[ -z "$pmat" ] || echo "== pmat: $pmat (ranks: $pmat_ranks)"
 ldd "$lib" | grep -E "not found" && { echo "unresolved dependencies"; exit 1; }
 
 status=0
 fail() { echo "FAIL: $*"; status=1; }
+pmat_status=0
+pmat_fail() {
+    echo "PMAT FAIL (experimental): $*"; pmat_status=1
+    [ -z "${GITHUB_ACTIONS:-}" ] || echo "::warning title=pmat (experimental)::$*"
+}
+
+# new_run_dir <name>: <name>/ in the current (trace) directory with a copy of the raw trace
+new_run_dir() {
+    rm -rf "$1" && mkdir -p "$1" && cp tractor_t.* "$1"/
+}
+
+# show_crash <log>: the error lines of a failed run (MPI aborts, exceptions, signals), then its last lines
+show_crash() {
+    grep -iE "abort|fatal|error|unmatched|terminate|exception|signal|segmentation|killed" "$1" | grep -v "^Model contains" | head -10 | sed 's/^/        /'
+    echo "        ... last lines:"; tail -n 8 "$1" | sed 's/^/        /'
+}
+
+unpack() { case $1 in *.gz) zcat "$1" ;; *) cat "$1" ;; esac ; }
+
+# bind_where <out dir> <record>: the bind file(s) and line(s) holding <record>
+bind_where() {
+    local f
+    for f in "$1"/*.bind.* ; do
+        zcat "$f" | grep -nxF -- "$2" | sed "s|^\([0-9]*\):.*|$(basename "$f"):\1|"
+    done | head -3 | paste -sd' '
+}
+
+# compare_out <serial run dir> <pmat run dir>: <run>/out must hold the same files; .mpi/.hwc/.trace.info identical after
+# unpacking, .bind the same records once all files are concatenated and sorted (pmat may split them differently).
+# Differences are printed (file, line, first records) and kept in full in <pmat run dir>/compare/.
+compare_out() {
+    local ref=$1/out new=$2/out cmp=$2/compare f nd same=0 rec where
+    local tag=${2##*/}
+    rm -rf "$cmp" && mkdir -p "$cmp"
+    [ -d "$new" ] || { echo "      $tag: no output directory $new"; return 1; }
+    diff <(cd "$ref" && ls | grep -v '\.bind\.') <(cd "$new" && ls | grep -v '\.bind\.') > "$cmp/files.diff" || {
+        same=1; echo "      $tag: different output files (< serial, > $tag):"; sed 's/^/        /' "$cmp/files.diff"; }
+    for f in $(cd "$ref" && ls | grep -v '\.bind\.') ; do
+        [ -f "$new/$f" ] || continue
+        if ! diff <(unpack "$ref/$f") <(unpack "$new/$f") > "$cmp/$f.diff" ; then
+            same=1
+            nd=$(grep -c '^[<>]' "$cmp/$f.diff")
+            echo "      $tag: $f differs ($nd lines; line numbers serial,$tag; < serial, > $tag):"
+            head -12 "$cmp/$f.diff" | sed 's/^/        /'
+        else
+            rm -f "$cmp/$f.diff"
+        fi
+    done
+    if ! diff <(zcat "$ref"/*.bind.* | sort) <(zcat "$new"/*.bind.* | sort) > "$cmp/bind.diff" ; then
+        same=1
+        echo "      $tag: bind records differ: serial $(zcat "$ref"/*.bind.* | wc -l) records" \
+             "($(for f in "$ref"/*.bind.* ; do zcat "$f" | wc -l ; done | paste -sd/)), $tag $(zcat "$new"/*.bind.* | wc -l)" \
+             "($(for f in "$new"/*.bind.* ; do zcat "$f" | wc -l ; done | paste -sd/)); only in serial: $(grep -c '^<' "$cmp/bind.diff")," \
+             "only in $tag: $(grep -c '^>' "$cmp/bind.diff"); first ones (record  [file:line]):"
+        { grep '^<' "$cmp/bind.diff" | head -5 ; grep '^>' "$cmp/bind.diff" | head -5 ; } | while IFS= read -r rec ; do
+            if [ "${rec:0:1}" = "<" ] ; then where=$(bind_where "$ref" "${rec:2}") ; else where=$(bind_where "$new" "${rec:2}") ; fi
+            echo "        ${rec}  [$where]"
+        done
+    else
+        rm -f "$cmp/bind.diff"
+    fi
+    [ $same -eq 0 ] && rm -rf "$cmp"
+    return $same
+}
 
 # trace_and_analyse <test> <names:1|0> -> traces, mat and ctt output in $work/<test>.<names|ids>
 trace_and_analyse() {
@@ -97,11 +187,34 @@ trace_and_analyse() {
         [ -s "tractor_t.mpi.$r.gz" ] || fail "$t/$mode: missing tractor_t.mpi.$r.gz"
     done
 
-    timeout 300 "$bin/mat" -o out > mat.log 2>&1 || { tail -n 20 mat.log ; fail "$t/$mode: mat" ; }
+    # every (p)mat run gets its own copy of the raw trace and runs there without switches (output in <run>/out)
+    new_run_dir serial
+    (cd serial && timeout 300 "$bin/mat" > mat.log 2>&1) || { tail -n 20 serial/mat.log ; fail "$t/$mode: mat" ; }
+    if [ -n "$pmat" ] ; then
+        local n ok= rc
+        for n in $pmat_ranks ; do
+            new_run_dir "pmat$n"
+            pmat_launch "$n"
+            rc=0 ; (cd "pmat$n" && timeout 300 "${launch[@]}" "$pmat" > mat.log 2>&1) || rc=$?
+            if [ $rc -ne 0 ] ; then
+                show_crash "pmat$n/mat.log" ; pmat_fail "$t/$mode: pmat on $n ranks: exit status $rc (log $d/pmat$n/mat.log)"
+            elif ! grep -q "End processing" "pmat$n/mat.log" ; then
+                tail -n 20 "pmat$n/mat.log" ; pmat_fail "$t/$mode: pmat on $n ranks did not finish"
+            elif [ "$(sed -nE 's/^Rank:([0-9]+) is handling rank ([0-9]+)\.$/\1 \2/p' "pmat$n/mat.log" | sort -n -k2)" != \
+                   "$(for r in $(seq 0 $((ranks - 1))) ; do echo "$((r % n)) $r" ; done)" ] ; then
+                grep "is handling rank" "pmat$n/mat.log" ; pmat_fail "$t/$mode: pmat on $n ranks did not distribute the $ranks trace ranks over its ranks (not a PEAT_MPI build?)"
+            elif compare_out "$d/serial" "$d/pmat$n" ; then
+                ok+=" $n"
+            else
+                pmat_fail "$t/$mode: pmat on $n ranks: output differs from serial mat (diffs in $d/pmat$n/compare)"
+            fi
+        done
+        echo "    $mode: pmat output identical to serial mat on ranks:${ok:- none}"
+    fi
     # ctt: report on stdout, progress on stderr - keep them apart so progress can't split report lines
     timeout 300 "$bin/ctt" > ctt.log 2> ctt.err || { tail -n 20 ctt.log ctt.err ; fail "$t/$mode: ctt" ; }
     grep -q "End processing" ctt.log ctt.err    || fail "$t/$mode: ctt did not finish"
-    if grep -h "not in the trace's function name/ID table" mat.log ctt.log ctt.err ; then
+    if grep -h "not in the trace's function name/ID table" serial/mat.log ctt.log ctt.err ; then
         fail "$t/$mode: function ids missing from the .app name/ID table"
     fi
     grep "^Function " ctt.log | sort -u > functions.txt
@@ -149,5 +262,12 @@ for t in $tests ; do
 done
 
 echo "== work dir: $work"
+if [ -n "$pmat" ] ; then
+    if [ $pmat_status -eq 0 ] ; then echo "PMAT PASSED"
+    else
+        echo "PMAT FAILED (experimental$([ "${SMOKE_PMAT_STRICT:-0}" = 1 ] && echo ", strict: counted" || echo ", not counted"))"
+        [ "${SMOKE_PMAT_STRICT:-0}" = 1 ] && status=1
+    fi
+fi
 [ $status -eq 0 ] && echo "SMOKE PASSED" || echo "SMOKE FAILED"
 exit $status

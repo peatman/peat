@@ -38,6 +38,13 @@ jobs:
   # Ubuntu 24.04's MPICH 4.2 is built --with-pmix, but its hydra mpiexec only serves PMI-1, so every
   # "mpiexec -n 4" starts 4 singletons: that MPICH is only build-tested (it is the MPI 4.1 non-const
   # prototype case). Smoke tests run on 22.04's MPICH 4.0 (plain PMI) and on MPICH built from source.
+  #
+  # Entries with "pmat" (stock: mpich-4.3.2 and openmpi-5.0.11; engineering: mpich-4.3.2-eng, mpich-5.0.2-eng and
+  # mvapich-4.1-eng) also build parallel mat (pmat.<pmat>: mat's Makefile TARGET, mvapich2 being its generic MPICH-family
+  # one - mpicxx) with that job's MPI, and the smoke test runs it on every trace with 1, 2 and 4
+  # ranks, each in its own copy of the trace, and compares its output with serial mat's. pmat is experimental: a
+  # failure or mismatch shows up as a warning annotation (details in the step log and the smoke artifacts) but does
+  # not fail the job.
   tractor:
     name: tractor (${{ matrix.mpi }})
     runs-on: ${{ matrix.os }}
@@ -46,7 +53,7 @@ jobs:
       matrix:
         include:
           - { os: ubuntu-22.04, mpi: mpich-4.0,   mpi_pkg: libmpich-dev mpich, target: mpich4, diags: "off on", smoke: true, smoke_tests: "p2p coll comm rma" }
-          - { os: ubuntu-24.04, mpi: mpich-4.3.2, src: mpich, ver: "4.3.2", dev: "ch4:ofi",           target: mpich4, diags: "off on", smoke: true, smoke_tests: "p2p coll comm rma" }
+          - { os: ubuntu-24.04, mpi: mpich-4.3.2, src: mpich, ver: "4.3.2", dev: "ch4:ofi",           target: mpich4, diags: "off on", smoke: true, smoke_tests: "p2p coll comm rma", pmat: mvapich2 }
           - { os: ubuntu-24.04, mpi: mpich-5.0.2, src: mpich, ver: "5.0.2", dev: "ch4:ofi",           target: mpich5, diags: "off on", smoke: true, smoke_tests: "p2p coll comm rma" }
           # latest MPICH 3 (MPI 3.1): tractor's mpich3 target
           - { os: ubuntu-24.04, mpi: mpich-3.4.3, src: mpich, ver: "3.4.3", dev: "ch3:sock",           target: mpich3, diags: "off on", smoke: true, smoke_tests: "p2p coll comm rma" }
@@ -58,17 +65,17 @@ jobs:
           # even without tractor, so it is left out.
           - { os: ubuntu-24.04, mpi: openmpi-5.0.10, src: openmpi, ver: "5.0.10", target: openmpi5, diags: "off", smoke: true, smoke_tests: "p2p coll comm" }
           # 5.0.11 fixes the restarted MPI_Bsend_init bug, so p2p_test checks it strictly there
-          - { os: ubuntu-24.04, mpi: openmpi-5.0.11, src: openmpi, ver: "5.0.11", target: openmpi5, diags: "off", smoke: true, smoke_tests: "p2p coll comm" }
+          - { os: ubuntu-24.04, mpi: openmpi-5.0.11, src: openmpi, ver: "5.0.11", target: openmpi5, diags: "off", smoke: true, smoke_tests: "p2p coll comm", pmat: ompi }
           # engineering (patched) MPIs: one entry per mpi.tool/patches directory, except the deprecated mpich-5.0.1
           # (superseded by 5.0.2) and mvapich-2.3.5 (superseded by 2.3.7-1). Every <patch>/*.patch is applied (MPICH family: then autogen.sh) and tractor is built
           # with PARSE_MPI_INTERNAL=on; the cache key holds the hash of the patch files, so the MPI is rebuilt only when
           # a patch changes (or there is no cached build yet).
-          - { os: ubuntu-24.04, mpi: mpich-4.3.2-eng, src: mpich,   ver: "4.3.2", dev: "ch4:ofi", patch: mpich-4.3.2,   target: mpich4,   diags: "off on", smoke: true, smoke_tests: "p2p coll comm rma" }
-          - { os: ubuntu-24.04, mpi: mpich-5.0.2-eng, src: mpich,   ver: "5.0.2", dev: "ch4:ofi", patch: mpich-5.0.2,   target: mpich5,   diags: "off on", smoke: true, smoke_tests: "p2p coll comm rma" }
+          - { os: ubuntu-24.04, mpi: mpich-4.3.2-eng, src: mpich,   ver: "4.3.2", dev: "ch4:ofi", patch: mpich-4.3.2,   target: mpich4,   diags: "off on", smoke: true, smoke_tests: "p2p coll comm rma", pmat: mvapich2 }
+          - { os: ubuntu-24.04, mpi: mpich-5.0.2-eng, src: mpich,   ver: "5.0.2", dev: "ch4:ofi", patch: mpich-5.0.2,   target: mpich5,   diags: "off on", smoke: true, smoke_tests: "p2p coll comm rma", pmat: mvapich2 }
           # MVAPICH 4.1 itself (stock too, without tractor) hangs in MPI_Dist_graph_create (comm) and fails a persistent
           # collective's Waitall (coll), so those two are left out; it runs on libfabric's shm provider (mvapich-4.1.shm.patch)
           # (its embedded libfabric's ucr provider includes <infiniband/ib.h>: verbs headers needed to build)
-          - { os: ubuntu-24.04, mpi: mvapich-4.1-eng, src: mvapich, ver: "4.1",   dev: "ch4:ofi", patch: mvapich-4.1,   target: mvapich4, diags: "off on", smoke: true, smoke_tests: "p2p rma", fi_provider: shm, mpi_pkg: libibverbs-dev librdmacm-dev }
+          - { os: ubuntu-24.04, mpi: mvapich-4.1-eng, src: mvapich, ver: "4.1",   dev: "ch4:ofi", patch: mvapich-4.1,   target: mvapich4, diags: "off on", smoke: true, smoke_tests: "p2p rma", fi_provider: shm, mpi_pkg: libibverbs-dev librdmacm-dev, pmat: mvapich2 }
           # MVAPICH2 on its PSM2 device (ch3:psm, libpsm2 12.0.1 built from source by tests/ci/build_psm2.sh - Ubuntu's 11.2
           # fails psm2_init without an HFI even shm-only): runs on one node without an Omni-Path HFI with
           # PSM2_DEVICES=self,shm (set in the smoke step, as is MV2_USE_SHMEM_COLL=0); the verbs headers are still needed.
@@ -168,6 +175,18 @@ jobs:
         run: |
           make -C mpi.tool/components/ctt/src -j"$(nproc)" && make -C mpi.tool/components/ctt/src install
           make -C mpi.tool/components/mat/src -j"$(nproc)" TARGET=serial && make -C mpi.tool/components/mat/src install TARGET=serial
+      - name: Build parallel mat (pmat.${{ matrix.pmat }}, experimental)
+        if: matrix.smoke && matrix.pmat
+        id: pmat
+        continue-on-error: true
+        # the Makefile builds in the source tree and its object names don't depend on TARGET: clean the serial mat's
+        # objects first, or pmat would link code compiled without PEAT_MPI (serial mat itself is installed already)
+        run: |
+          make -C mpi.tool/components/mat/src clean TARGET=${{ matrix.pmat }}
+          make -C mpi.tool/components/mat/src -j"$(nproc)" TARGET=${{ matrix.pmat }} && make -C mpi.tool/components/mat/src install TARGET=${{ matrix.pmat }}
+          # an MPI target must be the parallel build: without MPI the binary is serial mat under another name
+          nm -D mpi.tool/bin/pmat.${{ matrix.pmat }} | grep -qw MPI_Init_thread || { echo "::error::pmat.${{ matrix.pmat }} does not use MPI"; exit 1; }
+          ldd mpi.tool/bin/pmat.${{ matrix.pmat }} | grep -E "libmpi|not found"
       - name: Smoke test (tests under tractor -> mat -> ctt)
         if: matrix.smoke
         env:
@@ -180,6 +199,9 @@ jobs:
           MV2_ENABLE_AFFINITY: 0  # MVAPICH2: no CPU binding - on the runner VM its implicit mapping picks cores that do not
                                   # exist ("Core id 33 does not exist", MPI_Init fails); a single-node smoke test needs none
           SMOKE_ENGINEERING: ${{ matrix.patch && '1' || '0' }} # engineering build: MPI-internal functions must be traced
+          # also run pmat on the traces (experimental: reported, not counted), if it built
+          SMOKE_PMAT: ${{ steps.pmat.outcome == 'success' && format('mpi.tool/bin/pmat.{0}', matrix.pmat) || '' }}
+          SMOKE_PMAT_RANKS: 1 2 4
         run: |
           status=0
           for d in ${{ matrix.diags }}; do

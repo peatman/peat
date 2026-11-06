@@ -286,6 +286,20 @@ PEAT_Num Mat::handle_incoming_messages()
         MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, globals.comm_compute, &flag, &status);
         if (flag) {
             switch (status.MPI_TAG) {
+            case TRACTOR_P2P_EVENT_TAG:
+            case TRACTOR_COLLECTIVE_EVENT_TAG:
+            case TRACTOR_P2P_PRINT_STRING_TAG:
+            case TRACTOR_REQ_PRINT_STRING_TAG:
+            case TRACTOR_COLL_PRINT_STRING_TAG:
+            case TRACTOR_REQUEST_TAG:
+                messages_received++;
+                break;
+            default:
+                // not a work message (PROFILE_WRITE_PERMISSION from a rank that already terminated): left for the
+                // explicit receive waiting for it - probing on would find the same message forever
+                return 0;
+            }
+            switch (status.MPI_TAG) {
             case RTS_TAG:
                 assert(0);
                 break;
@@ -320,28 +334,6 @@ PEAT_Num Mat::handle_incoming_messages()
                 MPI_Get_count(&status, MPI_CHAR, &size);
                 request_func_store->process_remote_request(size, status.MPI_SOURCE);
             } break;
-            case LOCAL_RANKS_FINISHED: {
-                int size;
-                MPI_Get_count(&status, MPI_CHAR, &size);
-#if defined(_WIN32) && !defined(__MINGW32__)
-                char *buffer = (char *)_malloca(size);
-#else
-                char buffer[size];
-#endif
-                MPI_Recv(buffer, size, MPI_CHAR, status.MPI_SOURCE, LOCAL_RANKS_FINISHED, globals.comm_compute, &status);
-                std::vector<PEAT_Rank> remote_ranks;
-                unpack_pod(buffer, remote_ranks);
-                for (std::vector<PEAT_Rank>::iterator it = remote_ranks.begin(); it != remote_ranks.end(); ++it) {
-                    completed_ranks[*it] = 1;
-                    total_completed_ranks++;
-                }
-            } break;
-            case ALL_RANKS_FINISHED: {
-                assert(globals.comm_rank != 0);
-                assert(status.MPI_SOURCE == 0);
-                MPI_Recv(&all_finished, 1, MPI_INT, 0, ALL_RANKS_FINISHED, globals.comm_compute, &status);
-                std::cerr << "Rank " << globals.comm_rank << " received ACK " << all_finished << "\n";
-            } break;
             }
         }
     } while (flag > 0);
@@ -358,6 +350,7 @@ PEAT_Num Mat::process_outgoing_messages()
                 assert(it->request == MPI_REQUEST_NULL);
                 peat_free(it->buffer);
                 it = active_deliveries.erase(it);
+                deliveries_completed++;
                 continue;
             }
             ++it;
@@ -367,8 +360,42 @@ PEAT_Num Mat::process_outgoing_messages()
     return 0;
     // return p2p_func_store->check_completions() + coll_func_store->check_completions() + request_func_store->check_completions();
 }
+/*
+   Called when this rank has parsed all its trace events: keep handling messages until every work message any pmat rank
+   sent has been received. Handling a message can send more (a completion forwarded to the rank matching the collective
+   is answered with the bind record for the trace rank's owner), and MPI_Iprobe can't see messages still in transit, so a
+   rank being idle locally proves nothing. Instead every rank counts the work messages it sent and received, and
+   rounds of MPI_Iallreduce sum them up while messages keep being handled. Termination: two consecutive rounds with
+   sent == received and the same totals (Mattern's four-counter method) - then nothing was in transit between the two
+   rounds and nothing was sent, and with all trace events parsed only a received message can cause a send. Every rank
+   sees the same sums, so all stop in the same round.
+*/
+void Mat::wait_for_global_quiescence()
+{
+    PEAT_LNum previous[2] = {-1, -1};
+    for (;;) {
+        handle_incoming_messages();
+        process_outgoing_messages();
+        PEAT_LNum local[2] = {messages_sent(), messages_received}, global[2] = {0, 0};
+        MPI_Request round;
+        MPI_Iallreduce(local, global, 2, MPI_LONG_LONG, MPI_SUM, globals.comm_compute, &round);
+        int done = 0;
+        while (!done) {
+            handle_incoming_messages();
+            process_outgoing_messages();
+            MPI_Test(&round, &done, MPI_STATUS_IGNORE);
+        }
+        if (global[0] == global[1] && global[0] == previous[0] && global[1] == previous[1])
+            break;
+        previous[0] = global[0];
+        previous[1] = global[1];
+    }
+    // every message has been received, so the remaining sends complete without further receives
+    while (process_outgoing_messages() > 0) {
+    }
+}
 #endif
-Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : all_finished(0), total_completed_ranks(0), ptp(NULL), input_MPI(NULL), input_HWC(NULL), events_processed(0), globals(glob), model_id(model_id_storage)
+Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : ptp(NULL), input_MPI(NULL), input_HWC(NULL), events_processed(0), globals(glob), model_id(model_id_storage)
 {
     // output_model = 0;
     // output_model_message = 0;
@@ -421,7 +448,6 @@ Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : all_finished(0),
 
 #ifdef PEAT_MPI
     whole_ranks = globals.whole_ranks;
-    completed_ranks.resize(trace_comm_size);
     my_ranks = globals.my_ranks;
 #endif
 	req_store = new Request_Store(ptp, globals.verbose);
@@ -494,7 +520,6 @@ void Mat::process()
         parse_single_event(rank->first);
     }
     PEAT_Num completions = 0;
-    PEAT_Signed_Num unbound_events = 0;
     const PEAT_UID total_event_num = user_region_store->get_num_events(my_ranks);
     PEAT_Ratio start_estimation = Wtime();
     PEAT_Ratio prev_step = start_estimation;
@@ -536,61 +561,27 @@ void Mat::process()
         }
     }
 #ifdef PEAT_MPI
-    if (globals.comm_size > 1) {
-        MPI_Request local_fin_req;
-        MPI_Status status;
-        int flag = 0;
-        PEAT_Num size = pack_pod_size(my_ranks);
-#if defined(_WIN32) && !defined(__MINGW32__)
-        char *buffer = (char *)_malloca(size);
-#else
-        char buffer[size];
-#endif
-        pack_pod(buffer, my_ranks);
-        do {
-            completions = handle_incoming_messages() + process_outgoing_messages();
-            unbound_events = check_unbound_events();
-        } while (completions != 0 /* || unbound_events > 0*/);
-
-        MPI_Issend(buffer, (PEAT_Signed_Num)size, MPI_CHAR, 0, LOCAL_RANKS_FINISHED, globals.comm_compute, &local_fin_req);
-        matout << "Ranks Finished:" << my_ranks << std::endl;
+    wait_for_global_quiescence();
+    {
         PEAT_Ratio cur_step = Wtime();
         PEAT_Ratio estimation_bw = ((PEAT_Ratio)(events_processed)) / (cur_step - start_estimation);
         PEAT_Ratio instant_bw = ((PEAT_Ratio)(events_processed - prev_event_num)) / (cur_step - prev_step);
-        prev_event_num = events_processed;
         printf("%d:%d%% Speed is %.2lf (%.2lf) events per second. Step Time %.2lf. Total Time %.2lf\n", globals.comm_rank, 100, instant_bw, estimation_bw, cur_step - prev_step, cur_step - start_estimation);
         if (globals.verbose) {
-            // print_elems_in_queue();
             p2p_func_store->print_sizes();
             coll_func_store->print_sizes();
-        }
-
-        if (globals.comm_rank == 0) {
-            // total_completed_ranks += my_ranks_size;
-            do {
-                if (flag == 0)
-                    MPI_Test(&local_fin_req, &flag, &status);
-                completions = handle_incoming_messages() + process_outgoing_messages();
-                unbound_events = check_unbound_events();
-            } while (total_completed_ranks < globals.trace_comm_size || completions != 0 || flag == 0 /* || unbound_events > 0*/);
-
-            // all ranks are registered. Sending aknowledge
-            for (int rank = 1; rank < globals.comm_size; rank++) {
-                MPI_Ssend(&rank, 1, MPI_INT, rank, ALL_RANKS_FINISHED, globals.comm_compute);
-            }
-            handle_incoming_messages();
-        } else {
-            do {
-                if (flag == 0)
-                    MPI_Test(&local_fin_req, &flag, &status);
-                completions = handle_incoming_messages() + process_outgoing_messages();
-                unbound_events = check_unbound_events();
-            } while (completions != 0 || all_finished == 0 || flag == 0 /* || check_unbound_events() > 0*/);
         }
     }
 #endif
     process_unbound_events(globals.comm_rank);
 #ifdef PEAT_MPI
+    // with --print_on_send the p2p pairs matched only now send their bind records to the owner of the sending trace
+    // rank: wait until those are received too (every rank enters after its own process_unbound_events, so again only
+    // a received message can cause a send). Without it they are written locally and nothing is sent. Every rank has
+    // the same options, so all of them take part in this collective or none.
+    if (globals.print_location) {
+        wait_for_global_quiescence();
+    }
     int perm = 0;
     MPI_Status status;
     if (globals.comm_rank > 0)
