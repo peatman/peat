@@ -70,13 +70,12 @@
  /******************************** Allgather ********************************/
 --- a/src/include/mpir_comm.h
 +++ b/src/include/mpir_comm.h
-@@ -406,4 +406,32 @@
+@@ -406,4 +406,31 @@
  int MPII_Comm_get_hints(MPIR_Comm * comm_ptr, MPIR_Info * info);
  int MPII_Comm_check_hints(MPIR_Comm * comm_ptr);
  
 +MPI_Request mpi_internal_get_request(struct MPIR_Request *request) MPICH_API_PUBLIC;
 +int mpi_internal_get_requests(int inum, struct MPIR_Request **requests_in, MPI_Request *requests_out) MPICH_API_PUBLIC;
-+MPI_Request MPI_Check_dummy(MPI_Request request) MPICH_API_PUBLIC;
 +MPIR_Comm* mpi_internal_get_comm(struct MPIR_Request *request) MPICH_API_PUBLIC;
 +int mpi_internal_get_comms(int inum,struct MPIR_Request **requests_in, MPIR_Comm **comms_out) MPICH_API_PUBLIC;
 +/* handle of this very comm, internal or not */
@@ -563,7 +562,7 @@
 +}
 --- a/src/mpi/group/group_translate_ranks.c
 +++ b/src/mpi/group/group_translate_ranks.c
-@@ -214,3 +214,64 @@
+@@ -214,3 +214,56 @@
      goto fn_exit;
      /* --END ERROR HANDLING-- */
  }
@@ -591,14 +590,6 @@
 +        requests_out[i]=mpi_internal_get_request(requests_in[i]);
 +    }
 +    return 0;
-+}
-+
-+MPI_Request MPI_Check_dummy(MPI_Request request)
-+{
-+    if (request >= MPIR_REQUEST_COMPLETE && request < MPIR_REQUEST_COMPLETE + MPIR_REQUEST_BUILTIN_COUNT) {
-+        return 0;
-+    }
-+    return request;
 +}
 +
 +MPIR_Comm* mpi_internal_get_comm(MPIR_Request *request)

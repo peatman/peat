@@ -248,11 +248,8 @@ struct t_base_event {
     t_base_event();
     ~t_base_event();
 
-    int record_ints(const int tid, const int level, const int *values, const int num);
-    int record_int(const int tid, const int level, const int value);
-    int record_longs(const int tid, const int level, const long long *values, const int num);
-    int record_low_longs(const int tid, const int level, const long long *values, const int num);
-    int record_long(const int tid, const int level, const long long value);
+    int write_records(const int tid, const int level, const long long *values, const int num);
+    int write_record(const int tid, const int level, const long long value);
 };
 
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)

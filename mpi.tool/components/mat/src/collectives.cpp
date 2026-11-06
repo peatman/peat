@@ -454,6 +454,32 @@ void Collectives::process_collective(const PEAT_Rank rank, MAT_Collectives_Recor
     }
 }
 
+/* The communicator a collective/comm/fio event is matched on. parse_collective (matching) and send_collective (choosing
+   the pmat rank that matches it) must agree: all trace ranks' k-th instance of a (comm, function) go to the same pmat
+   rank. */
+PEAT_MPI_Comm Collectives::event_comm(const PEAT_Rank rank, const Tractor_Event &event) const
+{
+    if (!global_func_id.check_property(event.func_id, PEAT_PROP_COMM)) { // fio opretations without comm (usually read/wrie)
+        if (global_func_id.check_property(event.func_id, PEAT_PROP_FILE_HANDLE)) {
+            return fh_comms.at(rank).at(event.MPIFIO.fh);
+        }
+        return 2; // mpi_comm_world
+    }
+    // Collectives, comms and fio with comm (opena/close)
+    if (!global_func_id.check_property(event.func_id, PEAT_PROP_FILE_HANDLE) && !global_func_id.check_property(event.func_id, PEAT_PROP_FILE_POINTER_INPUT) && !global_func_id.check_property(event.func_id, PEAT_PROP_FILE_POINTER_OUTPUT)) {
+        // not FIO
+        if (event.func_class == PEAT_PROP_CLASS_COMM) {
+            return event.Comms.comm;
+        }
+        if (event.func_id >= MPI_COMM_CREATE_ID && event.Collective.comm == 0) {
+            return 2;
+        }
+        return event.Collective.comm;
+    }
+    // FIO
+    return event.MPIFIO.comm;
+}
+
 void Collectives::parse_collective(const PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool is_remote)
 {
     assert(ptp);
@@ -474,31 +500,7 @@ void Collectives::parse_collective(const PEAT_Rank rank, const Tractor_Event &ev
         ptp->add_rank_MPI(rank, event.tsc_time.func.out - event.tsc_time.func.in);
     }
     MAT_Collectives_Record* record = new MAT_Collectives_Record(event);
-
-    if(!global_func_id.check_property(event.func_id, PEAT_PROP_COMM)) { // fio opretations without comm (usually read/wrie)
-        if(global_func_id.check_property(event.func_id, PEAT_PROP_FILE_HANDLE)) {
-            record->coll_event->comm = fh_comms.at(rank).at(event.MPIFIO.fh);
-        } else {
-            record->coll_event->comm = 2; // mpi_comm_world
-        }
-    } else {
-        // Collectives, comms and fio with comm (opena/close)
-        if(!global_func_id.check_property(event.func_id, PEAT_PROP_FILE_HANDLE) && !global_func_id.check_property(event.func_id, PEAT_PROP_FILE_POINTER_INPUT) && !global_func_id.check_property(event.func_id, PEAT_PROP_FILE_POINTER_OUTPUT)) {
-            // not FIO
-            if(event.func_class == PEAT_PROP_CLASS_COMM) {
-                record->coll_event->comm = event.Comms.comm;
-            } else {
-                if(event.func_id >= MPI_COMM_CREATE_ID && event.Collective.comm == 0) {
-                    record->coll_event->comm = 2;
-                } else {
-                    record->coll_event->comm = event.Collective.comm;
-                }
-            }
-        } else {
-            // FIO
-            record->coll_event->comm = event.MPIFIO.comm;
-        }
-    }
+    record->coll_event->comm = event_comm(rank, event);
 
     if(global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) { // add persistent request to queue and finish
         MAT_Request_Store_Record tmp;
@@ -645,7 +647,6 @@ void Collectives::process_remote_collective(PEAT_Signed_Num size, PEAT_Rank src)
 }
 void Collectives::send_collective(PEAT_Rank rank, const Tractor_Event &event)
 {
-    PEAT_MPI_Comm comm;
     const PEAT_MPI_Func_ID mpifunc = event.func_id;
     if (mpifunc == MPI_FILE_OPEN_ID) {
         fh_comms[rank][event.MPIFIO.fh] = event.MPIFIO.comm;
@@ -653,25 +654,7 @@ void Collectives::send_collective(PEAT_Rank rank, const Tractor_Event &event)
     if (mpifunc == MPI_FILE_CLOSE_ID) {
         fh_comms[rank].erase(event.MPIFIO.fh);
     }
-
-    if (!global_func_id.check_property(mpifunc, PEAT_PROP_COMM)) {
-        if (global_func_id.check_property(mpifunc, PEAT_PROP_FILE_HANDLE)) {
-            comm = fh_comms.at(rank).at(event.MPIFIO.fh);
-        } else {
-            comm = 2; // mpi_comm_world
-        }
-    } else {
-        // Temporal stub
-        if (!global_func_id.check_property(mpifunc, PEAT_PROP_FILE_HANDLE) && !global_func_id.check_property(event.func_id, PEAT_PROP_FILE_POINTER_INPUT) && !global_func_id.check_property(event.func_id, PEAT_PROP_FILE_POINTER_OUTPUT)) {
-            if (mpifunc >= MPI_COMM_CREATE_ID && event.Collective.comm == 0) {
-                comm = 2;
-            } else {
-                comm = event.Collective.comm;
-            }
-        } else {
-            comm = event.MPIFIO.comm;
-        }
-    }
+    const PEAT_MPI_Comm comm = event_comm(rank, event);
 
     if (global_func_id.check_property(mpifunc, PEAT_PROP_DATA_COLLECTIVE) || event.func_class == PEAT_PROP_CLASS_COLLECTIVE || event.func_class == PEAT_PROP_REQUEST) { 
         // since some FIO operation are also parsed here we need to check if it's really collective operation
