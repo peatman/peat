@@ -174,10 +174,12 @@ void P2PAL::print_P2PF(const MAT_P2P_Record &left, const MAT_P2P_Record &right)
         delivery.func = TMPI_FUNC_ID_NONE;
         MPI_Isend(delivery.buffer, size, MPI_CHAR, mat_peer, TRACTOR_P2P_PRINT_STRING_TAG, mat_compute_comm, &delivery.request);
         active_deliveries->push_back(delivery);
+        // counted by the receiving pmat rank when it writes the record (Mat::print_remote_string), like the remote
+        // request binds - counting here too would count every record twice in the .trace.info Bind_Peer totals
 #else
         output_bind->puts(left.rank, &tbuf[4]);
-#endif
         messages_bound[left.rank]++;
+#endif
     } else {
         messages_bound[right.rank]++;
         output_bind->puts(right.rank, &tbuf[4]);

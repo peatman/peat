@@ -28,19 +28,35 @@ extern "C" {
 #ifdef _STATUS_LO_HI_
 #define MPI_STATUS_GET_COUNT_P(x) ((long long)((((long long)(((unsigned int)x->count_hi_and_cancelled) >> 1)) << BITS_IN_INT) + (unsigned int)x->count_lo))
 #define MPI_STATUS_GET_COUNT_R(x) ((long long)((((long long)(((unsigned int)x.count_hi_and_cancelled) >> 1)) << BITS_IN_INT) + (unsigned int)x.count_lo))
-static int __msl_record_request(const int tid, const int level, const MPI_Request value) { return (gt_info(record_int(tid, level, (int)value))); }
-static int __msl_record_requests(const int tid, const int level, const MPI_Request *values, const int num) { return (gt_info(record_ints(tid, level, (int *)values, num))); }
+/* an MPICH-family request is an int handle: recorded zero-extended to 64 bits, like an Open MPI request (a pointer),
+   so every request is read back the same way */
+static int __msl_record_request(const int tid, const int level, const MPI_Request value) { return (gt_info(write_record(tid, level, (long long)(unsigned int)value))); }
+static int __msl_record_requests(const int tid, const int level, const MPI_Request *values, const int num)
+{
+    for (int i = 0; i < num; i++) {
+        __msl_record_request(tid, level, values[i]);
+    }
+    return 0;
+}
 #else
 #ifdef OPEN_MPI
 #define MPI_STATUS_GET_COUNT_P(x) (((long long)(x)->_ucount))
 #define MPI_STATUS_GET_COUNT_R(x) (((long long)(x)._ucount))
-static int __msl_record_request(const int tid, const int level, const MPI_Request value) { return (gt_info(record_long(tid, level, (long long)value))); }
-static int __msl_record_requests(const int tid, const int level, const MPI_Request *values, const int num) { return (gt_info(record_longs(tid, level, (long long *)values, num))); }
+static int __msl_record_request(const int tid, const int level, const MPI_Request value) { return (gt_info(write_record(tid, level, (long long)value))); }
+static int __msl_record_requests(const int tid, const int level, const MPI_Request *values, const int num) { return (gt_info(write_records(tid, level, (long long *)values, num))); }
 #else
 #define MPI_STATUS_GET_COUNT_P(x) (((long long)(x)->count))
 #define MPI_STATUS_GET_COUNT_R(x) (((long long)(x).count))
-static int __msl_record_request(const int tid, const int level, const MPI_Request value) { return (gt_info(record_int(tid, level, (int)value))); }
-static int __msl_record_requests(const int tid, const int level, const MPI_Request *values, const int num) { return (gt_info(record_ints(tid, level, (int *)values, num))); }
+/* an MPICH-family request is an int handle: recorded zero-extended to 64 bits, like an Open MPI request (a pointer),
+   so every request is read back the same way */
+static int __msl_record_request(const int tid, const int level, const MPI_Request value) { return (gt_info(write_record(tid, level, (long long)(unsigned int)value))); }
+static int __msl_record_requests(const int tid, const int level, const MPI_Request *values, const int num)
+{
+    for (int i = 0; i < num; i++) {
+        __msl_record_request(tid, level, values[i]);
+    }
+    return 0;
+}
 #endif
 #endif
 
@@ -151,13 +167,13 @@ MPI_Comm mpi_internal_get_comm_handle_from_comm(MPI_Comm comm) {return comm;};
 
 static MPI_Request __msl_record_drequest(const int tid, const int level, MPI_Request request)
 {
-    __msl_record_long(tid, level, (const long long)request);
+    __msl_write_record(tid, level, (const long long)request);
     return (request);
 }
 
 static int __msl_record_drequests(const int tid, const int level, MPI_Request *requests, const int num)
 {
-    return (__msl_record_longs(tid, level, (const long long *)requests, num));
+    return (__msl_write_records(tid, level, (const long long *)requests, num));
 }
 
 #else // for mpich based mpi there is internal function incorporated to source tree via patch provided in PEAT
@@ -175,7 +191,7 @@ static MPI_Request __msl_get_drequest(const MPID_Request *value)
 static MPI_Request __msl_record_drequest(const int tid, const int level, const MPID_Request *value)
 {
     MPI_Request mpi_req = mpi_internal_get_request(value);
-    __msl_record_int(tid, level, mpi_req);
+    __msl_record_request(tid, level, mpi_req);
     return (mpi_req);
 }
 
@@ -183,7 +199,7 @@ static int __msl_record_drequests(const int tid, const int level, const MPID_Req
 {
     MPI_Request local_reqs[num];
     mpi_internal_get_requests(num, values, local_reqs);
-    return (__msl_record_ints(tid, level, local_reqs, num));
+    return (__msl_record_requests(tid, level, local_reqs, num));
 }
 
 static void __msl_cvt_drequests(MPI_Request *out, const MPID_Request **values, const int num)
@@ -257,7 +273,7 @@ void T_MPID_Request_release(MPID_Request *request)
             TSC[1]=status.MPI_TAG;
             TSC[2]=get_rank_from_comm(local_comm,status.MPI_SOURCE);
             TSC[3]=MPI_STATUS_GET_COUNT_R(status);
-           __msl_record_longs(tid,level,TSC,4);
+           __msl_write_records(tid,level,TSC,4);
         }
 
         tsc_exit = peat_get_time();
