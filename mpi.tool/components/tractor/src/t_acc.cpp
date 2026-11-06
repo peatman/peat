@@ -162,7 +162,7 @@ static msl_event *record_acc_event(short func1, const long long *params)
     t_event->gpu.num_arguments = ACC_PARAMS_NUM;
     t_event->gpu.num_out_arguments = 0;
     t_event->gpu.num_extra_arguments = 0;
-    __msl_record_longs(tid, level, params, ACC_PARAMS_NUM);
+    __msl_write_records(tid, level, params, ACC_PARAMS_NUM);
     if (gt_info(full_ompt_unwind)) {
         stack_unwind(gt_info(max_ret_level), counters.addrs, gt_info(ret_levels));
     } else {

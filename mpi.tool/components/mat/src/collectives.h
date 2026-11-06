@@ -217,6 +217,7 @@ class Collectives : public Outputs
     void process_collective(const PEAT_Rank rank, MAT_Collectives_Record* event, int pc_level, PEAT_Bool is_remote);
 
     void print_collective_out(const Tractor_Event &event);
+    PEAT_MPI_Comm event_comm(const PEAT_Rank rank, const Tractor_Event &event) const;
     void print_collective_err(const MAT_Collective &record, PEAT_Rank my_rank);
     void print_collective_bind(const MAT_Collective &record);
     PEAT_Bool check_completion(const MAT_Collective &record);

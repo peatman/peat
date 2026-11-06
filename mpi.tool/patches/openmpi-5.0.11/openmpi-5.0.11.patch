@@ -1329,7 +1329,7 @@
           i = (i + 1) % size, ++rreq) {
          nreqs++;
 -        err = MCA_PML_CALL(irecv_init
-+        err = ompi_coll_p2p_recv_init
++        err = Pompi_coll_p2p_recv_init
                             (prcv + (ptrdiff_t)i * rcvinc, rcount, rdtype, i,
 -                           MCA_COLL_BASE_TAG_ALLTOALL, comm, rreq));
 +                           MCA_COLL_BASE_TAG_ALLTOALL, comm, rreq);
@@ -1341,7 +1341,7 @@
           i = (i + size - 1) % size, ++sreq) {
          nreqs++;
 -        err = MCA_PML_CALL(isend_init
-+        err = ompi_coll_p2p_send_init
++        err = Pompi_coll_p2p_send_init
                             (psnd + (ptrdiff_t)i * sndinc, scount, sdtype, i,
                             MCA_COLL_BASE_TAG_ALLTOALL,
 -                           MCA_PML_BASE_SEND_STANDARD, comm, sreq));
@@ -1352,7 +1352,7 @@
      /* Start your engines.  This will never return an error. */
  
 -    MCA_PML_CALL(start(nreqs, req));
-+    ompi_coll_p2p_start(nreqs, req);
++    Pompi_coll_p2p_start(nreqs, req);
  
      /* Wait for them all.  If there's an error, note that we don't
       * care what the error was -- just that there *was* an error.  The
@@ -1361,10 +1361,19 @@
       * the error after we free everything. */
  
 -    err = ompi_request_wait_all(nreqs, req, MPI_STATUSES_IGNORE);
-+    err = ompi_coll_p2p_wait_all(nreqs, req, MPI_STATUSES_IGNORE);
++    err = Pompi_coll_p2p_wait_all(nreqs, req, MPI_STATUSES_IGNORE);
      if (MPI_SUCCESS != err) { line = __LINE__; goto err_hndl; }
  
   err_hndl:
+@@ -735,7 +736,7 @@
+         (void)line;  // silence compiler warning
+     }
+     /* Free the reqs in all cases as they are persistent requests */
+-    ompi_coll_base_free_reqs(req, nreqs);
++    Pompi_coll_base_free_reqs(req, nreqs);
+ 
+     /* All done */
+     return err;
 --- a/ompi/mca/coll/base/coll_base_alltoallv.c
 +++ b/ompi/mca/coll/base/coll_base_alltoallv.c
 @@ -40,6 +40,7 @@
@@ -1473,7 +1482,7 @@
              ++nreqs;
              prcv = ((char *) rbuf) + (ptrdiff_t)rdisps[i] * rext;
 -            err = MCA_PML_CALL(irecv_init(prcv, rcounts[i], rdtype,
-+            err = ompi_coll_p2p_recv_init(prcv, rcounts[i], rdtype,
++            err = Pompi_coll_p2p_recv_init(prcv, rcounts[i], rdtype,
                                            i, MCA_COLL_BASE_TAG_ALLTOALLV, comm,
 -                                          preq++));
 +                                          preq++);
@@ -1485,7 +1494,7 @@
              ++nreqs;
              psnd = ((char *) sbuf) + (ptrdiff_t)sdisps[i] * sext;
 -            err = MCA_PML_CALL(isend_init(psnd, scounts[i], sdtype,
-+            err = ompi_coll_p2p_send_init(psnd, scounts[i], sdtype,
++            err = Pompi_coll_p2p_send_init(psnd, scounts[i], sdtype,
                                           i, MCA_COLL_BASE_TAG_ALLTOALLV,
                                           MCA_PML_BASE_SEND_STANDARD, comm,
 -                                         preq++));
@@ -1496,7 +1505,7 @@
  
      /* Start your engines.  This will never return an error. */
 -    MCA_PML_CALL(start(nreqs, reqs));
-+    ompi_coll_p2p_start(nreqs, reqs);
++    Pompi_coll_p2p_start(nreqs, reqs);
  
      /* Wait for them all.  If there's an error, note that we don't care
       * what the error was -- just that there *was* an error.  The PML
@@ -1505,10 +1514,19 @@
       * So free them anyway -- even if there was an error, and return the
       * error after we free everything. */
 -    err = ompi_request_wait_all(nreqs, reqs, MPI_STATUSES_IGNORE);
-+    err = ompi_coll_p2p_wait_all(nreqs, reqs, MPI_STATUSES_IGNORE);
++    err = Pompi_coll_p2p_wait_all(nreqs, reqs, MPI_STATUSES_IGNORE);
  
   err_hndl:
      /* find a real error code */
+@@ -390,7 +391,7 @@
+         }
+     }
+     /* Free the requests in all cases as they are persistent */
+-    ompi_coll_base_free_reqs(reqs, nreqs);
++    Pompi_coll_base_free_reqs(reqs, nreqs);
+ 
+     return err;
+ }
 --- a/ompi/mca/coll/base/coll_base_barrier.c
 +++ b/ompi/mca/coll/base/coll_base_barrier.c
 @@ -35,6 +35,7 @@
@@ -2177,7 +2195,7 @@
  
  /* some fixed value index vars to simplify certain operations */
  typedef enum COLLTYPE {
-@@ -544,11 +545,11 @@
+@@ -544,11 +545,38 @@
                   * For other errors that do not have a well defined post-error
                   * behavior, calling the cancel/wait could deadlock, so we just
                   * free, as this is the best that can be done in this case. */
@@ -2189,6 +2207,33 @@
  #endif /* OPAL_ENABLE_FT_MPI */
 -            ompi_request_free(&reqs[i]);
 +            ompi_coll_p2p_free(&reqs[i]);
++        }
++    }
++}
++
++/**
++ * Same as ompi_coll_base_free_reqs, but with the untraced Pompi_coll_p2p_* calls: for the requests of the algorithms
++ * that build their persistent requests with Pompi_coll_p2p_*_init (alltoall/alltoallv basic_linear, basic alltoallw).
++ * Those one-shot persistent requests (init, start, wait_all, free inside one blocking collective) only duplicate the
++ * collective itself, so none of their calls is traced (as MPICH's PMPIC_Wait in the *_allcomm_nb collectives).
++ */
++static inline void Pompi_coll_base_free_reqs(ompi_request_t **reqs, int count)
++{
++    if (OPAL_UNLIKELY(NULL == reqs)) {
++        return;
++    }
++
++    for (int i = 0; i < count; ++i) {
++        if( MPI_REQUEST_NULL != reqs[i] ) {
++#if OPAL_ENABLE_FT_MPI
++            if( MPI_ERR_PROC_FAILED == reqs[i]->req_status.MPI_ERROR
++             || MPI_ERR_PROC_FAILED_PENDING == reqs[i]->req_status.MPI_ERROR
++             || MPI_ERR_REVOKED == reqs[i]->req_status.MPI_ERROR ) {
++                Pompi_coll_p2p_cancel(reqs[i]);
++                Pompi_coll_p2p_wait(&reqs[i], MPI_STATUS_IGNORE);
++            } else /* this 'else' intentionally spills outside the ifdef */
++#endif /* OPAL_ENABLE_FT_MPI */
++            Pompi_coll_p2p_free(&reqs[i]);
          }
      }
  }
@@ -4546,92 +4591,112 @@
          if (MPI_SUCCESS != err) { goto error_hndl; }
      }
  
-@@ -217,9 +218,9 @@
+@@ -217,12 +218,12 @@
              continue;
  
          prcv = ((char *) rbuf) + rdisps[i];
 -        err = MCA_PML_CALL(irecv_init(prcv, rcounts[i], rdtypes[i],
-+        err = ompi_coll_p2p_recv_init(prcv, rcounts[i], rdtypes[i],
++        err = Pompi_coll_p2p_recv_init(prcv, rcounts[i], rdtypes[i],
                                        i, MCA_COLL_BASE_TAG_ALLTOALLW, comm,
 -                                      preq++));
 +                                      preq++);
          ++nreqs;
          if (MPI_SUCCESS != err) {
-             ompi_coll_base_free_reqs(reqs, nreqs);
-@@ -238,10 +239,10 @@
+-            ompi_coll_base_free_reqs(reqs, nreqs);
++            Pompi_coll_base_free_reqs(reqs, nreqs);
+             return err;
+         }
+     }
+@@ -238,20 +239,20 @@
              continue;
  
          psnd = ((char *) sbuf) + sdisps[i];
 -        err = MCA_PML_CALL(isend_init(psnd, scounts[i], sdtypes[i],
-+        err = ompi_coll_p2p_send_init(psnd, scounts[i], sdtypes[i],
++        err = Pompi_coll_p2p_send_init(psnd, scounts[i], sdtypes[i],
                                        i, MCA_COLL_BASE_TAG_ALLTOALLW,
                                        MCA_PML_BASE_SEND_STANDARD, comm,
 -                                      preq++));
 +                                      preq++);
          ++nreqs;
          if (MPI_SUCCESS != err) {
-             ompi_coll_base_free_reqs(reqs, nreqs);
-@@ -251,7 +252,7 @@
+-            ompi_coll_base_free_reqs(reqs, nreqs);
++            Pompi_coll_base_free_reqs(reqs, nreqs);
+             return err;
+         }
+     }
  
      /* Start your engines.  This will never return an error. */
  
 -    MCA_PML_CALL(start(nreqs, reqs));
-+    ompi_coll_p2p_start(nreqs, reqs);
++    Pompi_coll_p2p_start(nreqs, reqs);
  
      /* Wait for them all.  If there's an error, note that we don't care
       * what the error was -- just that there *was* an error.  The PML
-@@ -260,7 +261,7 @@
+@@ -260,9 +261,9 @@
       * So free them anyway -- even if there was an error, and return the
       * error after we free everything. */
  
 -    err = ompi_request_wait_all(nreqs, reqs, MPI_STATUSES_IGNORE);
-+    err = ompi_coll_p2p_wait_all(nreqs, reqs, MPI_STATUSES_IGNORE);
++    err = Pompi_coll_p2p_wait_all(nreqs, reqs, MPI_STATUSES_IGNORE);
      /* Free the requests in all cases as they are persistent */
-     ompi_coll_base_free_reqs(reqs, nreqs);
+-    ompi_coll_base_free_reqs(reqs, nreqs);
++    Pompi_coll_base_free_reqs(reqs, nreqs);
  
-@@ -306,9 +307,9 @@
+     /* All done */
+     return err;
+@@ -306,12 +307,12 @@
              continue;
  
          prcv = ((char *) rbuf) + rdisps[i];
 -        err = MCA_PML_CALL(irecv_init(prcv, rcounts[i], rdtypes[i],
-+        err = ompi_coll_p2p_recv_init(prcv, rcounts[i], rdtypes[i],
++        err = Pompi_coll_p2p_recv_init(prcv, rcounts[i], rdtypes[i],
                                        i, MCA_COLL_BASE_TAG_ALLTOALLW,
 -                                      comm, preq++));
 +                                      comm, preq++);
          ++nreqs;
          if (OMPI_SUCCESS != err) {
-             ompi_coll_base_free_reqs(reqs, nreqs);
-@@ -326,10 +327,10 @@
+-            ompi_coll_base_free_reqs(reqs, nreqs);
++            Pompi_coll_base_free_reqs(reqs, nreqs);
+             return err;
+         }
+     }
+@@ -326,19 +327,19 @@
              continue;
  
          psnd = ((char *) sbuf) + sdisps[i];
 -        err = MCA_PML_CALL(isend_init(psnd, scounts[i], sdtypes[i],
-+        err = ompi_coll_p2p_send_init(psnd, scounts[i], sdtypes[i],
++        err = Pompi_coll_p2p_send_init(psnd, scounts[i], sdtypes[i],
                                        i, MCA_COLL_BASE_TAG_ALLTOALLW,
                                        MCA_PML_BASE_SEND_STANDARD, comm,
 -                                      preq++));
 +                                      preq++);
          ++nreqs;
          if (OMPI_SUCCESS != err) {
-             ompi_coll_base_free_reqs(reqs, nreqs);
-@@ -338,7 +339,7 @@
+-            ompi_coll_base_free_reqs(reqs, nreqs);
++            Pompi_coll_base_free_reqs(reqs, nreqs);
+             return err;
+         }
      }
  
      /* Start your engines.  This will never return an error. */
 -    MCA_PML_CALL(start(nreqs, reqs));
-+    ompi_coll_p2p_start(nreqs, reqs);
++    Pompi_coll_p2p_start(nreqs, reqs);
  
      /* Wait for them all.  If there's an error, note that we don't care
       * what the error was -- just that there *was* an error.  The PML
-@@ -346,7 +347,7 @@
+@@ -346,10 +347,10 @@
       * i.e., by the end of this call, all the requests are free-able.
       * So free them anyway -- even if there was an error, and return the
       * error after we free everything. */
 -    err = ompi_request_wait_all(nreqs, reqs, MPI_STATUSES_IGNORE);
-+    err = ompi_coll_p2p_wait_all(nreqs, reqs, MPI_STATUSES_IGNORE);
++    err = Pompi_coll_p2p_wait_all(nreqs, reqs, MPI_STATUSES_IGNORE);
  
      /* Free the requests in all cases as they are persistent */
-     ompi_coll_base_free_reqs(reqs, nreqs);
+-    ompi_coll_base_free_reqs(reqs, nreqs);
++    Pompi_coll_base_free_reqs(reqs, nreqs);
+ 
+     /* All done */
+     return err;
 --- a/ompi/mca/coll/basic/coll_basic_barrier.c
 +++ b/ompi/mca/coll/basic/coll_basic_barrier.c
 @@ -28,6 +28,7 @@

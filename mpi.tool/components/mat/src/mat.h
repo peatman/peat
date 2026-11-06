@@ -37,10 +37,8 @@ struct Mat_Time {
 class Mat
 {
   public:
-    PEAT_Num all_finished, total_completed_ranks;
     std::vector<PEAT_Rank> whole_ranks;
     std::vector<PEAT_Rank> my_ranks;
-    std::vector<PEAT_Rank> completed_ranks;
     Communicators *comm_store;
     PTP *ptp;
     Collectives *coll_func_store;
@@ -77,8 +75,12 @@ class Mat
     PEAT_Bool parse_single_event(const int rank);
 #ifdef PEAT_MPI
     PEAT_Num handle_incoming_messages();
-    std::list<PEAT_Event_Delivery> active_deliveries;
+    std::list<PEAT_Event_Delivery> active_deliveries; // every work message sent to a pmat rank, until its send completes
     PEAT_Num process_outgoing_messages();
+    // work messages (events, requests, bind strings) this pmat rank sent / received, for termination detection
+    PEAT_LNum deliveries_completed = 0, messages_received = 0;
+    PEAT_LNum messages_sent() const { return deliveries_completed + (PEAT_LNum)active_deliveries.size(); }
+    void wait_for_global_quiescence();
     void print_remote_string(int size, int tag, int src);
     PEAT_Signed_Num check_unbound_events()
     {

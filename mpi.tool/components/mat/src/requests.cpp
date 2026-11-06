@@ -177,6 +177,27 @@ PEAT_Bool Requests::remove_pers_req(const PEAT_Rank rank, const PEAT_MPI_Request
 #endif
     return req_store->remove_request(rank, request, REQUEST_TYPE_PERSISTENT, ret_it);
 }
+/* Whether request currently belongs to a persistent request of rank: stored here, sent to the pmat rank matching it
+   (local side only) or thrown away (persistent request on MPI_PROC_NULL). */
+PEAT_Bool Requests::is_persistent_request(const PEAT_Rank rank, const PEAT_MPI_Request request, PEAT_Bool is_remote)
+{
+    MAT_Request_Store_Record rec;
+    if (req_store->find_request(rank, request, REQUEST_TYPE_PERSISTENT, &rec, false)) {
+        return true;
+    }
+#ifdef PEAT_MPI
+    if (!is_remote && req_store->flown_away_pers_requests.count(rank) && req_store->flown_away_pers_requests.at(rank).count(request)) {
+        return true;
+    }
+    if (req_store->find_thrown_away_request(qt_pers_thrown, rank, request, false)) {
+        return true;
+    }
+#else
+    (void)is_remote;
+#endif
+    return false;
+}
+
 void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_remote)
 {
     // cerr << "DBG1 " << event << "\n";
@@ -197,11 +218,16 @@ void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is
 		//skip these starting events. They are not needed for request tracking. We will track only completion events.
         return;
 	}
+    // Open MPI frees its persistent internal requests (a persistent collective's or a collective's schedule) with
+    // ompi_coll_p2p_free: for those it ends the request like MPI_Request_free - otherwise the handle, soon reused by
+    // the next collective's requests, would keep pointing at the freed one. Of any other request it is a completion.
+    const PEAT_Bool frees_persistent = event.func_id == MPI_REQUEST_FREE_ID ||
+        (event.func_id == OMPI_COLL_P2P_FREE_ID && !event.requests.empty() && is_persistent_request(rank, event.requests.at(0), is_remote));
         // build list of completed requests
-    if (event.func_id == MPI_REQUEST_FREE_ID || event.func_id == MPI_CANCEL_ID) { // mpi_request_free
+    if (frees_persistent || event.func_id == MPI_CANCEL_ID) { // mpi_request_free
 #ifdef PEAT_MPI
         if (!is_remote) {
-            if(event.func_id == MPI_REQUEST_FREE_ID) {
+            if(frees_persistent) {
                 if(!req_store->flown_away_pers_requests.empty()) {
                     if(req_store->flown_away_pers_requests.count(rank)) {
                         std::map<PEAT_MPI_Request, MAT_Request_Record>::iterator req_it = req_store->flown_away_pers_requests.at(rank).find(event.requests.at(0));
@@ -228,12 +254,20 @@ void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is
             }
         }
 #endif
-        if(event.func_id == MPI_REQUEST_FREE_ID) {
+        if(frees_persistent) {
             MAT_Request_Store_Record resp;
             PEAT_Bool found = remove_pers_req(rank, event.requests.at(0), &resp);
             if(found) {
                 print_req_bind(rank, event.requests.at(0), resp.record->get_ph(), event, is_remote);
                 delete resp.record;
+            }
+            // freeing an active request (a nonblocking one, or a started persistent one) releases its handle at once:
+            // the MPI may hand it out again right away (Intel MPI does), and no completion of it will follow - drop it
+            // from the store, or that stale entry would take the next completion of the reused handle. Only the
+            // request goes; the operation itself is still matched with its peer.
+            if (event.func_id == MPI_REQUEST_FREE_ID) {
+                discard_P2P_event(rank, event.requests.at(0), is_remote);
+                discard_collective_event(rank, event.requests.at(0), is_remote);
             }
         } else {
             // only 1 of following 2 should hit
@@ -257,7 +291,15 @@ void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is
                             tmp_evt.buffers.clear();
                             tmp_evt.Requests.triggered_request_num = tmp_evt.Requests.input_request_num = 1;
                             tmp_evt.requests.push_back(*it);
-                            req_store->flown_away_user_requests[rank][*it].push_back(req_it->second);
+                            // the started request's completion is forwarded from the list its completion looks in:
+                            // an internal one's (Open MPI's persistent internal p2p) from the internal requests - left
+                            // in the user list it would never be taken out, and a later request reusing the handle
+                            // (whose free/completion falls back to that list) would be sent to this peer
+                            if (is_internal) {
+                                req_store->flown_away_internal_requests[rank][*it] = req_it->second;
+                            } else {
+                                req_store->flown_away_user_requests[rank][*it].push_back(req_it->second);
+                            }
                             send_cn(tmp_evt, req_it->second.peer);
                             *it = comm_store->get_MPI_REQUEST_NULL(); // make it invalid
                         }
@@ -410,6 +452,23 @@ void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is
     }*/
     return;
 }
+/* Bind record type of a request binding: phase is the call that created the request, bind the one that completed,
+   started or destroyed it. Shared by the local and the remote (pmat) path, which must write the same records. */
+static int req_bind_tag(const Phase &phase, const Phase &bind)
+{
+    if (bind.func_id == MPI_REQUEST_FREE_ID || bind.func_id == MPI_CANCEL_ID) {
+        return PEAT_RT_Bind_Destroying;
+    }
+    // Open MPI's internal free ends a persistent request (see parse_cn); of other requests it is a completion
+    if (bind.func_id == OMPI_COLL_P2P_FREE_ID && global_func_id.check_property(phase.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) {
+        return PEAT_RT_Bind_Destroying;
+    }
+    if (global_func_id.check_property(phase.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) {
+        return PEAT_RT_Bind_Initiation;
+    }
+    return PEAT_RT_Bind_Completion;
+}
+
 void Requests::print_req_bind(PEAT_Rank rank, PEAT_MPI_Request req, const Phase &phase, const Phase &bind, PEAT_Bool is_remote)
 {
     if (is_remote) {
@@ -420,14 +479,7 @@ void Requests::print_req_bind(PEAT_Rank rank, PEAT_MPI_Request req, const Phase 
         PEAT_Rank mat_peer = whole_ranks[rank];
         PEAT_Event_Delivery delivery;
         delivery.buffer = tbuf;
-        int tag = PEAT_RT_Bind_Completion;
-        if (phase.func_id == MPI_SEND_INIT_ID || phase.func_id == MPI_RECV_INIT_ID) {
-            tag = PEAT_RT_Bind_Initiation;
-        }
-
-        if (bind.func_id == MPI_REQUEST_FREE_ID || bind.func_id == MPI_CANCEL_ID) {
-            tag = PEAT_RT_Bind_Destroying;
-        }
+        const int tag = req_bind_tag(phase, bind);
         sprintf(&tbuf[4], "%d:%s:%s:%s:%s\n", tag,
                 global_func_id.name_by_idx(phase.func_id),
                 peat_ids_string(phase.ids).c_str(),
@@ -442,14 +494,7 @@ void Requests::print_req_bind(PEAT_Rank rank, PEAT_MPI_Request req, const Phase 
     } else {
         // gzFile Bind = output_bind->get_file_ptr(rank);
 
-        int tag = PEAT_RT_Bind_Completion;
-        if (global_func_id.check_property(phase.func_id,PEAT_PROP_PERSISTENT_REQUEST_INIT)) {
-            tag = PEAT_RT_Bind_Initiation;
-        }
-
-        if (bind.func_id == MPI_REQUEST_FREE_ID || bind.func_id == MPI_CANCEL_ID) {
-            tag = PEAT_RT_Bind_Destroying;
-        }
+        const int tag = req_bind_tag(phase, bind);
         output_bind->printf(rank, "%d:%s:%s:%s:%s\n", tag,
                             global_func_id.name_by_idx(phase.func_id),
                             peat_ids_string(phase.ids).c_str(),
