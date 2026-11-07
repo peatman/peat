@@ -125,7 +125,7 @@ struct MAT_OSC_Record : public MAT_Record {
 };
 
 struct MAT_P2P_Record : public MAT_Record {
-    MAT_P2P_Record() : MAT_Record(), comm(0), size(0), tag(0), message(0), peer_rank(-1), request(0), peer_assigned(false), is_send(false) {}
+    MAT_P2P_Record() : MAT_Record(), comm(0), size(0), tag(0), message(0), peer_rank(-1), request(0), peer_assigned(false), is_send(false), completed(false) {}
     MAT_P2P_Record(const Tractor_Event& s);
     PEAT_MPI_Comm comm;
     PEAT_Message_Size size;
@@ -135,6 +135,7 @@ struct MAT_P2P_Record : public MAT_Record {
     PEAT_MPI_Request request;
     PEAT_Bool peer_assigned;
     PEAT_Bool is_send;
+    PEAT_Bool completed; // its request's completion (Wait/Test...) has been parsed: a receive's size is the received one
     Phase ph;
     virtual int record_type() {return 1;}
     virtual Phase& get_ph() { return ph; }

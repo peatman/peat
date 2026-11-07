@@ -64,7 +64,11 @@ PEAT_Bool Requests::discard_P2P_event(const PEAT_Rank rank, const PEAT_MPI_Reque
         return false;
     }
     MAT_Request_Store_Record dummy;
-    return req_store->remove_request(rank, request, REQUEST_TYPE_USER_P2P, &dummy);
+    dummy.record = NULL;
+    const PEAT_Bool removed = req_store->remove_request(rank, request, REQUEST_TYPE_USER_P2P, &dummy);
+    if (removed && dummy.record && dummy.record->record_type() == 1) // a wildcard receive that will never resolve
+        p2p_func_store->drop_wildcard_barrier(rank, static_cast<MAT_P2P_Record *>(dummy.record));
+    return removed;
 }
 
 PEAT_Bool Requests::discard_collective_event(const PEAT_Rank rank, const PEAT_MPI_Request request, PEAT_Bool is_remote)
@@ -214,10 +218,6 @@ void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is
     if (!is_remote) {
         print_req_out(event);
     }
-    if (event.func_id == MPI_PREADY_ID || event.func_id == MPI_PREADY_LIST_ID || event.func_id == MPI_PREADY_RANGE_ID || event.func_id == MPI_PARRIVED_ID) {
-		//skip these starting events. They are not needed for request tracking. We will track only completion events.
-        return;
-	}
     // Open MPI frees its persistent internal requests (a persistent collective's or a collective's schedule) with
     // ompi_coll_p2p_free: for those it ends the request like MPI_Request_free - otherwise the handle, soon reused by
     // the next collective's requests, would keep pointing at the freed one. Of any other request it is a completion.
@@ -435,6 +435,11 @@ void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is
                 parse_collective_completion_phase(rank, request, ph_cn, true, event.PControl.ctl, is_remote);
                 break;
             default:
+                // MPID_Request_Release of a request mat doesn't hold: the user's own request released after the user
+                // already completed it, a message handle of MPI_Mprobe/Improbe (a request object in MPICH), or an
+                // internal request whose creation isn't traced - nothing to bind, and not lost
+                if (event.func_id == MPID_REQUEST_RELEASE_ID)
+                    break;
                 if (!(tag == comm_store->get_MPI_ANY_TAG() && source == comm_store->get_MPI_ANY_SOURCE()) && request != 0 ) {
 #ifndef PEAT_MPI
                     PEAT_Rank my_rank = 0;

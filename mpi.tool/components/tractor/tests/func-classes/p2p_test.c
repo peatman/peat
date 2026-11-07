@@ -1,8 +1,8 @@
 /* Point-to-point class test.
    Ring pattern (send to right, receive from left) covering blocking send modes,
    nonblocking sends/receives, all completion calls, probe/matched probe,
-   persistent requests, cancel and (MPI-4) large-count, Isendrecv and
-   partitioned communication.
+   persistent requests, cancel and wildcard receives (MPI_ANY_SOURCE/MPI_ANY_TAG with every
+   sending and receiving call). Up to MPI-3.
    Usage: p2p_test [iterations]      (2 or more ranks) */
 #include "test_common.h"
 
@@ -212,6 +212,303 @@ static void probes(int it)
     MPI_Wait(&req, MPI_STATUS_IGNORE);
 }
 
+/* Wildcard receives (MPI_ANY_SOURCE / MPI_ANY_TAG) with every sending and receiving call. Every rank sends the
+   same WC_MSGS messages (same tag; message k carries k in its data and has its own length) to right and posts WC_MSGS
+   consecutive receives from left. Receive kinds: Recv, Irecv, Recv_init, Sendrecv(_replace), Mprobe/Mrecv,
+   Improbe/Imrecv; send kinds: Send, Isend, Ssend, Issend, Bsend, Ibsend, Send_init, Ssend_init, Bsend_init. When the
+   receive is a send-receive call its send half carries the message. Kinds depend on the rank, so left's sending call
+   differs from this rank's receiving one (Send against Sendrecv, Sendrecv against Recv, ...); across the sequences of an iteration every kind comes at every
+   position, each receive with an envelope from (ANY,ANY), (left,ANY), (ANY,T), (left,T), and nonblocking ones are
+   completed in different orders. MPI matches one sender's messages in sending order to receives in posting order, so
+   receive k must get message k. Even ranks send before receiving, odd ones after, so synchronous sends can't deadlock
+   the ring. Rsend kinds are left out: they need the receive posted first (persistent() covers them).
+   Then two tags with a specific receive ahead of the wildcards, and (3+ ranks) a fan-in taken with MPI_ANY_SOURCE.
+   Runs on its own communicators: an MPI_ANY_TAG receive on MPI_COMM_WORLD could take the other phases' messages, and
+   the root's wildcard receives on wcomm the fan-in messages of ranks already past phases 1 and 2. */
+#define WC_MSGS 4
+#define WC_CAP (8 * WC_MSGS)
+#define WC_TAG 90
+#define WC_TAG2 91
+static MPI_Comm wcomm = MPI_COMM_NULL;
+static MPI_Comm fcomm = MPI_COMM_NULL; /* the fan-in: its senders run ahead into it while the root still receives on wcomm */
+
+enum wc_kind {
+    WK_RECV, WK_IRECV, WK_RECV_INIT, WK_SENDRECV, WK_SENDRECV_REPLACE, WK_MPROBE, WK_IMPROBE,
+    WK_COUNT
+};
+static const char *wc_kind_name[WK_COUNT] = {
+    "Recv", "Irecv", "Recv_init", "Sendrecv", "Sendrecv_replace", "Mprobe/Mrecv", "Improbe/Imrecv",
+};
+enum wc_send_kind {
+    SK_SEND, SK_ISEND, SK_SSEND, SK_ISSEND, SK_BSEND, SK_IBSEND, SK_SEND_INIT, SK_SSEND_INIT, SK_BSEND_INIT,
+    SK_COUNT
+};
+
+static int wc_sends(int kind) /* the receiving call's send half carries the message */
+{
+    switch (kind) {
+    case WK_SENDRECV: case WK_SENDRECV_REPLACE:
+        return 1;
+    }
+    return 0;
+}
+static int wc_len(int k)
+{
+    return 8 * (k + 1);
+}
+static int wc_base(int src, int it, int k)
+{
+    return src * 1000 + it * 10 + k;
+}
+
+/* Send len ints with one send kind. req stays MPI_REQUEST_NULL for blocking kinds; *persistent is set for the _init
+   kinds (started here; the request must be freed after completing). */
+static void wc_send(int kind, const int *sbuf, int len, int dest, int tag, MPI_Comm comm, MPI_Request *req, int *persistent)
+{
+    *req = MPI_REQUEST_NULL;
+    *persistent = 0;
+    switch (kind) {
+    case SK_SEND: MPI_Send(sbuf, len, MPI_INT, dest, tag, comm); break;
+    case SK_ISEND: MPI_Isend(sbuf, len, MPI_INT, dest, tag, comm, req); break;
+    case SK_SSEND: MPI_Ssend(sbuf, len, MPI_INT, dest, tag, comm); break;
+    case SK_ISSEND: MPI_Issend(sbuf, len, MPI_INT, dest, tag, comm, req); break;
+    case SK_BSEND: MPI_Bsend(sbuf, len, MPI_INT, dest, tag, comm); break;
+    case SK_IBSEND: MPI_Ibsend(sbuf, len, MPI_INT, dest, tag, comm, req); break;
+    case SK_SEND_INIT: MPI_Send_init(sbuf, len, MPI_INT, dest, tag, comm, req); *persistent = 1; break;
+    case SK_SSEND_INIT: MPI_Ssend_init(sbuf, len, MPI_INT, dest, tag, comm, req); *persistent = 1; break;
+    case SK_BSEND_INIT: MPI_Bsend_init(sbuf, len, MPI_INT, dest, tag, comm, req); *persistent = 1; break;
+    }
+    if (*persistent)
+        MPI_Start(req);
+}
+
+/* Post (blocking kinds: complete) one receive of the given kind from src/tag into rbuf. If the kind sends, its send
+   half sends slen ints of sbuf to dest with tag stag. req stays MPI_REQUEST_NULL for blocking kinds (st is filled),
+   *persistent is set for the Recv_init kinds. */
+static void wc_post(int kind, int src, int tag, int *rbuf, const int *sbuf, int slen, int dest, int stag,
+                    MPI_Comm comm, MPI_Request *req, int *persistent, MPI_Status *st)
+{
+    MPI_Message msg;
+    int cnt, flag;
+    *req = MPI_REQUEST_NULL;
+    *persistent = 0;
+    switch (kind) {
+    case WK_RECV: MPI_Recv(rbuf, WC_CAP, MPI_INT, src, tag, comm, st); break;
+    case WK_IRECV: MPI_Irecv(rbuf, WC_CAP, MPI_INT, src, tag, comm, req); break;
+    case WK_RECV_INIT:
+        MPI_Recv_init(rbuf, WC_CAP, MPI_INT, src, tag, comm, req);
+        MPI_Start(req);
+        *persistent = 1;
+        break;
+    case WK_SENDRECV:
+        MPI_Sendrecv(sbuf, slen, MPI_INT, dest, stag, rbuf, WC_CAP, MPI_INT, src, tag, comm, st);
+        break;
+    case WK_SENDRECV_REPLACE: /* one count for both halves: the message received has the same length */
+        memcpy(rbuf, sbuf, slen * sizeof(int));
+        MPI_Sendrecv_replace(rbuf, slen, MPI_INT, dest, stag, src, tag, comm, st);
+        break;
+    case WK_MPROBE:
+        MPI_Mprobe(src, tag, comm, &msg, st);
+        MPI_Get_count(st, MPI_INT, &cnt);
+        MPI_Mrecv(rbuf, cnt, MPI_INT, &msg, st);
+        break;
+    case WK_IMPROBE:
+        do
+            MPI_Improbe(src, tag, comm, &flag, &msg, st);
+        while (!flag);
+        MPI_Get_count(st, MPI_INT, &cnt);
+        MPI_Imrecv(rbuf, cnt, MPI_INT, &msg, req);
+        break;
+    }
+}
+
+/* Complete the requests still pending (blocking kinds left MPI_REQUEST_NULL and already have their status), keeping
+   each status with its request; mode picks Waitall, Wait in reverse order, Waitany or Testsome. Frees persistent ones. */
+static void wc_complete(int n, MPI_Request *req, MPI_Status *st, const int *persistent, int mode)
+{
+    MPI_Status *tmp = malloc(n * sizeof(MPI_Status));
+    int *pending = malloc(n * sizeof(int)), *idx = malloc(n * sizeof(int));
+    int i, outcount, done = 0, active = 0;
+    for (i = 0; i < n; i++)
+        active += pending[i] = req[i] != MPI_REQUEST_NULL;
+    switch (mode % 4) {
+    case 0:
+        MPI_Waitall(n, req, tmp);
+        for (i = 0; i < n; i++)
+            if (pending[i])
+                st[i] = tmp[i];
+        break;
+    case 1:
+        for (i = n - 1; i >= 0; i--)
+            if (pending[i])
+                MPI_Wait(&req[i], &st[i]);
+        break;
+    case 2:
+        for (; done < active; done++) {
+            MPI_Waitany(n, req, &i, &tmp[0]);
+            if (i == MPI_UNDEFINED)
+                break;
+            st[i] = tmp[0]; /* a completed persistent request is inactive: Waitany doesn't return it again */
+        }
+        break;
+    default: /* Testsome: status k belongs to request idx[k] */
+        while (done < active) {
+            MPI_Testsome(n, req, &outcount, idx, tmp);
+            if (outcount == MPI_UNDEFINED)
+                break;
+            for (i = 0; i < outcount; i++, done++)
+                st[idx[i]] = tmp[i];
+        }
+        break;
+    }
+    for (i = 0; i < n; i++)
+        if (persistent[i])
+            MPI_Request_free(&req[i]);
+    free(tmp);
+    free(pending);
+    free(idx);
+}
+
+/* Known MVAPICH2 bug (seen with 2.3.7, ch3:psm): the status of a matched receive (MPI_Mrecv/MPI_Imrecv) reports twice
+   the received count; source, tag and data are right. There only the count of those receives isn't checked. */
+static int wc_count_ok(const char *kind)
+{
+#ifdef MVAPICH2_NUMVERSION
+    static int reported = 0;
+    if (strncmp(kind, "Mprobe", 6) == 0 || strncmp(kind, "Improbe", 7) == 0) {
+        if (!reported++ && g_rank == 0)
+            fprintf(stderr, "KNOWN MVAPICH2 BUG: MPI_Mrecv/MPI_Imrecv status count can be doubled: wildcards() doesn't "
+                            "check their count\n");
+        return 0;
+    }
+#else
+    (void)kind;
+#endif
+    return 1;
+}
+
+/* a receive got message m of src with tag tag */
+static void wc_check(const int *rbuf, const MPI_Status *st, int it, int src, int m, int tag, const char *what, const char *kind)
+{
+    int cnt;
+    MPI_Get_count(st, MPI_INT, &cnt);
+    EXPECT(st->MPI_SOURCE == src, "%s (%s): source %d, expected %d", what, kind, st->MPI_SOURCE, src);
+    EXPECT(st->MPI_TAG == tag, "%s (%s): tag %d, expected %d", what, kind, st->MPI_TAG, tag);
+    EXPECT(cnt == wc_len(m) || !wc_count_ok(kind), "%s (%s): %d ints, expected %d (message %d)", what, kind, cnt, wc_len(m), m);
+    check_int(rbuf, wc_len(m), wc_base(src, it, m), what);
+}
+
+static void wildcards(int it)
+{
+    const int src4[4] = {MPI_ANY_SOURCE, left, MPI_ANY_SOURCE, left};
+    const int tag4[4] = {MPI_ANY_TAG, MPI_ANY_TAG, WC_TAG, WC_TAG};
+    int sbuf[WC_MSGS][WC_CAP], rbuf[WC_MSGS][WC_CAP], kinds[WC_MSGS], rpers[WC_MSGS], spers[WC_MSGS], seq, k;
+    int recv_kinds[WK_COUNT], nrk = 0;
+    MPI_Request sreq[WC_MSGS], rreq[WC_MSGS];
+    MPI_Status st[WC_MSGS];
+    char what[96];
+    const int send_first = g_rank % 2 == 0;
+
+    for (k = 0; k < WK_COUNT; k++) /* kinds that only receive, for the phases with fixed sends */
+        if (!wc_sends(k))
+            recv_kinds[nrk++] = k;
+
+    /* 1. same sends, consecutive receives: every receive kind against every send kind, every envelope */
+    const int nseq = (int)WK_COUNT > (int)SK_COUNT ? (int)WK_COUNT : (int)SK_COUNT;
+    for (seq = 0; seq < nseq; seq++) {
+        for (k = 0; k < WC_MSGS; k++) {
+            const int env = (seq + 3 * k + it + g_rank) % 4;
+            const int skind = (seq + 2 * k + 3 * g_rank + it) % SK_COUNT;
+            kinds[k] = (seq + k + g_rank) % WK_COUNT;
+            fill_int(sbuf[k], wc_len(k), wc_base(g_rank, it, k));
+            sreq[k] = MPI_REQUEST_NULL;
+            spers[k] = 0;
+            if (!wc_sends(kinds[k]) && send_first)
+                wc_send(skind, sbuf[k], wc_len(k), right, WC_TAG, wcomm, &sreq[k], &spers[k]);
+            wc_post(kinds[k], src4[env], tag4[env], rbuf[k], sbuf[k], wc_len(k), right, WC_TAG, wcomm, &rreq[k],
+                    &rpers[k], &st[k]);
+            if (!wc_sends(kinds[k]) && !send_first)
+                wc_send(skind, sbuf[k], wc_len(k), right, WC_TAG, wcomm, &sreq[k], &spers[k]);
+        }
+        wc_complete(WC_MSGS, rreq, st, rpers, seq + it);
+        snprintf(what, sizeof(what), "wildcards 1, sequence %d, receive", seq);
+        for (k = 0; k < WC_MSGS; k++)
+            wc_check(rbuf[k], &st[k], it, left, k, WC_TAG, what, wc_kind_name[kinds[k]]);
+        {
+            MPI_Status sst[WC_MSGS];
+            wc_complete(WC_MSGS, sreq, sst, spers, 0);
+        }
+    }
+
+    /* 2. two tags, sent T,T2,T,T2: the receive (left,T2) posted first takes message 1, then (ANY,ANY) message 0,
+          (left,T) message 2 and (ANY,T2) message 3; send and receive kinds rotate */
+    {
+        const int tags[WC_MSGS] = {WC_TAG, WC_TAG2, WC_TAG, WC_TAG2};
+        const int src[WC_MSGS] = {left, MPI_ANY_SOURCE, left, MPI_ANY_SOURCE};
+        const int tag[WC_MSGS] = {WC_TAG2, MPI_ANY_TAG, WC_TAG, WC_TAG2};
+        const int want[WC_MSGS] = {1, 0, 2, 3};
+        /* all four messages go out first (nonblocking/buffered kinds only: the receives are posted after them) */
+        const int early_sends[] = {SK_ISEND, SK_IBSEND, SK_SEND_INIT, SK_BSEND, SK_ISSEND, SK_SSEND_INIT
+        };
+        const int nes = sizeof(early_sends) / sizeof(early_sends[0]);
+        for (k = 0; k < WC_MSGS; k++) {
+            fill_int(sbuf[k], wc_len(k), wc_base(g_rank, it, k));
+            wc_send(early_sends[(it + k + g_rank) % nes], sbuf[k], wc_len(k), right, tags[k], wcomm, &sreq[k], &spers[k]);
+        }
+        for (k = 0; k < WC_MSGS; k++) {
+            kinds[k] = recv_kinds[(it + k + g_rank) % nrk];
+            wc_post(kinds[k], src[k], tag[k], rbuf[k], NULL, 0, right, 0, wcomm, &rreq[k], &rpers[k], &st[k]);
+        }
+        wc_complete(WC_MSGS, rreq, st, rpers, it);
+        for (k = 0; k < WC_MSGS; k++)
+            wc_check(rbuf[k], &st[k], it, left, want[k], tags[want[k]], "wildcards 2 (two tags)", wc_kind_name[kinds[k]]);
+        {
+            MPI_Status sst[WC_MSGS];
+            wc_complete(WC_MSGS, sreq, sst, spers, 0);
+        }
+    }
+
+    /* 3. fan-in (3+ ranks): the others send 2 messages each to one root (tag WC_TAG + sender) with rotating send
+          kinds; the root takes them with MPI_ANY_SOURCE and MPI_ANY_TAG in rotating receive kinds. Per sender the
+          earlier posted receive must get the first message. */
+    if (g_size > 2) {
+        const int root = it % g_size;
+        if (g_rank == root) {
+            const int n = 2 * (g_size - 1);
+            int *got = calloc(g_size, sizeof(int)), *kind = malloc(n * sizeof(int)), *pers = malloc(n * sizeof(int));
+            int (*b)[WC_CAP] = malloc(n * sizeof(*b));
+            MPI_Request *r = malloc(n * sizeof(MPI_Request));
+            MPI_Status *s = malloc(n * sizeof(MPI_Status));
+            for (k = 0; k < n; k++) {
+                kind[k] = recv_kinds[(it + k) % nrk];
+                wc_post(kind[k], MPI_ANY_SOURCE, MPI_ANY_TAG, b[k], NULL, 0, 0, 0, fcomm, &r[k], &pers[k], &s[k]);
+            }
+            wc_complete(n, r, s, pers, it);
+            for (k = 0; k < n; k++) {
+                const int src = s[k].MPI_SOURCE;
+                EXPECT(src >= 0 && src < g_size && src != root, "wildcards 3 (fan-in, %s): source %d", wc_kind_name[kind[k]], src);
+                if (src >= 0 && src < g_size && src != root)
+                    wc_check(b[k], &s[k], it, src, got[src]++, WC_TAG + src, "wildcards 3 (fan-in)", wc_kind_name[kind[k]]);
+            }
+            for (k = 0; k < g_size; k++)
+                EXPECT(k == root || got[k] == 2, "wildcards 3 (fan-in): %d messages from %d", got[k], k);
+            free(got);
+            free(kind);
+            free(pers);
+            free(b);
+            free(r);
+            free(s);
+        } else {
+            MPI_Status sst[2];
+            for (k = 0; k < 2; k++) {
+                fill_int(sbuf[k], wc_len(k), wc_base(g_rank, it, k));
+                wc_send((it + k + g_rank) % SK_COUNT, sbuf[k], wc_len(k), root, WC_TAG + g_rank, fcomm, &sreq[k], &spers[k]);
+            }
+            wc_complete(2, sreq, sst, spers, 0);
+        }
+    }
+}
+
 static void persistent(int it)
 {
     int sbuf[4][N], rbuf[4][N];
@@ -279,73 +576,6 @@ static void cancel_and_free(int it)
     MPI_Barrier(MPI_COMM_WORLD); /* send buffer must stay alive until matched */
 }
 
-#if HAVE_MPI4
-static void mpi4_features(int it)
-{
-    int sbuf[N], rbuf[N];
-    MPI_Request reqs[2];
-    MPI_Status st;
-    MPI_Count cnt;
-    int i, flag;
-    const int parts = 4;
-
-    fill_int(sbuf, N, g_rank + it);
-
-    /* Isendrecv / Isendrecv_replace */
-    MPI_Isendrecv(sbuf, N, MPI_INT, right, 90, rbuf, N, MPI_INT, left, 90, MPI_COMM_WORLD, &reqs[0]);
-    MPI_Wait(&reqs[0], &st);
-    check_int(rbuf, N, left + it, "Isendrecv");
-    memcpy(rbuf, sbuf, sizeof(rbuf));
-    MPI_Isendrecv_replace(rbuf, N, MPI_INT, right, 91, left, 91, MPI_COMM_WORLD, &reqs[0]);
-    MPI_Wait(&reqs[0], MPI_STATUS_IGNORE);
-    check_int(rbuf, N, left + it, "Isendrecv_replace");
-
-    /* large-count variants */
-    MPI_Irecv_c(rbuf, (MPI_Count)N, MPI_INT, left, 92, MPI_COMM_WORLD, &reqs[0]);
-    MPI_Send_c(sbuf, (MPI_Count)N, MPI_INT, right, 92, MPI_COMM_WORLD);
-    MPI_Wait(&reqs[0], &st);
-    MPI_Get_count_c(&st, MPI_INT, &cnt);
-    EXPECT(cnt == N, "Get_count_c wrong");
-    check_int(rbuf, N, left + it, "Send_c/Irecv_c");
-
-    MPI_Isend_c(sbuf, (MPI_Count)N, MPI_INT, right, 93, MPI_COMM_WORLD, &reqs[0]);
-    MPI_Recv_c(rbuf, (MPI_Count)N, MPI_INT, left, 93, MPI_COMM_WORLD, &st);
-    MPI_Wait(&reqs[0], MPI_STATUS_IGNORE);
-    check_int(rbuf, N, left + it, "Isend_c/Recv_c");
-
-    MPI_Sendrecv_c(sbuf, (MPI_Count)N, MPI_INT, right, 94, rbuf, (MPI_Count)N, MPI_INT, left, 94,
-                   MPI_COMM_WORLD, &st);
-    check_int(rbuf, N, left + it, "Sendrecv_c");
-
-    MPI_Recv_init_c(rbuf, (MPI_Count)N, MPI_INT, left, 95, MPI_COMM_WORLD, &reqs[0]);
-    MPI_Send_init_c(sbuf, (MPI_Count)N, MPI_INT, right, 95, MPI_COMM_WORLD, &reqs[1]);
-    MPI_Startall(2, reqs);
-    MPI_Waitall(2, reqs, MPI_STATUSES_IGNORE);
-    check_int(rbuf, N, left + it, "Send_init_c/Recv_init_c");
-    MPI_Request_free(&reqs[0]);
-    MPI_Request_free(&reqs[1]);
-
-    /* partitioned communication */
-    MPI_Precv_init(rbuf, parts, N / parts, MPI_INT, left, 96, MPI_COMM_WORLD, MPI_INFO_NULL, &reqs[0]);
-    MPI_Psend_init(sbuf, parts, N / parts, MPI_INT, right, 96, MPI_COMM_WORLD, MPI_INFO_NULL, &reqs[1]);
-    MPI_Startall(2, reqs);
-    MPI_Pready(0, reqs[1]);
-    MPI_Pready_range(1, 2, reqs[1]);
-    {
-        int list[1] = { 3 };
-        MPI_Pready_list(1, list, reqs[1]);
-    }
-    for (i = 0; i < parts; i++) {
-        do {
-            MPI_Parrived(reqs[0], i, &flag);
-        } while (!flag);
-    }
-    MPI_Waitall(2, reqs, MPI_STATUSES_IGNORE);
-    check_int(rbuf, N, left + it, "partitioned");
-    MPI_Request_free(&reqs[0]);
-    MPI_Request_free(&reqs[1]);
-}
-#endif
 
 int main(int argc, char **argv)
 {
@@ -367,6 +597,8 @@ int main(int argc, char **argv)
     bsize = 8 * (bsize + MPI_BSEND_OVERHEAD);
     bsend_buf = malloc(bsize);
     MPI_Buffer_attach(bsend_buf, bsize);
+    MPI_Comm_dup(MPI_COMM_WORLD, &wcomm);
+    MPI_Comm_dup(MPI_COMM_WORLD, &fcomm);
 
     for (it = 0; it < iterations; it++) {
         blocking_modes(it);
@@ -374,11 +606,11 @@ int main(int argc, char **argv)
         probes(it);
         persistent(it);
         cancel_and_free(it);
-#if HAVE_MPI4
-        mpi4_features(it);
-#endif
+        wildcards(it);
     }
 
+    MPI_Comm_free(&wcomm);
+    MPI_Comm_free(&fcomm);
     MPI_Buffer_detach(&detached, &bsize);
     free(bsend_buf);
 

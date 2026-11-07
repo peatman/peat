@@ -21,6 +21,7 @@
 #include "utils.h"
 
 #include <assert.h>
+#include <iterator>
 #include <sstream>
 
 MAT_P2P_Record::MAT_P2P_Record(const Tractor_Event& s): MAT_Record()
@@ -34,6 +35,7 @@ MAT_P2P_Record::MAT_P2P_Record(const Tractor_Event& s): MAT_Record()
     peer_rank = s.P2P.peer;
     request = s.P2P.request;
     peer_assigned = false;
+    completed = false;
     is_send = (s.func_class == PEAT_PROP_CLASS_P2P && global_func_id.check_property(s.func_id, PEAT_PROP_DATA_TX));
 }   
 
@@ -237,7 +239,9 @@ void P2PAL::print_P2PF(const MAT_P2P_Record &left, const MAT_P2P_Record &right)
                     right.ph.ids[0]);
             peat_throw_error("Tags mismatch\n");
         }
-        if (left.size != right.size) {
+        // a nonblocking/persistent receive not completed yet still has the posted count as its size, not the received one
+        const PEAT_Bool right_size_final = right.request == 0 || right.completed;
+        if (left.size != right.size && right_size_final) {
             fprintf(stderr, "p2p. Ranks:%d,%d ids:%lld (%lld) => (%lld) %lld\n", left.rank, right.rank,
                     left.ph.ids[0],
                     left.size, right.size,
@@ -347,6 +351,7 @@ PEAT_Bool P2PAL::update_request(const PEAT_Rank rank, const Request_Store_Record
             assert(0);
             return true;
         }
+        const PEAT_Bool was_wildcard = unresolved_wildcard(*record);
         if (!record->is_send) {
             if (record->tag == comm_store->get_MPI_ANY_TAG()) { // any tag
                 record->tag = tag;
@@ -365,7 +370,10 @@ PEAT_Bool P2PAL::update_request(const PEAT_Rank rank, const Request_Store_Record
             if (size >= 0)
                 record->size = size;
         }
+        record->completed = true;
         request_func_store->print_req_bind(rank, request, record->ph, phase, is_remote);
+        if (was_wildcard) // resolved now: it and the receives held behind it may enter the matching queues
+            release_receives(rank, record->comm);
 
         PEAT_Num queue_type = record->is_send ? qt_send : qt_recv;
         PEAT_Num peer_queue_type = record->is_send ? qt_recv : qt_send;
@@ -374,26 +382,98 @@ PEAT_Bool P2PAL::update_request(const PEAT_Rank rank, const Request_Store_Record
         std::list<MAT_P2P_Record *>::iterator peer_it;
         if (req_it != matching_queues[queue_type][rank][key].end()) {
             if (match_peer(matching_queues[peer_queue_type], peer_it, **req_it)) {
-                std::list<MAT_P2P_Record *>::iterator lP = ((*req_it)->is_send) ? req_it : peer_it;
-                std::list<MAT_P2P_Record *>::iterator rP = ((*req_it)->is_send) ? peer_it : req_it;
-                MAT_P2P_Record *lpr = *lP;
-                MAT_P2P_Record *rpr = *rP;
-                print_P2PF(*lpr, *rpr);
-                lpr->peer_assigned = rpr->peer_assigned = true;
-                P2P_Event_Key send_key(*lpr), recv_key(*rpr);
-                matching_queues[qt_send][lpr->rank][send_key].erase(lP);
-                matching_queues[qt_recv][rpr->rank][recv_key].erase(rP);
-                if (lpr->request == 0) {
-                    delete (lpr);
-                }
-                if (rpr->request == 0) {
-                    delete (rpr);
-                }
+                if ((*req_it)->is_send)
+                    bind_pair(req_it, peer_it);
+                else
+                    bind_pair(peer_it, req_it);
             }
         }
         return true;
     }
     return false;
+}
+
+PEAT_Bool P2PAL::hold_receive(const PEAT_Rank rank, MAT_P2P_Record *record)
+{
+    std::map<PEAT_MPI_Comm, std::list<MAT_P2P_Record *>> &rank_held = held_receives[rank];
+    std::map<PEAT_MPI_Comm, std::list<MAT_P2P_Record *>>::iterator held = rank_held.find(record->comm);
+    if (held == rank_held.end()) {
+        if (!unresolved_wildcard(*record))
+            return false;
+        held = rank_held.insert(std::make_pair(record->comm, std::list<MAT_P2P_Record *>())).first;
+    }
+    held->second.push_back(record);
+    return true;
+}
+void P2PAL::release_receives(const PEAT_Rank rank, const PEAT_MPI_Comm comm)
+{
+    std::map<PEAT_MPI_Comm, std::list<MAT_P2P_Record *>>::iterator held = held_receives[rank].find(comm);
+    if (held == held_receives[rank].end())
+        return;
+    while (!held->second.empty() && !unresolved_wildcard(*held->second.front())) {
+        MAT_P2P_Record *record = held->second.front();
+        held->second.pop_front();
+        matching_queues[qt_recv][rank][P2P_Event_Key(*record)].push_back(record);
+        match_waiting_sends(rank, *record);
+    }
+    if (held->second.empty())
+        held_receives[rank].erase(held);
+}
+void P2PAL::release_all_receives()
+{
+    for (PEAT_Rank rank = 0; rank < static_cast<PEAT_Rank>(held_receives.size()); rank++) {
+        for (std::map<PEAT_MPI_Comm, std::list<MAT_P2P_Record *>>::iterator held = held_receives[rank].begin(); held != held_receives[rank].end(); ++held) {
+            for (std::list<MAT_P2P_Record *>::iterator it = held->second.begin(); it != held->second.end(); ++it)
+                matching_queues[qt_recv][rank][P2P_Event_Key(**it)].push_back(*it);
+        }
+        held_receives[rank].clear();
+    }
+}
+void P2PAL::drop_wildcard_barrier(const PEAT_Rank rank, MAT_P2P_Record *record)
+{
+    if (record->is_send || rank < 0 || rank >= static_cast<PEAT_Rank>(held_receives.size()))
+        return;
+    std::map<PEAT_MPI_Comm, std::list<MAT_P2P_Record *>>::iterator held = held_receives[rank].find(record->comm);
+    if (held == held_receives[rank].end() || !unresolved_wildcard(*record))
+        return;
+    for (std::list<MAT_P2P_Record *>::iterator it = held->second.begin(); it != held->second.end(); ++it) {
+        if (*it == record) {
+            // it never resolves: it goes where it was before wildcards were held (unpaired at the end, as then)
+            held->second.erase(it);
+            matching_queues[qt_recv][rank][P2P_Event_Key(*record)].push_back(record);
+            release_receives(rank, record->comm);
+            return;
+        }
+    }
+}
+/* recv has just entered the matching queues: pair the sends waiting for its envelope (any message handle) in order */
+void P2PAL::match_waiting_sends(const PEAT_Rank recv_rank, const MAT_P2P_Record &recv)
+{
+    const PEAT_Rank send_rank = recv.peer_rank;
+    if (send_rank < 0 || send_rank >= static_cast<PEAT_Rank>(matching_queues[qt_send].size()))
+        return;
+    std::map<P2P_Event_Key, std::list<MAT_P2P_Record *>> &sends = matching_queues[qt_send][send_rank];
+    for (std::map<P2P_Event_Key, std::list<MAT_P2P_Record *>>::iterator q = sends.begin(); q != sends.end(); ++q) {
+        if (q->first.tag != recv.tag || q->first.peer != recv_rank || q->first.comm != recv.comm)
+            continue;
+        std::list<MAT_P2P_Record *>::iterator recv_it;
+        while (!q->second.empty() && match_peer(matching_queues[qt_recv], recv_it, *q->second.front()))
+            bind_pair(q->second.begin(), recv_it);
+    }
+}
+void P2PAL::bind_pair(std::list<MAT_P2P_Record *>::iterator send_it, std::list<MAT_P2P_Record *>::iterator recv_it)
+{
+    MAT_P2P_Record *lP = *send_it;
+    MAT_P2P_Record *rP = *recv_it;
+    P2P_Event_Key send_key(*lP), recv_key(*rP);
+    lP->peer_assigned = rP->peer_assigned = true;
+    print_P2PF(*lP, *rP);
+    matching_queues[qt_send][lP->rank][send_key].erase(send_it);
+    matching_queues[qt_recv][rP->rank][recv_key].erase(recv_it);
+    if (lP->request == 0)
+        delete lP;
+    if (rP->request == 0)
+        delete rP;
 }
 
 void P2PAL::write_HNT() const
@@ -426,7 +506,8 @@ PEAT_Bool P2PAL::add_pers_req_start(const PEAT_Rank rank, PEAT_MPI_Func_ID init_
     }
     P2P_Event_Key key(*record);
     if (global_func_id.check_property(init_func_id, PEAT_PROP_DATA_RX)) {
-        matching_queues[qt_recv][rank][key].push_back(record);
+        if (!hold_receive(rank, record))
+            matching_queues[qt_recv][rank][key].push_back(record);
     } else if (global_func_id.check_property(init_func_id, PEAT_PROP_DATA_TX)) {
         matching_queues[qt_send][rank][key].push_back(record);
     } else {
@@ -480,23 +561,7 @@ void P2PAL::parse_P2PTx(PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool pr
         std::list<MAT_P2P_Record *>::iterator record_it = matching_queues[qt_send][rank][key].begin();
         if (record_it != matching_queues[qt_send][rank][key].end()) {
             if (match_peer(matching_queues[qt_recv], matching_rec_it, **record_it)) {
-                MAT_P2P_Record *lP = *record_it;
-                MAT_P2P_Record *rP = *matching_rec_it;
-                P2P_Event_Key send_key(*lP);
-                P2P_Event_Key recv_key(*rP);
-                lP->peer_assigned = rP->peer_assigned = true;
-                print_P2PF(*lP, *rP);
-                PEAT_Rank send_rank = lP->rank;
-                PEAT_Rank recv_rank = rP->rank;
-
-                matching_queues[qt_send][send_rank][send_key].erase(record_it);
-                matching_queues[qt_recv][recv_rank][recv_key].erase(matching_rec_it);
-                if (lP->request == 0) {
-                    delete lP;
-                }
-                if (rP->request == 0) {
-                    delete rP;
-                }
+                bind_pair(record_it, matching_rec_it);
             }
         }
     } else {
@@ -566,6 +631,8 @@ void P2PAL::parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool in
             tmp.record = record;
             req_store->add_request(rank, record->request, &tmp);
         }
+        if (hold_receive(rank, record))
+            return;
 
         P2P_Event_Key key(*record);
         matching_queues[qt_recv][rank][key].push_back(record);
@@ -574,22 +641,7 @@ void P2PAL::parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool in
 
         if (record_it != matching_queues[qt_recv][rank][key].end()) {
             if (match_peer(matching_queues[qt_send], matching_rec_it, **record_it)) {
-                MAT_P2P_Record *lP = *matching_rec_it;
-                MAT_P2P_Record *rP = *record_it;
-                P2P_Event_Key send_key(*lP);
-                P2P_Event_Key recv_key(*rP);
-                print_P2PF(*lP, *rP);
-                PEAT_Rank send_rank = lP->rank;
-                PEAT_Rank recv_rank = rP->rank;
-                lP->peer_assigned = rP->peer_assigned = true;
-                matching_queues[qt_send][send_rank][send_key].erase(matching_rec_it);
-                matching_queues[qt_recv][recv_rank][recv_key].erase(record_it);
-                if(lP->request == 0) {
-                    delete lP;
-                }
-                if(rP->request == 0) {
-                    delete rP;
-                }
+                bind_pair(matching_rec_it, record_it);
             }
         }
     } else {
@@ -773,24 +825,15 @@ void P2PAL::process_remote_event(PEAT_Signed_Num size, PEAT_Rank src)
 
 void P2PAL::process_unbound_events(PEAT_Rank my_rank)
 {
+    release_all_receives();
     for (matching_event_type::iterator rank_it = matching_queues[qt_send].begin(); rank_it != matching_queues[qt_send].end(); ++rank_it) {
         for (std::map<P2P_Event_Key, std::list<MAT_P2P_Record *>>::iterator send_it = rank_it->begin(); send_it != rank_it->end(); ++send_it) {
             for (std::list<MAT_P2P_Record *>::iterator event_it = send_it->second.begin(); event_it != send_it->second.end();) {
                 std::list<MAT_P2P_Record *>::iterator matching_rec_it;
                 if (match_peer(matching_queues[qt_recv], matching_rec_it, **event_it)) {
-                    PEAT_Rank send_rank = (*event_it)->rank;
-                    PEAT_Rank recv_rank = (*event_it)->peer_rank;
-                    print_P2PF(**event_it, **matching_rec_it);
-                    P2P_Event_Key send_key(**event_it), recv_key(**matching_rec_it);
-                    (*event_it)->peer_assigned = (*matching_rec_it)->peer_assigned = true;
-                    if ((*event_it)->request == 0) {
-                        delete *event_it;
-                    }
-                    if ((*matching_rec_it)->request == 0) {
-                        delete *matching_rec_it;
-                    }
-                    event_it = matching_queues[qt_send][send_rank][send_key].erase(event_it);
-                    matching_queues[qt_recv][recv_rank][recv_key].erase(matching_rec_it);
+                    std::list<MAT_P2P_Record *>::iterator next = std::next(event_it);
+                    bind_pair(event_it, matching_rec_it);
+                    event_it = next;
                 } else {
                     peat_throw_error("Unpaired Event Found\n");
                     print_P2PE(**event_it);
@@ -804,19 +847,9 @@ void P2PAL::process_unbound_events(PEAT_Rank my_rank)
             for (std::list<MAT_P2P_Record *>::iterator event_it = recv_it->second.begin(); event_it != recv_it->second.end();) {
                 std::list<MAT_P2P_Record *>::iterator matching_rec_it;
                 if (match_peer(matching_queues[qt_send], matching_rec_it, **event_it)) {
-                    PEAT_Rank send_rank = (*event_it)->peer_rank;
-                    PEAT_Rank recv_rank = (*event_it)->rank;
-                    print_P2PF(**matching_rec_it, **event_it);
-                    (*event_it)->peer_assigned = (*matching_rec_it)->peer_assigned = true;
-                    P2P_Event_Key send_key(**matching_rec_it), recv_key(**event_it);
-                    if ((*event_it)->request == 0) {
-                        delete *event_it;
-                    }
-                    if ((*matching_rec_it)->request == 0) {
-                        delete *matching_rec_it;
-                    }
-                    event_it = matching_queues[qt_recv][recv_rank][recv_key].erase(event_it);
-                    matching_queues[qt_send][send_rank][send_key].erase(matching_rec_it);
+                    std::list<MAT_P2P_Record *>::iterator next = std::next(event_it);
+                    bind_pair(matching_rec_it, event_it);
+                    event_it = next;
                 } else {
                     peat_throw_error("Unpaired Event Found\n");
                     print_P2PE(**event_it);
@@ -829,6 +862,7 @@ void P2PAL::process_unbound_events(PEAT_Rank my_rank)
 #ifdef PEAT_MPI
 PEAT_Signed_Num P2PAL::check_unbound_events()
 {
+    release_all_receives();
     int total_unpaired_events = 0;
     int hanged_events = 0;
     for (matching_event_type::iterator rank_it = matching_queues[qt_send].begin(); rank_it != matching_queues[qt_send].end(); ++rank_it) {
@@ -837,23 +871,11 @@ PEAT_Signed_Num P2PAL::check_unbound_events()
                 std::list<MAT_P2P_Record *>::iterator matching_rec_it;
 
                 if (match_peer(matching_queues[qt_recv], matching_rec_it, **event_it)) {
-                    PEAT_Rank send_rank = (*event_it)->rank;
-                    PEAT_Rank recv_rank = (*event_it)->peer_rank;
-                    print_P2PF(**event_it, **matching_rec_it);
-                    (*event_it)->peer_assigned = (*matching_rec_it)->peer_assigned = true;
-                    P2P_Event_Key send_key(**event_it), recv_key(**matching_rec_it);
-                    if ((*event_it)->request > 0) {
-                        hanged_events++; // indicates hanged request (send/recv without wait/test).
-                    } else {
-                        delete *event_it;
-                    }
-                    if ((*matching_rec_it)->request > 0) {
-                        hanged_events++; // indicates hanged request (send/recv without wait/test).
-                    } else {
-                        delete *matching_rec_it;
-                    }
-                    event_it = matching_queues[qt_send][send_rank][send_key].erase(event_it);
-                    matching_queues[qt_recv][recv_rank][recv_key].erase(matching_rec_it);
+                    // a request still held indicates a hanged one (send/recv without wait/test)
+                    hanged_events += ((*event_it)->request > 0) + ((*matching_rec_it)->request > 0);
+                    std::list<MAT_P2P_Record *>::iterator next = std::next(event_it);
+                    bind_pair(event_it, matching_rec_it);
+                    event_it = next;
                 } else {
                     // peat_throw_error("Unpaired Event Found\n");
                     // print_P2PE(**event_it);
@@ -868,23 +890,10 @@ PEAT_Signed_Num P2PAL::check_unbound_events()
             for (std::list<MAT_P2P_Record *>::iterator event_it = recv_it->second.begin(); event_it != recv_it->second.end();) {
                 std::list<MAT_P2P_Record *>::iterator matching_rec_it;
                 if (match_peer(matching_queues[qt_send], matching_rec_it, **event_it)) {
-                    PEAT_Rank send_rank = (*event_it)->peer_rank;
-                    PEAT_Rank recv_rank = (*event_it)->rank;
-                    print_P2PF(**matching_rec_it, **event_it);
-                    P2P_Event_Key send_key(**matching_rec_it), recv_key(**event_it);
-                    (*event_it)->peer_assigned = (*matching_rec_it)->peer_assigned = true;
-                    if ((*event_it)->request > 0) {
-                        hanged_events++; // indicates hanged request (send/recv without wait/test).
-                    } else {
-                        delete *event_it;
-                    }
-                    if ((*matching_rec_it)->request > 0) {
-                        hanged_events++; // indicates hanged request (send/recv without wait/test).
-                    } else {
-                        delete *matching_rec_it;
-                    }
-                    event_it = matching_queues[qt_recv][recv_rank][recv_key].erase(event_it);
-                    matching_queues[qt_send][send_rank][send_key].erase(matching_rec_it);
+                    hanged_events += ((*event_it)->request > 0) + ((*matching_rec_it)->request > 0);
+                    std::list<MAT_P2P_Record *>::iterator next = std::next(event_it);
+                    bind_pair(matching_rec_it, event_it);
+                    event_it = next;
                 } else {
                     // peat_throw_error("Unpaired Event Found\n");
                     // print_P2PE(**event_it);
