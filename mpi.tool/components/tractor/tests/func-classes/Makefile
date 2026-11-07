@@ -21,7 +21,11 @@ all: $(TESTS)
 %: %.c test_common.h
 	$(MPICC) $(CFLAGS) -o $@ $<
 
+# the flags the tests are built with (ci/smoke.sh preprocesses the sources with them to see which functions they call)
+print-cflags:
+	@echo $(CFLAGS)
+
 clean:
 	rm -f $(TESTS) *.o fio_test.*.dat
 
-.PHONY: all clean
+.PHONY: all clean print-cflags

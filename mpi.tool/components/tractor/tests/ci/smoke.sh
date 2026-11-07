@@ -223,8 +223,10 @@ trace_and_analyse() {
 
 # MPI functions <test> calls: its own code (and test_common.h) preprocessed with this MPI's mpicc - so #if MPI_VERSION
 # and similar blocks resolve as they were compiled - without mpi.h, limited to the functions tractor can record
+# (with the Makefile's own flags: NO_MPI4 by default here, so the MPI-4 blocks don't count)
 expected_calls() {
-    "${MPICC:-mpicc}" -E "$src/$1_test.c" 2>/dev/null |
+    # shellcheck disable=SC2046 # the flags are meant to split
+    "${MPICC:-mpicc}" $(make -s -C "$src" print-cflags) -E "$src/$1_test.c" 2>/dev/null |
         awk -v t="$1_test.c" '/^# [0-9]+ "/ { f = $3; gsub(/"/, "", f); n = split(f, a, "/");
                                              keep = (a[n] == t || a[n] == "test_common.h"); next }
                               keep' |
