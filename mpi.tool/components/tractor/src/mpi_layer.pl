@@ -195,11 +195,11 @@ if ($properties=~/MSTATUSES/) {
         event->requests.flag=1;
         event->requests.triggered_request_num=*onum;
         long long TSC[inum*4];
-        for (i=0;i<*onum;i++) { 
+        for (i=0;i<*onum;i++) { // statuses[i] is the status of request indx[i] (not statuses[indx[i]])
             TSC[i*4+0]=indx[i];
-            TSC[i*4+1]=statuses[indx[i]].MPI_TAG;
-            TSC[i*4+2]=${mpi_internal}get_rank_from_comm(local_comms[indx[i]],statuses[indx[i]].MPI_SOURCE); ;
-            TSC[i*4+3]=MPI_STATUS_GET_COUNT_R(statuses[indx[i]]);
+            TSC[i*4+1]=statuses[i].MPI_TAG;
+            TSC[i*4+2]=${mpi_internal}get_rank_from_comm(local_comms[indx[i]],statuses[i].MPI_SOURCE); ;
+            TSC[i*4+3]=MPI_STATUS_GET_COUNT_R(statuses[i]);
         }
         __msl_write_records(tid,level,TSC,(*onum)*4);
     }";

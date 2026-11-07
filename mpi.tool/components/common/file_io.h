@@ -24,6 +24,8 @@
 #include <string>
 
 #include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
 #include <sys/stat.h>
 
 #include "zlib.h"
@@ -47,6 +49,8 @@ struct File_Name_And_Ptr_GZ {
 #ifdef PEAT_OMP
     PEAT_Mutex read_lock;
     PEAT_Mutex write_lock;
+    PEAT_Mutex flush_lock; // deferred writing: one flush of this file at a time, so chunks reach it in order
+    std::string pending;   // deferred writing: text written but not compressed into the file yet (under write_lock)
     /*
     File_Name_And_Ptr_GZ(const File_Name_And_Ptr_GZ& s) : name(s.name), ptr(s.ptr), was_closed(s.was_closed),sb(s.sb) {}
     File_Name_And_Ptr_GZ& operator=(const File_Name_And_Ptr_GZ& s)  {
@@ -155,6 +159,12 @@ class File_Storage_GZ
             fprintf(stderr, "write_line: No file is opened for %d rank. Returning NULL. Program may crash.\n", rank);
             return;
         }
+#ifdef PEAT_OMP
+        if (deferred) {
+            append_pending(rank, line.c_str(), line.size());
+            return;
+        }
+#endif
         if (!check_open(rank)) {
             return;
         }
@@ -182,6 +192,12 @@ class File_Storage_GZ
             fprintf(stderr, "write_line: No file is opened for %d rank. Returning NULL. Program may crash.\n", rank);
             return;
         }
+#ifdef PEAT_OMP
+        if (deferred) {
+            append_pending(rank, line, strlen(line));
+            return;
+        }
+#endif
         if (!check_open(rank)) {
             return;
         }
@@ -209,11 +225,19 @@ class File_Storage_GZ
             fprintf(stderr, "write_line: No file is opened for %d rank. Returning NULL. Program may crash.\n", rank);
             return;
         }
-        if (!check_open(rank)) {
-            return;
-        }
         va_list argptr;
         va_start(argptr, format);
+#ifdef PEAT_OMP
+        if (deferred) {
+            append_pending_v(rank, format, argptr);
+            va_end(argptr);
+            return;
+        }
+#endif
+        if (!check_open(rank)) {
+            va_end(argptr);
+            return;
+        }
 #ifdef PEAT_OMP
         fptr.at(rank).write_lock.lock();
 #endif
@@ -221,7 +245,23 @@ class File_Storage_GZ
 #ifdef PEAT_OMP
         fptr.at(rank).write_lock.unlock();
 #endif
+        va_end(argptr);
     }
+#ifdef PEAT_OMP
+    /* Deferred writing (parallel mat): puts()/printf() only append the text to the file's pending buffer, and
+       flush_pending() compresses it into the file. Compression is what writing costs, and the thread flushing a file
+       pays for it outside whatever lock the writer held. Off by default; set_deferred(false) flushes every file. */
+    void set_deferred(PEAT_Bool on)
+    {
+        if (!on)
+            flush_pending();
+        deferred = on;
+    }
+    PEAT_Bool is_deferred() const { return deferred; }
+    // compress the pending text of one file if there is at least min_size bytes of it
+    void flush_pending(const PEAT_Rank rank, const size_t min_size = 1);
+    void flush_pending(); // every file, all of its pending text
+#endif
 
     gzFile get_file_ptr(const PEAT_Rank rank)
     {
@@ -282,6 +322,12 @@ class File_Storage_GZ
     int verbose;
     int flags;
     PEAT_Message_Size bytes_read_total;
+#ifdef PEAT_OMP
+    PEAT_Bool deferred = false;
+    void append_pending(const PEAT_Rank rank, const char *text, const size_t len);
+    void append_pending_v(const PEAT_Rank rank, const char *format, va_list args);
+    void write_pending(File_Name_And_Ptr_GZ &file); // pending text left at close
+#endif
 };
 
 #endif // __FILE_IO_H__
