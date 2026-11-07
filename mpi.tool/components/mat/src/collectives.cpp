@@ -22,6 +22,7 @@
 #include "requests.h"
 #include "comm.h"
 #include <assert.h>
+#include <iterator>
 #include <sstream>
 
 
@@ -282,6 +283,41 @@ void Collectives::print_collective_bind(const MAT_Collective &record)
 #endif
 }
 
+#ifdef MAT_INDEXED_COLLECTIVES
+// the first instance (creation order) still expecting rank: the front of its waiting fifo
+PEAT_Bool Collectives::match_collective(const collective_list_struct &queue, collective_list::iterator &record, PEAT_Rank rank) const
+{
+    std::map<PEAT_Rank, collective_fifo>::const_iterator w = queue.waiting.find(rank);
+    if (w == queue.waiting.end())
+        return false;
+    assert(!w->second.empty()); // emptied fifos are erased
+    record = w->second.front();
+    assert(record->expected_ranks.count(rank));
+    return true;
+}
+
+void Collectives::add_pending_request(collective_list_struct &queue, PEAT_Rank rank, PEAT_MPI_Request request, collective_list::iterator record)
+{
+    if (request > 0)
+        queue.pending_requests[std::make_pair(rank, request)].push_back(record);
+}
+
+void Collectives::remove_pending_request(collective_list_struct &queue, PEAT_Rank rank, PEAT_MPI_Request request, collective_list::iterator record)
+{
+    std::map<std::pair<PEAT_Rank, PEAT_MPI_Request>, collective_fifo>::iterator p = queue.pending_requests.find(std::make_pair(rank, request));
+    assert(p != queue.pending_requests.end() && p->second.front() == record);
+    if (p == queue.pending_requests.end())
+        return;
+    for (collective_fifo::iterator it = p->second.begin(); it != p->second.end(); ++it) { // the front, see find_collective
+        if (*it == record) {
+            p->second.erase(it);
+            break;
+        }
+    }
+    if (p->second.empty())
+        queue.pending_requests.erase(p);
+}
+#else
 PEAT_Bool Collectives::match_collective(collective_list::iterator &first, collective_list::iterator &last, collective_list::iterator &record, PEAT_Rank rank) const
 {
     collective_list::iterator it = first;
@@ -321,6 +357,7 @@ PEAT_Bool Collectives::match_collective(collective_list_struct &queue, collectiv
     }
     return false;
 }
+#endif // MAT_INDEXED_COLLECTIVES
 
 PEAT_Bool Collectives::empty() const
 {
@@ -344,6 +381,20 @@ void Collectives::process_collective(const PEAT_Rank rank, MAT_Collectives_Recor
         tmp.record = event;
         req_store->add_request(rank, event->coll_event->request, &tmp);
     }
+#ifdef MAT_INDEXED_COLLECTIVES
+    std::map<collective_key, collective_list_struct>::iterator queue_it = coll_queues.find(key);
+    if(queue_it != coll_queues.end()) {
+        matched_collective_exists = match_collective(queue_it->second, matched_record, rank);
+    }
+    if(matched_collective_exists) {
+        collective_list_struct& queue = queue_it->second;
+        std::map<PEAT_Rank, collective_fifo>::iterator w = queue.waiting.find(rank);
+        w->second.pop_front(); // rank joins it, so it no longer waits for rank
+        if(w->second.empty())
+            queue.waiting.erase(w);
+        add_pending_request(queue, rank, event->coll_event->request, matched_record);
+    }
+#else
     if(!coll_queues.empty()) {
         if(coll_queues.count(key)) {
             // cerr << "Collective key " << collective_key << " mpifunc " << mpifunc << " comm " << comm << " count " << collective_queues.count(collective_key) << endl;
@@ -358,6 +409,7 @@ void Collectives::process_collective(const PEAT_Rank rank, MAT_Collectives_Recor
 #endif
         }
     }
+#endif // MAT_INDEXED_COLLECTIVES
     if(matched_collective_exists) {
         Collective_Ranks& expected_ranks = coll_get_value(matched_record, expected_ranks);
 #if defined PROCESS_WHOLE_EVENT
@@ -442,6 +494,19 @@ void Collectives::process_collective(const PEAT_Rank rank, MAT_Collectives_Recor
         collective_entry.func_id = event->coll_event->ph.func_id;
         collective_entry.pc_level = pc_level;
 
+#ifdef MAT_INDEXED_COLLECTIVES
+        if(!expected_ranks.empty() || !check_completion(collective_entry)) {
+            collective_list_struct& queue = coll_queues[key];
+            queue.collectives.push_back(collective_entry);
+            collective_list::iterator created = std::prev(queue.collectives.end());
+            for(Collective_Ranks::const_iterator r = expected_ranks.begin(); r != expected_ranks.end(); ++r) {
+                queue.waiting[*r].push_back(created);
+            }
+            add_pending_request(queue, rank, event->coll_event->request, created);
+        } else {
+            print_collective_bind(collective_entry);
+        }
+#else
         if(!expected_ranks.empty()) {
             coll_queues[key].collectives.push_back(collective_entry);
         } else {
@@ -451,6 +516,7 @@ void Collectives::process_collective(const PEAT_Rank rank, MAT_Collectives_Recor
                 coll_queues[key].collectives.push_back(collective_entry);
             }
         }
+#endif
     }
 }
 
@@ -550,6 +616,27 @@ PEAT_Bool Collectives::check_completion(collective_list::iterator &record)
     }
     return true;
 }
+#ifdef MAT_INDEXED_COLLECTIVES
+PEAT_Bool Collectives::erase_collective(collective_list::iterator &record)
+{
+    collective_key c_key(coll_get_value(record, comm), coll_get_value(record, func_id));
+    return erase_collective(c_key, record);
+}
+// only complete instances are erased: nobody waits for them (expected_ranks empty) and no request is pending
+// (check_completion), so neither index of collective_list_struct still refers to record
+PEAT_Bool Collectives::erase_collective(collective_key &c_key, collective_list::iterator &record)
+{
+    std::map<collective_key, collective_list_struct>::iterator queue_it = coll_queues.find(c_key);
+    assert(queue_it != coll_queues.end());
+    assert(record->expected_ranks.empty());
+    queue_it->second.collectives.erase(record);
+    if (queue_it->second.collectives.empty()) {
+        assert(queue_it->second.waiting.empty() && queue_it->second.pending_requests.empty());
+        coll_queues.erase(queue_it);
+    }
+    return true;
+}
+#else
 PEAT_Bool Collectives::erase_collective(collective_list::iterator &record)
 {
     collective_key c_key(coll_get_value(record, comm), coll_get_value(record, func_id));
@@ -580,6 +667,7 @@ PEAT_Bool Collectives::erase_collective(collective_key &c_key, collective_list::
         coll_queues.erase(c_key);
     return true;
 }
+#endif // MAT_INDEXED_COLLECTIVES
 PEAT_Bool Collectives::find_collective(const PEAT_Rank rank, const MAT_Request_Store_Record *rec, collective_list::iterator* record)
 {
 	MAT_Collectives_Record* event = static_cast<MAT_Collectives_Record*>(rec->record);
@@ -598,6 +686,18 @@ PEAT_Bool Collectives::find_collective(const PEAT_Rank rank, const MAT_Request_S
 PEAT_Bool Collectives::find_collective(const PEAT_Rank rank, Collective_Event* event, collective_list::iterator* record)
 {
     collective_key c_key(event->comm, event->ph.func_id);
+#ifdef MAT_INDEXED_COLLECTIVES
+    std::map<collective_key, collective_list_struct>::iterator queue_it = coll_queues.find(c_key);
+    if(queue_it == coll_queues.end())
+        return false;
+    // the first instance (creation order) rank joined with this request still active
+    std::map<std::pair<PEAT_Rank, PEAT_MPI_Request>, collective_fifo>::iterator p = queue_it->second.pending_requests.find(std::make_pair(rank, event->permanent_request));
+    if(p == queue_it->second.pending_requests.end())
+        return false;
+    *record = p->second.front();
+    assert(!(*record)->expected_ranks.count(rank) && (*record)->coll_events_list.at(rank)->request == event->permanent_request);
+    return true;
+#else
     if(coll_queues.count(c_key)) {
         for(collective_list::iterator it = coll_queues.at(c_key).collectives.begin(); it != coll_queues.at(c_key).collectives.end(); ++it) {
             Collective_Ranks& checked_hash = coll_get_value(it, expected_ranks);
@@ -609,6 +709,7 @@ PEAT_Bool Collectives::find_collective(const PEAT_Rank rank, Collective_Event* e
         }
     }
     return false;
+#endif
 }
 
 PEAT_Bool Collectives::update_request(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase &phase, Collective_Event *event, PEAT_Bool is_remote)
@@ -616,6 +717,9 @@ PEAT_Bool Collectives::update_request(const PEAT_Rank rank, const PEAT_MPI_Reque
     collective_list::iterator coll;
     if(find_collective(rank,event, &coll)) {
         assert(coll_get_value(coll, coll_events_list).at(rank)->request == request);
+#ifdef MAT_INDEXED_COLLECTIVES
+        remove_pending_request(coll_queues.at(collective_key(event->comm, event->ph.func_id)), rank, coll_get_value(coll, coll_events_list).at(rank)->request, coll);
+#endif
         coll_get_value(coll, coll_events_list).at(rank)->request = 0;
         request_func_store->print_req_bind(rank, request, coll_get_value(coll, coll_events_list).at(rank)->ph, phase, is_remote);
         if(coll_get_value(coll, expected_ranks).empty()) {

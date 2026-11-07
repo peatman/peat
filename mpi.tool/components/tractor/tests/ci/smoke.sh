@@ -26,6 +26,11 @@
 # concatenating and sorting all bind files. Differences are printed and kept in pmat<N>/compare/.
 # pmat is experimental: its failures are reported ("PMAT FAIL", a ::warning:: annotation on GitHub Actions) but do not
 # change the exit status, unless SMOKE_PMAT_STRICT=1.
+# SMOKE_MAT_ALT=<serial mat binary> also runs a second serial mat build (CI: mat built with MAT_INDEXED_COLLECTIVES
+# off, i.e. the old collective matching) the same way in <test>.<names|ids>/mat_alt. Its output must be identical to
+# serial mat's - the same files, every one identical after unpacking (.bind files too, record order included) - and
+# its report on stdout the same apart from timing lines. Differences are printed and kept in mat_alt/compare/; they
+# fail the run.
 
 set -u
 
@@ -46,6 +51,11 @@ work=${SMOKE_WORKDIR:-$(mktemp -d)}
 [ -f "$lib" ]     || { echo "no tractor library: $lib"; exit 2; }
 [ -x "$bin/mat" ] || { echo "no mat in $bin"; exit 2; }
 [ -x "$bin/ctt" ] || { echo "no ctt in $bin"; exit 2; }
+mat_alt=${SMOKE_MAT_ALT:-}
+if [ -n "$mat_alt" ]; then
+    mat_alt=$(realpath "$mat_alt")
+    [ -x "$mat_alt" ] || { echo "no alternative mat: $mat_alt"; exit 2; }
+fi
 pmat=${SMOKE_PMAT:-}
 pmat_ranks=${SMOKE_PMAT_RANKS:-1 2 4}
 if [ -n "$pmat" ]; then
@@ -99,6 +109,7 @@ pmat_launch() {
 }
 
 echo "== tractor: $lib (engineering=$engineering)"
+[ -z "$mat_alt" ] || echo "== alternative serial mat: $mat_alt"
 [ -z "$pmat" ] || echo "== pmat: $pmat (ranks: $pmat_ranks)"
 ldd "$lib" | grep -E "not found" && { echo "unresolved dependencies"; exit 1; }
 
@@ -169,6 +180,41 @@ compare_out() {
     return $same
 }
 
+# compare_exact <serial run dir> <other run dir>: <run>/out must hold the same files, each identical after unpacking
+# (no sorting: the same build of the same program must write the same records in the same order), and mat.log the same
+# lines apart from the speed/timing ones. Differences are printed and kept in full in <other run dir>/compare/.
+compare_exact() {
+    local ref=$1 new=$2 cmp=$2/compare f nd same=0
+    local tag=${2##*/}
+    rm -rf "$cmp" && mkdir -p "$cmp"
+    [ -d "$new/out" ] || { echo "      $tag: no output directory $new/out"; return 1; }
+    diff <(cd "$ref/out" && ls) <(cd "$new/out" && ls) > "$cmp/files.diff" || {
+        same=1; echo "      $tag: different output files (< serial, > $tag):"; sed 's/^/        /' "$cmp/files.diff"; }
+    for f in $(cd "$ref/out" && ls) ; do
+        [ -f "$new/out/$f" ] || continue
+        if ! diff <(unpack "$ref/out/$f") <(unpack "$new/out/$f") > "$cmp/$f.diff" ; then
+            same=1
+            nd=$(grep -c '^[<>]' "$cmp/$f.diff")
+            echo "      $tag: $f differs ($nd lines; line numbers serial,$tag; < serial, > $tag):"
+            head -12 "$cmp/$f.diff" | sed 's/^/        /'
+        else
+            rm -f "$cmp/$f.diff"
+        fi
+    done
+    # the report (statistics block etc.) without the lines carrying wall-clock times, each run's own directory (mat
+    # prints paths in it) replaced by <run>
+    if ! diff <(grep -vE 'Speed is|Time ' "$ref/mat.log" | sed "s|$ref|<run>|g") \
+              <(grep -vE 'Speed is|Time ' "$new/mat.log" | sed "s|$new|<run>|g") > "$cmp/mat.log.diff" ; then
+        same=1
+        echo "      $tag: mat report differs (< serial, > $tag):"
+        head -12 "$cmp/mat.log.diff" | sed 's/^/        /'
+    else
+        rm -f "$cmp/mat.log.diff"
+    fi
+    [ $same -eq 0 ] && rm -rf "$cmp"
+    return $same
+}
+
 # trace_and_analyse <test> <names:1|0> -> traces, mat and ctt output in $work/<test>.<names|ids>
 trace_and_analyse() {
     local t=$1 names=$2 mode d r
@@ -190,6 +236,16 @@ trace_and_analyse() {
     # every (p)mat run gets its own copy of the raw trace and runs there without switches (output in <run>/out)
     new_run_dir serial
     (cd serial && timeout 300 "$bin/mat" > mat.log 2>&1) || { tail -n 20 serial/mat.log ; fail "$t/$mode: mat" ; }
+    if [ -n "$mat_alt" ] ; then
+        new_run_dir mat_alt
+        if ! (cd mat_alt && timeout 300 "$mat_alt" > mat.log 2>&1) ; then
+            tail -n 20 mat_alt/mat.log ; fail "$t/$mode: alternative mat (log $d/mat_alt/mat.log)"
+        elif compare_exact "$d/serial" "$d/mat_alt" ; then
+            echo "    $mode: alternative mat output identical to serial mat ($(ls serial/out | wc -l) files)"
+        else
+            fail "$t/$mode: alternative mat output differs from serial mat (diffs in $d/mat_alt/compare)"
+        fi
+    fi
     if [ -n "$pmat" ] ; then
         local n ok= rc
         for n in $pmat_ranks ; do
