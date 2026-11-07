@@ -145,7 +145,7 @@ void P2PAL::print_P2PF(const MAT_P2P_Record &left, const MAT_P2P_Record &right)
     if (right.ph.tsc_time.func.out < left.ph.tsc_time.func.in) {
         long long diff = left.ph.tsc_time.func.in - right.ph.tsc_time.func.out;
         if (max_dif < diff) { // less recording
-            std::cerr << "Receive ended earlier than Transmit (tsc diff:" << std::dec << diff << ") {\nSend(host:" << ptp->get_host_name(left.rank) << "): " << left << "\nRecv(host:" << ptp->get_host_name(right.rank) << "): " << right << "\n}" << std::endl;
+            MAT_CERR("Receive ended earlier than Transmit (tsc diff:" << std::dec << diff << ") {\nSend(host:" << ptp->get_host_name(left.rank) << "): " << left << "\nRecv(host:" << ptp->get_host_name(right.rank) << "): " << right << "\n}" << std::endl);
             max_dif = diff;
         }
     }
@@ -180,14 +180,19 @@ void P2PAL::print_P2PF(const MAT_P2P_Record &left, const MAT_P2P_Record &right)
         // request binds - counting here too would count every record twice in the .trace.info Bind_Peer totals
 #else
         output_bind->puts(left.rank, &tbuf[4]);
+        #pragma omp atomic
         messages_bound[left.rank]++;
 #endif
     } else {
+        #pragma omp atomic
         messages_bound[right.rank]++;
         output_bind->puts(right.rank, &tbuf[4]);
     }
 #ifdef PRINT_STAT
     if (output_HWC && output_HWC->get_number_of_files() > 0) { // no timing data to compute stats/imbalance from when hwc files aren't read
+#ifdef PEAT_OMP
+        std::lock_guard<std::mutex> stats_guard(stats_lock); // printed_p2p is shared by all ranks
+#endif
         int pc_level = left.pc_level;
         PEAT_P2P_Record r_left;
         r_left.func_id = left.ph.func_id;
@@ -352,6 +357,8 @@ PEAT_Bool P2PAL::update_request(const PEAT_Rank rank, const Request_Store_Record
             return true;
         }
         const PEAT_Bool was_wildcard = unresolved_wildcard(*record);
+        { // a record in the matching queues can be paired by its peer's thread meanwhile; a held wildcard receive can't
+        Rank_Guard guard(*this, was_wildcard ? -1 : rank, was_wildcard ? -1 : record->peer_rank);
         if (!record->is_send) {
             if (record->tag == comm_store->get_MPI_ANY_TAG()) { // any tag
                 record->tag = tag;
@@ -372,9 +379,11 @@ PEAT_Bool P2PAL::update_request(const PEAT_Rank rank, const Request_Store_Record
         }
         record->completed = true;
         request_func_store->print_req_bind(rank, request, record->ph, phase, is_remote);
+        }
         if (was_wildcard) // resolved now: it and the receives held behind it may enter the matching queues
             release_receives(rank, record->comm);
 
+        Rank_Guard guard(*this, rank, record->peer_rank);
         PEAT_Num queue_type = record->is_send ? qt_send : qt_recv;
         PEAT_Num peer_queue_type = record->is_send ? qt_recv : qt_send;
         P2P_Event_Key key(*record);
@@ -413,6 +422,7 @@ void P2PAL::release_receives(const PEAT_Rank rank, const PEAT_MPI_Comm comm)
     while (!held->second.empty() && !unresolved_wildcard(*held->second.front())) {
         MAT_P2P_Record *record = held->second.front();
         held->second.pop_front();
+        Rank_Guard guard(*this, rank, record->peer_rank); // this rank's queue and the sender's
         matching_queues[qt_recv][rank][P2P_Event_Key(*record)].push_back(record);
         match_waiting_sends(rank, *record);
     }
@@ -440,21 +450,27 @@ void P2PAL::drop_wildcard_barrier(const PEAT_Rank rank, MAT_P2P_Record *record)
         if (*it == record) {
             // it never resolves: it goes where it was before wildcards were held (unpaired at the end, as then)
             held->second.erase(it);
-            matching_queues[qt_recv][rank][P2P_Event_Key(*record)].push_back(record);
+            {
+                Rank_Guard guard(*this, rank);
+                matching_queues[qt_recv][rank][P2P_Event_Key(*record)].push_back(record);
+            }
             release_receives(rank, record->comm);
             return;
         }
     }
 }
-/* recv has just entered the matching queues: pair the sends waiting for its envelope (any message handle) in order */
+/* recv has just entered the matching queues: pair the sends waiting for its envelope (any message handle) in order.
+   Its envelope is copied first: pairing deletes the records without a request, recv possibly among them. */
 void P2PAL::match_waiting_sends(const PEAT_Rank recv_rank, const MAT_P2P_Record &recv)
 {
     const PEAT_Rank send_rank = recv.peer_rank;
+    const PEAT_MPI_Tag tag = recv.tag;
+    const PEAT_MPI_Comm comm = recv.comm;
     if (send_rank < 0 || send_rank >= static_cast<PEAT_Rank>(matching_queues[qt_send].size()))
         return;
     std::map<P2P_Event_Key, std::list<MAT_P2P_Record *>> &sends = matching_queues[qt_send][send_rank];
     for (std::map<P2P_Event_Key, std::list<MAT_P2P_Record *>>::iterator q = sends.begin(); q != sends.end(); ++q) {
-        if (q->first.tag != recv.tag || q->first.peer != recv_rank || q->first.comm != recv.comm)
+        if (q->first.tag != tag || q->first.peer != recv_rank || q->first.comm != comm)
             continue;
         std::list<MAT_P2P_Record *>::iterator recv_it;
         while (!q->second.empty() && match_peer(matching_queues[qt_recv], recv_it, *q->second.front()))
@@ -506,12 +522,15 @@ PEAT_Bool P2PAL::add_pers_req_start(const PEAT_Rank rank, PEAT_MPI_Func_ID init_
     }
     P2P_Event_Key key(*record);
     if (global_func_id.check_property(init_func_id, PEAT_PROP_DATA_RX)) {
-        if (!hold_receive(rank, record))
+        if (!hold_receive(rank, record)) {
+            Rank_Guard guard(*this, rank);
             matching_queues[qt_recv][rank][key].push_back(record);
+        }
     } else if (global_func_id.check_property(init_func_id, PEAT_PROP_DATA_TX)) {
+        Rank_Guard guard(*this, rank);
         matching_queues[qt_send][rank][key].push_back(record);
     } else {
-        std::cerr << "Weird persistent request." << std::endl;
+        MAT_CERR("Weird persistent request." << std::endl);
         return false;
     }
     MAT_Request_Store_Record tmp;
@@ -555,6 +574,7 @@ void P2PAL::parse_P2PTx(PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool pr
             tmp.record = record;
             req_store->add_request(rank, record->request, &tmp);
         }
+        Rank_Guard guard(*this, rank, record->peer_rank); // this rank's queue and the receiver's
         P2P_Event_Key key(*record);
         matching_queues[qt_send][rank][key].push_back(record);
         std::list<MAT_P2P_Record *>::iterator matching_rec_it;
@@ -571,16 +591,16 @@ void P2PAL::parse_P2PTx(PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool pr
         if (event.P2P.request > 0) {
             if (global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) {
                 if (req_store->thrown_away_pers_requests[rank].find(event.P2P.request) != req_store->thrown_away_pers_requests[rank].end()) {
-                    std::cerr << "Persistent request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl;
+                    MAT_CERR("Persistent request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl);
                 };
                 req_store->thrown_away_pers_requests[rank].insert(event.P2P.request);
-                std::cerr << "Invalid persistent request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl;
+                MAT_CERR("Invalid persistent request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl);
             } else {
                 if (req_store->thrown_away_requests[rank].find(event.P2P.request) != req_store->thrown_away_requests[rank].end()) {
-                    std::cerr << "Request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl;
+                    MAT_CERR("Request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl);
                 }
                 req_store->thrown_away_requests[rank].insert(event.P2P.request);
-                std::cerr << "Invalid request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl;
+                MAT_CERR("Invalid request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl);
             }
         }
 #endif
@@ -634,6 +654,7 @@ void P2PAL::parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool in
         if (hold_receive(rank, record))
             return;
 
+        Rank_Guard guard(*this, rank, record->peer_rank); // this rank's queue and the sender's
         P2P_Event_Key key(*record);
         matching_queues[qt_recv][rank][key].push_back(record);
         std::list<MAT_P2P_Record *>::iterator record_it = matching_queues[qt_recv][rank][key].begin();
@@ -650,17 +671,17 @@ void P2PAL::parse_P2PRx(PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool in
         if (event.P2P.request > 0) {
             if (global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) {
                 if (req_store->thrown_away_pers_requests[rank].find(event.P2P.request) != req_store->thrown_away_pers_requests[rank].end()) {
-                    std::cerr << "Persistent request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl;
+                    MAT_CERR("Persistent request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl);
                 };
                 req_store->thrown_away_pers_requests[rank].insert(event.P2P.request);
-                std::cerr << "Invalid persistent request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl;
+                MAT_CERR("Invalid persistent request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl);
             }
             else {
                 if (req_store->thrown_away_requests[rank].find(event.P2P.request) != req_store->thrown_away_requests[rank].end()) {
-                    std::cerr << "Request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl;
+                    MAT_CERR("Request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl);
                 }
                 req_store->thrown_away_requests[rank].insert(event.P2P.request);
-                std::cerr << "Invalid request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl;
+                MAT_CERR("Invalid request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl);
             }
         }
 #endif
@@ -738,16 +759,16 @@ void P2PAL::send_P2PTx(PEAT_Rank rank, const Tractor_Event &event)
         if (event.P2P.request > 0) {
             if (global_func_id.check_property(event.func_id, PEAT_PROP_PERSISTENT_REQUEST_INIT)) {
                 if (req_store->thrown_away_pers_requests[rank].find(event.P2P.request) != req_store->thrown_away_pers_requests[rank].end()) {
-                    std::cerr << "Persistent request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl;
+                    MAT_CERR("Persistent request " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl);
                 };
                 req_store->thrown_away_pers_requests[rank].insert(event.P2P.request);
-                std::cerr << "Invalid persistent request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl;
+                MAT_CERR("Invalid persistent request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl);
             } else {
                 if (req_store->thrown_away_requests[rank].find(event.P2P.request) != req_store->thrown_away_requests[rank].end()) {
-                    std::cerr << "Request conflict " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl;
+                    MAT_CERR("Request conflict " << std::hex << event.P2P.request << std::dec << " conflict.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl);
                 }
                 req_store->thrown_away_requests[rank].insert(event.P2P.request);
-                std::cerr << "Invalid request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl;
+                MAT_CERR("Invalid request " << std::hex << event.P2P.request << std::dec << " thrown away.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << std::endl);
             }
         }
         return;
@@ -921,9 +942,17 @@ void P2PAL::print_sizes() const
         PEAT_Rank rank = 0;
         for (matching_event_type::const_iterator matching_queues_it = matching_queues[q].cbegin(); matching_queues_it != matching_queues[q].cend(); ++matching_queues_it, rank++) {
             size_t size = 0;
+#ifdef PEAT_OMP
+            if (rank < n_rank_locks)
+                rank_locks[rank].lock();
+#endif
             for (std::map<P2P_Event_Key, std::list<MAT_P2P_Record *>>::const_iterator key_it = matching_queues_it->cbegin(); key_it != matching_queues_it->cend(); ++key_it) {
                 size += key_it->second.size();
             }
+#ifdef PEAT_OMP
+            if (rank < n_rank_locks)
+                rank_locks[rank].unlock();
+#endif
             if (size > 0)
                 printf(":r%d-%zd", rank, size);
         }

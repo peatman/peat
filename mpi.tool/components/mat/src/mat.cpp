@@ -17,6 +17,9 @@
  */
 
 #include "mat.h"
+#ifdef PEAT_OMP
+Mat_Recursive_Spin_Lock mat_store_lock;
+#endif
 #include <string>
 #ifdef PEAT_MPI
 #include <mpi.h>
@@ -116,11 +119,6 @@ PEAT_Bool Mat::parse_single_event(const int rank)
     while (w.timeline.count(tsc_t) > 0)
         tsc_t++;
     w.timeline[tsc_t] = rank;
-#ifdef PEAT_OMP
-    // from here on the event goes into the stores every thread shares
-    std::lock_guard<Mat_Match_Lock> matching(match_lock);
-#endif
-
     if (mpifunc == MPI_PCONTROL_ID) {
         int ctl = t_event.PControl.ctl;
         int abs_ctl = ctl > 0 ? ctl : -ctl;
@@ -136,6 +134,7 @@ PEAT_Bool Mat::parse_single_event(const int rank)
 #ifdef PEAT_MPI
         coll_func_store->send_collective(rank, t_event);
 #else
+        MAT_STORE_GUARD;
         coll_func_store->parse_collective(rank, t_event, false);
 #endif
     }
@@ -184,6 +183,7 @@ PEAT_Bool Mat::parse_single_event(const int rank)
 #ifdef PEAT_MPI
         coll_func_store->send_collective(rank, t_event);
 #else
+        MAT_STORE_GUARD;
         coll_func_store->parse_collective(rank, t_event, false);
 #endif
     }
@@ -196,63 +196,67 @@ PEAT_Bool Mat::parse_single_event(const int rank)
 #ifdef PEAT_MPI
             coll_func_store->send_collective(rank, t_event);
 #else
+            MAT_STORE_GUARD;
             coll_func_store->parse_collective(rank, t_event, false);
 #endif
         } else {
+            MAT_STORE_GUARD;
             comm_func_store->parse_comm(rank, t_event);
         }
     }
     if (t_event.func_class == PEAT_PROP_CLASS_OSC) {
-        osc_func_store->parse_osc(rank, t_event);   
+        MAT_STORE_GUARD;
+        osc_func_store->parse_osc(rank, t_event);
     }
 
     if (t_event.func_class == PEAT_PROP_CLASS_GPU) {
+        MAT_STORE_GUARD;
         gpu_func_store->parse_GPU(rank, t_event);
     }
     if (t_event.func_class == PEAT_PROP_CLASS_LOCAL || t_event.func_class == PEAT_PROP_CLASS_OMPT) {
         p2p_func_store->parse_Local(rank, t_event);
     }
     if (p_control_in_use[rank] > 0 && occ_inc) {
-        Mat_Time t = timings[p_control_in_use[rank]][t_event.func_class];
+        Mat_Time t = w.timings[p_control_in_use[rank]][t_event.func_class];
         t.durations += mpi_time;
         t.occurences += (mpi_time != 0);
-        timings[p_control_in_use[rank]][t_event.func_class] = t;
+        w.timings[p_control_in_use[rank]][t_event.func_class] = t;
 
-        t = timings[p_control_in_use[rank]][PEAT_PROP_CODE_ALL];
+        t = w.timings[p_control_in_use[rank]][PEAT_PROP_CODE_ALL];
         t.durations += mpi_time;
         t.occurences += (mpi_time != 0);
-        timings[p_control_in_use[rank]][PEAT_PROP_CODE_ALL] = t;
+        w.timings[p_control_in_use[rank]][PEAT_PROP_CODE_ALL] = t;
 
-        t = timings[p_control_in_use[rank]][PEAT_PROP_CODE_USER];
+        t = w.timings[p_control_in_use[rank]][PEAT_PROP_CODE_USER];
         t.durations += uc_time;
         t.occurences += (uc_time != 0);
-        timings[p_control_in_use[rank]][PEAT_PROP_CODE_USER] = t;
+        w.timings[p_control_in_use[rank]][PEAT_PROP_CODE_USER] = t;
 
-        t = timings[p_control_in_use[rank]][PEAT_PROP_CODE_TRACTOR_OVERHEAD];
+        t = w.timings[p_control_in_use[rank]][PEAT_PROP_CODE_TRACTOR_OVERHEAD];
         t.durations += t_time;
         t.occurences += (t_time != 0);
-        timings[p_control_in_use[rank]][PEAT_PROP_CODE_TRACTOR_OVERHEAD] = t;
+        w.timings[p_control_in_use[rank]][PEAT_PROP_CODE_TRACTOR_OVERHEAD] = t;
 
     } else if (occ_inc) {
-        Mat_Time t = timings[0][t_event.func_class];
+        Mat_Time t = w.timings[0][t_event.func_class];
         t.durations += mpi_time;
         t.occurences += (mpi_time != 0);
-        timings[0][t_event.func_class] = t;
+        w.timings[0][t_event.func_class] = t;
 
-        t = timings[0][PEAT_PROP_CODE_ALL];
+        t = w.timings[0][PEAT_PROP_CODE_ALL];
         t.durations += mpi_time;
         t.occurences += (mpi_time != 0);
-        timings[0][PEAT_PROP_CODE_ALL] = t;
+        w.timings[0][PEAT_PROP_CODE_ALL] = t;
 
-        t = timings[0][PEAT_PROP_CODE_USER];
+        t = w.timings[0][PEAT_PROP_CODE_USER];
         t.durations += uc_time;
         t.occurences += (uc_time != 0);
-        timings[0][PEAT_PROP_CODE_USER] = t;
+        w.timings[0][PEAT_PROP_CODE_USER] = t;
 
-        t = timings[0][PEAT_PROP_CODE_TRACTOR_OVERHEAD];
+        t = w.timings[0][PEAT_PROP_CODE_TRACTOR_OVERHEAD];
         t.durations += t_time;
         t.occurences += (t_time != 0);
-        timings[0][PEAT_PROP_CODE_TRACTOR_OVERHEAD] = t;
+        w.timings[0][PEAT_PROP_CODE_TRACTOR_OVERHEAD] = t;
     }
     if (!w.second_line && (t_event.ids.size()<2 || t_event.ids[1] < 0)) { //count only 'user' events
         rank_events_processed[rank]++;
@@ -523,7 +527,7 @@ PEAT_Rank Mat::get_soonest_event(Mat_Worker &w, PEAT_Clock &tsc)
 #ifdef PEAT_OMP
 #define MAT_OMP_FLUSH_SIZE (256 * 1024) // compress a rank's pending output once it holds this much text
 /* The threads' walks over their ranks (rank % threads). Every output file is written deferred meanwhile: the text goes
-   to memory under match_lock, and the thread owning the rank compresses it outside the lock (after each event of the
+   to memory (under the file's lock), and the thread owning the rank compresses it outside the matching locks (after each event of the
    rank, once enough has piled up). Whatever is left - bind records other threads wrote into this thread's files after
    it finished - is flushed when deferred writing is switched off at the end. */
 void Mat::process_omp_ranks()
@@ -541,6 +545,12 @@ void Mat::process_omp_ranks()
         if (out)
             out->set_deferred(true);
     const PEAT_UID total_event_num = user_region_store->get_num_events(my_ranks);
+    // maps indexed by rank get all their keys now: during the walk a rank's entry is touched only by its own thread,
+    // and none may be added (a std::map insert races with every other access to the map)
+    for (std::map<PEAT_Rank, std::string>::const_iterator rank = globals.pe_MPI_files_in_rank.begin(); rank != globals.pe_MPI_files_in_rank.end(); ++rank) {
+        p_control_in_use[rank->first];
+        ptp->add_rank_MPI(rank->first, 0);
+    }
     const PEAT_Ratio start_estimation = Wtime();
 #pragma omp parallel num_threads(nthreads)
     {
@@ -571,7 +581,7 @@ void Mat::process_omp_ranks()
                     prev_event_num = done;
                     printf("%d:%d%% Speed is %.2lf (%.2lf) events per second. Step Time %.2lf. Total Time %.2lf\n", globals.comm_rank, cur_percent, instant_bw, estimation_bw, cur_step - prev_step, cur_step - start_estimation);
                     if (globals.verbose) {
-                        std::lock_guard<Mat_Match_Lock> matching(match_lock);
+                        MAT_STORE_GUARD; // the P2P store locks its ranks itself
                         p2p_func_store->print_sizes();
                         coll_func_store->print_sizes();
                     }
@@ -589,6 +599,13 @@ void Mat::process_omp_ranks()
     for (File_Storage_GZ *out : outputs)
         if (out)
             out->set_deferred(false);
+    for (const std::unique_ptr<Mat_Worker> &w : workers) // the statistics block's timings: sums, any order
+        for (const auto &level : w->timings)
+            for (const auto &cls : level.second) {
+                Mat_Time &t = timings[level.first][cls.first];
+                t.durations += cls.second.durations;
+                t.occurences += cls.second.occurences;
+            }
     workers.clear(); // worker() is the serial one again for whatever runs after the walk
 }
 #endif
@@ -648,6 +665,7 @@ void Mat::process()
             }
         }
     }
+    timings = serial_worker.timings;
 #endif
 #ifdef PEAT_MPI
     wait_for_global_quiescence();
