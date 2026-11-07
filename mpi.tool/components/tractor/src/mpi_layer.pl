@@ -181,11 +181,11 @@ if ($properties=~/MSTATUSES/) {
         event->requests.flag=1;
         event->requests.triggered_request_num=*onum;
         long long TSC[inum*4];
-        for (i=0;i<*onum;i++) { 
+        for (i=0;i<*onum;i++) { // statuses[i] is the status of request indx[i] (not statuses[indx[i]])
             TSC[i*4+0]=indx[i];
-            TSC[i*4+1]=statuses[indx[i]].MPI_TAG;
-            TSC[i*4+2]=${mpi_internal}get_rank_from_comm(local_comms[indx[i]],statuses[indx[i]].MPI_SOURCE); ;
-            TSC[i*4+3]=MPI_STATUS_GET_COUNT_R(statuses[indx[i]]);
+            TSC[i*4+1]=statuses[i].MPI_TAG;
+            TSC[i*4+2]=${mpi_internal}get_rank_from_comm(local_comms[indx[i]],statuses[i].MPI_SOURCE); ;
+            TSC[i*4+3]=MPI_STATUS_GET_COUNT_R(statuses[i]);
         }
         __msl_write_records(tid,level,TSC,(*onum)*4);
     }";
@@ -924,6 +924,8 @@ if ($parse_gpu == 1) {
   print "#ifdef GPUPARSE\n";
   print "#include \"CL/cl.h\"\n";
   print "#include \"level_zero/ze_api.h\"\n";
+  # clCreateCommandQueueWithProperties takes a zero-terminated list of name/value pairs; record the queue properties bit field
+  print "static long long t_cl_queue_properties(const cl_queue_properties *p) { if (p) for (; p[0]; p += 2) if (p[0] == CL_QUEUE_PROPERTIES) return (long long)p[1]; return 0; }\n";
 #  print "void init_gpu_syms(void);\n";
 
 #  print "int clv30=CL_VERSION_3_0;\n";

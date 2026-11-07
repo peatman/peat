@@ -878,69 +878,6 @@ static int MPI_Comm_join_internal(int fd, MPI_Comm *newcomm, void **p_entrys)
     return rv;
 }
 
-#if MPI_VERSION >= 4
-static int MPI_Comm_idup_with_info_internal(MPI_Comm comm, MPI_Info info, MPI_Comm *newcomm, MPI_Request *request, void **p_entrys)
-{
-    __DEBUG_PROLOG_MPI_LAYER__
-    const PEAT_MPI_Func_ID fid = MPI_COMM_IDUP_WITH_INFO_ID;
-    const PEAT_MPI_Func_ID_Through fidc = MPI_COMM_IDUP_WITH_INFO_ID_THROUGH;
-    const int is_internal = 0;
-#include "mpi_layer_comm_begin.prolog.h"
-#ifdef _TRACTOR_PCALL_
-    rv = PMPI_Comm_idup_with_info(comm, info, newcomm, request);
-#endif
-#define __write_comms__ \
-    event->comms.request = *request; \
-    event->comms.comm = comm; \
-    event->comms.newcomm = *newcomm;
-#define __comm_membership_from__ comm /* newcomm may not be used until the request completes; it copies comm */
-#include "mpi_layer_comm_begin.epilog.h"
-#undef __write_comms__
-    __DEBUG_EPILOG_MPI_LAYER__
-    return rv;
-}
-#endif
-
-#if MPI_VERSION >= 4
-static int MPI_Comm_create_from_group_internal(MPI_Group group, const char *stringtag, MPI_Info info, MPI_Errhandler errhandler, MPI_Comm *newcomm, void **p_entrys)
-{
-    __DEBUG_PROLOG_MPI_LAYER__
-    const PEAT_MPI_Func_ID fid = MPI_COMM_CREATE_FROM_GROUP_ID;
-    const PEAT_MPI_Func_ID_Through fidc = MPI_COMM_CREATE_FROM_GROUP_ID_THROUGH;
-    const int is_internal = 0;
-#include "mpi_layer_comm_begin.prolog.h"
-#ifdef _TRACTOR_PCALL_
-    rv = PMPI_Comm_create_from_group(group, stringtag, info, errhandler, newcomm);
-#endif
-#define __write_comms__ \
-    event->comms.newcomm = *newcomm;
-#include "mpi_layer_comm_begin.epilog.h"
-#undef __write_comms__
-    __DEBUG_EPILOG_MPI_LAYER__
-    return rv;
-}
-#endif
-
-#if MPI_VERSION >= 4
-static int MPI_Intercomm_create_from_groups_internal(MPI_Group local_group, int local_leader, MPI_Group remote_group, int remote_leader, const char *stringtag, MPI_Info info, MPI_Errhandler errhandler, MPI_Comm *newintercomm, void **p_entrys)
-{
-    __DEBUG_PROLOG_MPI_LAYER__
-    const PEAT_MPI_Func_ID fid = MPI_INTERCOMM_CREATE_FROM_GROUPS_ID;
-    const PEAT_MPI_Func_ID_Through fidc = MPI_INTERCOMM_CREATE_FROM_GROUPS_ID_THROUGH;
-    const int is_internal = 0;
-#include "mpi_layer_comm_begin.prolog.h"
-#ifdef _TRACTOR_PCALL_
-    rv = PMPI_Intercomm_create_from_groups(local_group, local_leader, remote_group, remote_leader, stringtag, info, errhandler, newintercomm);
-#endif
-#define __write_comms__ \
-    event->comms.newcomm = *newintercomm;
-#include "mpi_layer_comm_begin.epilog.h"
-#undef __write_comms__
-    __DEBUG_EPILOG_MPI_LAYER__
-    return rv;
-}
-#endif
-
 
 #ifdef _PARSE_MPI_INTERNAL_
 #ifdef _OPENMPI_

@@ -134,7 +134,25 @@ class P2PAL : public Outputs
     {
         matching_queues[0].resize(size);
         matching_queues[1].resize(size);
+        held_receives.resize(size);
     }
+    /* Wildcard receives. A nonblocking receive posted with MPI_ANY_SOURCE and/or MPI_ANY_TAG learns its source and tag
+       only from its completion, and until then it could take any message on its communicator that a later receive
+       would otherwise get. So from its posting on, every receive of that rank on that communicator is held back (in
+       posting order) until all wildcard receives ahead of it are resolved; then they enter the matching queues in
+       posting order and are paired with the sends already waiting. Sends are never held. */
+    void drop_wildcard_barrier(const PEAT_Rank rank, MAT_P2P_Record *record); // cancelled/freed before it completed
+
+  private:
+    std::vector<std::map<PEAT_MPI_Comm, std::list<MAT_P2P_Record *>>> held_receives; // [receiving rank][comm], posting order
+    PEAT_Bool unresolved_wildcard(const MAT_P2P_Record &r) const { return !r.is_send && r.request > 0 && is_wild_card(r); }
+    PEAT_Bool hold_receive(const PEAT_Rank rank, MAT_P2P_Record *record);
+    void release_receives(const PEAT_Rank rank, const PEAT_MPI_Comm comm);
+    void release_all_receives(); // end of the trace: whatever is still held goes to the queues as it is
+    void match_waiting_sends(const PEAT_Rank recv_rank, const MAT_P2P_Record &recv);
+    void bind_pair(std::list<MAT_P2P_Record *>::iterator send_it, std::list<MAT_P2P_Record *>::iterator recv_it);
+
+  public:
     void print_P2PL(const Tractor_Event &event);
     void print_P2PE(const MAT_P2P_Record &event);
     void print_P2PF(const MAT_P2P_Record &left, const MAT_P2P_Record &right);
