@@ -446,15 +446,18 @@ void P2PAL::drop_wildcard_barrier(const PEAT_Rank rank, MAT_P2P_Record *record)
         }
     }
 }
-/* recv has just entered the matching queues: pair the sends waiting for its envelope (any message handle) in order */
+/* recv has just entered the matching queues: pair the sends waiting for its envelope (any message handle) in order.
+   Its envelope is copied first: pairing deletes the records without a request, recv possibly among them. */
 void P2PAL::match_waiting_sends(const PEAT_Rank recv_rank, const MAT_P2P_Record &recv)
 {
     const PEAT_Rank send_rank = recv.peer_rank;
+    const PEAT_MPI_Tag tag = recv.tag;
+    const PEAT_MPI_Comm comm = recv.comm;
     if (send_rank < 0 || send_rank >= static_cast<PEAT_Rank>(matching_queues[qt_send].size()))
         return;
     std::map<P2P_Event_Key, std::list<MAT_P2P_Record *>> &sends = matching_queues[qt_send][send_rank];
     for (std::map<P2P_Event_Key, std::list<MAT_P2P_Record *>>::iterator q = sends.begin(); q != sends.end(); ++q) {
-        if (q->first.tag != recv.tag || q->first.peer != recv_rank || q->first.comm != recv.comm)
+        if (q->first.tag != tag || q->first.peer != recv_rank || q->first.comm != comm)
             continue;
         std::list<MAT_P2P_Record *>::iterator recv_it;
         while (!q->second.empty() && match_peer(matching_queues[qt_recv], recv_it, *q->second.front()))
