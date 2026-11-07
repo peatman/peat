@@ -4,6 +4,10 @@
    persistent requests, cancel, wildcard receives (MPI_ANY_SOURCE/MPI_ANY_TAG with every
    sending and receiving call) and (MPI-4) large-count, Isendrecv and partitioned communication.
    Usage: p2p_test [iterations]      (2 or more ranks) */
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE /* RTLD_DEFAULT */
+#endif
+#include <dlfcn.h>
 #include "test_common.h"
 
 #define N 1024
@@ -441,6 +445,64 @@ static void wc_complete(int n, MPI_Request *req, MPI_Status *st, const int *pers
     free(idx);
 }
 
+/* Known MPICH bug (stock MPICH 4.x/5.x, MVAPICH): the status of an MPI_Isendrecv(_replace) request (and the _c
+   variants) is not filled from the receive - or only when the request happens to complete inside the call, so it can't
+   be probed reliably; the patches in mpi.tool/patches fix it. On a stock MPICH-family MPI those kinds are left out of the
+   wildcard receives (their source and tag would come from that status - for the test and for tractor/mat alike), but
+   each is still called once, as the smoke test wants every function the test calls in the trace. A patched (engineering)
+   build is recognised, as in the patches' README, by the hook it exports: pmpi_internal_comm_create (not the
+   mpi_internal_comm_create alias, which an engineering tractor exports too). 1 = the kind can be used. */
+static int wc_status_ok(int kind)
+{
+#if HAVE_MPI4 && defined(MPICH_NUMVERSION)
+    static int stock = -1;
+    if (stock < 0) {
+        stock = dlsym(RTLD_DEFAULT, "pmpi_internal_comm_create") == NULL;
+        if (stock) {
+            int sb = 7, rb = -1, rep = 7;
+            MPI_Request r;
+            MPI_Isendrecv(&sb, 1, MPI_INT, 0, 77, &rb, 1, MPI_INT, 0, 77, MPI_COMM_SELF, &r);
+            MPI_Wait(&r, MPI_STATUS_IGNORE);
+            MPI_Isendrecv_replace(&rep, 1, MPI_INT, 0, 78, 0, 78, MPI_COMM_SELF, &r);
+            MPI_Wait(&r, MPI_STATUS_IGNORE);
+            MPI_Isendrecv_c(&sb, 1, MPI_INT, 0, 79, &rb, 1, MPI_INT, 0, 79, MPI_COMM_SELF, &r);
+            MPI_Wait(&r, MPI_STATUS_IGNORE);
+            MPI_Isendrecv_replace_c(&rep, 1, MPI_INT, 0, 80, 0, 80, MPI_COMM_SELF, &r);
+            MPI_Wait(&r, MPI_STATUS_IGNORE);
+            if (g_rank == 0)
+                fprintf(stderr, "KNOWN MPICH BUG: MPI_Isendrecv(_replace)(_c) status not filled on unpatched MPICH/MVAPICH "
+                                "(see mpi.tool/patches): wildcards() leaves them out\n");
+        }
+    }
+    if (stock)
+        switch (kind) {
+        case WK_ISENDRECV: case WK_ISENDRECV_REPLACE: case WK_ISENDRECV_C: case WK_ISENDRECV_REPLACE_C:
+            return 0;
+        }
+#else
+    (void)kind;
+#endif
+    return 1;
+}
+
+/* Known MVAPICH2 bug (seen with 2.3.7, ch3:psm): the status of a matched receive (MPI_Mrecv/MPI_Imrecv) reports twice
+   the received count; source, tag and data are right. There only the count of those receives isn't checked. */
+static int wc_count_ok(const char *kind)
+{
+#ifdef MVAPICH2_NUMVERSION
+    static int reported = 0;
+    if (strncmp(kind, "Mprobe", 6) == 0 || strncmp(kind, "Improbe", 7) == 0) {
+        if (!reported++ && g_rank == 0)
+            fprintf(stderr, "KNOWN MVAPICH2 BUG: MPI_Mrecv/MPI_Imrecv status count can be doubled: wildcards() doesn't "
+                            "check their count\n");
+        return 0;
+    }
+#else
+    (void)kind;
+#endif
+    return 1;
+}
+
 /* a receive got message m of src with tag tag */
 static void wc_check(const int *rbuf, const MPI_Status *st, int it, int src, int m, int tag, const char *what, const char *kind)
 {
@@ -448,7 +510,7 @@ static void wc_check(const int *rbuf, const MPI_Status *st, int it, int src, int
     MPI_Get_count(st, MPI_INT, &cnt);
     EXPECT(st->MPI_SOURCE == src, "%s (%s): source %d, expected %d", what, kind, st->MPI_SOURCE, src);
     EXPECT(st->MPI_TAG == tag, "%s (%s): tag %d, expected %d", what, kind, st->MPI_TAG, tag);
-    EXPECT(cnt == wc_len(m), "%s (%s): %d ints, expected %d (message %d)", what, kind, cnt, wc_len(m), m);
+    EXPECT(cnt == wc_len(m) || !wc_count_ok(kind), "%s (%s): %d ints, expected %d (message %d)", what, kind, cnt, wc_len(m), m);
     check_int(rbuf, wc_len(m), wc_base(src, it, m), what);
 }
 
@@ -457,23 +519,27 @@ static void wildcards(int it)
     const int src4[4] = {MPI_ANY_SOURCE, left, MPI_ANY_SOURCE, left};
     const int tag4[4] = {MPI_ANY_TAG, MPI_ANY_TAG, WC_TAG, WC_TAG};
     int sbuf[WC_MSGS][WC_CAP], rbuf[WC_MSGS][WC_CAP], kinds[WC_MSGS], rpers[WC_MSGS], spers[WC_MSGS], seq, k;
-    int recv_kinds[WK_COUNT], nrk = 0;
+    int recv_kinds[WK_COUNT], nrk = 0, used_kinds[WK_COUNT], nuk = 0;
     MPI_Request sreq[WC_MSGS], rreq[WC_MSGS];
     MPI_Status st[WC_MSGS];
     char what[96];
     const int send_first = g_rank % 2 == 0;
 
-    for (k = 0; k < WK_COUNT; k++) /* kinds that only receive, for the phases with fixed sends */
-        if (!wc_sends(k))
+    for (k = 0; k < WK_COUNT; k++) {
+        if (!wc_status_ok(k)) /* Isendrecv on stock MPICH */
+            continue;
+        used_kinds[nuk++] = k;
+        if (!wc_sends(k)) /* kinds that only receive, for the phases with fixed sends */
             recv_kinds[nrk++] = k;
+    }
 
     /* 1. same sends, consecutive receives: every receive kind against every send kind, every envelope */
-    const int nseq = (int)WK_COUNT > (int)SK_COUNT ? (int)WK_COUNT : (int)SK_COUNT;
+    const int nseq = nuk > (int)SK_COUNT ? nuk : (int)SK_COUNT;
     for (seq = 0; seq < nseq; seq++) {
         for (k = 0; k < WC_MSGS; k++) {
             const int env = (seq + 3 * k + it + g_rank) % 4;
             const int skind = (seq + 2 * k + 3 * g_rank + it) % SK_COUNT;
-            kinds[k] = (seq + k + g_rank) % WK_COUNT;
+            kinds[k] = used_kinds[(seq + k + g_rank) % nuk];
             fill_int(sbuf[k], wc_len(k), wc_base(g_rank, it, k));
             sreq[k] = MPI_REQUEST_NULL;
             spers[k] = 0;
