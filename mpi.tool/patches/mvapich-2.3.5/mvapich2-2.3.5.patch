@@ -2009,26 +2009,6 @@
 +    if (comm == NULL) return MPI_COMM_NULL;
 +    return comm->handle;
 +}
---- a/src/mpi/pt2pt/mpir_request.c
-+++ b/src/mpi/pt2pt/mpir_request.c
-@@ -354,7 +354,7 @@
- 			&ierr );
- 		    rc = (int) ierr;
- 		    if (rc == MPI_SUCCESS)
--			PMPI_Status_f2c( is, &request_ptr->status );
-+			MPI_Status_f2c( is, &request_ptr->status );
- 		    MPIR_ERR_CHKANDSTMT1((rc != MPI_SUCCESS), mpi_errno,
- 			MPI_ERR_OTHER,;, "**user", "**userquery %d", rc);
- 		    break;
-@@ -484,7 +484,7 @@
- 		request_ptr->greq_fns->grequest_extra_state, is, &ierr );
- 	    rc = (int)ierr;
- 	    if (rc == MPI_SUCCESS) 
--		PMPI_Status_f2c( is, &request_ptr->status );
-+		MPI_Status_f2c( is, &request_ptr->status );
- 	    MPIR_ERR_CHKANDSTMT1((rc != MPI_SUCCESS), mpi_errno, MPI_ERR_OTHER,
- 		{;}, "**user", "**userquery %d", rc);
- 	}
 --- a/src/mpid/common/sched/mpid_sched.c
 +++ b/src/mpid/common/sched/mpid_sched.c
 @@ -851,6 +851,38 @@
