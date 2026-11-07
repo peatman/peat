@@ -1,0 +1,9 @@
+# build
+traffic_test
+*.o
+.built_with
+# run.sh traces (default trace.traffic) and compare.sh runs (default <trace dir>.compare)
+trace.*/
+*.compare/
+core
+core.*

@@ -78,6 +78,9 @@ void File_Storage_GZ::close(const PEAT_Rank rank)
 {
     if (fptr.count(rank) == 1) {
         if (fptr.at(rank).ptr) {
+#ifdef PEAT_OMP
+            write_pending(fptr.at(rank));
+#endif
             gzclose(fptr.at(rank).ptr);
             fptr.at(rank).ptr = NULL;
         } else {
@@ -158,6 +161,8 @@ File_Storage_GZ::~File_Storage_GZ()
         for (std::map<PEAT_Rank, File_Name_And_Ptr_GZ>::iterator it = fptr.begin(); it != fptr.end(); ++it) {
             UTILCOUT << "File " << it->second.name << " successfully closed." << std::endl;
 #ifdef PEAT_OMP
+            if (it->second.ptr)
+                write_pending(it->second);
             it->second.read_lock.lock();
 #endif
             if (it->second.ptr)
@@ -170,6 +175,66 @@ File_Storage_GZ::~File_Storage_GZ()
         fptr.clear();
     }
 }
+
+#ifdef PEAT_OMP
+void File_Storage_GZ::append_pending(const PEAT_Rank rank, const char *text, const size_t len)
+{
+    File_Name_And_Ptr_GZ &file = fptr.at(rank);
+    file.write_lock.lock();
+    file.pending.append(text, len);
+    file.write_lock.unlock();
+}
+void File_Storage_GZ::append_pending_v(const PEAT_Rank rank, const char *format, va_list args)
+{
+    char small[512];
+    va_list again;
+    va_copy(again, args);
+    const int len = vsnprintf(small, sizeof(small), format, args);
+    if (len < 0) {
+        va_end(again);
+        return;
+    }
+    File_Name_And_Ptr_GZ &file = fptr.at(rank);
+    file.write_lock.lock();
+    if (static_cast<size_t>(len) < sizeof(small)) {
+        file.pending.append(small, static_cast<size_t>(len));
+    } else {
+        const size_t at = file.pending.size();
+        file.pending.resize(at + static_cast<size_t>(len) + 1);
+        vsnprintf(&file.pending[at], static_cast<size_t>(len) + 1, format, again);
+        file.pending.resize(at + static_cast<size_t>(len));
+    }
+    file.write_lock.unlock();
+    va_end(again);
+}
+void File_Storage_GZ::flush_pending(const PEAT_Rank rank, const size_t min_size)
+{
+    std::map<PEAT_Rank, File_Name_And_Ptr_GZ>::iterator it = fptr.find(rank);
+    if (it == fptr.end())
+        return;
+    File_Name_And_Ptr_GZ &file = it->second;
+    std::string out;
+    file.flush_lock.lock(); // taken before the text: a later chunk can't overtake this one into the file
+    file.write_lock.lock();
+    if (file.pending.size() >= min_size && !file.pending.empty())
+        out.swap(file.pending);
+    file.write_lock.unlock();
+    if (!out.empty() && check_open(rank))
+        gzwrite(file.ptr, out.data(), static_cast<unsigned>(out.size()));
+    file.flush_lock.unlock();
+}
+void File_Storage_GZ::flush_pending()
+{
+    for (std::map<PEAT_Rank, File_Name_And_Ptr_GZ>::iterator it = fptr.begin(); it != fptr.end(); ++it)
+        flush_pending(it->first);
+}
+void File_Storage_GZ::write_pending(File_Name_And_Ptr_GZ &file)
+{
+    if (!file.pending.empty() && file.ptr)
+        gzwrite(file.ptr, file.pending.data(), static_cast<unsigned>(file.pending.size()));
+    file.pending.clear();
+}
+#endif
 
 PEAT_Bool File_Storage_GZ::read_lines(String_Split &lines, const PEAT_Rank rank, const char delim, const char term)
 {
