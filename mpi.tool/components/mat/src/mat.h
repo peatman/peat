@@ -33,47 +33,18 @@
 #include <vector>
 
 /* mat.omp (PEAT_OMP) splits the trace ranks over its threads (rank % threads), each walking its own ranks in time
-   order. They share the matching structures: everything from the dispatch of a parsed event into the stores on runs
-   under match_lock, while reading, parsing and time conversion of events, and the compression of the output files
-   (deferred writing, see File_Storage_GZ::set_deferred), run in parallel. */
+   order. They share the matching structures under the locks of mat_locks.h; reading, parsing and time conversion of
+   events, and the compression of the output files (deferred writing, see File_Storage_GZ::set_deferred), run in
+   parallel. */
 #if defined(PEAT_OMP) && defined(PEAT_MPI)
 #error "pmat with OpenMP (hybrid MPI+OpenMP mat) is not supported yet"
 #endif
-#ifdef PEAT_OMP
-#include <atomic>
-#include <mutex>
-#include <thread>
-/* The lock every event of every thread passes through, held only briefly each time: a sleeping mutex would make
-   each hand-over wait for a futex wake-up. Recursive: a send-receive record parses its second line under it. */
-class Mat_Match_Lock
-{
-    std::atomic<int> owner{-1};
-    int depth = 0;
+#include "mat_locks.h"
 
-  public:
-    void lock()
-    {
-        const int me = omp_get_thread_num();
-        if (owner.load(std::memory_order_relaxed) == me) {
-            depth++;
-            return;
-        }
-        for (unsigned spins = 0;; spins++) {
-            int free_lock = -1;
-            if (owner.load(std::memory_order_relaxed) == -1 && owner.compare_exchange_weak(free_lock, me, std::memory_order_acquire))
-                break;
-            if (spins > 1000)
-                std::this_thread::yield();
-        }
-        depth = 1;
-    }
-    void unlock()
-    {
-        if (--depth == 0)
-            owner.store(-1, std::memory_order_release);
-    }
+struct Mat_Time {
+    PEAT_Clock durations, occurences;
+    Mat_Time() : durations(0), occurences(0) {}
 };
-#endif
 
 /* State of one walk over a set of trace ranks: the whole trace in mat, a subset in each mat.omp thread */
 struct Mat_Worker {
@@ -82,11 +53,7 @@ struct Mat_Worker {
     String_Split line_mpi, line_hwc;
     PEAT_Bool second_line = false; // between the two lines of a send-receive record
     Tractor_Event send_line, recv_line;
-};
-
-struct Mat_Time {
-    PEAT_Clock durations, occurences;
-    Mat_Time() : durations(0), occurences(0) {}
+    std::map<PEAT_Num, std::map<PEAT_Property, Mat_Time>> timings; // per PC level and class; summed into Mat::timings
 };
 class Mat
 {
@@ -154,7 +121,6 @@ class Mat
     Mat_Worker serial_worker;
 #ifdef PEAT_OMP
     std::vector<std::unique_ptr<Mat_Worker>> workers; // one per thread, indexed by omp_get_thread_num()
-    Mat_Match_Lock match_lock;
     void process_omp_ranks();
 #endif
 };

@@ -22,6 +22,7 @@
 #include <stdexcept>
 #include "comm.h"
 #include "osc.h"
+#include "mat_locks.h"
 
 Requests::Requests(int s,
 #ifdef PEAT_MPI
@@ -60,7 +61,7 @@ PEAT_Bool Requests::discard_P2P_event(const PEAT_Rank rank, const PEAT_MPI_Reque
     // cerr << "DBG1 " << event << "\n";
     // pull requests from all available queues: message_queues[SENDQ],message_queues[RECVQ]
     if (request == comm_store->get_MPI_REQUEST_NULL()) {
-        std::cerr << "Null request detected. Rank: " << rank << ". Skipped." << std::endl;
+        MAT_CERR("Null request detected. Rank: " << rank << ". Skipped." << std::endl);
         return false;
     }
     MAT_Request_Store_Record dummy;
@@ -74,7 +75,7 @@ PEAT_Bool Requests::discard_P2P_event(const PEAT_Rank rank, const PEAT_MPI_Reque
 PEAT_Bool Requests::discard_collective_event(const PEAT_Rank rank, const PEAT_MPI_Request request, PEAT_Bool is_remote)
 {
     if (request == comm_store->get_MPI_REQUEST_NULL()) {
-        std::cerr << "Null request detected. Rank: " << rank << ". Skipped." << std::endl;
+        MAT_CERR("Null request detected. Rank: " << rank << ". Skipped." << std::endl);
         return false;
     }
     Collectives::collective_list::iterator coll;
@@ -102,7 +103,7 @@ PEAT_Bool Requests::parse_P2P_completion_phase(const PEAT_Rank rank, const Reque
     // cerr << "DBG1 " << event << "\n";
     // pull requests from all available queues: message_queues[SENDQ],message_queues[RECVQ]
     if (request == comm_store->get_MPI_REQUEST_NULL()) {
-        std::cerr << "Null request detected. Rank: " << rank << ". Skipped." << std::endl;
+        MAT_CERR("Null request detected. Rank: " << rank << ". Skipped." << std::endl);
         return false;
     }
     if (request > 0) {
@@ -117,10 +118,11 @@ PEAT_Bool Requests::parse_comm_completion_phase(const PEAT_Rank rank, const PEAT
     // cerr << "DBG1 " << event << "\n";
     // pull requests from all available queues: message_queues[SENDQ],message_queues[RECVQ]
     if(request == comm_store->get_MPI_REQUEST_NULL()) {
-        std::cerr << "Null request detected. Rank: " << rank << ". Skipped." << std::endl;
+        MAT_CERR("Null request detected. Rank: " << rank << ". Skipped." << std::endl);
         return false;
     }
     if(request > 0) {
+        MAT_STORE_GUARD; // the collective/comm/osc stores are shared by all threads
         comm_func_store->update_request(rank, request, phase, is_remote);
         return true;
     }
@@ -132,10 +134,11 @@ PEAT_Bool Requests::parse_osc_completion_phase(const PEAT_Rank rank, const PEAT_
     // cerr << "DBG1 " << event << "\n";
     // pull requests from all available queues: message_queues[SENDQ],message_queues[RECVQ]
     if(request == comm_store->get_MPI_REQUEST_NULL()) {
-        std::cerr << "Null request detected. Rank: " << rank << ". Skipped." << std::endl;
+        MAT_CERR("Null request detected. Rank: " << rank << ". Skipped." << std::endl);
         return false;
     }
     if(request > 0) {
+        MAT_STORE_GUARD; // the collective/comm/osc stores are shared by all threads
         osc_func_store->update_request(rank, request, phase, is_remote);
         return true;
     }
@@ -145,7 +148,7 @@ PEAT_Bool Requests::parse_osc_completion_phase(const PEAT_Rank rank, const PEAT_
 PEAT_Bool Requests::parse_collective_completion_phase(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase &phase, const int pc_level, PEAT_Bool is_fio, PEAT_Bool is_remote)
 {
     if (request == comm_store->get_MPI_REQUEST_NULL()) {
-        std::cerr << "Null request detected. Rank: " << rank << ". Skipped." << std::endl;
+        MAT_CERR("Null request detected. Rank: " << rank << ". Skipped." << std::endl);
         return false;
     }
     MAT_Request_Store_Record ret_it;
@@ -154,6 +157,7 @@ PEAT_Bool Requests::parse_collective_completion_phase(const PEAT_Rank rank, cons
             print_req_bind(rank, request, ret_it.record->get_ph(), phase, is_remote);
         } else {
             MAT_Collectives_Record* coll = (MAT_Collectives_Record*)ret_it.record;
+            MAT_STORE_GUARD; // the collective/comm/osc stores are shared by all threads
             coll_func_store->update_request(rank, request, phase, coll->coll_event,is_remote);
         }
         return true;
@@ -325,7 +329,7 @@ void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is
                 }
             } else {
                 if (*it != comm_store->get_MPI_REQUEST_NULL()) { // only handle active requests
-                    std::cerr << "Invalid persistent request " << std::hex << *it << std::dec << " detected.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << ".Skipped." << std::endl;
+                    MAT_CERR("Invalid persistent request " << std::hex << *it << std::dec << " detected.Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << ".Skipped." << std::endl);
                     req_store->thrown_away_requests[rank].insert(*it); // for later mpi_test/wait
                 }
             }
@@ -355,13 +359,13 @@ void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is
         const PEAT_Rank source = event.statuses.at(i).src;
         const PEAT_Message_Size size = event.statuses.at(i).bytes;
         if (request == comm_store->get_MPI_REQUEST_NULL()) {
-            std::cerr << "Null request detected. Rank: " << rank << ". Skipped." << std::endl;
+            MAT_CERR("Null request detected. Rank: " << rank << ". Skipped." << std::endl);
             continue;
         }
 #ifdef PEAT_MPI
         std::set<PEAT_MPI_Request>::iterator thrown_it = req_store->thrown_away_requests[rank].find(request);
         if (thrown_it != req_store->thrown_away_requests[rank].end()) {
-            std::cerr << "Invalid request " << std::hex << request << std::dec << " detected. Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << std::endl;
+            MAT_CERR("Invalid request " << std::hex << request << std::dec << " detected. Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << std::endl);
             req_store->thrown_away_requests[rank].erase(thrown_it);
             continue;
         }
@@ -448,7 +452,7 @@ void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is
 #ifndef PEAT_MPI
                     PEAT_Rank my_rank = 0;
 #endif
-                    std::cerr << "Rank " << my_rank << ". Request " << std::hex << request << std::dec << " is 'lost'. Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << " Internal: " << is_internal << " Skipped." << std::endl;
+                    MAT_CERR("Rank " << my_rank << ". Request " << std::hex << request << std::dec << " is 'lost'. Rank: " << rank << ". ids: " << peat_ids_string(event.ids) << " Remote: " << is_remote << " Internal: " << is_internal << " Skipped." << std::endl);
                     //assert(0);
                     // PEAT_Bool found_one_p2_p = parse_P2P_completion_phase(rank, ph_cn, request, tag, source, size, record.pc_level, qn_start, qn_stop, is_remote);
                 }
@@ -509,6 +513,7 @@ void Requests::print_req_bind(PEAT_Rank rank, PEAT_MPI_Request req, const Phase 
                             peat_ids_string(phase.ids).c_str(),
                             global_func_id.name_by_idx(bind.func_id),
                             peat_ids_string(bind.ids).c_str());
+        #pragma omp atomic
         p2p_func_store->messages_bound[rank]++;
     }
 }
@@ -540,6 +545,7 @@ void Requests::print_req_bind(PEAT_Rank rank, const Collective_Entry &coll, cons
                             peat_ids_string(coll.coll_events_list.at(rank)->ph.ids).c_str(),
                             global_func_id.name_by_idx(phase.func_id),
                             peat_ids_string(phase.ids).c_str());
+        #pragma omp atomic
         p2p_func_store->messages_bound[rank]++;
     }
 }
@@ -610,6 +616,7 @@ void Requests::parse_collective_start_phase(const PEAT_Rank rank, const Phase& p
     srec.record = record;
     srec.request_type = REQUEST_TYPE_USER_COLLECTIVE;
     req_store->add_request(rank, request, &srec);*/
+    MAT_STORE_GUARD; // the collective/comm/osc stores are shared by all threads
     coll_func_store->add_pers_req_start(rank, record);
 }
 

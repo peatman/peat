@@ -25,9 +25,11 @@
 #include "records.h"
 #include "tevent.h"
 #include "request_store.h"
+#include "mat_locks.h"
 
 #include <list>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -135,6 +137,12 @@ class P2PAL : public Outputs
         matching_queues[0].resize(size);
         matching_queues[1].resize(size);
         held_receives.resize(size);
+#ifdef PEAT_OMP
+        rank_locks.reset(new Mat_Spin_Lock[size]);
+        n_rank_locks = static_cast<PEAT_Rank>(size);
+        for (PEAT_Rank r = 0; r < static_cast<PEAT_Rank>(size); r++) // every rank's entry exists before the threads start
+            matching_messages[r];
+#endif
     }
     /* Wildcard receives. A nonblocking receive posted with MPI_ANY_SOURCE and/or MPI_ANY_TAG learns its source and tag
        only from its completion, and until then it could take any message on its communicator that a later receive
@@ -144,6 +152,50 @@ class P2PAL : public Outputs
     void drop_wildcard_barrier(const PEAT_Rank rank, MAT_P2P_Record *record); // cancelled/freed before it completed
 
   private:
+#ifdef PEAT_OMP
+    /* mat.omp: a rank's matching queues are guarded by its lock (see mat_locks.h); pairing a send of s with a receive
+       of r holds both. The P2P statistics and bind counters have their own. */
+    std::unique_ptr<Mat_Spin_Lock[]> rank_locks;
+    PEAT_Rank n_rank_locks = 0;
+    std::mutex stats_lock;
+#endif
+    /* holds the locks of one rank or of a pair, the lower rank first; ranks that aren't ranks (MPI_ANY_SOURCE,
+       MPI_PROC_NULL, ...) are skipped. Nothing in serial mat. */
+    class Rank_Guard
+    {
+#ifdef PEAT_OMP
+        P2PAL &p2p;
+        PEAT_Rank first, second;
+        PEAT_Rank valid(PEAT_Rank r) const { return r >= 0 && r < p2p.n_rank_locks ? r : -1; }
+
+      public:
+        Rank_Guard(P2PAL &p, PEAT_Rank a, PEAT_Rank b = -1) : p2p(p)
+        {
+            a = valid(a);
+            b = valid(b);
+            if (a == b)
+                b = -1;
+            first = (a >= 0 && (b < 0 || a < b)) ? a : b;
+            second = first == a ? b : a;
+            if (first >= 0)
+                p2p.rank_locks[first].lock();
+            if (second >= 0)
+                p2p.rank_locks[second].lock();
+        }
+        ~Rank_Guard()
+        {
+            if (second >= 0)
+                p2p.rank_locks[second].unlock();
+            if (first >= 0)
+                p2p.rank_locks[first].unlock();
+        }
+#else
+      public:
+        Rank_Guard(P2PAL &, PEAT_Rank, PEAT_Rank = -1) {}
+#endif
+        Rank_Guard(const Rank_Guard &) = delete;
+        Rank_Guard &operator=(const Rank_Guard &) = delete;
+    };
     std::vector<std::map<PEAT_MPI_Comm, std::list<MAT_P2P_Record *>>> held_receives; // [receiving rank][comm], posting order
     PEAT_Bool unresolved_wildcard(const MAT_P2P_Record &r) const { return !r.is_send && r.request > 0 && is_wild_card(r); }
     PEAT_Bool hold_receive(const PEAT_Rank rank, MAT_P2P_Record *record);

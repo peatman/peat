@@ -603,6 +603,45 @@
      MPIR_ERR_CHECK(mpi_errno);
      MPIR_Request_free(req_ptr);
  
+--- a/src/mpi/coll/iscatter/iscatter_intra_sched_binomial.c
++++ b/src/mpi/coll/iscatter/iscatter_intra_sched_binomial.c
+@@ -11,8 +11,20 @@
+     MPI_Aint curr_count;
+     MPI_Aint send_subtree_count;
+     MPI_Aint nbytes;
++    MPI_Aint root_count;        /* curr_count the root starts every run with */
+     MPI_Status status;
+ };
++
++/* calc_curr_count decrements curr_count during a run, so the root has to start every run of a
++ * persistent schedule (MPI_Scatter_init) from the full count again, otherwise send_subtree_count
++ * goes negative on the second MPI_Start and the deferred send fails. */
++static int init_root_count(MPIR_Comm * comm, int tag, void *state)
++{
++    struct shared_state *ss = state;
++    ss->curr_count = ss->root_count;
++    return MPI_SUCCESS;
++}
++
+ static int get_count(MPIR_Comm * comm, int tag, void *state)
+ {
+     struct shared_state *ss = state;
+@@ -140,9 +152,13 @@
+             MPIR_ERR_CHECK(mpi_errno);
+ 
+             MPIR_SCHED_BARRIER(s);
+-            ss->curr_count = ss->nbytes * comm_size;
++            ss->root_count = ss->nbytes * comm_size;
+         } else
+-            ss->curr_count = sendcount * comm_size;
++            ss->root_count = sendcount * comm_size;
++        ss->curr_count = ss->root_count;
++        mpi_errno = MPIR_Sched_cb(&init_root_count, ss, s);
++        MPIR_ERR_CHECK(mpi_errno);
++        MPIR_SCHED_BARRIER(s);
+     }
+ 
+     /* root has all the data; others have zero so far */
 --- a/src/mpi/coll/neighbor_allgather/neighbor_allgather_allcomm_nb.c
 +++ b/src/mpi/coll/neighbor_allgather/neighbor_allgather_allcomm_nb.c
 @@ -18,7 +18,7 @@
@@ -1011,6 +1050,37 @@
  
    fn_exit:
      MPIR_FUNC_EXIT;
+--- a/src/mpid/ch4/src/ch4_recv.h
++++ b/src/mpid/ch4/src/ch4_recv.h
+@@ -254,8 +254,9 @@
+     int mpi_errno = MPI_SUCCESS;
+     MPIR_FUNC_ENTER;
+ 
+-    if (rank == comm->rank && comm->comm_kind != MPIR_COMM_KIND__INTERCOMM) {
+-        mpi_errno = MPIDI_Self_irecv(buf, count, datatype, rank, tag, MPIR_Process.comm_self, attr, request);
++    /* Must mirror MPID_Isend_unsafe: see the comment there. */
++    if (MPIR_is_self_comm(comm)) {
++        mpi_errno = MPIDI_Self_irecv(buf, count, datatype, rank, tag, comm, attr, request);
+     } else {
+         MPIDI_av_entry_t *av = (rank == MPI_ANY_SOURCE ? NULL : MPIDIU_comm_rank_to_av(comm, rank));
+         mpi_errno = MPIDI_irecv(buf, count, datatype, rank, tag, comm, attr, av, request);
+--- a/src/mpid/ch4/src/ch4_send.h
++++ b/src/mpid/ch4/src/ch4_send.h
+@@ -82,8 +82,12 @@
+     MPIDI_av_entry_t *av = NULL;
+     MPIR_FUNC_ENTER;
+ 
+-    if (rank == comm->rank && comm->comm_kind != MPIR_COMM_KIND__INTERCOMM) {
+-        mpi_errno = MPIDI_Self_isend(buf, count, datatype, rank, tag, MPIR_Process.comm_self, attr, request);
++    /* Only true self-comms may use the self queue. Rerouting a send to our own
++     * rank on a larger comm through MPIR_Process.comm_self loses the comm and
++     * context, so an MPI_ANY_SOURCE probe/recv on the original comm (e.g.
++     * MPIR_Dist_graph_create_impl) never matches it and hangs. */
++    if (MPIR_is_self_comm(comm)) {
++        mpi_errno = MPIDI_Self_isend(buf, count, datatype, rank, tag, comm, attr, request);
+     } else {
+         av = MPIDIU_comm_rank_to_av(comm, rank);
+         mpi_errno = MPIDI_isend(buf, count, datatype, rank, tag, comm, attr, av, request);
 --- a/src/mpid/common/sched/mpidu_sched.c
 +++ b/src/mpid/common/sched/mpidu_sched.c
 @@ -1054,7 +1054,8 @@
