@@ -32,7 +32,16 @@
 #include <string>
 #include <vector>
 
+/* MAT_INDEXED_COLLECTIVES: find the collective instance a rank joins, and the one a request completion belongs to,
+   through per-rank fifos instead of walking the (comm, function) queue (see collective_list_struct). Set by the build
+   (on by default): CMake -DMAT_INDEXED_COLLECTIVES=OFF or make MAT_INDEXED_COLLECTIVES=off returns to the list walk
+   (UPDATE_FIRST_ENTRY). Both must give identical output (CI compares them on every smoke trace). */
+#ifdef MAT_INDEXED_COLLECTIVES
+#include <deque>
+#include <utility>
+#else
 #define UPDATE_FIRST_ENTRY
+#endif
 
 struct Collective_Event { // tsc_u_time is for debugging purposes only!
     Collective_Event() : request(0), permanent_request(0), comm(0) {}
@@ -183,12 +192,29 @@ class Collectives : public Outputs
     PEAT_Bool empty() const;
     PEAT_Num collective_queue_size() const;
     typedef std::list<MAT_Collective> collective_list;
+#ifdef MAT_INDEXED_COLLECTIVES
+    typedef std::deque<collective_list::iterator> collective_fifo;
+    /* Instances of one (comm, function), in creation order. Two indexes replace walking the list (std::list iterators
+       stay valid until their own element is erased):
+       - waiting[r]: the instances whose expected_ranks still hold r, in creation order. Its front is the first such
+         instance in the list, i.e. the one r's next call joins. r leaves expected_ranks only by joining (popping the
+         front), and an instance is erased only once expected_ranks is empty, so no erased iterator is ever left here.
+       - pending_requests[{r, request}]: the instances r joined with that still active request, in creation order (r
+         joins in creation order). Its front is the one a completion of the request belongs to; the entry is removed
+         when the completion resets the request to 0, which check_completion requires before an instance is erased. */
+    struct collective_list_struct {
+        collective_list collectives;
+        std::map<PEAT_Rank, collective_fifo> waiting;
+        std::map<std::pair<PEAT_Rank, PEAT_MPI_Request>, collective_fifo> pending_requests;
+    };
+#else
     struct collective_list_struct {
         std::list<MAT_Collective> collectives;
 #ifdef UPDATE_FIRST_ENTRY
         std::map<PEAT_Rank, collective_list::iterator> first;
 #endif
     };
+#endif
 #define coll_get_value(x, y) x->y
 #define coll_get_record(x) *x
 
@@ -212,8 +238,14 @@ class Collectives : public Outputs
     void print_sizes() const;
 
   private:
+#ifdef MAT_INDEXED_COLLECTIVES
+    PEAT_Bool match_collective(const collective_list_struct &queue, collective_list::iterator &record, PEAT_Rank rank) const;
+    void add_pending_request(collective_list_struct &queue, PEAT_Rank rank, PEAT_MPI_Request request, collective_list::iterator record);
+    void remove_pending_request(collective_list_struct &queue, PEAT_Rank rank, PEAT_MPI_Request request, collective_list::iterator record);
+#else
     PEAT_Bool match_collective(collective_list_struct &queue, collective_list::iterator &record, PEAT_Rank rank) const;
     PEAT_Bool match_collective(collective_list::iterator &first, collective_list::iterator &last, collective_list::iterator &record, PEAT_Rank rank) const;
+#endif
     void process_collective(const PEAT_Rank rank, MAT_Collectives_Record* event, int pc_level, PEAT_Bool is_remote);
 
     void print_collective_out(const Tractor_Event &event);

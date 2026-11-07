@@ -22,10 +22,17 @@ ZLIBLIB=-lz
 
 DEFINES=-DMAT_PROCESS_HWC_MPI_OUTPUT
 
+# off returns collective matching to the old queue walk (see collectives.h); output must be identical either way.
+# No header dependencies here: run make clean when switching it.
+MAT_INDEXED_COLLECTIVES=on
+ifeq "$(MAT_INDEXED_COLLECTIVES)" "on"
+DEFINES+=-DMAT_INDEXED_COLLECTIVES
+endif
+
 INCLUDES=-I../../common -I. $(ZLIBINCLUDE)
 TARGET=serial
-COMMON_FLAGS=-O3 -std=c++20
-#COMMON_FLAGS=-O0 -std=c++20 -g
+COMMON_FLAGS=-O3 -std=c++20 $(DEFINES)
+#COMMON_FLAGS=-O0 -std=c++20 -g $(DEFINES)
 
 ifeq "$(TARGET)" "impi"
 CXX=mpiicpx
@@ -53,7 +60,7 @@ endif
 
 ifeq "$(TARGET)" "openmp"
 CXX=g++
-CXXFLAGS=-W -Wall -Wnon-virtual-dtor -Wold-style-cast -Wctor-dtor-privacy -fopenmp $(COMMON_FLAGS) $(INCLUDES) $(DEFINES)
+CXXFLAGS=-W -Wall -Wnon-virtual-dtor -Wold-style-cast -Wctor-dtor-privacy -fopenmp $(COMMON_FLAGS) $(INCLUDES)
 EXECUTABLE=mat.omp
 endif
 
