@@ -23,12 +23,35 @@
 #include "drawoptionsdialog.h"
 #include "filterdialog.h"
 #include "globals.h"
+#include "helpviewer.h"
+#include "highlightdialog.h"
 #include "legenddialog.h"
 #include "textviewer.h"
 #include "tracedialog.h"
 #include "trace_info.h"
+#include <QClipboard>
+#include <QInputDialog>
 #include <QMessageBox>
+#include <QMimeData>
+#include <QPdfWriter>
 #include <QPalette>
+#include <QTimer>
+
+// TV_TraceParts flags are kept in the settings as a string of 0/1
+static QString flags_to_string(const bool *flags, int count)
+{
+    QString text;
+    for (int i = 0; i < count; ++i)
+        text += flags[i] ? QLatin1Char('1') : QLatin1Char('0');
+    return text;
+}
+static void flags_from_string(const QString &text, bool *flags, int count)
+{
+    if (text.size() != count)
+        return; // nothing saved yet, or saved by a version with another set of flags
+    for (int i = 0; i < count; ++i)
+        flags[i] = text.at(i) == QLatin1Char('1');
+}
 
 // Loads the SVG icon for the given graphics-editor tool/action ("presentation",
 // "curve", "line", "rectangle", "ellipse" or "arrow") from the icons.qrc
@@ -61,12 +84,34 @@ TVMainWindow::TVMainWindow(QWidget *parent)
         QSettings settings;
         shown.func_min_width = settings.value("Drawing/func_min_width", 2).toInt();
         shown.draw_offscreen_messages = settings.value("Drawing/offscreen_messages", false).toBool();
+        shown.row_height_percent = qBound(25, settings.value("Drawing/row_height", 100).toInt(), 400);
+        // "Drawing/color_by_function" is the flag this mode has replaced
+        shown.color_mode = settings.contains("Drawing/color_mode") ? qBound(0, settings.value("Drawing/color_mode").toInt(), TV_COLOR_MODE_MAX - 1)
+                                                                   : (settings.value("Drawing/color_by_function", false).toBool() ? TV_COLOR_BY_FUNCTION : TV_COLOR_BY_KIND);
+        // the hidden communicators are not kept: their ids belong to one trace
+        flags_from_string(settings.value("Filter/mpi_functions").toString(), shown.mpi_functions, TV_MPI_FUNC_GROUP_MAX);
+        flags_from_string(settings.value("Filter/mpi_messages").toString(), shown.mpi_messages, 7);
     }
     tv = new TV(sa, statusBar(), pb, sr, &shown, this);
     sa->setWidget(tv);
     sa->setWidgetResizable(true);
     sa->setBackgroundRole(QPalette::Dark);
-    setCentralWidget(sa);
+    ruler = new TimeRuler(this);
+    {
+        QWidget *central = new QWidget(this);
+        QVBoxLayout *central_layout = new QVBoxLayout(central);
+        central_layout->setContentsMargins(0, 0, 0, 0);
+        central_layout->setSpacing(0);
+        central_layout->addWidget(ruler);
+        central_layout->addWidget(sa); // moved out of the designer's central widget before that one is replaced
+        setCentralWidget(central);
+    }
+    connect(tv, &TV::view_changed, this, [this](double left, double right, double model_left, double model_right, double clock_freq, int width) {
+        ruler->set_view(left, right, model_left, model_right, clock_freq, sa->viewport()->x() + tv->x(), width);
+    });
+    connect(tv, &TV::cursor_moved, ruler, &TimeRuler::set_cursor);
+    connect(ruler, &TimeRuler::jump_requested, this, [this](double fraction) { tv->draw_view(fraction); });
+    setAcceptDrops(true);
     label_current_time = new QLabel(outputDouble(0.0));
     label_current_time->setMargin(3);
     label_start_time = new QLabel(outputDouble(0.0));
@@ -85,6 +130,11 @@ TVMainWindow::TVMainWindow(QWidget *parent)
     label_candidate = new QLabel("0");
     label_candidate->setStyleSheet("QLabel { color : green; }");
     label_candidate->setMargin(3);
+    label_current_time->setToolTip(tr("Time under the mouse cursor: clock ticks (seconds)"));
+    label_start_time->setToolTip(tr("Left bound of the view: clock ticks (seconds)"));
+    label_end_time->setToolTip(tr("Right bound and length of the view: clock ticks (seconds)"));
+    label_hidden_elements->setToolTip(tr("Elements not drawn because they are narrower than the minimal width.\nZoom in, or lower the width in Options > Drawing."));
+    label_candidate->setToolTip(tr("Number of the shown view in the list found by the last Analyse action (Ctrl+Left/Right steps through it)"));
     ui->toolBar->addWidget(label_current_time);
     ui->toolBar->addSeparator();
     ui->toolBar->addWidget(label_start_time);
@@ -113,6 +163,119 @@ TVMainWindow::TVMainWindow(QWidget *parent)
     ui->actionZoomOut->setIcon(make_presentation_tool_icon("zoom_out"));
     ui->actionFind->setIcon(style()->standardIcon(QStyle::SP_FileDialogContentsView));
     ui->actionLegend->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+
+    // View history: Back/Forward over the previously shown views, placed right
+    // after Zoom Out in the toolbar and before Reset in the View menu.
+    view_back_action = new QAction(tr("&Back"), this);
+    view_back_action->setIcon(style()->standardIcon(QStyle::SP_ArrowBack));
+    view_back_action->setShortcuts(QKeySequence::Back);
+    view_back_action->setStatusTip(tr("Go back to the previous view"));
+    view_back_action->setToolTip(tr("Previous view (%1)").arg(view_back_action->shortcut().toString(QKeySequence::NativeText)));
+    view_back_action->setEnabled(false);
+    connect(view_back_action, &QAction::triggered, this, [this]() { tv->go_view_history(-1); });
+    view_forward_action = new QAction(tr("For&ward"), this);
+    view_forward_action->setIcon(style()->standardIcon(QStyle::SP_ArrowForward));
+    view_forward_action->setShortcuts(QKeySequence::Forward);
+    view_forward_action->setStatusTip(tr("Go forward to the next view"));
+    view_forward_action->setToolTip(tr("Next view (%1)").arg(view_forward_action->shortcut().toString(QKeySequence::NativeText)));
+    view_forward_action->setEnabled(false);
+    connect(view_forward_action, &QAction::triggered, this, [this]() { tv->go_view_history(1); });
+    connect(tv, &TV::view_history_changed, this, [this](bool can_back, bool can_forward) {
+        view_back_action->setEnabled(can_back);
+        view_forward_action->setEnabled(can_forward);
+    });
+    {
+        const QList<QAction *> actions = ui->toolBar->actions();
+        const int zoom_out_index = actions.indexOf(ui->actionZoomOut);
+        QAction *before = (zoom_out_index >= 0 && zoom_out_index + 1 < actions.size()) ? actions.at(zoom_out_index + 1) : nullptr;
+        ui->toolBar->insertAction(before, view_back_action);
+        ui->toolBar->insertAction(before, view_forward_action);
+        ui->menuView->insertAction(ui->actionReset, view_back_action);
+        ui->menuView->insertAction(ui->actionReset, view_forward_action);
+    }
+
+    QAction *copy_picture_action = new QAction(tr("&Copy picture"), this);
+    copy_picture_action->setShortcut(QKeySequence(tr("Ctrl+Shift+C")));
+    copy_picture_action->setStatusTip(tr("Copy the current picture with its time axis to the clipboard"));
+    connect(copy_picture_action, &QAction::triggered, this, [this]() {
+        const QImage picture = compose_picture();
+        if (!picture.isNull())
+            QApplication::clipboard()->setImage(picture);
+    });
+    ui->menuFile->insertAction(ui->menuFile->actions().value(3), copy_picture_action); // right after Snapshot
+
+    QAction *go_to_time_action = new QAction(tr("&Go to time..."), this);
+    go_to_time_action->setShortcut(QKeySequence(tr("Ctrl+G")));
+    go_to_time_action->setStatusTip(tr("Center the view at a given time"));
+    connect(go_to_time_action, &QAction::triggered, this, &TVMainWindow::go_to_time);
+    QAction *find_function_action = new QAction(tr("Find f&unction..."), this);
+    find_function_action->setShortcut(QKeySequence(tr("Ctrl+Shift+F")));
+    find_function_action->setStatusTip(tr("Find the next or previous call of a function by its name"));
+    connect(find_function_action, &QAction::triggered, this, [this]() { tv->open_find_function_by_name(); });
+    ui->menuView->insertAction(ui->actionFilter, go_to_time_action);
+    ui->menuView->insertAction(ui->actionFilter, ui->actionFind);
+    ui->menuView->insertAction(ui->actionFilter, find_function_action);
+    ui->menuView->insertSeparator(ui->actionFilter);
+
+    QAction *taller_rows_action = new QAction(tr("&Taller rows"), this);
+    taller_rows_action->setShortcut(QKeySequence(tr("Ctrl+Up")));
+    taller_rows_action->setStatusTip(tr("Make the thread rows taller"));
+    connect(taller_rows_action, &QAction::triggered, this, [this]() { change_row_height(1); });
+    QAction *shorter_rows_action = new QAction(tr("&Shorter rows"), this);
+    shorter_rows_action->setShortcut(QKeySequence(tr("Ctrl+Down")));
+    shorter_rows_action->setStatusTip(tr("Make the thread rows shorter, to see more ranks at once"));
+    connect(shorter_rows_action, &QAction::triggered, this, [this]() { change_row_height(-1); });
+    QAction *legend_window_action = new QAction(tr("&Legend window"), this);
+    legend_window_action->setStatusTip(tr("Show the colours and their meanings in a window beside the trace"));
+    connect(legend_window_action, &QAction::triggered, this, &TVMainWindow::show_legend_window);
+    ui->menuView->insertAction(ui->actionFilter, taller_rows_action);
+    ui->menuView->insertAction(ui->actionFilter, shorter_rows_action);
+    ui->menuView->insertAction(ui->actionFilter, legend_window_action);
+    QAction *highlight_action = new QAction(tr("&Highlight..."), this);
+    highlight_action->setStatusTip(tr("Dim all events but those of a function, a communicator or a message size"));
+    connect(highlight_action, &QAction::triggered, this, &TVMainWindow::show_highlight_dialog);
+    ui->menuView->insertAction(ui->actionFilter, highlight_action);
+    {
+        // what the toolbar shows for the cursor and the bounds of the view
+        QMenu *units_menu = new QMenu(tr("Time &units"), this);
+        QActionGroup *units_group = new QActionGroup(this);
+        QSettings settings;
+        const int units = settings.value("View/time_units", 0).toInt() == 1 ? 1 : 0;
+        const QString names[2] = {tr("&Clock ticks and seconds"), tr("&Time from the start of the loaded trace")};
+        for (int i = 0; i < 2; ++i) {
+            QAction *action = units_menu->addAction(names[i]);
+            action->setCheckable(true);
+            action->setChecked(i == units);
+            units_group->addAction(action);
+            connect(action, &QAction::triggered, this, [this, i]() {
+                QSettings s;
+                s.setValue("View/time_units", i);
+                tv->set_time_units(i);
+            });
+        }
+        tv->set_time_units(units);
+        ui->menuView->insertMenu(ui->actionFilter, units_menu);
+    }
+    ui->menuView->insertSeparator(ui->actionFilter);
+
+    QAction *late_sender_action = new QAction(tr("Late &sender"), this);
+    late_sender_action->setStatusTip(tr("Messages whose receiver waited for the send to start, the longest wait first"));
+    connect(late_sender_action, &QAction::triggered, this, [this]() { tv->find_P2P_late(true); });
+    QAction *late_receiver_action = new QAction(tr("Late &receiver"), this);
+    late_receiver_action->setStatusTip(tr("Messages whose sender waited for the receive to start, the longest wait first"));
+    connect(late_receiver_action, &QAction::triggered, this, [this]() { tv->find_P2P_late(false); });
+    ui->menuPoint_to_Point->addAction(late_sender_action);
+    ui->menuPoint_to_Point->addAction(late_receiver_action);
+
+    QAction *statistics_action = new QAction(tr("&Statistics of the view"), this);
+    statistics_action->setStatusTip(tr("Time per function, MPI time per rank and messages between ranks in the shown window"));
+    connect(statistics_action, &QAction::triggered, this, [this]() { tv->show_statistics(false); });
+    ui->menuAnalyse->addSeparator();
+    ui->menuAnalyse->addAction(statistics_action);
+
+    bookmarks_menu = new QMenu(tr("&Bookmarks"), this);
+    menuBar()->insertMenu(ui->menuLegend->menuAction(), bookmarks_menu);
+    rebuild_bookmarks_menu();
 
     connect(tv, SIGNAL(show_current_time(QString)), label_current_time, SLOT(setText(QString)));
     connect(tv, SIGNAL(show_start_time(QString)), label_start_time, SLOT(setText(QString)));
@@ -200,7 +363,19 @@ TVMainWindow::TVMainWindow(QWidget *parent)
     presentation_arrow_action->setStatusTip(tr("Arrow tool"));
     connect(presentation_arrow_action, &QAction::triggered, this, &TVMainWindow::select_presentation_arrow_tool);
 
+    presentation_text_action = new QAction(tr("Text"), this);
+    presentation_text_action->setCheckable(true);
+    presentation_text_action->setStatusTip(tr("Text tool: click where the text has to be"));
+    connect(presentation_text_action, &QAction::triggered, this, [this]() { tv->set_presentation_tool(TV::PresentationTool::Text); });
+
+    presentation_eraser_action = new QAction(tr("Eraser"), this);
+    presentation_eraser_action->setCheckable(true);
+    presentation_eraser_action->setStatusTip(tr("Eraser: wipes the drawings under the cursor"));
+    connect(presentation_eraser_action, &QAction::triggered, this, [this]() { tv->set_presentation_tool(TV::PresentationTool::Eraser); });
+
     presentation_tool_group = new QActionGroup(this);
+    presentation_tool_group->addAction(presentation_text_action);
+    presentation_tool_group->addAction(presentation_eraser_action);
     presentation_tool_group->addAction(presentation_curve_action);
     presentation_tool_group->addAction(presentation_line_action);
     presentation_tool_group->addAction(presentation_rectangle_action);
@@ -234,6 +409,18 @@ TVMainWindow::TVMainWindow(QWidget *parent)
     ui->toolBar->insertAction(presentation_separator, presentation_rectangle_action);
     ui->toolBar->insertAction(presentation_separator, presentation_ellipse_action);
     ui->toolBar->insertAction(presentation_separator, presentation_arrow_action);
+    ui->toolBar->insertAction(presentation_separator, presentation_text_action);
+    ui->toolBar->insertAction(presentation_separator, presentation_eraser_action);
+    {
+        QSpinBox *width_box = new QSpinBox(this);
+        width_box->setRange(1, 12);
+        width_box->setValue(2);
+        width_box->setSuffix(tr(" px"));
+        width_box->setToolTip(tr("Width of the drawing pen"));
+        width_box->setFocusPolicy(Qt::ClickFocus);
+        connect(width_box, &QSpinBox::valueChanged, this, [this](int width) { tv->set_presentation_width(width); });
+        presentation_width_action = ui->toolBar->insertWidget(presentation_separator, width_box);
+    }
     ui->toolBar->insertAction(presentation_separator, presentation_undo_action);
     ui->toolBar->insertAction(presentation_separator, presentation_redo_action);
     ui->toolBar->insertAction(presentation_separator, presentation_save_action);
@@ -244,6 +431,9 @@ TVMainWindow::TVMainWindow(QWidget *parent)
     presentation_rectangle_action->setVisible(false);
     presentation_ellipse_action->setVisible(false);
     presentation_arrow_action->setVisible(false);
+    presentation_text_action->setVisible(false);
+    presentation_eraser_action->setVisible(false);
+    presentation_width_action->setVisible(false);
     presentation_undo_action->setVisible(false);
     presentation_redo_action->setVisible(false);
     presentation_save_action->setVisible(false);
@@ -261,7 +451,21 @@ TVMainWindow::TVMainWindow(QWidget *parent)
     fileMenu->addSeparator();
     fileMenu->addAction(exit_action);
     QMenu *helpMenu = menuBar()->addMenu(tr("&Help"));
+    QAction *contents_action = new QAction(tr("&Contents"), this);
+    contents_action->setShortcut(QKeySequence::HelpContents);
+    contents_action->setStatusTip(tr("Help of qTV"));
+    connect(contents_action, &QAction::triggered, this, [this]() { show_help("index.html"); });
+    helpMenu->addAction(contents_action);
+    QAction *controls_action = new QAction(tr("C&ontrols"), this);
+    controls_action->setStatusTip(tr("Mouse and keyboard controls of the trace picture"));
+    connect(controls_action, &QAction::triggered, this, [this]() { show_help("controls.html"); });
+    helpMenu->addAction(controls_action);
     helpMenu->addAction(about_action);
+
+    {
+        QSettings settings;
+        restoreGeometry(settings.value("Window/geometry").toByteArray());
+    }
 }
 
 TVMainWindow::~TVMainWindow()
@@ -271,8 +475,242 @@ TVMainWindow::~TVMainWindow()
 }
 void TVMainWindow::snap_shot()
 {
-    const QString file_name = QFileDialog::getSaveFileName(this, tr("Save PNG image"), "untitled.png", tr("Image Files (*.png);;All files (*.*)"));
-    bool r = tv->save(file_name, "PNG", -1);
+    save_picture_as("untitled.png");
+}
+
+// View > Highlight: which events stay bright
+void TVMainWindow::show_highlight_dialog()
+{
+    HighlightDialog d(this);
+    const Communicators *communicators = nullptr;
+    if (!info.path.isEmpty() && !info.trace_files.isEmpty() && CommunicatorsDialog::load(this, info, tv->get_communicators_data()))
+        communicators = &tv->get_communicators_data()->communicators;
+    d.set_properties(shown, communicators);
+    if (d.exec() == QDialog::Accepted) {
+        d.get_properties(shown);
+        tv->redraw_view();
+    }
+}
+
+// Asks for a file and saves the picture as it is on the screen (with the presentation drawings, if any)
+// together with its time axis.
+void TVMainWindow::save_picture_as(const QString &suggested_name)
+{
+    const QImage picture = compose_picture();
+    if (picture.isNull()) {
+        return; // nothing is shown yet
+    }
+    const QString file_name = QFileDialog::getSaveFileName(this, tr("Save the picture"), suggested_name, tr("PNG image (*.png);;JPEG image (*.jpg);;PDF document (*.pdf);;All files (*.*)"));
+    if (file_name.isEmpty()) {
+        return;
+    }
+    // the format follows the extension, PNG if there is none
+    const QString suffix = QFileInfo(file_name).suffix().toLower();
+    bool saved = false;
+    if (suffix == "pdf") { // one page of the size of the picture; the picture inside is a bitmap, not vector graphics
+        QPdfWriter writer(file_name);
+        writer.setResolution(96);
+        writer.setPageSize(QPageSize(QSizeF(picture.width() * 72.0 / 96, picture.height() * 72.0 / 96), QPageSize::Point));
+        writer.setPageMargins(QMarginsF(0, 0, 0, 0));
+        QPainter p(&writer);
+        saved = p.isActive();
+        if (saved) {
+            p.drawImage(0, 0, picture);
+        }
+    } else {
+        saved = suffix.isEmpty() ? picture.save(file_name, "PNG") : picture.save(file_name);
+    }
+    if (!saved) {
+        QMessageBox::warning(this, tr("Snapshot"), tr("Cannot save the picture to %1").arg(file_name));
+    }
+}
+
+// Ctrl+Up / Ctrl+Down: taller or shorter thread rows (the same value as in Options > Drawing).
+void TVMainWindow::change_row_height(int direction)
+{
+    if (tv->is_presentation_mode()) {
+        return;
+    }
+    const int height = qBound(25, direction > 0 ? shown.row_height_percent * 5 / 4 : shown.row_height_percent * 4 / 5, 400);
+    if (height != shown.row_height_percent) {
+        shown.row_height_percent = height;
+        save_drawing_settings();
+        tv->redraw_view();
+    }
+}
+
+void TVMainWindow::save_drawing_settings()
+{
+    QSettings settings;
+    settings.setValue("Drawing/func_min_width", shown.func_min_width);
+    settings.setValue("Drawing/offscreen_messages", shown.draw_offscreen_messages);
+    settings.setValue("Drawing/row_height", shown.row_height_percent);
+    settings.setValue("Drawing/color_mode", shown.color_mode);
+}
+
+void TVMainWindow::show_legend_window()
+{
+    QPoint place;
+    const bool had_window = legend_window;
+    if (had_window) { // recreated to show the current colours, at the same place
+        place = legend_window->pos();
+        delete legend_window.data();
+    }
+    legend_window = LegendDialog::create_window(this, tv_colors);
+    if (had_window) {
+        legend_window->move(place);
+    }
+    legend_window->show();
+}
+
+// The picture as it is on the screen with the time axis on top of it.
+QImage TVMainWindow::compose_picture() const
+{
+    const QImage picture = tv->current_picture();
+    if (picture.isNull()) {
+        return picture;
+    }
+    const QPixmap axis = ruler->grab();
+    const int axis_height = ruler->height();
+    QImage result(picture.width(), picture.height() + axis_height, QImage::Format_ARGB32);
+    result.fill(palette().color(QPalette::Window));
+    QPainter p(&result);
+    p.drawPixmap(-ruler->picture_offset(), 0, axis);
+    p.drawImage(0, axis_height, picture);
+    return result;
+}
+
+void TVMainWindow::go_to_time()
+{
+    qreal left, right, model_left, model_right, clock_freq;
+    if (!tv->get_view_info(left, right, model_left, model_right, clock_freq) || !(clock_freq > 0)) {
+        return;
+    }
+    const double last = (model_right - model_left) / clock_freq;
+    bool ok = false;
+    const double seconds = QInputDialog::getDouble(this, tr("Go to time"), tr("Seconds from the start of the loaded trace (0 ... %1):").arg(last, 0, 'g', 9),
+                                                   ((left + right) / 2 - model_left) / clock_freq, 0, last, 9, &ok);
+    if (ok) {
+        const qreal center = model_left + seconds * clock_freq;
+        tv->show_view(center - (right - left) / 2, center + (right - left) / 2);
+        tv->setFocus();
+    }
+}
+
+// Bookmarks are named views kept in the <trace info file>.user file, next to the source search directories.
+void TVMainWindow::rebuild_bookmarks_menu()
+{
+    bookmarks_menu->clear();
+    const QStringList bookmarks = info.read_bookmarks();
+    QAction *add_action = bookmarks_menu->addAction(tr("&Add bookmark..."), this, &TVMainWindow::add_bookmark);
+    add_action->setShortcut(QKeySequence(tr("Ctrl+B")));
+    add_action->setStatusTip(tr("Remember the current view under a name"));
+    QAction *remove_action = bookmarks_menu->addAction(tr("&Remove all bookmarks"), this, [this]() {
+        if (!info.write_bookmarks(QStringList())) {
+            QMessageBox::warning(this, tr("Bookmarks"), tr("Cannot write %1").arg(info.user_file_name()));
+        }
+        QTimer::singleShot(0, this, &TVMainWindow::rebuild_bookmarks_menu); // not from inside the action being deleted
+    });
+    remove_action->setEnabled(!bookmarks.isEmpty());
+    QMenu *remove_menu = new QMenu(tr("Remove &bookmark"), bookmarks_menu); // one entry per bookmark, a click removes it
+    remove_menu->setEnabled(!bookmarks.isEmpty());
+    bookmarks_menu->insertMenu(remove_action, remove_menu);
+    bookmarks_menu->addSeparator();
+    for (const QString &bookmark : std::as_const(bookmarks)) { // left|right|name
+        const qreal left = bookmark.section('|', 0, 0).toDouble();
+        const qreal right = bookmark.section('|', 1, 1).toDouble();
+        const QString name = bookmark.section('|', 2);
+        bookmarks_menu->addAction(name, this, [this, left, right]() {
+            tv->show_view(left, right);
+            tv->setFocus();
+        });
+        remove_menu->addAction(name, this, [this, bookmark]() { remove_bookmark(bookmark); });
+    }
+}
+
+void TVMainWindow::remove_bookmark(const QString &bookmark)
+{
+    QStringList bookmarks = info.read_bookmarks();
+    bookmarks.removeOne(bookmark); // the whole entry is matched, so equal names with different views are told apart
+    if (!info.write_bookmarks(bookmarks)) {
+        QMessageBox::warning(this, tr("Bookmarks"), tr("Cannot write %1").arg(info.user_file_name()));
+    }
+    // the menu is rebuilt once the triggering action has returned: rebuilding deletes that action
+    QTimer::singleShot(0, this, &TVMainWindow::rebuild_bookmarks_menu);
+}
+
+void TVMainWindow::add_bookmark()
+{
+    qreal left, right, model_left, model_right, clock_freq;
+    if (info.trace_info_file.isEmpty() || !tv->get_view_info(left, right, model_left, model_right, clock_freq)) {
+        return;
+    }
+    const QString suggested = clock_freq > 0 ? tr("at %1, length %2").arg(format_seconds((left - model_left) / clock_freq, 6), format_seconds((right - left) / clock_freq)) : QString();
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, tr("Add bookmark"), tr("Name of the current view:"), QLineEdit::Normal, suggested, &ok);
+    if (!ok || name.isEmpty()) {
+        return;
+    }
+    QStringList bookmarks = info.read_bookmarks();
+    bookmarks << QString::number(left, 'g', 17) + '|' + QString::number(right, 'g', 17) + '|' + name;
+    if (!info.write_bookmarks(bookmarks)) {
+        QMessageBox::warning(this, tr("Bookmarks"), tr("Cannot write %1").arg(info.user_file_name()));
+    }
+    QTimer::singleShot(0, this, &TVMainWindow::rebuild_bookmarks_menu); // not from inside the action being deleted
+}
+
+// Help > Contents / Controls: the pages are in help/*.html (see HelpViewer).
+void TVMainWindow::show_help(const QString &page)
+{
+    if (!help_viewer) {
+        help_viewer = new HelpViewer(this);
+    }
+    help_viewer->show_page(page);
+}
+
+// Opens a trace info file given on the command line or dropped onto the window.
+void TVMainWindow::open_trace_file(const QString &file_name)
+{
+    if (tv->is_presentation_mode()) {
+        return;
+    }
+    QFileInfo file;
+    if (!get_file_info(file_name, file)) {
+        QMessageBox::warning(this, tr("Load trace"), tr("File not found:\n%1").arg(file_name));
+        return;
+    }
+    disable_all_actions();
+    trace_file = file;
+    add_to_recent_files(trace_file.filePath());
+    proceed_load_data();
+    enable_all_actions();
+}
+
+void TVMainWindow::dragEnterEvent(QDragEnterEvent *e)
+{
+    if (e->mimeData()->hasUrls() && !tv->is_presentation_mode()) {
+        e->acceptProposedAction();
+    }
+}
+
+void TVMainWindow::dropEvent(QDropEvent *e)
+{
+    const QList<QUrl> urls = e->mimeData()->urls();
+    if (urls.isEmpty() || !urls.first().isLocalFile()) {
+        return;
+    }
+    e->acceptProposedAction();
+    const QString file_name = urls.first().toLocalFile();
+    // the load dialog is opened after the drop is over, not inside of it
+    QTimer::singleShot(0, this, [this, file_name]() { open_trace_file(file_name); });
+}
+
+void TVMainWindow::closeEvent(QCloseEvent *e)
+{
+    QSettings settings;
+    settings.setValue("Window/geometry", saveGeometry());
+    tv->close_detail_views(); // they are windows of their own and would keep the application running
+    QMainWindow::closeEvent(e);
 }
 
 bool TVMainWindow::offer_save_presentation()
@@ -288,10 +726,7 @@ bool TVMainWindow::offer_save_presentation()
         return false;
     }
     if (answer == QMessageBox::Yes) {
-        const QString file_name = QFileDialog::getSaveFileName(this, tr("Save PNG image"), "presentation.png", tr("Image Files (*.png);;All files (*.*)"));
-        if (!file_name.isEmpty()) {
-            tv->save_current_view(file_name, "PNG", -1);
-        }
+        save_picture_as("presentation.png");
     }
     return true;
 }
@@ -317,7 +752,8 @@ void TVMainWindow::toggle_presentation_mode(bool checked)
             }
             if (action != presentation_color_action && action != presentation_curve_action && action != presentation_line_action
                 && action != presentation_rectangle_action && action != presentation_ellipse_action && action != presentation_arrow_action
-                && action != presentation_undo_action && action != presentation_redo_action && action != presentation_save_action) {
+                && action != presentation_undo_action && action != presentation_redo_action && action != presentation_save_action
+                && action != presentation_text_action && action != presentation_eraser_action && action != presentation_width_action) {
                 action->setProperty("presentation_before", before_presentation);
                 presentation_saved_actions.append(action);
                 ui->toolBar->removeAction(action);
@@ -329,6 +765,9 @@ void TVMainWindow::toggle_presentation_mode(bool checked)
         presentation_rectangle_action->setVisible(true);
         presentation_ellipse_action->setVisible(true);
         presentation_arrow_action->setVisible(true);
+        presentation_text_action->setVisible(true);
+        presentation_eraser_action->setVisible(true);
+        presentation_width_action->setVisible(true);
         presentation_undo_action->setVisible(true);
         presentation_redo_action->setVisible(true);
         presentation_undo_action->setEnabled(false);
@@ -354,6 +793,9 @@ void TVMainWindow::toggle_presentation_mode(bool checked)
         presentation_rectangle_action->setVisible(false);
         presentation_ellipse_action->setVisible(false);
         presentation_arrow_action->setVisible(false);
+    presentation_text_action->setVisible(false);
+    presentation_eraser_action->setVisible(false);
+    presentation_width_action->setVisible(false);
         presentation_undo_action->setVisible(false);
         presentation_redo_action->setVisible(false);
         presentation_save_action->setVisible(false);
@@ -464,10 +906,7 @@ void TVMainWindow::save_presentation_picture()
     if (!tv) {
         return;
     }
-    const QString file_name = QFileDialog::getSaveFileName(this, tr("Save PNG image"), "presentation.png", tr("Image Files (*.png);;All files (*.*)"));
-    if (!file_name.isEmpty()) {
-        tv->save_current_view(file_name, "PNG", -1);
-    }
+    save_picture_as("presentation.png");
 }
 
 void TVMainWindow::load_data()
@@ -504,7 +943,11 @@ void TVMainWindow::proceed_load_data()
             // sa->setMinimumHeight(0);
             // setMinimumHeight(0);
             QApplication::processEvents();
-            tv->load_model(trace_file, ranks_to_load, tmin, tmax, load_threads, render_threads, tp);
+            tv->clear_view_history(); // another trace: the old views mean nothing (a reload keeps them)
+            tv->close_detail_views(); // and so do the Info / Functions / Messages windows of the previous trace
+            if (!tv->load_model(trace_file, ranks_to_load, tmin, tmax, load_threads, render_threads, tp)) {
+                QMessageBox::warning(this, tr("Load trace"), tr("The trace files listed in\n%1\ncould not be read.").arg(trace_file.absoluteFilePath()));
+            }
             tv->reset_zoom();
             emit tv->start_image_creation();
             tv->update();
@@ -512,7 +955,10 @@ void TVMainWindow::proceed_load_data()
             setWindowTitle("Trace data " + trace_file.absoluteFilePath());
             ui->actionReLoad->setEnabled(true);
             presentation_action->setEnabled(true);
+            rebuild_bookmarks_menu();
         }
+    } else {
+        QMessageBox::warning(this, tr("Load trace"), tr("Cannot read the trace info file\n%1").arg(trace_file.absoluteFilePath()));
     }
 }
 
@@ -657,6 +1103,9 @@ void TVMainWindow::on_actionFilter_triggered()
         d.set_communicators(&tv->get_communicators_data()->communicators, shown.hidden_comms);
     if (d.exec() == QDialog::Accepted) { // OK saves, Apply saves and redraws, Cancel drops the changes
         d.get_properties(shown);
+        QSettings settings;
+        settings.setValue("Filter/mpi_functions", flags_to_string(shown.mpi_functions, TV_MPI_FUNC_GROUP_MAX));
+        settings.setValue("Filter/mpi_messages", flags_to_string(shown.mpi_messages, 7));
         if (d.redraw_requested())
             tv->redraw_view();
     }
@@ -733,6 +1182,10 @@ void TVMainWindow::keyReleaseEvent(QKeyEvent *e)
 }
 void TVMainWindow::keyPressEvent(QKeyEvent *e)
 {
+    // Esc cancels a loading or a rendering also when the trace picture has no keyboard focus
+    if (e->key() == Qt::Key_Escape && tv && tv->cancel_running()) {
+        return;
+    }
     QWidget::keyPressEvent(e);
 }
 
@@ -751,6 +1204,9 @@ void TVMainWindow::on_actionLegend_triggered()
     if (d.exec() == QDialog::Accepted) {
         d.get_properties(tv_colors);
         tv_colors.save();
+        if (legend_window) {
+            show_legend_window(); // the legend window follows the new colours
+        }
     }
 }
 
@@ -760,9 +1216,7 @@ void TVMainWindow::on_actionDrawOptions_triggered()
     d.set_properties(shown);
     if (d.exec() == QDialog::Accepted) {
         d.get_properties(shown);
-        QSettings settings;
-        settings.setValue("Drawing/func_min_width", shown.func_min_width);
-        settings.setValue("Drawing/offscreen_messages", shown.draw_offscreen_messages);
+        save_drawing_settings();
         tv->redraw_view();
     }
 }

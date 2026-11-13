@@ -31,6 +31,12 @@ class Trace_Info
     bool parse_trace_info_file(QFileInfo &tracefile);
     bool has_transport_files() const;
     void update_src_dirs();
+    // The <trace info file>.user file keeps the user's data of a trace as key|value lines:
+    // "searchdir|<dir>" and "bookmark|<left>|<right>|<name>" (a named view, bounds in clock ticks).
+    // Writing one kind of lines keeps all the other lines of the file.
+    QString user_file_name() const;
+    QStringList read_bookmarks() const; // "<left>|<right>|<name>" entries
+    bool write_bookmarks(const QStringList &bookmarks) const;
     static QString make_absolute_path(const QString &file_path, const QString &relative_dir);
 
     PEAT_LNum num_colls;
@@ -46,6 +52,10 @@ class Trace_Info
     std::map<PEAT_Rank, Times_Sync> rank_times;
     QStringList src_dirs;
     QString trace_info_file;
+
+  private:
+    QStringList read_user_values(const QString &key) const;
+    bool write_user_values(const QString &key, const QStringList &values) const;
 };
 
 #endif // __TRACE_INFO_H__

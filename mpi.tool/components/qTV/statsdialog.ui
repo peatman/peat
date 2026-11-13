@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>StatsDialog</class>
+ <widget class="QDialog" name="StatsDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>900</width>
+    <height>600</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Statistics</string>
+  </property>
+  <property name="sizeGripEnabled">
+   <bool>true</bool>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QLabel" name="labelWindow">
+     <property name="text">
+      <string/>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTabWidget" name="tabWidget">
+     <property name="currentIndex">
+      <number>0</number>
+     </property>
+     <widget class="QTableWidget" name="tableFunctions">
+      <property name="editTriggers">
+       <set>QAbstractItemView::NoEditTriggers</set>
+      </property>
+      <property name="selectionBehavior">
+       <enum>QAbstractItemView::SelectRows</enum>
+      </property>
+      <attribute name="title">
+       <string>Functions</string>
+      </attribute>
+      <attribute name="verticalHeaderVisible">
+       <bool>false</bool>
+      </attribute>
+      <column>
+       <property name="text">
+        <string>Function</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Group</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Calls</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Total (s)</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>% of ranks x window</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Mean (us)</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Min (us)</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Max (us)</string>
+       </property>
+      </column>
+     </widget>
+     <widget class="QTableWidget" name="tableRanks">
+      <property name="editTriggers">
+       <set>QAbstractItemView::NoEditTriggers</set>
+      </property>
+      <property name="selectionBehavior">
+       <enum>QAbstractItemView::SelectRows</enum>
+      </property>
+      <attribute name="title">
+       <string>Ranks</string>
+      </attribute>
+      <attribute name="verticalHeaderVisible">
+       <bool>false</bool>
+      </attribute>
+      <column>
+       <property name="text">
+        <string>Rank</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>MPI calls</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>MPI time (s)</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>MPI % of window</string>
+       </property>
+      </column>
+     </widget>
+     <widget class="QTableWidget" name="tableMessages">
+      <property name="editTriggers">
+       <set>QAbstractItemView::NoEditTriggers</set>
+      </property>
+      <property name="selectionBehavior">
+       <enum>QAbstractItemView::SelectRows</enum>
+      </property>
+      <attribute name="title">
+       <string>P2P messages</string>
+      </attribute>
+      <attribute name="verticalHeaderVisible">
+       <bool>false</bool>
+      </attribute>
+      <column>
+       <property name="text">
+        <string>From rank</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>To rank</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Messages</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Bytes</string>
+       </property>
+      </column>
+      <column>
+       <property name="text">
+        <string>Mean bytes</string>
+       </property>
+      </column>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

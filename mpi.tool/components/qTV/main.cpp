@@ -20,6 +20,7 @@
 #include "tvmainwindow.h"
 
 #include <QApplication>
+#include <QTimer>
 
 int main(int argc, char *argv[])
 {
@@ -33,6 +34,12 @@ int main(int argc, char *argv[])
     a.setStyle("Fusion");
     TVMainWindow w;
     w.show();
+    // qTV <trace info file>: opened once the window is up
+    const QStringList args = a.arguments();
+    if (args.size() > 1) {
+        const QString file_name = args.at(1);
+        QTimer::singleShot(0, &w, [&w, file_name]() { w.open_trace_file(file_name); });
+    }
     int r = a.exec();
     tv_colors.save();
     return r;

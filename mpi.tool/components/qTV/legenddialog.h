@@ -39,6 +39,8 @@ class LegendDialog : public QDialog
     ~LegendDialog();
     void set_properties(TV_Colors &c);
     void get_properties(TV_Colors &c);
+    // A small read-only window with the colours and their meanings, to keep beside the trace.
+    static QWidget *create_window(QWidget *parent, const TV_Colors &c);
 
   private slots:
     // void on_eventListWidget_itemClicked(QListWidgetItem *item);

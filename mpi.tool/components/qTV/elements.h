@@ -27,6 +27,7 @@
 #include <QStatusBar>
 #include <QTableWidget>
 #include <QTreeWidget>
+#include <atomic>
 #include <mutex>
 
 #include "globals.h"
@@ -269,6 +270,49 @@ class Elements
     PEAT_Bool find_coll_least_bw(PEAT_Message_Size cutoff);
     PEAT_Bool find_p2p_most_imbalance();
     PEAT_Bool find_p2p_least_bw(PEAT_Message_Size cutoff);
+    // The views found by the last find_coll_*/find_p2p_* call, ordered from the best one (key is the metric).
+    const std::map<double, PEAT_Viewport> &get_candidates() const
+    {
+        return candidates;
+    }
+    bool select_candidate(int index); // zooms to the candidate, false if there is no such one
+    PEAT_Bool find_p2p_late(bool sender); // late sender (true) or late receiver (false) messages, the longest wait first
+
+    // Rendering can be cancelled from the event loop it runs (see draw_elements): the picture stays incomplete.
+    // Loading can be cancelled the same way: what has been read by then stays loaded.
+    void cancel_loading() { cancel_load = true; }
+    bool loading_cancelled() const { return cancel_load; }
+    void cancel_drawing() { cancel_draw = true; }
+    bool drawing_cancelled() const { return cancel_draw; }
+    QRect get_event_rect(const TV_Event *e, int width) const;                         // place of an event in the picture of the current view
+    void get_peers(const TV_Event *e, std::vector<const TV_Event *> &peers) const; // events joined with it by message lines
+
+    // The nearest call of a function (top-level or nested into another call) that starts after (direction > 0)
+    // or before (direction < 0) the given time, on one rank or on any loaded one (rank < 0). NULL when there is none.
+    const TV_Event *find_function(PEAT_MPI_Func_ID func_id, PEAT_Rank rank, int direction, PEAT_Clock from) const;
+
+    // Aggregated numbers of the events and p2p messages of a time window.
+    struct Func_Stat {
+        PEAT_UID calls = 0;
+        double total = 0; // clocks inside the window
+        double full = 0;  // clocks of the whole calls, also outside of the window
+        PEAT_Clock min = LLONG_MAX, max = 0;
+        int group = 0; // see tv_event_group_name()
+    };
+    struct Rank_Stat {
+        PEAT_UID mpi_calls = 0;
+        double mpi_time = 0; // clocks inside the window, summed over the threads
+    };
+    struct Pair_Stat {
+        PEAT_UID messages = 0;
+        PEAT_Message_Size bytes = 0;
+    };
+    struct Statistics {
+        std::map<std::pair<PEAT_MPI_Func_ID, bool>, Func_Stat> funcs; // function, and whether these are calls nested into other calls
+        std::map<PEAT_Rank, Rank_Stat> ranks; // every loaded rank
+        std::map<std::pair<PEAT_Rank, PEAT_Rank>, Pair_Stat> pairs; // sender, receiver
+    };
+    void get_statistics(PEAT_Clock start, PEAT_Clock stop, Statistics &stats) const;
     // rank statistic
     Address_File_Storage *user_regions;
 
@@ -390,6 +434,8 @@ class Elements
     qreal zoom_time_start;
     qreal zoom_time_stop;
     qint32 no_draw_elems;
+    std::atomic<bool> cancel_draw{false};
+    std::atomic<bool> cancel_load{false};
     TV_TraceParts *shown;
     bool add_event(TV_Event* event, TV_TraceParts& tp);
     bool add_transport_event(TV_Transport_Event* event, TV_TraceParts& tp);
