@@ -1231,7 +1231,9 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                     y_to += paint.mpi_ulc.at(ranks_to_load_v_rev[to->rank]);
                     y_from -= y_offset; // always start from center
                     y_to -= y_offset;   // always start from center
-                    if (qAbs(x_to + wdt_to * 0.5 - x_from + wdt_from * 0.5) <= showElementsThreshold) {
+                    // a collective line joins different ranks, so it is vertical when they are in sync (e.g. the
+                    // completions of one collective): only a line with no extent in x and y is not worth drawing
+                    if (qAbs((x_to + wdt_to * 0.5) - (x_from + wdt_from * 0.5)) <= showElementsThreshold && from->rank == to->rank) {
                         no_draw_elems++;
                         continue;
                     }
@@ -1787,6 +1789,8 @@ void Elements::get_messages_in_region(QTableWidget *initiation, QTableWidget *co
                 collective->addTopLevelItem(func_name);
                 for (std::map<PEAT_Rank, TV_Event *>::const_iterator evt_it = evt->events.cbegin(); evt_it != evt->events.cend(); ++evt_it) {
                     QTreeWidgetItem *func_prop = new QTreeWidgetItem(func_name);
+                    // the member's own function: MPI_Ialltoall for a start, MPI_Wait/Test/... for a completion
+                    func_prop->setText(0, QString(global_func_id.name_by_idx(evt_it->second->func_id)));
                     func_prop->setText(1, QString("%1").arg(evt_it->second->rank));
                     func_prop->setText(2, QString::fromStdString(peat_ids_string(evt_it->second->ids)));
                     if (user_regions) {
