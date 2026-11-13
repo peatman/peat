@@ -19,6 +19,8 @@
 #include "trace_info.h"
 #include "../common/utils.h"
 #include <QDir>
+#include <QFile>
+#include <QTextStream>
 
 Trace_Info::Trace_Info() {}
 
@@ -198,11 +200,68 @@ bool Trace_Info::has_transport_files() const
 }
 void Trace_Info::update_src_dirs()
 {
-    std::string filename = trace_info_file.toStdString();
-    filename += ".user";
-    File_Storage_GZ user_settings(filename, PEAT_FIO_FLAG_WRITE, NULL, false);
-    for (QString dir : src_dirs) {
-        std::string line = "searchdir|" + dir.toStdString() + "\n";
-        user_settings.puts(0, line);
+    write_user_values("searchdir", src_dirs);
+}
+
+QString Trace_Info::user_file_name() const
+{
+    return trace_info_file + ".user";
+}
+
+QStringList Trace_Info::read_bookmarks() const
+{
+    return read_user_values("bookmark");
+}
+
+bool Trace_Info::write_bookmarks(const QStringList &bookmarks) const
+{
+    return write_user_values("bookmark", bookmarks);
+}
+
+// Values of the "key|value" lines of the .user file, in the file's order.
+QStringList Trace_Info::read_user_values(const QString &key) const
+{
+    QStringList values;
+    if (trace_info_file.isEmpty())
+        return values;
+    QFile file(user_file_name());
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return values;
+    const QString prefix = key + '|';
+    QTextStream in(&file);
+    while (!in.atEnd()) {
+        const QString line = in.readLine();
+        if (line.startsWith(prefix))
+            values << line.mid(prefix.size());
     }
+    return values;
+}
+
+// Replaces the "key|value" lines of the .user file by the given values; lines of the other keys are kept.
+bool Trace_Info::write_user_values(const QString &key, const QStringList &values) const
+{
+    if (trace_info_file.isEmpty())
+        return false;
+    const QString prefix = key + '|';
+    QStringList lines;
+    QFile file(user_file_name());
+    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&file);
+        while (!in.atEnd()) {
+            const QString line = in.readLine();
+            if (!line.isEmpty() && !line.startsWith(prefix))
+                lines << line;
+        }
+        file.close();
+    }
+    for (const QString &value : values)
+        lines << prefix + value;
+    if (lines.isEmpty() && !file.exists())
+        return true; // nothing to keep: no empty file is left behind
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return false;
+    QTextStream out(&file);
+    for (const QString &line : std::as_const(lines))
+        out << line << '\n';
+    return out.status() == QTextStream::Ok;
 }

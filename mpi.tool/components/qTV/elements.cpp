@@ -26,6 +26,7 @@
 #include <QHeaderView>
 #include <QProgressDialog>
 #include <algorithm>
+#include <cmath>
 #include <sstream>
 #include <stdexcept>
 
@@ -33,6 +34,7 @@
 #include "../common/model_id.h"
 #include "elements.h"
 #include "globals.h"
+#include "tableitems.h"
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -44,6 +46,57 @@
 static bool mpi_func_shown(const TV_TraceParts &tp, const TV_Event *e, TV_MPI_Func_Group user_group)
 {
     return tp.mpi_functions[user_group + global_func_id.check_property(e->func_id, PEAT_PROP_MPI_INTERNAL)];
+}
+// message size of an event, -1 if it carries no data
+static PEAT_Message_Size event_bytes(const TV_Event *e)
+{
+    return std::max(std::max(e->get_tx_bytes(), e->get_rx_bytes()), std::max(e->get_tx_bytes(e->rank), e->get_rx_bytes(e->rank)));
+}
+// from blue (0) to red (1)
+static QColor heat_color(double t)
+{
+    return QColor::fromHsv(int(240 * (1 - qBound(0.0, t, 1.0))), 200, 235);
+}
+// colour of an event in the colour modes other than TV_COLOR_BY_KIND
+static QColor event_mode_color(const TV_Event *e, int mode, double freq)
+{
+    switch (mode) {
+    case TV_COLOR_BY_FUNCTION:
+        return QColor::fromHsv((int(e->func_id) * 67) % 360, 170, 235);
+    case TV_COLOR_BY_COMM: {
+        PEAT_MPI_Comm comm = 0;
+        if (!e->get_comm(comm) || comm == 0)
+            break;
+        return QColor::fromHsv(int(((unsigned int)comm * 2654435761u) >> 8) % 360, 170, 235); // ids differ in a few bits: spread them over the hues
+    }
+    case TV_COLOR_BY_DURATION: {
+        if (!(freq > 0))
+            break;
+        const double us = double(e->e_time.func.duration()) / freq * 1e6;
+        return heat_color(us <= 1 ? 0 : std::log10(us) / 6); // 1 us ... 1 s
+    }
+    case TV_COLOR_BY_SIZE: {
+        const PEAT_Message_Size bytes = event_bytes(e);
+        if (bytes < 0)
+            break;
+        return heat_color(std::log10(double(bytes) + 1) / 9); // 1 byte ... 1 GB
+    }
+    }
+    return QColor(Qt::lightGray);
+}
+// true if the event matches every highlighting condition that is set
+static bool event_highlighted(const TV_TraceParts &tp, const TV_Event *e)
+{
+    if (tp.highlight_func != 0 && int(e->func_id) != tp.highlight_func)
+        return false;
+    if (tp.highlight_comm != 0) {
+        PEAT_MPI_Comm comm = 0;
+        if (!e->get_comm(comm) || comm != tp.highlight_comm)
+            return false;
+    }
+    if (tp.highlight_min_bytes > 0 && event_bytes(e) < tp.highlight_min_bytes)
+        return false;
+    return true;
 }
 // mirrors the per-event filters of the event drawing loop, so that a message is not drawn when an event it connects is hidden
 static bool event_shown(const TV_TraceParts &tp, const TV_Event *e, double pix_in_tic)
@@ -438,6 +491,7 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
                                int tmin, int tmax, int load_threads, TV_TraceParts &tp)
 {
     const QString prog_bar_text = pb->format();
+    cancel_load = false;
     if (!parse_trace_info_file(trace_info_file, mpi_file_names, hwc_file_names, bind_file_names, transport_file_names, ranks_to_load)) {
         // TODO add messageBox?;
         return false;
@@ -479,7 +533,7 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
     try {
         // std::string myPath = traceinfo.absolutePath().toStdString() + "/";
 
-        pb->setFormat("Reading mpi & hwc files " + prog_bar_text + " done");
+        pb->setFormat("Reading mpi & hwc files (Esc cancels) " + prog_bar_text + " done");
         pb->repaint();
         int rank_completed = 0;
         PEAT_Rank m_r = mpi_file_names.size();
@@ -523,7 +577,7 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
                         max_id = event->ids[0] + 1;
                     }
                 }
-            } while (rc);
+            } while (rc && !cancel_load);
             cut_events(ranks_to_load_v[r], max_id);
             mpi_files.close(r);
             hwc_files.close(r);
@@ -533,7 +587,7 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
         pb->setFormat("Compacting Events " + prog_bar_text + " done");
         QApplication::processEvents();
         compact_events(load_threads);
-        pb->setFormat("Reading bind files " + prog_bar_text + " done");
+        pb->setFormat("Reading bind files (Esc cancels) " + prog_bar_text + " done");
         QApplication::processEvents();
         m_r = bind_file_names.size();
         bind_completion_map.clear();
@@ -559,7 +613,7 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
                             pb->setValue(rank_completed);
                         progress(prevclk, QApplication::processEvents);
                     }
-                } while (rc);
+                } while (rc && !cancel_load);
                 bind_files.close(r);
 #pragma omp atomic
                 rank_completed++;
@@ -584,7 +638,7 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
             pending_peers.clear();
             resolve_collectives(tp);
         }
-        pb->setFormat("Reading transport files " + prog_bar_text + " done");
+        pb->setFormat("Reading transport files (Esc cancels) " + prog_bar_text + " done");
         QApplication::processEvents();
         if (!transport_file_names.empty() && tp.transport_functions) {
             std::vector<PEAT_Rank> transport_ranks;
@@ -625,7 +679,7 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
                             max_id = transport_event->ids[0] + 1;
                         }
                     }
-                } while (rc);
+                } while (rc && !cancel_load);
                 cut_transport_events(ranks_to_load_v[r], max_id);
                 transport_files.close(rank);
             }
@@ -817,9 +871,12 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
     int w_min_name_size = p[0]->fontMetrics().maxWidth() >> 1;
     w_min_name_size *= strlen("MPI_ISEND");
     no_draw_elems = 0;
+    cancel_draw = false;
+    const int font_height = p[0]->fontMetrics().height();
+    const bool rows_fit_text = paint.thread_height >= font_height; // lowered rows (see row_height_percent) carry no text
 
     sr->hide();
-    pb->setFormat("Rendering trace..." + prog_bar_text + " done");
+    pb->setFormat("Rendering trace (Esc cancels)..." + prog_bar_text + " done");
     pb->setMinimum(0);
     pb->setMaximum(get_draw_rank_count() + get_total_rank_count());
     pb->setValue(0);
@@ -844,8 +901,10 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
         assert(tid < render_threads);
         if (tid == 0)
             progress(prevclk, QApplication::processEvents);
+        if (cancel_draw)
+            continue; // an OpenMP loop cannot be left: the remaining ranks are skipped
         std::vector<TV_Event *> &it_rank = eventsV.at(ranks_to_load_v.at(r));
-        QPen line_rank(Qt::black, 0, Qt::DashDotLine);
+        QPen line_rank(tv_canvas_line_color(), 0, Qt::DashDotLine);
         // QPen   linePrank(Qt::black, 0, Qt::SolidLine);
 
         // p[tid]->setOpacity(current_opacity);
@@ -890,6 +949,8 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
             }
             if (tid == 0)
                 progress(prevclk, QApplication::processEvents);
+            if (cancel_draw)
+                break;
             std::vector<const TV_Event *> subtree; // the call and its nested records at every level
             cur_func->collect_subtree(subtree);
             for (size_t f = 0; f < subtree.size(); f++) {
@@ -1006,10 +1067,17 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                     break;
                 }
                 // font.setPixelSize(height);
+                if (shown->color_mode != TV_COLOR_BY_KIND) { // the colour shows something else than the kind of the event
+                    QBrush mode_brush = p[tid]->brush();
+                    mode_brush.setColor(event_mode_color(cur_func_ptr, shown->color_mode, trace_info.freq));
+                    p[tid]->setBrush(mode_brush);
+                }
+                const bool highlighting = shown->highlighting();
+                const bool dimmed = highlighting && !event_highlighted(*shown, cur_func_ptr);
                 QRect rfrom(x_start, y_start, f_width, height);
                 QRect rpefrom(x_pe_start, y_start, pe_width, height);
                 p[tid]->setPen(tv_colors.func_line);
-                p[tid]->setOpacity(current_opacity);
+                p[tid]->setOpacity(dimmed ? 0.08 : (highlighting ? 0.9 : current_opacity));
                 p[tid]->drawRect(rfrom);
                 if (pe_width > 1) {
                     p[tid]->setBrush(tv_colors.event_brushes[TV_BRUSH_EVENT_TYPE_PE]);
@@ -1018,7 +1086,7 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                 }
 
                 // draw MPI event text
-                if (f_width > w_min_name_size) {
+                if (f_width > w_min_name_size && rows_fit_text && !dimmed) {
                     p[tid]->setOpacity(1.0);
                     p[tid]->setPen(tv_colors.func_text);
                     p[tid]->drawText(rfrom, Qt::AlignLeft | Qt::AlignVCenter, QString(global_func_id.name_by_idx(cur_func_ptr->func_id)) + QString("\nidx:") + QString().setNum(cur_func_ptr->ids[0])); // Slow!
@@ -1088,7 +1156,7 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                 p[tid]->setPen(tv_colors.func_line);
                 p[tid]->setOpacity(current_opacity);
                 p[tid]->drawRect(transport_rfrom);
-                if (f_width > w_min_name_size) {
+                if (f_width > w_min_name_size && rows_fit_text) {
                     p[tid]->setOpacity(1.0);
                     p[tid]->setPen(tv_colors.func_text);
                     p[tid]->drawText(transport_rfrom, Qt::AlignLeft | Qt::AlignVCenter, QString(global_func_id.name_by_idx(cur_transport->func_id)) + QString("\nidx:") + QString().setNum(cur_transport->ids[0]));
@@ -1098,7 +1166,9 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
         p[tid]->setOpacity(1.0);
         p[tid]->setPen(tv_colors.rank_text);
         QString rstr = "R" + QString::number(ranks_to_load_v[r]);
-        p[tid]->drawText(5, paint.mpi_ulc.at(r) + w_min_name_h, rstr);
+        const int label_step = pix_in_rank > 0 ? qMax(1, int((font_height + pix_in_rank - 1) / pix_in_rank)) : 1;
+        if (r % label_step == 0)
+            p[tid]->drawText(5, paint.mpi_ulc.at(r) + w_min_name_h, rstr);
         p[tid]->setOpacity(current_opacity);
     }
     QPainter f(finalImage);
@@ -1132,7 +1202,7 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
         std::map<PEAT_Clock, TV_Message> &it_rank = messages.at(cur_rank);
         if (tid == 0)
             progress(prevclk, QApplication::processEvents);
-        if (it_rank.empty())
+        if (it_rank.empty() || cancel_draw)
             continue;
         // size_t size = it_rank.size();
         PEAT_LNum mess_num = 0;
@@ -1144,6 +1214,8 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
             long from_thread_height = thread_height;
             long to_thread_height = thread_height;
             mess_num++;
+            if (cancel_draw)
+                break;
             if (to->e_time.func.out <= start_time) {
                 continue;
             }
@@ -1620,55 +1692,55 @@ void Elements::get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_t
         int row = tbl->rowCount();
         tbl->setRowCount(row + 1);
         // Name
-        QTableWidgetItem *name = new QTableWidgetItem(global_func_id.name_by_idx(cur_func_ptr->func_id));
+        QTableWidgetItem *name = new TV_Table_Item(global_func_id.name_by_idx(cur_func_ptr->func_id));
         tbl->setItem(row, 0, name);
         // Rank
-        QTableWidgetItem *rank = new QTableWidgetItem();
+        QTableWidgetItem *rank = new TV_Table_Item();
         rank->setData(Qt::DisplayRole, cur_func_ptr->rank);
         rank->setTextAlignment(Qt::AlignHCenter);
         tbl->setItem(row, 1, rank);
         // IDs
-        QTableWidgetItem *primary_item = new QTableWidgetItem();
+        QTableWidgetItem *primary_item = new TV_Table_Item();
         primary_item->setData(Qt::DisplayRole, QString::fromStdString(peat_ids_string(cur_func_ptr->ids)));
         primary_item->setTextAlignment(Qt::AlignHCenter);
         tbl->setItem(row, 2, primary_item);
         // Time In
-        QTableWidgetItem *time_in = new QTableWidgetItem(outputDouble(cur_func_ptr->e_time.func.in));
+        QTableWidgetItem *time_in = new TV_Table_Item(outputDouble(cur_func_ptr->e_time.func.in));
         time_in->setTextAlignment(Qt::AlignRight);
         tbl->setItem(row, 3, time_in);
         // Time Out
-        QTableWidgetItem *time_out = new QTableWidgetItem(outputDouble(cur_func_ptr->e_time.func.out));
+        QTableWidgetItem *time_out = new TV_Table_Item(outputDouble(cur_func_ptr->e_time.func.out));
         time_out->setTextAlignment(Qt::AlignRight);
         tbl->setItem(row, 4, time_out);
         // Duration
-        QTableWidgetItem *duration = new QTableWidgetItem(outputDouble(cur_func_ptr->e_time.func.duration()));
+        QTableWidgetItem *duration = new TV_Table_Item(outputDouble(cur_func_ptr->e_time.func.duration()));
         duration->setTextAlignment(Qt::AlignRight);
         tbl->setItem(row, 5, duration);
         // Duration micro sec
-        QTableWidgetItem *duration_micro = new QTableWidgetItem(outputDouble((PEAT_Ratio(cur_func_ptr->e_time.func.duration()) / trace_info.freq) * 1000000));
+        QTableWidgetItem *duration_micro = new TV_Table_Item(outputDouble((PEAT_Ratio(cur_func_ptr->e_time.func.duration()) / trace_info.freq) * 1000000));
         duration_micro->setTextAlignment(Qt::AlignRight);
         tbl->setItem(row, 6, duration_micro);
         // distance Before
         PEAT_Clock prev_out = prev_event ? prev_event->e_time.func.out : cur_func_ptr->e_time.func.in;
         if (prev_out > cur_func_ptr->e_time.func.in) // overlapping/nested neighbour: no negative gap
             prev_out = cur_func_ptr->e_time.func.in;
-        QTableWidgetItem *before = new QTableWidgetItem(outputDouble(cur_func_ptr->e_time.func.in - prev_out));
+        QTableWidgetItem *before = new TV_Table_Item(outputDouble(cur_func_ptr->e_time.func.in - prev_out));
         before->setTextAlignment(Qt::AlignRight);
         tbl->setItem(row, 7, before);
         // distance After
         PEAT_Clock next_in = next_event ? next_event->e_time.func.in : cur_func_ptr->e_time.func.out;
         if (next_in < cur_func_ptr->e_time.func.out) // overlapping/nested neighbour: no negative gap
             next_in = cur_func_ptr->e_time.func.out;
-        QTableWidgetItem *after = new QTableWidgetItem(outputDouble(next_in - cur_func_ptr->e_time.func.out));
+        QTableWidgetItem *after = new TV_Table_Item(outputDouble(next_in - cur_func_ptr->e_time.func.out));
         after->setTextAlignment(Qt::AlignRight);
         tbl->setItem(row, 8, after);
         // Before ID
-        QTableWidgetItem *before_id = new QTableWidgetItem();
+        QTableWidgetItem *before_id = new TV_Table_Item();
         before_id->setData(Qt::DisplayRole, prev_event ? QString::fromStdString(peat_ids_string(prev_event->ids)) : QString("-1"));
         before_id->setTextAlignment(Qt::AlignRight);
         tbl->setItem(row, 9, before_id);
         // AfterID
-        QTableWidgetItem *after_id = new QTableWidgetItem();
+        QTableWidgetItem *after_id = new TV_Table_Item();
         after_id->setData(Qt::DisplayRole, next_event ? QString::fromStdString(peat_ids_string(next_event->ids)) : QString("-1"));
         after_id->setTextAlignment(Qt::AlignRight);
         tbl->setItem(row, 10, after_id);
@@ -1782,13 +1854,13 @@ void Elements::get_messages_in_region(QTableWidget *initiation, QTableWidget *co
                 coll_set.insert(evt);
                 QStringList itemList;
                 itemList.append(QString(global_func_id.name_by_idx(evt->func_id)) + (it_msg->second.msg_type == TV_PEN_MESSAGE_TYPE_COLLECTIVE_COMPLETION ? " (completion)" : it_msg->second.msg_type == TV_PEN_MESSAGE_TYPE_COLLECTIVE_START ? " (start)" : it_msg->second.msg_type == TV_PEN_MESSAGE_TYPE_COLLECTIVE_INIT ? " (init)" : "")); // itemDescriptionString.str().c_str());
-                QTreeWidgetItem *func_name = new QTreeWidgetItem((QTreeWidget *)0, itemList);
+                QTreeWidgetItem *func_name = new TV_Tree_Item((QTreeWidget *)0, itemList);
                 QFont font1 = func_name->font(1);
                 font1.setBold(true);
                 func_name->setFont(1, font1);
                 collective->addTopLevelItem(func_name);
                 for (std::map<PEAT_Rank, TV_Event *>::const_iterator evt_it = evt->events.cbegin(); evt_it != evt->events.cend(); ++evt_it) {
-                    QTreeWidgetItem *func_prop = new QTreeWidgetItem(func_name);
+                    QTreeWidgetItem *func_prop = new TV_Tree_Item(func_name);
                     // the member's own function: MPI_Ialltoall for a start, MPI_Wait/Test/... for a completion
                     func_prop->setText(0, QString(global_func_id.name_by_idx(evt_it->second->func_id)));
                     func_prop->setText(1, QString("%1").arg(evt_it->second->rank));
@@ -1865,55 +1937,55 @@ void Elements::get_messages_in_region(QTableWidget *initiation, QTableWidget *co
                 }
                 tw->setRowCount(tw->rowCount() + 1);
                 // Name (from)
-                QTableWidgetItem *i_from_name = new QTableWidgetItem(global_func_id.name_by_idx(from->func_id));
+                QTableWidgetItem *i_from_name = new TV_Table_Item(global_func_id.name_by_idx(from->func_id));
                 tw->setItem(tw->rowCount() - 1, 0, i_from_name);
                 // Rank (from)
-                QTableWidgetItem *i_from_rank = new QTableWidgetItem();
+                QTableWidgetItem *i_from_rank = new TV_Table_Item();
                 i_from_rank->setData(Qt::DisplayRole, from->rank);
                 i_from_rank->setTextAlignment(Qt::AlignHCenter);
                 tw->setItem(tw->rowCount() - 1, 1, i_from_rank);
                 // IDs (from)
-                QTableWidgetItem *i_from_idx = new QTableWidgetItem();
+                QTableWidgetItem *i_from_idx = new TV_Table_Item();
                 i_from_idx->setData(Qt::DisplayRole, QString::fromStdString(peat_ids_string(from->ids)));
                 i_from_idx->setTextAlignment(Qt::AlignHCenter);
                 tw->setItem(tw->rowCount() - 1, 2, i_from_idx);
                 // Time In (from)
-                QTableWidgetItem *i_from_in = new QTableWidgetItem(outputDouble(from->e_time.func.in));
+                QTableWidgetItem *i_from_in = new TV_Table_Item(outputDouble(from->e_time.func.in));
                 i_from_in->setTextAlignment(Qt::AlignRight);
                 if (it_msg->second.msg_type == TV_PEN_MESSAGE_TYPE_REVERSED) {
                     i_from_in->setBackground(failed_msg);
                 }
                 tw->setItem(tw->rowCount() - 1, 3, i_from_in);
                 // Name (to)
-                QTableWidgetItem *i_to_name = new QTableWidgetItem(global_func_id.name_by_idx(to->func_id));
+                QTableWidgetItem *i_to_name = new TV_Table_Item(global_func_id.name_by_idx(to->func_id));
                 tw->setItem(tw->rowCount() - 1, 4, i_to_name);
                 // Rank (to)
-                QTableWidgetItem *i_to_rank = new QTableWidgetItem();
+                QTableWidgetItem *i_to_rank = new TV_Table_Item();
                 i_to_rank->setData(Qt::DisplayRole, to->rank);
                 i_to_rank->setTextAlignment(Qt::AlignHCenter);
                 tw->setItem(tw->rowCount() - 1, 5, i_to_rank);
                 // IDs (to)
-                QTableWidgetItem *i_to_idx = new QTableWidgetItem();
+                QTableWidgetItem *i_to_idx = new TV_Table_Item();
                 i_to_idx->setData(Qt::DisplayRole, QString::fromStdString(peat_ids_string(to->ids)));
                 i_to_idx->setTextAlignment(Qt::AlignHCenter);
                 tw->setItem(tw->rowCount() - 1, 6, i_to_idx);
                 // Time Out (to)
-                QTableWidgetItem *i_to_out = new QTableWidgetItem(outputDouble(to->e_time.func.out));
+                QTableWidgetItem *i_to_out = new TV_Table_Item(outputDouble(to->e_time.func.out));
                 i_to_out->setTextAlignment(Qt::AlignRight);
                 tw->setItem(tw->rowCount() - 1, 7, i_to_out);
                 // Duration
                 if (it_msg->second.msg_type == TV_PEN_MESSAGE_TYPE_REVERSED || it_msg->second.msg_type == TV_PEN_MESSAGE_TYPE_NORMAL) {
-                    QTableWidgetItem *i_duration = new QTableWidgetItem(outputDouble(to->e_time.func.out - from->e_time.func.in));
+                    QTableWidgetItem *i_duration = new TV_Table_Item(outputDouble(to->e_time.func.out - from->e_time.func.in));
                     i_duration->setTextAlignment(Qt::AlignRight);
                     tw->setItem(tw->rowCount() - 1, 8, i_duration);
                     // transfer rate
                     // qDebug() << freq;
-                    // QTableWidgetItem *iRate = new QTableWidgetItem(QString().setNum(PEAT_Ratio(fromPtr.size) / PEAT_Ratio(toPtr.tscOut - fromPtr.tscIn) * freq));
-                    QTableWidgetItem *i_rate = new QTableWidgetItem(outputDouble((PEAT_Ratio(to->e_time.func.out - from->e_time.func.in) / trace_info.freq) * 1000000));
+                    // QTableWidgetItem *iRate = new TV_Table_Item(QString().setNum(PEAT_Ratio(fromPtr.size) / PEAT_Ratio(toPtr.tscOut - fromPtr.tscIn) * freq));
+                    QTableWidgetItem *i_rate = new TV_Table_Item(outputDouble((PEAT_Ratio(to->e_time.func.out - from->e_time.func.in) / trace_info.freq) * 1000000));
                     i_rate->setTextAlignment(Qt::AlignRight);
                     tw->setItem(tw->rowCount() - 1, 9, i_rate);
                     // Buf Size (send function buffer based)
-                    QTableWidgetItem *i_buf_size = new QTableWidgetItem(outputDouble(std::max(it_msg->second.from->get_tx_bytes(), it_msg->second.to->get_rx_bytes())));
+                    QTableWidgetItem *i_buf_size = new TV_Table_Item(outputDouble(std::max(it_msg->second.from->get_tx_bytes(), it_msg->second.to->get_rx_bytes())));
                     i_buf_size->setTextAlignment(Qt::AlignRight);
                     tw->setItem(tw->rowCount() - 1, 10, i_buf_size);
                 }
@@ -2053,11 +2125,11 @@ void Elements::get_user_addresses_in_region(QTreeWidget *tw, const PEAT_Clock st
             itemList2.append(global_func_id.name_by_idx(cur_func_next->func_id)); // itemDescriptionString.str().c_str());
             itemList2.append(QString::fromStdString(peat_ids_string(cur_func_next->ids)));
             itemList2.append(QString("%1/%2").arg(cur_func_next->get_tx_bytes()).arg(cur_func_next->get_rx_bytes()));
-            QTreeWidgetItem *func_name_prev = new QTreeWidgetItem((QTreeWidget *)0, itemList1);
+            QTreeWidgetItem *func_name_prev = new TV_Tree_Item((QTreeWidget *)0, itemList1);
             QFont font1 = func_name_prev->font(1);
             font1.setBold(true);
             func_name_prev->setFont(1, font1);
-            QTreeWidgetItem *func_name_next = new QTreeWidgetItem((QTreeWidget *)0, itemList2);
+            QTreeWidgetItem *func_name_next = new TV_Tree_Item((QTreeWidget *)0, itemList2);
             QFont font2 = func_name_next->font(1);
             font2.setBold(true);
             func_name_next->setFont(1, font2);
@@ -2074,7 +2146,7 @@ void Elements::get_user_addresses_in_region(QTreeWidget *tw, const PEAT_Clock st
                     qItemChild1.append(addr_info->func.c_str());
                     qItemChild1.append(item_source_line.str().c_str());
                     qItemChild1.append(item_object_address.str().c_str());
-                    QTreeWidgetItem *i_child = new QTreeWidgetItem((QTreeWidget *)0, qItemChild1);
+                    QTreeWidgetItem *i_child = new TV_Tree_Item((QTreeWidget *)0, qItemChild1);
                     func_name_prev->addChild(i_child);
                 }
                 func_name_prev->addChild(func_name_next);
@@ -2089,7 +2161,7 @@ void Elements::get_user_addresses_in_region(QTreeWidget *tw, const PEAT_Clock st
                     qItemChild1.append(addr_info->func.c_str());
                     qItemChild1.append(item_source_line.str().c_str());
                     qItemChild1.append(item_object_address.str().c_str());
-                    QTreeWidgetItem *i_child = new QTreeWidgetItem((QTreeWidget *)0, qItemChild1);
+                    QTreeWidgetItem *i_child = new TV_Tree_Item((QTreeWidget *)0, qItemChild1);
                     func_name_prev->addChild(i_child);
                 }
             }
@@ -2342,6 +2414,7 @@ PEAT_Bool Elements::find_coll_most_imbalance()
     }
     if (!candidates.empty()) {
         candidates_it = candidates.begin();
+        current_candidate = 0;
         zoom_time_start = candidates_it->second.start;
         zoom_time_stop = candidates_it->second.end;
         return true;
@@ -2380,6 +2453,7 @@ PEAT_Bool Elements::find_coll_least_bw(PEAT_Message_Size cutoff)
     }
     if (!candidates.empty()) {
         candidates_it = candidates.begin();
+        current_candidate = 0;
         zoom_time_start = candidates_it->second.start;
         zoom_time_stop = candidates_it->second.end;
         return true;
@@ -2412,6 +2486,7 @@ PEAT_Bool Elements::find_p2p_most_imbalance()
     }
     if (!candidates.empty()) {
         candidates_it = candidates.begin();
+        current_candidate = 0;
         zoom_time_start = candidates_it->second.start;
         zoom_time_stop = candidates_it->second.end;
         return true;
@@ -2452,6 +2527,94 @@ PEAT_Bool Elements::find_p2p_least_bw(PEAT_Message_Size cutoff)
     }
     return false;
 }
+// Late sender: the receive (or the wait for it) starts before the send, so the receiver waits.
+// Late receiver: the send starts first and is still running when the receive starts, so the sender waits.
+// The views are ordered by the waiting time, the longest first.
+PEAT_Bool Elements::find_p2p_late(bool sender)
+{
+    candidates.clear();
+    for (std::vector<std::map<PEAT_UID, TV_Message>>::iterator rank_it = messages.begin(); rank_it != messages.end(); ++rank_it) {
+        for (std::map<PEAT_UID, TV_Message>::iterator mess_it = rank_it->begin(); mess_it != rank_it->end(); ++mess_it) {
+            const TV_Message &m = mess_it->second;
+            if (m.msg_type != TV_PEN_MESSAGE_TYPE_NORMAL || m.from == NULL || m.to == NULL)
+                continue;
+            const PEAT_Clock send_in = m.from->e_time.func.in;
+            const PEAT_Clock recv_in = m.to->e_time.func.in;
+            PEAT_Clock wait;
+            if (sender) {
+                if (send_in <= recv_in)
+                    continue;
+                wait = send_in - recv_in;
+            } else {
+                if (recv_in <= send_in || m.from->e_time.func.out <= recv_in)
+                    continue;
+                wait = recv_in - send_in;
+            }
+            PEAT_Viewport v(std::min(send_in, recv_in), std::max(m.from->e_time.func.out, m.to->e_time.func.out));
+            candidates[1.0 / (double)wait] = v;
+            if (candidates.size() > MAX_SIZE)
+                candidates.erase(prev(candidates.end()));
+        }
+    }
+    if (!candidates.empty()) {
+        candidates_it = candidates.begin();
+        current_candidate = 0;
+        zoom_time_start = candidates_it->second.start;
+        zoom_time_stop = candidates_it->second.end;
+        return true;
+    }
+    return false;
+}
+
+// Place of an event in the picture of the current view; it may lie outside of the picture.
+QRect Elements::get_event_rect(const TV_Event *e, int width) const
+{
+    if (e == NULL || e->rank < 0 || static_cast<size_t>(e->rank) >= ranks_to_load_v_rev.size() || !(zoom_time_stop > zoom_time_start))
+        return QRect();
+    const PEAT_Rank r = ranks_to_load_v_rev[e->rank];
+    if (r < 0 || static_cast<size_t>(r) >= paint.mpi_ulc.size())
+        return QRect();
+    const double pix_in_tic = width / (zoom_time_stop - zoom_time_start);
+    const double x0 = qBound(-10.0, (e->e_time.func.in - zoom_time_start) * pix_in_tic, width + 10.0);
+    const double x1 = qBound(-10.0, (e->e_time.func.out - zoom_time_start) * pix_in_tic, width + 10.0);
+    int y = paint.thread_height * e->thread;
+    if (e->is_transport())
+        y += paint.transport_ulc.at(r);
+    else if (e->is_omp())
+        y += paint.omp_ulc.at(r);
+    else if (e->is_gpu())
+        y += paint.gpu_ulc.at(r);
+    else
+        y += paint.mpi_ulc.at(r);
+    return QRect(int(x0), y, qMax(2, int(x1 - x0)), paint.thread_height);
+}
+
+// The events joined with the given one by a message line (its receivers and its senders).
+void Elements::get_peers(const TV_Event *e, std::vector<const TV_Event *> &peers) const
+{
+    if (e == NULL)
+        return;
+    // as the sender: the messages are stored by the rank of their sender
+    if (e->rank >= 0 && static_cast<size_t>(e->rank) < messages.size()) {
+        const std::map<PEAT_UID, TV_Message> &sent = messages[e->rank];
+        for (std::map<PEAT_UID, TV_Message>::const_iterator it = sent.begin(); it != sent.end(); ++it) {
+            if (it->second.from == e && it->second.to)
+                peers.push_back(it->second.to);
+        }
+    }
+    // as the receiver: a message is keyed by the end of its receiver, moved on by one for every equal key (see add_message)
+    const PEAT_Clock key = e->e_time.func.out;
+    for (size_t rank = 0; rank < messages.size(); ++rank) {
+        const std::map<PEAT_UID, TV_Message> &sent = messages[rank];
+        for (std::map<PEAT_UID, TV_Message>::const_iterator it = sent.lower_bound(key); it != sent.end() && it->first <= key + 65536; ++it) {
+            if (it->second.to == e && it->second.from)
+                peers.push_back(it->second.from);
+        }
+    }
+    std::sort(peers.begin(), peers.end());
+    peers.erase(std::unique(peers.begin(), peers.end()), peers.end());
+}
+
 void Elements::move_viewport(int direction)
 {
     if (candidates.empty())
@@ -2471,14 +2634,146 @@ void Elements::move_viewport(int direction)
         zoom_time_stop = (qreal)candidates_it->second.end;
     }
     if (direction < 0) {
-        --candidates_it;
-        --current_candidate;
-        if (candidates_it == candidates.end()) {
+        if (candidates_it == candidates.begin()) { // wrap around: begin() cannot be decremented
             candidates_it = prev(candidates.end());
-            current_candidate = candidates.size();
+            current_candidate = candidates.size() - 1;
+        } else {
+            --candidates_it;
+            --current_candidate;
         }
         zoom_time_start = (qreal)candidates_it->second.start;
         zoom_time_stop = (qreal)candidates_it->second.end;
+    }
+}
+
+bool Elements::select_candidate(int index)
+{
+    if (index < 0 || static_cast<size_t>(index) >= candidates.size())
+        return false;
+    candidates_it = candidates.begin();
+    std::advance(candidates_it, index);
+    current_candidate = index;
+    zoom_time_start = (qreal)candidates_it->second.start;
+    zoom_time_stop = (qreal)candidates_it->second.end;
+    return true;
+}
+
+// Looks through a call and the records nested into it for the record of the function nearest to 'from'.
+static void nearest_record(const TV_Event *e, PEAT_MPI_Func_ID func_id, int direction, PEAT_Clock from, const TV_Event *&best)
+{
+    const PEAT_Clock in = e->e_time.func.in;
+    if (e->func_id == func_id && (direction > 0 ? in > from : in < from)) {
+        if (best == NULL || (direction > 0 ? in < best->e_time.func.in : in > best->e_time.func.in))
+            best = e;
+    }
+    for (size_t i = 0; i < e->t_events.size(); i++) {
+        if (e->t_events[i])
+            nearest_record(e->t_events[i], func_id, direction, from, best);
+    }
+}
+
+const TV_Event *Elements::find_function(PEAT_MPI_Func_ID func_id, PEAT_Rank rank, int direction, PEAT_Clock from) const
+{
+    // A nested record lies inside its top-level call, and the top-level calls of a rank are ordered by their
+    // starts. Calls of different threads may overlap, so a long call that started much earlier can still hold
+    // a nearer nested record: this many calls around are looked through before the search gives up on that.
+    const PEAT_UID overlap_window = 1000;
+    const TV_Event *best = NULL;
+    for (size_t i = 0; i < ranks_to_load_v.size(); ++i) {
+        const PEAT_Rank r = ranks_to_load_v[i];
+        if (rank >= 0 && r != rank)
+            continue;
+        const std::vector<TV_Event *> &events = eventsV.at(r);
+        if (events.empty())
+            continue;
+        const TV_Event *rank_best = NULL;
+        const PEAT_UID pos = lower_bound(events, from) - events.begin(); // a place close to the time
+        if (direction > 0) {
+            for (PEAT_UID j = std::max<PEAT_UID>(pos - overlap_window, 0); j < static_cast<PEAT_UID>(events.size()); ++j) {
+                const TV_Event *e = events[j];
+                if (e == NULL)
+                    continue;
+                if (rank_best && e->e_time.func.in > rank_best->e_time.func.in)
+                    break; // this call, the later ones and all their nested records start later
+                nearest_record(e, func_id, direction, from, rank_best);
+            }
+        } else {
+            PEAT_UID earlier_calls = 0;
+            for (PEAT_UID j = std::min<PEAT_UID>(pos + 1, events.size() - 1); j >= 0; --j) {
+                const TV_Event *e = events[j];
+                if (e == NULL)
+                    continue;
+                if (rank_best && e->e_time.func.out < rank_best->e_time.func.in) { // ended before the found one started
+                    if (++earlier_calls > overlap_window)
+                        break;
+                    continue;
+                }
+                nearest_record(e, func_id, direction, from, rank_best);
+            }
+        }
+        if (rank_best && (best == NULL || (direction > 0 ? rank_best->e_time.func.in < best->e_time.func.in : rank_best->e_time.func.in > best->e_time.func.in)))
+            best = rank_best;
+    }
+    return best;
+}
+
+// Adds a record and the records nested into it. The nested ones go to rows of their own and are not added
+// to the MPI time of the rank: their time is a part of the time of the call they are nested into.
+static void add_record_statistics(const TV_Event *e, bool nested, PEAT_Clock start, PEAT_Clock stop, Elements::Statistics &stats, Elements::Rank_Stat &rank_stat)
+{
+    if (e->e_time.func.in <= stop && e->e_time.func.out >= start) {
+        const PEAT_Clock duration = e->e_time.func.out - e->e_time.func.in;
+        const double inside = double(std::min(e->e_time.func.out, stop) - std::max(e->e_time.func.in, start));
+        Elements::Func_Stat &f = stats.funcs[std::make_pair(e->func_id, nested)];
+        f.calls++;
+        f.total += inside;
+        f.full += double(duration);
+        f.min = std::min(f.min, duration);
+        f.max = std::max(f.max, duration);
+        f.group = e->get_event_group();
+        if (!nested && f.group == 0) {
+            rank_stat.mpi_calls++;
+            rank_stat.mpi_time += inside;
+        }
+    }
+    for (size_t i = 0; i < e->t_events.size(); i++) {
+        if (e->t_events[i])
+            add_record_statistics(e->t_events[i], true, start, stop, stats, rank_stat);
+    }
+}
+
+void Elements::get_statistics(PEAT_Clock start, PEAT_Clock stop, Statistics &stats) const
+{
+    for (size_t i = 0; i < ranks_to_load_v.size(); ++i) {
+        const PEAT_Rank r = ranks_to_load_v[i];
+        Rank_Stat &rank_stat = stats.ranks[r]; // every loaded rank is listed, even without events in the window
+        const std::vector<TV_Event *> &events = eventsV.at(r);
+        if (events.empty())
+            continue;
+        for (EventRankTypeConstIter it = lower_bound(events, start); it != events.cend(); ++it) {
+            const TV_Event *e = *it;
+            if (e == NULL)
+                continue;
+            if (e->e_time.func.in > stop)
+                break;
+            if (e->e_time.func.out < start)
+                continue;
+            add_record_statistics(e, false, start, stop, stats, rank_stat);
+        }
+    }
+    for (std::vector<std::map<PEAT_UID, TV_Message>>::const_iterator rank_it = messages.begin(); rank_it != messages.end(); ++rank_it) {
+        for (std::map<PEAT_UID, TV_Message>::const_iterator mess_it = rank_it->begin(); mess_it != rank_it->end(); ++mess_it) {
+            const TV_Message &m = mess_it->second;
+            if (m.msg_type != TV_PEN_MESSAGE_TYPE_NORMAL || m.from == NULL || m.to == NULL)
+                continue;
+            if (m.from->e_time.func.in < start || m.from->e_time.func.in > stop)
+                continue; // a message belongs to the window its send starts in
+            Pair_Stat &p = stats.pairs[std::make_pair(m.from->rank, m.to->rank)];
+            p.messages++;
+            const PEAT_Message_Size bytes = m.from->get_tx_bytes();
+            if (bytes > 0)
+                p.bytes += bytes;
+        }
     }
 }
 

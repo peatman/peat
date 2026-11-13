@@ -20,6 +20,7 @@
 #define __TVMAINWINDOW_H__
 
 #include "qTV.h"
+#include "timeruler.h"
 #include <QApplication>
 #include <QActionGroup>
 #include <QCheckBox>
@@ -50,6 +51,7 @@
 #include <QtGui>
 #define DIALOG_WIDTH_PERCENT 0.7
 
+class HelpViewer;
 QT_BEGIN_NAMESPACE
 namespace Ui
 {
@@ -65,7 +67,10 @@ class TVMainWindow : public QMainWindow
     TVMainWindow(QWidget *parent = nullptr);
     ~TVMainWindow();
     TV *tv;
+    void open_trace_file(const QString &file_name); // a file given on the command line or dropped onto the window
   private slots:
+    void go_to_time();
+    void add_bookmark();
     void load_data();
     void snap_shot();
     void reload_data();
@@ -115,8 +120,24 @@ class TVMainWindow : public QMainWindow
     void keyPressEvent(QKeyEvent *);
     void keyReleaseEvent(QKeyEvent *);
     bool event(QEvent *e);
+    void dragEnterEvent(QDragEnterEvent *e) override;
+    void dropEvent(QDropEvent *e) override;
+    void closeEvent(QCloseEvent *e) override;
 
   private:
+    QImage compose_picture() const;
+    void rebuild_bookmarks_menu();
+    void change_row_height(int direction);
+    void show_legend_window();
+    void show_highlight_dialog();
+    void save_picture_as(const QString &suggested_name);
+    void show_help(const QString &page);
+    QPointer<HelpViewer> help_viewer;
+    void save_drawing_settings();
+    QPointer<QWidget> legend_window;
+    void remove_bookmark(const QString &bookmark);
+    TimeRuler *ruler;
+    QMenu *bookmarks_menu;
     void disable_all_actions();
     void enable_all_actions();
     void update_recent_file_actions();
@@ -150,6 +171,8 @@ class TVMainWindow : public QMainWindow
     QAction *clear_recent_files_action;
     QAction *about_action;
     QAction *exit_action;
+    QAction *view_back_action;
+    QAction *view_forward_action;
     QAction *presentation_action;
     QAction *presentation_color_action;
     QAction *presentation_curve_action;
@@ -157,6 +180,9 @@ class TVMainWindow : public QMainWindow
     QAction *presentation_rectangle_action;
     QAction *presentation_ellipse_action;
     QAction *presentation_arrow_action;
+    QAction *presentation_text_action;
+    QAction *presentation_eraser_action;
+    QAction *presentation_width_action;
     QAction *presentation_save_action;
     QAction *presentation_undo_action;
     QAction *presentation_redo_action;

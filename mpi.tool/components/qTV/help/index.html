@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>qTV - Qt Trace Viewer</title>
+</head>
+<body>
+<h1>qTV - Qt Trace Viewer</h1>
+<p>qTV is the trace viewer of PEAT. It loads a <tt>tractor</tt> trace and shows a timeline of the
+MPI, OpenMP, GPU and transport events of every loaded rank and thread, with the messages between them.</p>
+
+<h2>Opening a trace</h2>
+<ul>
+<li><b>File &gt; Load</b> (F3) asks for a <tt>.trace.info</tt> file. The file can also be given on the
+command line (<tt>qTV run.trace.info</tt>) or dropped onto the window.</li>
+<li>The load dialog selects the ranks and the part of the run to read. Big traces do not fit into
+memory as a whole: load the ranks and the time range of interest.</li>
+<li><b>File &gt; ReLoad</b> (Ctrl+F3) reads another set of ranks or another time range of the same trace.
+The view history and the open Info / Functions / Messages windows are kept.</li>
+</ul>
+
+<h2>Contents</h2>
+<ul>
+<li><a href="controls.html">Mouse and keyboard controls</a></li>
+<li><a href="features.html">Navigation, search and analysis</a></li>
+</ul>
+
+<h2>Files written by qTV</h2>
+<p>The file <tt>&lt;trace&gt;.trace.info.user</tt> next to the trace keeps the source search directories
+and the bookmarks of that trace. Colours, drawing options, filter flags, recent files and the window
+geometry are kept in the settings of the user.</p>
+</body>
+</html>

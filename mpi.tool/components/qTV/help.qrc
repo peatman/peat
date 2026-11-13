@@ -1,0 +1,9 @@
+<RCC>
+  <!-- Built-in copy of the help pages: shown when qTV.qch (the Qt Help file made from the
+       same pages, see help/qTV.qhp) is not available. -->
+  <qresource prefix="/help">
+    <file alias="index.html">help/index.html</file>
+    <file alias="controls.html">help/controls.html</file>
+    <file alias="features.html">help/features.html</file>
+  </qresource>
+</RCC>

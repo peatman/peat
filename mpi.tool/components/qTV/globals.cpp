@@ -26,6 +26,25 @@
 long long freq;
 TV_Global_Colors tv_colors;
 
+QColor tv_canvas_line_color()
+{
+    return tv_colors.event_brushes[TV_BRUSH_EVENT_TYPE_USER_CODE].color().lightness() < 128 ? QColor(235, 235, 235) : QColor(Qt::black);
+}
+
+QString format_seconds(double seconds, int digits)
+{
+    const double a = seconds < 0 ? -seconds : seconds;
+    if (a == 0)
+        return QString("0 s");
+    if (a < 1e-6)
+        return QString::number(seconds * 1e9, 'g', digits) + " ns";
+    if (a < 1e-3)
+        return QString::number(seconds * 1e6, 'g', digits) + " us";
+    if (a < 1)
+        return QString::number(seconds * 1e3, 'g', digits) + " ms";
+    return QString::number(seconds, 'g', digits) + " s";
+}
+
 void get_cpu_freq()
 {
 #if defined(_WIN32) && !defined(__MINGW32__)

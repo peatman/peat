@@ -21,6 +21,7 @@
 
 #include "globals.h"
 #include <QCheckBox>
+#include <QComboBox>
 #include <QDialog>
 #include <QSpinBox>
 
@@ -34,7 +35,9 @@ class DrawOptionsDialog : public QDialog
 
   private:
     QSpinBox *spin_func_min_width;
+    QSpinBox *spin_row_height;
     QCheckBox *check_offscreen_messages;
+    QComboBox *combo_color_mode;
 };
 
 #endif // __DRAWOPTIONSDIALOG_H__

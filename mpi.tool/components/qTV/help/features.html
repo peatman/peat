@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Navigation, search and analysis</title>
+</head>
+<body>
+<h1>Navigation, search and analysis</h1>
+<p><a href="index.html">Contents</a> | <a href="controls.html">Mouse and keyboard controls</a></p>
+
+<a name="axis"></a>
+<h2>Time axis and toolbar</h2>
+<p>The axis above the picture shows the time from the start of the <i>loaded</i> part of the trace.
+The thin bar on its top stands for the whole loaded trace with the shown window highlighted; a click
+on it moves the view there. The toolbar shows the time under the cursor and the bounds of the view in
+clock ticks and seconds, or, with <b>View &gt; Time units</b>, as the time from the start of the loaded
+trace, like the axis. <b>H:</b> is the number of elements too narrow to be drawn, <b>C:</b> the
+number of the shown view in the list found by the last Analyse action.</p>
+
+<a name="history"></a>
+<h2>View history</h2>
+<p>Every shown view is remembered. <b>View &gt; Back / Forward</b> (Alt+Left / Alt+Right, or the mouse
+back / forward buttons) step through them. Only the bounds of a view are kept, so the history costs no
+memory. It is cleared when another trace is loaded and kept on ReLoad.</p>
+
+<a name="bookmarks"></a>
+<h2>Bookmarks</h2>
+<p><b>Bookmarks &gt; Add bookmark</b> (Ctrl+B) remembers the current view under a name. Bookmarks are
+stored in the <tt>.trace.info.user</tt> file next to the trace. <b>Remove bookmark</b> deletes one of
+them, <b>Remove all bookmarks</b> all of them.</p>
+
+<a name="find"></a>
+<h2>Finding events</h2>
+<ul>
+<li><b>Find</b> (Ctrl+F) shows the call with a given rank and unique index.</li>
+<li><b>View &gt; Find function</b> (Ctrl+Shift+F) looks for the next or previous call of a function by
+its name, on one rank or on any loaded rank. Calls nested into other calls are found too. <b>Dim the other
+functions</b> draws all other functions faded while the dialog is open.</li>
+<li><b>View &gt; Go to time</b> (Ctrl+G) centers the view at a time given in seconds from the start of
+the loaded trace.</li>
+</ul>
+
+<a name="selection"></a>
+<h2>Selection and details</h2>
+<p>A left click selects the event under the cursor. It is framed together with the events joined with
+it by message lines. <b>Show selected with its peers</b> in the right-click menu zooms to fit all of
+them; Esc drops the selection.</p>
+<p>The right-click menu opens windows with details: <b>Info</b> for the event under the cursor,
+<b>Functions</b>, <b>Messages</b> and <b>User regions</b> for the region dragged with the right button.
+Every request opens a new window, the earlier ones stay until they are closed or another trace is
+loaded. A click on a row with a source location opens the source file.</p>
+
+<a name="statistics"></a>
+<h2>Statistics</h2>
+<p><b>Analyse &gt; Statistics of the view</b>, or <b>Statistics</b> in the right-click menu for a
+dragged region, shows:</p>
+<ul>
+<li><b>Functions</b>: number of calls and time per function;</li>
+<li><b>Ranks</b>: MPI time per rank, summed over its threads;</li>
+<li><b>P2P messages</b>: messages and bytes per pair of sender and receiver.</li>
+</ul>
+<p>Calls nested into other calls have rows of their own, marked <i>(nested)</i>, and are not added to
+the MPI time of a rank: their time is a part of the call they are nested into. A call that crosses the
+bounds of the window adds its part inside the window to the totals.</p>
+
+<a name="analyse"></a>
+<h2>Analyse</h2>
+<p>The actions of the <b>Analyse</b> menu look through the loaded trace for the worst cases and open
+a list of the found views; a click on a row shows it, Ctrl+Left / Ctrl+Right step through the list.</p>
+<ul>
+<li><b>Least BW</b>: messages or collectives with the lowest bandwidth, above a size cut-off.</li>
+<li><b>Most Imbalance</b>: collectives or messages whose participants are least in sync.</li>
+<li><b>Late sender</b>: the receive (or the wait for it) started before the send, the receiver waited.</li>
+<li><b>Late receiver</b>: the send started first and was still running when the receive started,
+the sender waited.</li>
+</ul>
+
+<a name="drawing"></a>
+<h2>What is drawn</h2>
+<ul>
+<li><b>View &gt; Filter</b> hides groups of functions, kinds of messages and communicators.</li>
+<li><b>View &gt; Highlight</b> keeps bright the events of a function, of a communicator, or with a
+message of at least a given size, and dims all the others. The conditions that are set have to hold
+together; Reset in the dialog clears them.</li>
+<li><b>Options &gt; Drawing</b> sets the minimal width of a drawn function, the height of a row
+(also Ctrl+Up / Ctrl+Down) and what the colour of an event shows: its kind (the colours of the legend),
+its function name, its communicator, its duration (from blue for 1 us to red for 1 s) or its message
+size (from blue for 1 byte to red for 1 GB). Rows lower than a text line show no function names.</li>
+<li><b>Options &gt; Legend</b> changes the colours; <b>View &gt; Legend window</b> keeps the colours and
+their meanings visible beside the trace.</li>
+<li>Esc cancels a rendering that takes too long. The picture stays incomplete until it is redrawn.</li>
+<li>Esc cancels a loading as well. What has been read by then stays loaded and is shown; the ranks are
+cut at different times and the messages may be missing. ReLoad reads the trace again.</li>
+<li>The time marker, the separators of the ranks and the selection of a range are drawn dark on a light
+"User Code" colour and light on a dark one.</li>
+</ul>
+
+<a name="export"></a>
+<h2>Pictures and tables</h2>
+<p><b>File &gt; Snapshot</b> (F2) saves the picture with its time axis as PNG, JPEG or PDF, by the
+extension of the file name. The PDF holds the picture as a bitmap. <b>Copy picture</b>
+(Ctrl+Shift+C) puts it to the clipboard. A right click in any table copies rows or exports the table
+to a CSV file. A click on a column header sorts the table by that column; numbers are sorted by
+their values.</p>
+
+<a name="presentation"></a>
+<h2>Presentation mode</h2>
+<p>The <b>Presentation</b> button of the toolbar switches to drawing over the current picture:
+free-hand curve, line, rectangle, ellipse, arrow, text and eraser, with a colour and a pen width.
+Undo and Redo work on the drawings. The trace cannot be moved or zoomed in this mode; the drawings
+are dropped when the mode is left, after an offer to save the picture. A saved picture includes the
+drawings and the time axis.</p>
+</body>
+</html>

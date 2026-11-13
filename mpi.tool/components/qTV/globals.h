@@ -43,6 +43,9 @@ extern long long freq;
         }                                                           \
     }
 void get_cpu_freq();
+class QString;
+// a duration or a time offset in seconds as text with a fitting unit (s, ms, us, ns)
+QString format_seconds(double seconds, int digits = 4);
 // index in TV_TraceParts::mpi_functions; the internal (PEAT_PROP_MPI_INTERNAL) group follows its user group
 enum TV_MPI_Func_Group {
     TV_MPI_FUNC_GROUP_LOCALS,
@@ -53,6 +56,15 @@ enum TV_MPI_Func_Group {
     TV_MPI_FUNC_GROUP_REQUESTS_INTERNAL,
     TV_MPI_FUNC_GROUP_MAX
 };
+// what the colour of an event shows (TV_TraceParts::color_mode)
+enum TV_Color_Mode {
+    TV_COLOR_BY_KIND,     // kind of the event, the colours of the legend
+    TV_COLOR_BY_FUNCTION, // one colour per function name
+    TV_COLOR_BY_COMM,     // one colour per communicator, grey for events without one
+    TV_COLOR_BY_DURATION, // from blue (1 us and less) to red (1 s and more)
+    TV_COLOR_BY_SIZE,     // message size: from blue (1 byte) to red (1 GB and more), grey for events without data
+    TV_COLOR_MODE_MAX
+};
 struct TV_TraceParts {
     bool mpi_functions[TV_MPI_FUNC_GROUP_MAX] = {true, true, true, true, true, true};
     // p2p, blocking collectives, initiation, completion, collective init, collective start, collective completion
@@ -62,6 +74,13 @@ struct TV_TraceParts {
     bool transport_functions = true;
     int func_min_width = 2;                // functions narrower than this (px) are not drawn, unless over a user region; 1 draws all
     bool draw_offscreen_messages = false;  // draw messages even when both ends are outside the window
+    int row_height_percent = 100;          // height of a thread row, in percent of the default (two text lines)
+    int color_mode = TV_COLOR_BY_KIND;     // TV_Color_Mode
+    // Highlighting: the events that match every condition set here are drawn bright, the others are dimmed
+    int highlight_func = 0;                // PEAT_MPI_Func_ID, 0 for any function
+    PEAT_MPI_Comm highlight_comm = 0;      // 0 (MPI_COMM_NULL) for any communicator
+    long long highlight_min_bytes = 0;     // least message size of the event, 0 for any
+    bool highlighting() const { return highlight_func != 0 || highlight_comm != 0 || highlight_min_bytes > 0; }
     std::set<PEAT_MPI_Comm> hidden_comms; // elements of these communicators are not shown
     bool comm_visible(PEAT_MPI_Comm comm) const { return hidden_comms.empty() || hidden_comms.count(comm) == 0; }
     /*
@@ -154,6 +173,9 @@ struct TV_Global_Colors : public TV_Colors {
 };
 
 extern TV_Global_Colors tv_colors;
+// Colour for the lines drawn over the rows (time marker, rank separators, selection of a range):
+// dark on a light "User Code" colour, light on a dark one.
+QColor tv_canvas_line_color();
 #if defined(_WIN32) && !defined(__MINGW32__)
 // #define USE_MS_CONCURRENCY
 #endif

@@ -18,6 +18,8 @@
 
 #include "legenddialog.h"
 #include "QColorDialog"
+#include <QPainter>
+#include <QVBoxLayout>
 #include "ui_legenddialog.h"
 
 LegendDialog::LegendDialog(QWidget *parent)
@@ -55,6 +57,37 @@ LegendDialog::LegendDialog(QWidget *parent)
 LegendDialog::~LegendDialog()
 {
     delete ui;
+}
+
+QWidget *LegendDialog::create_window(QWidget *parent, const TV_Colors &c)
+{
+    const LegendDialog names; // source of the names of the colours
+    QDialog *window = new QDialog(parent, Qt::Tool);
+    window->setAttribute(Qt::WA_DeleteOnClose);
+    window->setWindowTitle(tr("Legend"));
+    QVBoxLayout *layout = new QVBoxLayout(window);
+    QListWidget *list = new QListWidget(window);
+    list->setSelectionMode(QAbstractItemView::NoSelection);
+    list->setFocusPolicy(Qt::NoFocus);
+    layout->addWidget(list);
+    for (QMap<QString, int>::const_iterator item = names.event_items.begin(); item != names.event_items.end(); ++item) {
+        QPixmap swatch(24, 14);
+        swatch.fill(c.event_brushes[item.value()].color());
+        list->addItem(new QListWidgetItem(QIcon(swatch), item.key()));
+    }
+    for (QMap<QString, int>::const_iterator item = names.message_items.begin(); item != names.message_items.end(); ++item) {
+        QPixmap swatch(24, 14);
+        swatch.fill(Qt::transparent);
+        QPainter p(&swatch);
+        QPen pen = c.message_pens[item.value()];
+        pen.setWidth(qMax(2, pen.width()));
+        p.setPen(pen);
+        p.drawLine(1, 12, 22, 2);
+        p.end();
+        list->addItem(new QListWidgetItem(QIcon(swatch), tr("Message: %1").arg(item.key())));
+    }
+    window->resize(260, qMin(700, list->sizeHintForRow(0) * list->count() + 40));
+    return window;
 }
 
 void LegendDialog::eventsListWidget_item(QListWidgetItem *item)

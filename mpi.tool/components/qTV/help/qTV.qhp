@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Qt Help project of qTV: compiled by qhelpgenerator into qTV.qch (see CMakeLists.txt).
+     A new page has to be listed in <files>, in <toc>, and in help.qrc (the built-in copy
+     shown when qTV.qch is not available). -->
+<QtHelpProject version="1.0">
+    <namespace>ee.peat.qtv</namespace>
+    <virtualFolder>doc</virtualFolder>
+    <filterSection>
+        <toc>
+            <section title="qTV - Qt Trace Viewer" ref="index.html">
+                <section title="Mouse and keyboard controls" ref="controls.html"/>
+                <section title="Navigation, search and analysis" ref="features.html"/>
+            </section>
+        </toc>
+        <keywords>
+            <keyword name="Controls" ref="controls.html"/>
+            <keyword name="Keyboard" ref="controls.html"/>
+            <keyword name="Mouse" ref="controls.html"/>
+            <keyword name="Time axis" ref="features.html#axis"/>
+            <keyword name="View history" ref="features.html#history"/>
+            <keyword name="Bookmarks" ref="features.html#bookmarks"/>
+            <keyword name="Find" ref="features.html#find"/>
+            <keyword name="Selection" ref="features.html#selection"/>
+            <keyword name="Statistics" ref="features.html#statistics"/>
+            <keyword name="Analyse" ref="features.html#analyse"/>
+            <keyword name="Late sender" ref="features.html#analyse"/>
+            <keyword name="Drawing options" ref="features.html#drawing"/>
+            <keyword name="Snapshot" ref="features.html#export"/>
+            <keyword name="Presentation mode" ref="features.html#presentation"/>
+        </keywords>
+        <files>
+            <file>index.html</file>
+            <file>controls.html</file>
+            <file>features.html</file>
+        </files>
+    </filterSection>
+</QtHelpProject>
