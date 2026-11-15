@@ -41,6 +41,8 @@ class FilterDialog : public QDialog
     void get_properties(TV_TraceParts &shown) const;
     // Fills the Communicators tab; without it (no trace loaded) the tab is disabled.
     void set_communicators(const Communicators *communicators, const std::set<PEAT_MPI_Comm> &hidden);
+    // Fills the Ranks tab with the loaded ranks; without it (no trace loaded) the tab is disabled.
+    void set_ranks(const std::vector<PEAT_Rank> &loaded, const std::set<PEAT_Rank> &hidden);
 
     bool redraw_requested() const { return redraw; } // true if the dialog was closed with Apply
 
@@ -48,10 +50,14 @@ class FilterDialog : public QDialog
     void on_buttonBox_clicked(QAbstractButton *button); // auto-connected by name
     void on_buttonCommsAll_clicked();  // auto-connected by name
     void on_buttonCommsNone_clicked(); // auto-connected by name
+    void on_buttonRanksAll_clicked();  // auto-connected by name
+    void on_buttonRanksNone_clicked(); // auto-connected by name
 
   private:
     void set_all_comms(Qt::CheckState state);
+    void set_all_ranks(Qt::CheckState state);
     bool comms_filled;
+    bool ranks_filled;
     bool redraw;
     Ui::FilterDialog *ui;
 };

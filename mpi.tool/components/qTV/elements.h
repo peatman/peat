@@ -47,9 +47,11 @@ struct Elements_Paint {
     std::vector<qint32> transport_ulc;
     std::vector<qint32> omp_ulc;
     std::vector<qint32> gpu_ulc;
+    std::vector<char> hidden; // per drawn row: the rank was hidden (TV_TraceParts::hidden_ranks) when the picture was made
     void clear(int ranks)
     {
         width = height = thread_height = 0;
+        hidden.assign(ranks > 0 ? ranks : 0, 0);
         mpi_ulc.clear();
         transport_ulc.clear();
         omp_ulc.clear();
@@ -237,6 +239,15 @@ class Elements
     std::vector<PEAT_Rank> &get_loaded_ranks()
     {
         return ranks_to_load_v;
+    }
+    // Ranks hidden in the picture on the screen (not the ones requested for the next redraw): by row and by rank.
+    inline bool row_hidden(size_t row) const
+    {
+        return row < paint.hidden.size() && paint.hidden[row];
+    }
+    inline bool rank_hidden(PEAT_Rank rank) const
+    {
+        return rank >= 0 && static_cast<size_t>(rank) < ranks_to_load_v_rev.size() && row_hidden(ranks_to_load_v_rev[rank]);
     }
     // current, min, max are the mouse cursor coordinates
     inline PEAT_Clock convert_mouse_to_ticks(long current, long min, long max) const

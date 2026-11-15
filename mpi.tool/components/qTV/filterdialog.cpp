@@ -19,13 +19,15 @@
 #include "filterdialog.h"
 #include "ui_filterdialog.h"
 #include <QHeaderView>
+#include <QListWidgetItem>
 #include <QTableWidgetItem>
 
 FilterDialog::FilterDialog(QWidget *parent)
-    : QDialog(parent), comms_filled(false), redraw(false), ui(new Ui::FilterDialog)
+    : QDialog(parent), comms_filled(false), ranks_filled(false), redraw(false), ui(new Ui::FilterDialog)
 {
     ui->setupUi(this);
     ui->tabWidget->setTabEnabled(ui->tabWidget->indexOf(ui->tabCommunicators), false);
+    ui->tabWidget->setTabEnabled(ui->tabWidget->indexOf(ui->tabRanks), false);
     setSizeGripEnabled(true);
     QHeaderView *header = ui->tableComms->horizontalHeader();
     header->setSectionResizeMode(QHeaderView::Interactive);
@@ -77,6 +79,43 @@ void FilterDialog::get_properties(TV_TraceParts &shown) const
                 shown.hidden_comms.insert(item->data(Qt::UserRole).toInt());
         }
     }
+    if (ranks_filled) {
+        shown.hidden_ranks.clear();
+        for (int row = 0; row < ui->listRanks->count(); ++row) {
+            const QListWidgetItem *item = ui->listRanks->item(row);
+            if (item->checkState() != Qt::Checked)
+                shown.hidden_ranks.insert(item->data(Qt::UserRole).toInt());
+        }
+    }
+}
+
+void FilterDialog::set_ranks(const std::vector<PEAT_Rank> &loaded, const std::set<PEAT_Rank> &hidden)
+{
+    ui->listRanks->clear();
+    for (PEAT_Rank rank : loaded) {
+        QListWidgetItem *item = new QListWidgetItem(QString::number(rank), ui->listRanks);
+        item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsUserCheckable);
+        item->setCheckState(hidden.count(rank) ? Qt::Unchecked : Qt::Checked);
+        item->setData(Qt::UserRole, rank);
+    }
+    ranks_filled = true;
+    ui->tabWidget->setTabEnabled(ui->tabWidget->indexOf(ui->tabRanks), true);
+}
+
+void FilterDialog::set_all_ranks(Qt::CheckState state)
+{
+    for (int row = 0; row < ui->listRanks->count(); ++row)
+        ui->listRanks->item(row)->setCheckState(state);
+}
+
+void FilterDialog::on_buttonRanksAll_clicked()
+{
+    set_all_ranks(Qt::Checked);
+}
+
+void FilterDialog::on_buttonRanksNone_clicked()
+{
+    set_all_ranks(Qt::Unchecked);
 }
 
 void FilterDialog::set_communicators(const Communicators *communicators, const std::set<PEAT_MPI_Comm> &hidden)

@@ -903,6 +903,8 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
             progress(prevclk, QApplication::processEvents);
         if (cancel_draw)
             continue; // an OpenMP loop cannot be left: the remaining ranks are skipped
+        if (row_hidden(r))
+            continue; // the rank has no rows in this picture
         std::vector<TV_Event *> &it_rank = eventsV.at(ranks_to_load_v.at(r));
         QPen line_rank(tv_canvas_line_color(), 0, Qt::DashDotLine);
         // QPen   linePrank(Qt::black, 0, Qt::SolidLine);
@@ -915,9 +917,9 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
         long y_start = paint.mpi_ulc.at(r);
         long pix_in_rank = (get_mpi_threads(r) + get_transport_threads(r) + get_omp_threads(r) + get_gpu_threads(r)) * paint.thread_height;
         p[tid]->drawRect(0, y_start, s_width, pix_in_rank);
-        if (r && (r < get_draw_rank_count())) {
+        if (y_start > 0) { // separator above every rank but the topmost drawn one
             p[tid]->setPen(line_rank);
-            p[tid]->drawLine(0, r * pix_in_rank, s_width, r * pix_in_rank);
+            p[tid]->drawLine(0, y_start, s_width, y_start);
         }
         QColor user_region_color = threadImages[tid]->pixel(0, y_start);
         // p[tid]->setOpacity(current_opacity);
@@ -1227,6 +1229,8 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                 continue;
             if (!event_shown(*shown, from, pix_in_tic) || !event_shown(*shown, to, pix_in_tic))
                 continue;
+            if (rank_hidden(from->rank) || rank_hidden(to->rank))
+                continue; // an end of the line has no row
             if (tid == 0)
                 progress(prevclk, QApplication::processEvents);
             // long wdt_from= qAbs(from.timeOut-from.timeIn)*pixInTic;
@@ -1753,8 +1757,9 @@ void Elements::get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_t
             add_addr_info(after_id, next_event);
     };
 
+    // the ranks hidden in the picture are left out, as in the picture itself
     for (std::vector<std::vector<TV_Event *>>::const_iterator it_rank = eventsV.begin(); it_rank != eventsV.end(); ++it_rank) {
-        if (it_rank->empty())
+        if (it_rank->empty() || rank_hidden(PEAT_Rank(it_rank - eventsV.begin())))
             continue;
         for (EventRankTypeConstIter it_func = lower_bound(*it_rank, start); it_func != it_rank->cend(); ++it_func) {
             const TV_Event *cur_func_ptr = *it_func;
@@ -1784,7 +1789,7 @@ void Elements::get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_t
     }
 
     for (std::vector<std::vector<TV_Transport_Event *>>::const_iterator it_rank = events_transportV.begin(); it_rank != events_transportV.end(); ++it_rank) {
-        if (it_rank->empty())
+        if (it_rank->empty() || rank_hidden(PEAT_Rank(it_rank - events_transportV.begin())))
             continue;
         std::vector<TV_Transport_Event *>::const_iterator lb = lower_bound(*it_rank, start);
         for (std::vector<TV_Transport_Event *>::const_iterator it_func = lb; it_func != it_rank->cend(); ++it_func) {
@@ -1852,6 +1857,12 @@ void Elements::get_messages_in_region(QTableWidget *initiation, QTableWidget *co
                 if (coll_set.count(evt))
                     continue;
                 coll_set.insert(evt);
+                // only the members on the ranks of the picture are listed; a collective without them is left out
+                bool any_member_visible = false;
+                for (std::map<PEAT_Rank, TV_Event *>::const_iterator evt_it = evt->events.cbegin(); evt_it != evt->events.cend() && !any_member_visible; ++evt_it)
+                    any_member_visible = !rank_hidden(evt_it->second->rank);
+                if (!any_member_visible)
+                    continue;
                 QStringList itemList;
                 itemList.append(QString(global_func_id.name_by_idx(evt->func_id)) + (it_msg->second.msg_type == TV_PEN_MESSAGE_TYPE_COLLECTIVE_COMPLETION ? " (completion)" : it_msg->second.msg_type == TV_PEN_MESSAGE_TYPE_COLLECTIVE_START ? " (start)" : it_msg->second.msg_type == TV_PEN_MESSAGE_TYPE_COLLECTIVE_INIT ? " (init)" : "")); // itemDescriptionString.str().c_str());
                 QTreeWidgetItem *func_name = new TV_Tree_Item((QTreeWidget *)0, itemList);
@@ -1860,6 +1871,8 @@ void Elements::get_messages_in_region(QTableWidget *initiation, QTableWidget *co
                 func_name->setFont(1, font1);
                 collective->addTopLevelItem(func_name);
                 for (std::map<PEAT_Rank, TV_Event *>::const_iterator evt_it = evt->events.cbegin(); evt_it != evt->events.cend(); ++evt_it) {
+                    if (rank_hidden(evt_it->second->rank))
+                        continue;
                     QTreeWidgetItem *func_prop = new TV_Tree_Item(func_name);
                     // the member's own function: MPI_Ialltoall for a start, MPI_Wait/Test/... for a completion
                     func_prop->setText(0, QString(global_func_id.name_by_idx(evt_it->second->func_id)));
@@ -1918,6 +1931,8 @@ void Elements::get_messages_in_region(QTableWidget *initiation, QTableWidget *co
                     }
                 }
             } else {
+                if (rank_hidden(from->rank) || rank_hidden(to->rank))
+                    continue; // the line is not in the picture
                 QTableWidget *tw = NULL;
                 switch (it_msg->second.msg_type) {
                 case TV_PEN_MESSAGE_TYPE_NORMAL:
@@ -2081,7 +2096,7 @@ void Elements::get_user_addresses_in_region(QTreeWidget *tw, const PEAT_Clock st
     PEAT_UID regions_added = 0;
 #endif
     for (std::vector<std::vector<TV_Event *>>::const_iterator it_rank = eventsV.begin(); it_rank != eventsV.end(); ++it_rank, ++r) {
-        if (it_rank->empty())
+        if (it_rank->empty() || rank_hidden(r))
             continue;
         EventRankTypeConstIter it_func_previous = lower_bound(*it_rank, start);
         ;
@@ -2189,6 +2204,8 @@ TV_Event *Elements::get_event(int x, int y, int width) const
     int thread = -1;
     int selector = -1;
     for (int r = 0; r < ranks_to_load_v.size(); ++r) {
+        if (row_hidden(r))
+            continue; // not in the picture: its rows take no place
         long rank_top = paint.mpi_ulc.at(r);
         long pix_in_rank = (get_mpi_threads(r) + get_transport_threads(r) + get_omp_threads(r) + get_gpu_threads(r)) * paint.thread_height;
         if (y >= rank_top && y < rank_top + pix_in_rank) {
@@ -2572,7 +2589,7 @@ QRect Elements::get_event_rect(const TV_Event *e, int width) const
     if (e == NULL || e->rank < 0 || static_cast<size_t>(e->rank) >= ranks_to_load_v_rev.size() || !(zoom_time_stop > zoom_time_start))
         return QRect();
     const PEAT_Rank r = ranks_to_load_v_rev[e->rank];
-    if (r < 0 || static_cast<size_t>(r) >= paint.mpi_ulc.size())
+    if (r < 0 || static_cast<size_t>(r) >= paint.mpi_ulc.size() || row_hidden(r))
         return QRect();
     const double pix_in_tic = width / (zoom_time_stop - zoom_time_start);
     const double x0 = qBound(-10.0, (e->e_time.func.in - zoom_time_start) * pix_in_tic, width + 10.0);
@@ -2613,6 +2630,8 @@ void Elements::get_peers(const TV_Event *e, std::vector<const TV_Event *> &peers
     }
     std::sort(peers.begin(), peers.end());
     peers.erase(std::unique(peers.begin(), peers.end()), peers.end());
+    // the events of the hidden ranks are not in the picture
+    peers.erase(std::remove_if(peers.begin(), peers.end(), [this](const TV_Event *peer) { return rank_hidden(peer->rank); }), peers.end());
 }
 
 void Elements::move_viewport(int direction)
@@ -2683,6 +2702,8 @@ const TV_Event *Elements::find_function(PEAT_MPI_Func_ID func_id, PEAT_Rank rank
         const PEAT_Rank r = ranks_to_load_v[i];
         if (rank >= 0 && r != rank)
             continue;
+        if (row_hidden(i))
+            continue; // a call found there could not be shown
         const std::vector<TV_Event *> &events = eventsV.at(r);
         if (events.empty())
             continue;

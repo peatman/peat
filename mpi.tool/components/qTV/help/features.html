@@ -32,7 +32,7 @@ them, <b>Remove all bookmarks</b> all of them.</p>
 <a name="find"></a>
 <h2>Finding events</h2>
 <ul>
-<li><b>Find</b> (Ctrl+F) shows the call with a given rank and unique index.</li>
+<li><b>View &gt; Find by index</b> (Ctrl+F) shows the call with a given rank and unique index.</li>
 <li><b>View &gt; Find function</b> (Ctrl+Shift+F) looks for the next or previous call of a function by
 its name, on one rank or on any loaded rank. Calls nested into other calls are found too. <b>Dim the other
 functions</b> draws all other functions faded while the dialog is open.</li>
@@ -78,7 +78,10 @@ the sender waited.</li>
 <a name="drawing"></a>
 <h2>What is drawn</h2>
 <ul>
-<li><b>View &gt; Filter</b> hides groups of functions, kinds of messages and communicators.</li>
+<li><b>View &gt; Filter</b> hides groups of functions, kinds of messages and communicators.
+Its <b>Ranks</b> tab leaves the rows of the unchecked ranks, and the messages to or from them, out of the
+picture starting from the next redraw (Apply redraws at once); tooltips, Info and the Functions / Messages /
+User regions windows follow the picture on the screen. <b>View &gt; Reset</b> shows all the ranks again.</li>
 <li><b>View &gt; Highlight</b> keeps bright the events of a function, of a communicator, or with a
 message of at least a given size, and dims all the others. The conditions that are set have to hold
 together; Reset in the dialog clears them.</li>

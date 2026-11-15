@@ -397,13 +397,25 @@ void TV::draw_main_image()
         elements->paint.clear(ranks);
         // a row holds two text lines by default; it is never lower than the message lines need (see y_indent in draw_elements)
         elements->paint.thread_height = qMax(8, fontMetrics().height() * 2 * shown->row_height_percent / 100);
+        // The hidden ranks get no rows. The set is fixed here for the whole life of the picture: tooltips, Info and
+        // the region windows look at paint.hidden, not at the filter, which may be changed without a redraw.
+        const std::vector<PEAT_Rank> &loaded_ranks = elements->get_loaded_ranks();
+        int hidden_rows = 0;
+        for (int a = 0; a < ranks; a++) {
+            elements->paint.hidden[a] = shown->hidden_ranks.count(loaded_ranks[a]) != 0;
+            hidden_rows += elements->paint.hidden[a];
+        }
+        if (hidden_rows == ranks) { // nothing would be left to draw: the filter is ignored
+            elements->paint.hidden.assign(ranks, 0);
+        }
         int mpi_ulc = 0, transport_ulc, omp_ulc, gpu_ulc;
         for (int a = 0; a < ranks; a++) {
             elements->paint.mpi_ulc[a] = mpi_ulc;
-            int mpi_threads = elements->get_mpi_threads(a);
-            int transport_threads = elements->get_transport_threads(a);
-            int omp_threads = elements->get_omp_threads(a);
-            int gpu_threads = elements->get_gpu_threads(a);
+            const bool row_shown = !elements->paint.hidden[a];
+            int mpi_threads = row_shown ? elements->get_mpi_threads(a) : 0;
+            int transport_threads = row_shown ? elements->get_transport_threads(a) : 0;
+            int omp_threads = row_shown ? elements->get_omp_threads(a) : 0;
+            int gpu_threads = row_shown ? elements->get_gpu_threads(a) : 0;
             transport_ulc = (mpi_ulc + mpi_threads * elements->paint.thread_height);
             omp_ulc = (transport_ulc + transport_threads * elements->paint.thread_height);
             gpu_ulc = (omp_ulc + omp_threads * elements->paint.thread_height);
@@ -1192,6 +1204,7 @@ bool TV::load_model(QFileInfo &trace_file, const std::set<PEAT_Rank> &ranks_to_l
     find_anchor_valid = false;
     selected_event = 0;
     selected_peers.clear();
+    shown->hidden_ranks.clear(); // the first picture, kept for Reset, shows every loaded rank
     elements = new Elements(trace_file, shown);
     loading = true; // Esc is taken by cancel_running() from the event loop the reading runs
     const bool loaded = elements->load_model_data(pb, sr, mpi_file_names, hwc_file_names, bind_file_names, transport_file_names, ranks_to_load, tmin, tmax, load_threads, tp);
@@ -1287,6 +1300,7 @@ void TV::reset_view()
         return;
     }
     back_to_full_view = true;
+    shown->hidden_ranks.clear(); // Reset also brings back the ranks hidden by the filter
     delete (main_image);
     main_image = 0;
     elements->reset_zoom();
@@ -1345,46 +1359,51 @@ void TV::draw_view(double start)
 
 #define MAX_L_DISTANCE 5
 
+// Opens the source locations stored with a clicked item (see the "src_file<N>"/"src_line<N>" keys). When the
+// item belongs to a function but none of its locations is resolved (no debug information: the file is empty
+// or "??"), this is told at once instead of offering to search for a file with no name.
+void TV::open_item_sources(const QVariantMap &userData, QWidget *parent)
+{
+    if (userData.isEmpty() || !elements)
+        return; // not an item of a function
+    const QString func = userData["func_name"].toString();
+    bool resolved = false;
+    for (int addr_num = 0; addr_num < elements->get_trace_info().num_addrs; addr_num++) {
+        const QString sourceFile = userData.value("src_file" + QString::number(addr_num)).toString().trimmed();
+        const int sourceLine = userData.value("src_line" + QString::number(addr_num)).toInt();
+        if (sourceFile.isEmpty() || sourceFile.startsWith('?'))
+            continue;
+        resolved = true;
+        // Create and show TextViewer with the source file
+        TextViewer *viewer = new TextViewer(nullptr);
+        if (viewer->load_file(elements->get_trace_info().src_dirs, sourceFile) == 0) {
+            elements->update_src_dirs();
+            if (sourceLine > 0)
+                viewer->go_to_line(sourceLine);
+            int found_line = viewer->search_text(func, false, TextViewer::SearchFromCurrent, false, false);
+            if (found_line > 0 && sourceLine - found_line < MAX_L_DISTANCE) {
+                viewer->go_to_line(found_line);
+            }
+            viewer->show();
+        }
+    }
+    if (!resolved) {
+        QMessageBox::information(parent, tr("Source"), func.isEmpty() ? tr("The source file cannot be determined.") : tr("The source file of %1 cannot be determined.").arg(func));
+    }
+}
+
 void TV::handle_table_item_clicked(QTableWidgetItem *item)
 {
     if (!item)
         return;
-
-    // Check if the item has source file data
-    QVariantMap userData = item->data(Qt::UserRole).toMap();
-    for (int addr_num = 0; addr_num < elements->get_trace_info().num_addrs; addr_num++) {
-        QString file_key = "src_file" + QString::number(addr_num);
-        QString line_key = "src_line" + QString::number(addr_num);
-
-        if (userData.contains(file_key) && userData.contains(line_key)) {
-            QString sourceFile = userData[file_key].toString();
-            int sourceLine = userData[line_key].toInt();
-            QString func = userData["func_name"].toString();
-
-            if (!sourceFile.isEmpty()) {
-                // Create and show TextViewer with the source file
-                TextViewer *viewer = new TextViewer(nullptr);
-                if (viewer->load_file(elements->get_trace_info().src_dirs, sourceFile) == 0) {
-                    elements->update_src_dirs();
-                    if (sourceLine > 0)
-                        viewer->go_to_line(sourceLine);
-                    int found_line = viewer->search_text(func, false, TextViewer::SearchFromCurrent, false, false);
-                    if (found_line > 0 && sourceLine - found_line < MAX_L_DISTANCE) {
-                        viewer->go_to_line(found_line);
-                    }
-                    viewer->show();
-                }
-            }
-        }
-    }
+    open_item_sources(item->data(Qt::UserRole).toMap(), item->tableWidget());
 }
 void TV::handle_tree_item_clicked(QTreeWidgetItem *item)
 {
     if (!item)
         return;
 
-    // Check if the item has source file data. The data may be stored in
-    // different columns depending on which tree view triggered the click,
+    // The data may be stored in different columns depending on which tree view triggered the click,
     // so search all columns for a non-empty map.
     QVariantMap userData;
     for (int col = 0; col < item->columnCount(); col++) {
@@ -1394,31 +1413,7 @@ void TV::handle_tree_item_clicked(QTreeWidgetItem *item)
             break;
         }
     }
-    for (int addr_num = 0; addr_num < elements->get_trace_info().num_addrs; addr_num++) {
-        QString file_key = "src_file" + QString::number(addr_num);
-        QString line_key = "src_line" + QString::number(addr_num);
-
-        if (userData.contains(file_key) && userData.contains(line_key)) {
-            QString sourceFile = userData[file_key].toString();
-            int sourceLine = userData[line_key].toInt();
-            QString func = userData["func_name"].toString();
-
-            if (!sourceFile.isEmpty()) {
-                // Create and show TextViewer with the source file
-                TextViewer *viewer = new TextViewer(nullptr);
-                if (viewer->load_file(elements->get_trace_info().src_dirs, sourceFile) == 0) {
-                    elements->update_src_dirs();
-                    if (sourceLine > 0)
-                        viewer->go_to_line(sourceLine);
-                    int found_line = viewer->search_text(func, false, TextViewer::SearchFromCurrent, false, false);
-                    if (found_line > 0 && sourceLine - found_line < MAX_L_DISTANCE) {
-                        viewer->go_to_line(found_line);
-                    }
-                    viewer->show();
-                }
-            }
-        }
-    }
+    open_item_sources(userData, item->treeWidget());
 }
 void TV::handle_info_item_clicked(QTreeWidgetItem *item, int column)
 {
