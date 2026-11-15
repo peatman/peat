@@ -7,6 +7,8 @@
     <file alias="ellipse.svg">icons/light/ellipse.svg</file>
     <file alias="arrow.svg">icons/light/arrow.svg</file>
     <file alias="zoom_in.svg">icons/light/zoom_in.svg</file>
+    <file alias="find_index.svg">icons/light/find_index.svg</file>
+    <file alias="find_function.svg">icons/light/find_function.svg</file>
     <file alias="zoom_out.svg">icons/light/zoom_out.svg</file>
     <file alias="undo.svg">icons/light/undo.svg</file>
     <file alias="redo.svg">icons/light/redo.svg</file>
@@ -19,6 +21,8 @@
     <file alias="ellipse.svg">icons/dark/ellipse.svg</file>
     <file alias="arrow.svg">icons/dark/arrow.svg</file>
     <file alias="zoom_in.svg">icons/dark/zoom_in.svg</file>
+    <file alias="find_index.svg">icons/dark/find_index.svg</file>
+    <file alias="find_function.svg">icons/dark/find_function.svg</file>
     <file alias="zoom_out.svg">icons/dark/zoom_out.svg</file>
     <file alias="undo.svg">icons/dark/undo.svg</file>
     <file alias="redo.svg">icons/dark/redo.svg</file>

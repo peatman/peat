@@ -161,11 +161,11 @@ TVMainWindow::TVMainWindow(QWidget *parent)
     ui->actionReDraw->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
     ui->actionZoomIn->setIcon(make_presentation_tool_icon("zoom_in"));
     ui->actionZoomOut->setIcon(make_presentation_tool_icon("zoom_out"));
-    ui->actionFind->setIcon(style()->standardIcon(QStyle::SP_FileDialogContentsView));
+    ui->actionFind->setIcon(make_presentation_tool_icon("find_index"));
     ui->actionLegend->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
 
     // View history: Back/Forward over the previously shown views, placed right
-    // after Zoom Out in the toolbar and before Reset in the View menu.
+    // after Zoom Out in the toolbar (the View menu is put together below).
     view_back_action = new QAction(tr("&Back"), this);
     view_back_action->setIcon(style()->standardIcon(QStyle::SP_ArrowBack));
     view_back_action->setShortcuts(QKeySequence::Back);
@@ -190,14 +190,14 @@ TVMainWindow::TVMainWindow(QWidget *parent)
         QAction *before = (zoom_out_index >= 0 && zoom_out_index + 1 < actions.size()) ? actions.at(zoom_out_index + 1) : nullptr;
         ui->toolBar->insertAction(before, view_back_action);
         ui->toolBar->insertAction(before, view_forward_action);
-        ui->menuView->insertAction(ui->actionReset, view_back_action);
-        ui->menuView->insertAction(ui->actionReset, view_forward_action);
     }
 
     QAction *copy_picture_action = new QAction(tr("&Copy picture"), this);
     copy_picture_action->setShortcut(QKeySequence(tr("Ctrl+Shift+C")));
     copy_picture_action->setStatusTip(tr("Copy the current picture with its time axis to the clipboard"));
     connect(copy_picture_action, &QAction::triggered, this, [this]() {
+        if (!require_trace(tr("Copy picture")))
+            return;
         const QImage picture = compose_picture();
         if (!picture.isNull())
             QApplication::clipboard()->setImage(picture);
@@ -211,11 +211,18 @@ TVMainWindow::TVMainWindow(QWidget *parent)
     QAction *find_function_action = new QAction(tr("Find f&unction..."), this);
     find_function_action->setShortcut(QKeySequence(tr("Ctrl+Shift+F")));
     find_function_action->setStatusTip(tr("Find the next or previous call of a function by its name"));
-    connect(find_function_action, &QAction::triggered, this, [this]() { tv->open_find_function_by_name(); });
-    ui->menuView->insertAction(ui->actionFilter, go_to_time_action);
-    ui->menuView->insertAction(ui->actionFilter, ui->actionFind);
-    ui->menuView->insertAction(ui->actionFilter, find_function_action);
-    ui->menuView->insertSeparator(ui->actionFilter);
+    find_function_action->setIcon(make_presentation_tool_icon("find_function"));
+    find_function_action->setToolTip(tr("Find function by name (%1)").arg(find_function_action->shortcut().toString(QKeySequence::NativeText)));
+    connect(find_function_action, &QAction::triggered, this, [this]() {
+        if (require_trace(tr("Find function")))
+            tv->open_find_function_by_name();
+    });
+    {
+        // in the toolbar right after Find by index
+        const QList<QAction *> actions = ui->toolBar->actions();
+        const int find_index = actions.indexOf(ui->actionFind);
+        ui->toolBar->insertAction(find_index >= 0 ? actions.value(find_index + 1) : nullptr, find_function_action);
+    }
 
     QAction *taller_rows_action = new QAction(tr("&Taller rows"), this);
     taller_rows_action->setShortcut(QKeySequence(tr("Ctrl+Up")));
@@ -228,16 +235,12 @@ TVMainWindow::TVMainWindow(QWidget *parent)
     QAction *legend_window_action = new QAction(tr("&Legend window"), this);
     legend_window_action->setStatusTip(tr("Show the colours and their meanings in a window beside the trace"));
     connect(legend_window_action, &QAction::triggered, this, &TVMainWindow::show_legend_window);
-    ui->menuView->insertAction(ui->actionFilter, taller_rows_action);
-    ui->menuView->insertAction(ui->actionFilter, shorter_rows_action);
-    ui->menuView->insertAction(ui->actionFilter, legend_window_action);
     QAction *highlight_action = new QAction(tr("&Highlight..."), this);
     highlight_action->setStatusTip(tr("Dim all events but those of a function, a communicator or a message size"));
     connect(highlight_action, &QAction::triggered, this, &TVMainWindow::show_highlight_dialog);
-    ui->menuView->insertAction(ui->actionFilter, highlight_action);
+    // what the toolbar shows for the cursor and the bounds of the view
+    QMenu *units_menu = new QMenu(tr("Ti&me units"), this);
     {
-        // what the toolbar shows for the cursor and the bounds of the view
-        QMenu *units_menu = new QMenu(tr("Time &units"), this);
         QActionGroup *units_group = new QActionGroup(this);
         QSettings settings;
         const int units = settings.value("View/time_units", 0).toInt() == 1 ? 1 : 0;
@@ -254,24 +257,78 @@ TVMainWindow::TVMainWindow(QWidget *parent)
             });
         }
         tv->set_time_units(units);
-        ui->menuView->insertMenu(ui->actionFilter, units_menu);
     }
-    ui->menuView->insertSeparator(ui->actionFilter);
+
+    // The View menu, grouped by what an entry is for. The actions made in the designer are owned by the window,
+    // so clearing the menu only drops its layout.
+    ui->actionFind->setText(tr("&Find by index..."));
+    ui->actionFind->setToolTip(tr("Find a call by its rank and index (%1)").arg(ui->actionFind->shortcut().toString(QKeySequence::NativeText)));
+    ui->actionFilter->setText(tr("Filt&er..."));
+    QMenu *view = ui->menuView;
+    view->clear();
+    // moving over the trace
+    view->addAction(ui->actionZoomIn);
+    view->addAction(ui->actionZoomOut);
+    view->addAction(view_back_action);
+    view->addAction(view_forward_action);
+    view->addAction(ui->actionReset);
+    view->addAction(ui->actionReDraw);
+    view->addSeparator();
+    // jumping to a place
+    view->addAction(go_to_time_action);
+    view->addAction(ui->actionFind);
+    view->addAction(find_function_action);
+    view->addSeparator();
+    // what is drawn
+    view->addAction(ui->actionFilter);
+    view->addAction(highlight_action);
+    view->addSeparator();
+    // how it is drawn
+    view->addAction(taller_rows_action);
+    view->addAction(shorter_rows_action);
+    view->addMenu(units_menu);
+    view->addSeparator();
+    // windows beside the trace
+    view->addAction(legend_window_action);
+    view->addAction(ui->actionCommunicators);
 
     QAction *late_sender_action = new QAction(tr("Late &sender"), this);
     late_sender_action->setStatusTip(tr("Messages whose receiver waited for the send to start, the longest wait first"));
-    connect(late_sender_action, &QAction::triggered, this, [this]() { tv->find_P2P_late(true); });
+    connect(late_sender_action, &QAction::triggered, this, [this]() {
+        if (require_trace(tr("Late sender")))
+            tv->find_P2P_late(true);
+    });
     QAction *late_receiver_action = new QAction(tr("Late &receiver"), this);
     late_receiver_action->setStatusTip(tr("Messages whose sender waited for the receive to start, the longest wait first"));
-    connect(late_receiver_action, &QAction::triggered, this, [this]() { tv->find_P2P_late(false); });
+    connect(late_receiver_action, &QAction::triggered, this, [this]() {
+        if (require_trace(tr("Late receiver")))
+            tv->find_P2P_late(false);
+    });
     ui->menuPoint_to_Point->addAction(late_sender_action);
     ui->menuPoint_to_Point->addAction(late_receiver_action);
 
     QAction *statistics_action = new QAction(tr("&Statistics of the view"), this);
     statistics_action->setStatusTip(tr("Time per function, MPI time per rank and messages between ranks in the shown window"));
-    connect(statistics_action, &QAction::triggered, this, [this]() { tv->show_statistics(false); });
+    connect(statistics_action, &QAction::triggered, this, [this]() {
+        if (require_trace(tr("Statistics")))
+            tv->show_statistics(false);
+    });
     ui->menuAnalyse->addSeparator();
     ui->menuAnalyse->addAction(statistics_action);
+
+    // Greyed out until a trace is loaded (see proceed_load_data); Add bookmark follows in rebuild_bookmarks_menu().
+    // Back/Forward follow the view history, ReLoad and Presentation are switched on their own.
+    trace_actions = {ui->actionSnapshot, copy_picture_action,
+                     ui->actionZoomIn, ui->actionZoomOut, ui->actionReset, ui->actionReDraw,
+                     go_to_time_action, ui->actionFind, find_function_action,
+                     ui->actionFilter, highlight_action,
+                     taller_rows_action, shorter_rows_action,
+                     ui->actionCommunicators,
+                     ui->actionP2PLeast_BW, ui->actionP2PMost_Imbalance, late_sender_action, late_receiver_action,
+                     ui->actionCollLeast_BW, ui->actionCollMost_Imbalance, statistics_action};
+    for (QAction *action : std::as_const(trace_actions)) {
+        action->setEnabled(false);
+    }
 
     bookmarks_menu = new QMenu(tr("&Bookmarks"), this);
     menuBar()->insertMenu(ui->menuLegend->menuAction(), bookmarks_menu);
@@ -308,11 +365,11 @@ TVMainWindow::TVMainWindow(QWidget *parent)
     connect(presentation_action, &QAction::toggled, this, &TVMainWindow::toggle_presentation_mode);
     // Presentation mode requires a loaded trace; disabled until one is loaded.
     presentation_action->setEnabled(false);
-    // Presentation has to be placed right after the Find action/separator.
+    // Presentation has to be placed right after the Find actions/separator.
     QAction *insert_before_presentation = nullptr;
     {
         const QList<QAction *> actions = ui->toolBar->actions();
-        const int find_index = actions.indexOf(ui->actionFind);
+        const int find_index = actions.indexOf(find_function_action);
         if (find_index >= 0 && find_index + 1 < actions.size()) {
             insert_before_presentation = actions.at(find_index + 1);
         }
@@ -473,14 +530,32 @@ TVMainWindow::~TVMainWindow()
     save_presentation_color();
     delete ui;
 }
+bool TVMainWindow::require_trace(const QString &what)
+{
+    if (tv->is_busy()) {
+        return false; // the action will make sense in a moment: no message
+    }
+    if (!tv->has_trace()) {
+        QMessageBox::information(this, what, tr("Please, load a trace first."));
+        return false;
+    }
+    return true;
+}
+
 void TVMainWindow::snap_shot()
 {
+    if (!require_trace(tr("Snapshot"))) {
+        return;
+    }
     save_picture_as("untitled.png");
 }
 
 // View > Highlight: which events stay bright
 void TVMainWindow::show_highlight_dialog()
 {
+    if (!require_trace(tr("Highlight"))) {
+        return;
+    }
     HighlightDialog d(this);
     const Communicators *communicators = nullptr;
     if (!info.path.isEmpty() && !info.trace_files.isEmpty() && CommunicatorsDialog::load(this, info, tv->get_communicators_data()))
@@ -528,7 +603,7 @@ void TVMainWindow::save_picture_as(const QString &suggested_name)
 // Ctrl+Up / Ctrl+Down: taller or shorter thread rows (the same value as in Options > Drawing).
 void TVMainWindow::change_row_height(int direction)
 {
-    if (tv->is_presentation_mode()) {
+    if (!require_trace(direction > 0 ? tr("Taller rows") : tr("Shorter rows")) || tv->is_presentation_mode()) {
         return;
     }
     const int height = qBound(25, direction > 0 ? shown.row_height_percent * 5 / 4 : shown.row_height_percent * 4 / 5, 400);
@@ -583,7 +658,7 @@ QImage TVMainWindow::compose_picture() const
 void TVMainWindow::go_to_time()
 {
     qreal left, right, model_left, model_right, clock_freq;
-    if (!tv->get_view_info(left, right, model_left, model_right, clock_freq) || !(clock_freq > 0)) {
+    if (!require_trace(tr("Go to time")) || !tv->get_view_info(left, right, model_left, model_right, clock_freq) || !(clock_freq > 0)) {
         return;
     }
     const double last = (model_right - model_left) / clock_freq;
@@ -605,6 +680,7 @@ void TVMainWindow::rebuild_bookmarks_menu()
     QAction *add_action = bookmarks_menu->addAction(tr("&Add bookmark..."), this, &TVMainWindow::add_bookmark);
     add_action->setShortcut(QKeySequence(tr("Ctrl+B")));
     add_action->setStatusTip(tr("Remember the current view under a name"));
+    add_action->setEnabled(trace_loaded);
     QAction *remove_action = bookmarks_menu->addAction(tr("&Remove all bookmarks"), this, [this]() {
         if (!info.write_bookmarks(QStringList())) {
             QMessageBox::warning(this, tr("Bookmarks"), tr("Cannot write %1").arg(info.user_file_name()));
@@ -642,7 +718,7 @@ void TVMainWindow::remove_bookmark(const QString &bookmark)
 void TVMainWindow::add_bookmark()
 {
     qreal left, right, model_left, model_right, clock_freq;
-    if (info.trace_info_file.isEmpty() || !tv->get_view_info(left, right, model_left, model_right, clock_freq)) {
+    if (!require_trace(tr("Add bookmark")) || info.trace_info_file.isEmpty() || !tv->get_view_info(left, right, model_left, model_right, clock_freq)) {
         return;
     }
     const QString suggested = clock_freq > 0 ? tr("at %1, length %2").arg(format_seconds((left - model_left) / clock_freq, 6), format_seconds((right - left) / clock_freq)) : QString();
@@ -955,6 +1031,10 @@ void TVMainWindow::proceed_load_data()
             setWindowTitle("Trace data " + trace_file.absoluteFilePath());
             ui->actionReLoad->setEnabled(true);
             presentation_action->setEnabled(true);
+            trace_loaded = true;
+            for (QAction *action : std::as_const(trace_actions)) {
+                action->setEnabled(true);
+            }
             rebuild_bookmarks_menu();
         }
     } else {
@@ -1019,6 +1099,9 @@ bool get_file_info(const QString &user_file, QFileInfo &trace_file)
 
 void TVMainWindow::on_actionReset_triggered()
 {
+    if (!require_trace(tr("Reset"))) {
+        return;
+    }
     disable_all_actions();
     tv->reset_view();
     enable_all_actions();
@@ -1026,7 +1109,7 @@ void TVMainWindow::on_actionReset_triggered()
 
 void TVMainWindow::on_actionCollLeast_BW_triggered()
 {
-    if (tv) {
+    if (require_trace(tr("Collectives: Least BW"))) {
         PEAT_Message_Size cutoff = 0;
         CutoffDialog dialog(this);
         if (dialog.exec() == QDialog::Accepted) {
@@ -1038,13 +1121,13 @@ void TVMainWindow::on_actionCollLeast_BW_triggered()
 
 void TVMainWindow::on_actionCollMost_Imbalance_triggered()
 {
-    if (tv)
+    if (require_trace(tr("Collectives: Most Imbalance")))
         tv->find_coll_m_ib();
 }
 
 void TVMainWindow::on_actionP2PLeast_BW_triggered()
 {
-    if (tv) {
+    if (require_trace(tr("Point to Point: Least BW"))) {
         PEAT_Message_Size cutoff = 0;
         CutoffDialog dialog(this);
         if (dialog.exec() == QDialog::Accepted) {
@@ -1056,27 +1139,30 @@ void TVMainWindow::on_actionP2PLeast_BW_triggered()
 
 void TVMainWindow::on_actionP2PMost_Imbalance_triggered()
 {
-    if (tv)
+    if (require_trace(tr("Point to Point: Most Imbalance")))
         tv->find_P2P_m_ib();
 }
 
 void TVMainWindow::on_actionZoomIn_triggered()
 {
+    if (!require_trace(tr("Zoom In"))) {
+        return;
+    }
     disable_all_actions();
-    if (tv)
-        tv->zoom_in();
+    tv->zoom_in();
     enable_all_actions();
 }
 
 void TVMainWindow::on_actionZoomOut_triggered()
 {
-    if (tv)
+    if (require_trace(tr("Zoom Out")))
         tv->zoom_out();
 }
 
 void TVMainWindow::on_actionReDraw_triggered()
 {
-    tv->redraw_view();
+    if (require_trace(tr("ReDraw")))
+        tv->redraw_view();
 }
 
 void TVMainWindow::disable_all_actions()
@@ -1092,15 +1178,22 @@ void TVMainWindow::enable_all_actions()
 
 void TVMainWindow::on_actionFind_triggered()
 {
-    tv->open_find_function();
+    if (require_trace(tr("Find by index")))
+        tv->open_find_function();
 }
 
 void TVMainWindow::on_actionFilter_triggered()
 {
+    if (!require_trace(tr("Filter"))) {
+        return;
+    }
     FilterDialog d(this);
     d.set_properties(shown);
     if (!info.path.isEmpty() && !info.trace_files.isEmpty() && CommunicatorsDialog::load(this, info, tv->get_communicators_data()))
         d.set_communicators(&tv->get_communicators_data()->communicators, shown.hidden_comms);
+    const std::vector<PEAT_Rank> *loaded_ranks = tv->get_loaded_ranks();
+    if (loaded_ranks && !loaded_ranks->empty())
+        d.set_ranks(*loaded_ranks, shown.hidden_ranks);
     if (d.exec() == QDialog::Accepted) { // OK saves, Apply saves and redraws, Cancel drops the changes
         d.get_properties(shown);
         QSettings settings;
@@ -1113,7 +1206,7 @@ void TVMainWindow::on_actionFilter_triggered()
 
 void TVMainWindow::on_actionCommunicators_triggered()
 {
-    if (!CommunicatorsDialog::load(this, info, tv->get_communicators_data()))
+    if (!require_trace(tr("Communicators")) || !CommunicatorsDialog::load(this, info, tv->get_communicators_data()))
         return;
     CommunicatorsDialog dialog(this);
     dialog.set_communicators(tv->get_communicators_data()->communicators);

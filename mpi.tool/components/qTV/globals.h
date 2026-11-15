@@ -83,6 +83,9 @@ struct TV_TraceParts {
     bool highlighting() const { return highlight_func != 0 || highlight_comm != 0 || highlight_min_bytes > 0; }
     std::set<PEAT_MPI_Comm> hidden_comms; // elements of these communicators are not shown
     bool comm_visible(PEAT_MPI_Comm comm) const { return hidden_comms.empty() || hidden_comms.count(comm) == 0; }
+    // Rows of these ranks are left out of the picture. It is a request: the picture on the screen keeps the set
+    // it was drawn with (Elements_Paint::hidden) until the next redraw.
+    std::set<PEAT_Rank> hidden_ranks;
     /*
     bool
         mpi_local_functions=true,

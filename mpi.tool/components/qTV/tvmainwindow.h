@@ -146,6 +146,9 @@ class TVMainWindow : public QMainWindow
     void save_recent_files();
     void proceed_load_data();
     bool offer_save_presentation();
+    // To be called first by every action that works on a loaded trace: tells that there is none (what is the
+    // name of the action, the title of the message). False also while a trace is being loaded or drawn.
+    bool require_trace(const QString &what);
     void update_presentation_color_icon();
     void save_presentation_color();
     static QIcon make_presentation_tool_icon(const QString &kind);
@@ -174,6 +177,8 @@ class TVMainWindow : public QMainWindow
     QAction *view_back_action;
     QAction *view_forward_action;
     QAction *presentation_action;
+    QList<QAction *> trace_actions; // work on a loaded trace: greyed out until there is one
+    bool trace_loaded = false;
     QAction *presentation_color_action;
     QAction *presentation_curve_action;
     QAction *presentation_line_action;

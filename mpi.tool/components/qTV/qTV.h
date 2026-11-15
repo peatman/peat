@@ -133,6 +133,9 @@ class TV : public QWidget
     {
         presentation_width = width;
     }
+    // A trace is loaded and its picture exists; busy while a trace is being read or the picture is being made.
+    bool has_trace() const { return elements && main_image; }
+    bool is_busy() const { return loading || image_creating; }
     bool is_presentation_mode() const
     {
         return presentation_mode;
@@ -168,6 +171,8 @@ class TV : public QWidget
     void undo_presentation();
     void redo_presentation();
     std::shared_ptr<Communicators_Data> &get_communicators_data() { return communicators_data; }
+    // The ranks of the loaded trace, NULL if there is none or it is being loaded.
+    const std::vector<PEAT_Rank> *get_loaded_ranks() const { return elements && !loading ? &elements->get_loaded_ranks() : NULL; }
 
     // ---- View history (Back/Forward) ----
     // Every rendered view is remembered as its two time bounds only (no image and
@@ -215,6 +220,7 @@ class TV : public QWidget
     void draw_main_image();
     void handle_table_item_clicked(QTableWidgetItem *item);
     void handle_tree_item_clicked(QTreeWidgetItem *item);
+    void open_item_sources(const QVariantMap &userData, QWidget *parent); // shared by the two handlers above
     void handle_info_item_clicked(QTreeWidgetItem *item, int column);
 
   protected:
