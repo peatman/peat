@@ -34,15 +34,27 @@ cmake_minimum_required(VERSION 3.16...4.4)
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 project(tractor CXX C)
 unset(CMAKE_TRY_COMPILE_TARGET_TYPE)
-# Without a linking compiler test CMake detects no implicit link dirs and no CMAKE_LIBRARY_ARCHITECTURE, so on
-# multiarch distros (Debian/Ubuntu) find_library misses /usr/lib/<triplet> (libz, libhwloc, ...). Ask the compiler.
-if(NOT CMAKE_LIBRARY_ARCHITECTURE)
-  execute_process(COMMAND ${CMAKE_CXX_COMPILER} -print-multiarch
-                  OUTPUT_VARIABLE _tractor_multiarch OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET RESULT_VARIABLE _rc)
-  if(_rc EQUAL 0 AND _tractor_multiarch MATCHES "^[A-Za-z0-9_]+-[A-Za-z0-9_-]+$")
-    set(CMAKE_LIBRARY_ARCHITECTURE ${_tractor_multiarch})
-    message(STATUS "tractor: CMAKE_LIBRARY_ARCHITECTURE=${CMAKE_LIBRARY_ARCHITECTURE} (from -print-multiarch)")
-  endif()
+# Without a linking compiler test CMake detects no implicit link directories (nor CMAKE_LIBRARY_ARCHITECTURE), so
+# find_library would miss the ones only the compiler knows, e.g. /usr/lib/x86_64-linux-gnu on Debian/Ubuntu (libz,
+# libhwloc, libfabric, libcupti, ...). Take them from the compiler itself (-print-search-dirs: GCC, clang, icpx; nvc++
+# has none and adds nothing) as system library directories: searched after everything given explicitly (HINTS,
+# CMAKE_PREFIX_PATH, OFIPATH, ...), and not at all where NO_DEFAULT_PATH is used.
+execute_process(COMMAND ${CMAKE_CXX_COMPILER} -print-search-dirs
+                OUTPUT_VARIABLE _out ERROR_QUIET RESULT_VARIABLE _rc)
+if(_rc EQUAL 0 AND _out MATCHES "(^|\n)libraries: *=?([^\n]*)")
+  string(REPLACE ":" ";" _dirs "${CMAKE_MATCH_2}")
+  set(_tractor_compiler_lib_dirs)
+  foreach(_d IN LISTS _dirs)
+    if(_d AND IS_DIRECTORY "${_d}")
+      get_filename_component(_d "${_d}" ABSOLUTE) # resolve the ../.. of the compiler's own paths
+      if(NOT _d IN_LIST _tractor_compiler_lib_dirs AND NOT _d IN_LIST CMAKE_SYSTEM_LIBRARY_PATH)
+        list(APPEND _tractor_compiler_lib_dirs "${_d}")
+      endif()
+    endif()
+  endforeach()
+  list(APPEND CMAKE_SYSTEM_LIBRARY_PATH ${_tractor_compiler_lib_dirs})
+  string(REPLACE ";" " " _shown "${_tractor_compiler_lib_dirs}")
+  message(STATUS "tractor: library directories of the compiler: ${_shown}")
 endif()
 
 # libfabric: the system one unless OFIPATH (-DOFIPATH, or $OFIPATH / $OFI_PATH as env.sh sets them; libfabric_eng=-eng

@@ -301,6 +301,9 @@ jobs:
   llama:
     name: llama.cpp + CUDA tracing
     runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash # -eo pipefail: a failing "cmake ... | tee" fails the step
     env:
       LLAMA_CPP_REF: 4c4a0f0a4246bc36a3724d12238d5624714dcb2f # llama.cpp master the wrappers were written for
       LLAMA_CPP_DIR: ${{ github.workspace }}/.ci-llama/src
@@ -389,10 +392,24 @@ jobs:
           MPICH_CC: clang
           MPICH_CXX: clang++
         run: |
+          # the configure check does not link (no implicit link directories from CMake): CMakeLists.txt takes the library
+          # directories from the compiler (-print-search-dirs); /usr/lib/x86_64-linux-gnu (libz etc.) must be among them
+          clang++ -v -x c++ -E /dev/null -o /dev/null 2>&1 | grep -E "clang version|Selected GCC"
+          mpicxx -show
+          printf '#include <mpi.h>\n#include <string>\nint main(){std::string s("x"); return (int)s.size() - 1;}\n' > "$RUNNER_TEMP/t.cpp"
+          mpicxx "$RUNNER_TEMP/t.cpp" -o "$RUNNER_TEMP/t" || { echo "::error::clang through mpicxx cannot build a C++ program"; exit 1; }
           cmake -S $TRACTOR_SRC -B build/tractor-clang -G Ninja -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
-            -DTRACTOR_TARGET=mpich4 -DGPU=ON -DCUPTI=ON -DLLAMA=ON -DLLAMA_ROOT="$LLAMA_CPP_DIR" | tee build/tractor-clang.cfg
+            -DTRACTOR_TARGET=mpich4 -DGPU=ON -DCUPTI=ON -DLLAMA=ON -DLLAMA_ROOT="$LLAMA_CPP_DIR" | tee build/tractor-clang.cfg \
+            || { grep -B2 -A20 -iE "error|failed" build/tractor-clang/CMakeFiles/CMakeConfigureLog.yaml | head -80; exit 1; }
           grep -q "CXX compiler identification is Clang" build/tractor-clang.cfg || { echo "::error::not built with clang"; exit 1; }
-          cmake --build build/tractor-clang && cmake --install build/tractor-clang
+          grep -E "tractor: library directories of the compiler: .*/usr/lib/x86_64-linux-gnu( |$)" build/tractor-clang.cfg \
+            || { echo "::error::clang's library directories lack /usr/lib/x86_64-linux-gnu"; exit 1; }
+          # installed to mpi.tool/lib/<TRACTOR_COMPILER>: clang here (the GCC builds go to lib/gnu)
+          grep "^TRACTOR_COMPILER:" build/tractor-clang/CMakeCache.txt
+          grep -q "^TRACTOR_COMPILER:STRING=clang$" build/tractor-clang/CMakeCache.txt \
+            || { echo "::error::clang build not detected as TRACTOR_COMPILER=clang"; exit 1; }
+          cmake --build build/tractor-clang
+          cmake --install build/tractor-clang
           ls -l mpi.tool/lib/clang/libtractor.mpich4.gpu.so
       - name: Build tractor with GNU make (GPU)
         working-directory: mpi.tool/components/tractor/src
