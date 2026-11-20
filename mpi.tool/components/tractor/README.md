@@ -29,6 +29,7 @@ See [doc/README.md](doc/README.md) for older build/usage/trace-format documentat
 - `src/transport_func_layers.pl`, `src/funcids_convert.pl`(`.old`) - code generators for transport-API functions and MPI function-ID tables.
 - `src/pinc/` - per-call-category C++ code snippets included by the generated MPI layer (collectives, requests, local/buffer handling, transport-API direct/poll/ipeek, GPU).
 - `doc/` - README and trace format description documents.
+- `tests/ci/smoke.sh` - CI end-to-end test of the MPI tracing (func-classes tests under tractor -> mat -> ctt); `tests/ci/llama.sh` - the same for llama.cpp and CUDA: llama-simple under tractor (stages, ggml CPU kernels, llama off, CUDA) -> mat -> ctt, output unchanged, Modules remark; with a GPU also kernel/copy records and their binds. CI runs it on a pinned llama.cpp and Ubuntu's CUDA 12.0 packages, with the CMake (GCC, clang) and make libraries.
 - `Build.sh`/`BuildAllg.sh`/`BuildAlli.sh` - build scripts for GNU/Intel toolchains across supported MPI.
 
 ## Transport-API profiling
@@ -50,12 +51,13 @@ Note: `PEAT_TRACTOR_TRANSPORT_LAYER` is currently non-functional - the env-var p
 
 ## llama.cpp pipeline profiling
 
-`LLAMA_PARSE=on LLAMA_ROOT=<llama.cpp source tree>` (CMake: `-DLLAMA=ON -DLLAMA_ROOT=...`) adds wrappers for the coarse llama.cpp stages, the `CLASS_LLAMA` entries of `../common/mpi_func.inc` (library suffix `.llama`): `llama_model_load_from_file`, `llama_init_from_model`, `llama_tokenize`, `llama_process`, `llama_get_logits_ith`, `llama_sampler_sample`, `llama_token_to_piece`, `llama_free`, `llama_model_free` and the scheduler calls libllama makes into libggml-base, `ggml_backend_sched_alloc_graph`, `ggml_backend_sched_graph_compute_async`, `ggml_backend_sched_synchronize` (the same for every ggml backend; with a GPU backend the device time shows up in `synchronize`).
+Part of the base build, like OMPT, when it can be built: `LLAMA_PARSE=auto` (default; CMake `-DLLAMA=AUTO`) builds it when llama.cpp's headers are found - `LLAMA_ROOT=<llama.cpp source tree or install prefix>`, else the installed ones (`pkg-config llama`, `/usr/local/include`, `/usr/include`) - and have the API of the wrappers (checked by `src/t_llama_probe.cpp`: a llama.cpp with another API is left out); `LLAMA_PARSE=on|off` (CMake `-DLLAMA=ON|OFF`) forces it. It adds wrappers for the coarse llama.cpp stages, the `CLASS_LLAMA` entries of `../common/mpi_func.inc` (no change of the library name): `llama_model_load_from_file`, `llama_init_from_model`, `llama_tokenize`, `llama_process`, `llama_get_logits_ith`, `llama_sampler_sample`, `llama_token_to_piece`, `llama_free`, `llama_model_free` and the scheduler calls libllama makes into libggml-base, `ggml_backend_sched_alloc_graph`, `ggml_backend_sched_graph_compute_async`, `ggml_backend_sched_synchronize` (the same for every ggml backend; with a GPU backend the device time shows up in `synchronize`).
 
-- They are found with `dlsym(RTLD_NEXT, ...)`, so llama.cpp has to be built with shared libraries (`-DBUILD_SHARED_LIBS=ON`), and compiled against `LLAMA_ROOT/include/llama.h` (two of them take structures by value): use the source tree the traced llama.cpp was built from.
+- They are found with `dlsym(RTLD_NEXT, ...)`, so llama.cpp has to be built with shared libraries (`-DBUILD_SHARED_LIBS=ON`), and compiled against the `llama.h` found (two of them take structures by value): use the headers of the llama.cpp the traced llama.cpp was built from.
 - Records are nested (`llama_process` -> `ggml_backend_sched_graph_compute_async`, ...), carry no parameters and are read as local events by mat/ctt/pet/qTV. Generated from `pinc/llama.code.inc`.
 - `LLAMA_DEPRECATED=on` (CMake `-DLLAMA_DEPRECATED=ON`) adds `llama_decode`/`llama_encode`, deprecated in llama.cpp in favour of `llama_process`; they are under `#ifdef _PARSE_LLAMA_DEPRECATED_` in `mpi_func.inc`.
 - A llama.cpp process does not need MPI: the trace is written at exit when it recorded any llama.cpp stage.
+- The second remark of the com file lists the modules built into the library and, for the ones with a run-time switch, whether they recorded, e.g. `0:Modules: MPI 3.1(.openmpi5.gpu) OpenCL LevelZero OpenACC CUDA 13.5/CUPTI 130500(recording off) llama.cpp(stages on, ggml CPU kernels on) PTPD timer=nano`. CUDA says `recording failed` when `PEAT_TRACTOR_PARSE_CUDA=1` but CUPTI did not start (reported on stderr once, e.g. no driver); the run goes on without CUDA records.
 
 ### ggml CPU kernels
 
@@ -68,7 +70,11 @@ The same builds also wrap the ggml CPU backend (`CLASS_GGML_CPU`, generated from
 
 ## CUDA profiling (CUPTI) and cuBLAS
 
-`CUPTI_PARSE=on CUDA_ROOT=<CUDA toolkit>` (CMake: `-DCUPTI=ON -DCUDA_ROOT=...`, which also selects `PEAT_TIMER=nano`) adds `src/t_cupti.cpp` and the `CLASS_CUDA`/`CLASS_CUBLAS` entries of `../common/mpi_func.inc` (library suffix `.cuda`, linked to that toolkit's `libcupti`: use the CUDA version the application runs with). Recording is off unless `PEAT_TRACTOR_PARSE_CUDA=1`. Independent of `LLAMA_PARSE`, works for any CUDA application.
+CUDA is one of the GPU APIs: `PARSE_GPU=on` (CMake `-DGPU=ON`) builds it when a CUDA toolkit is found (`CUPTI_PARSE=auto`), `CUPTI_PARSE=on|off [CUDA_ROOT=<CUDA toolkit>]` (CMake: `-DCUPTI=ON|OFF|AUTO [-DCUDA_ROOT=...]`, which also selects `PEAT_TIMER=nano`) sets it explicitly, also without `PARSE_GPU`. It adds `src/t_cupti.cpp` and the `CLASS_CUDA`/`CLASS_CUBLAS` entries of `../common/mpi_func.inc` (a GPU build: `.gpu` in the library name, once, as with OpenCL, Level Zero, OpenACC; linked to that toolkit's `libcupti`: use the CUDA version the application runs with). Recording is off unless `PEAT_TRACTOR_PARSE_CUDA=1`. Independent of `LLAMA_PARSE`, works for any CUDA application.
+
+- Compilers: only host CUDA headers are compiled (`cupti.h`, `cublas_v2.h`, `cublasLt.h`), so it is not tied to a compiler or to nvcc. Checked with g++ 16, clang 23, nvc++ 26.9 (`TARGET=openmpi`; `openmpi5` adds `-fms-extensions`, which nvc++ rejects) and icpx 2026.1 (`COMPILER=intel`, Intel MPI, Makefile and CMake: `libtractor.impi.gpu.so` with llama.cpp tracing and CUDA), CUDA 12.0 (CUPTI API 18, Debian/Ubuntu packages), 12.9 and 13.5: the activity records are read through layouts every CUPTI from CUDA 11.8 on has (`Kernel9`, `Memset4`, and `Memcpy5`/`Synchronization`/`GraphTrace`, whose newer versions only add fields at the end). `auto` decides with a probe compiled by the MPI wrapper with the compiler's own options, so a compiler or a machine that cannot build it just builds without it (without the CUDA layer then; `PARSE_GPU=on` with no GPU API found at all gives the usual warning); `on` stops with what was missing.
+- Toolkit: `CUDA_ROOT`, else `NVHPC_CUDA_HOME` (set by env.sh for `compiler=nvc:<cuda version>`), `CUDA_HOME`, `CUDA_PATH`, `/opt/cuda`, `/usr/local/cuda`, `/usr`. CUPTI is found in all three layouts: `extras/CUPTI/{include,lib64}` (NVIDIA installers, NVHPC), `targets/x86_64-linux/{include,lib}` (e.g. Arch's `cuda`) and `include`, `lib/<multiarch>` (Debian/Ubuntu `nvidia-cuda-dev` + `libcupti-dev`, found as `/usr`; system directories are not added to `-I`/`-L`/rpath). The library is tied to that toolkit's `libcupti.so.<major>`: with several CUDA versions installed, set `CUDA_ROOT` to the one the application is built with (a CUDA 12 application, e.g. for pre-Turing GPUs, is not traced by a library built against `/opt/cuda` = CUDA 13).
+- Build scripts: `Build.sh` and `Build-cmake.sh` pass `LLAMA_PARSE`, `LLAMA_ROOT`, `LLAMA_DEPRECATED`, `CUPTI_PARSE` and `CUDA_ROOT` from the environment when set, like `TRANSPORT` (the source copy is named after `LLAMA_PARSE` and `CUPTI_PARSE`, so variants can be built at the same time). In the `BuildAll*.sh` builds llama.cpp tracing is there whenever its headers are found, and the GPU builds (`PARSE_GPU=on`) get CUDA when a toolkit is found.
 
 - GPU activity (CUPTI activity API): every kernel, copy (`cuda_memcpy_htod`/`dtoh`/`dtod`/`ptop`/`htoh`), `cuda_memset` and synchronization (`cuda_sync_context`/`stream`/`event`/`stream_wait_event`), as top-level records on a thread lane of its own per CUDA context and stream. CUPTI takes its timestamps from tractor's clock, so they are on the host time line. A kernel record is written with the kernel's own name - demangled, without return type and parameter list, `::` as `.` (`:` separates the fields), e.g. `mul_mat_vec_q<(ggml_type)2, 1, false, false, false>` - instead of `cuda_kernel`; the tools give a name they do not know an id of its own (`Func_ID::add_by_name()`), so the kernels are reported one by one. `PEAT_TRACTOR_CUDA_GRAPH_TRACE=1` records whole CUDA graphs (`cuda_graph`) instead of their kernels.
 - Host CUDA runtime calls (CUPTI callback API): `cudaLaunchKernel`, `cudaMemcpyAsync`, `cudaStreamSynchronize`, ... (the `cuda*` entries of `mpi_func.inc`), nested where they are made (`llama_process` > `ggml_backend_sched_graph_compute_async` > `cudaLaunchKernel`). No call site address: from a CUPTI callback only libcupti's frames are at hand.
@@ -93,7 +99,7 @@ The same builds also wrap the ggml CPU backend (`CLASS_GGML_CPU`, generated from
 
 A process not started by an MPI launcher (no `PMI_RANK`/`OMPI_COMM_WORLD_RANK`, e.g. a llama.cpp application) is written as rank 0 of a one-rank, one-node run, under the per-process template `<PEAT_TRACTOR_FILE>_<pid>`: `tractor_t_<pid>.app.gz`, `tractor_t_<pid>.{mpi,hwc,com}.0.gz`. The node records of the `.app` file (host, frequencies, sync points) are filled from the process itself, so ctt/mat/qTV read it as any other trace: `ctt -i tractor_t_<pid>`. (The pid is joined with `_`, not `.`: the tools take the rank from the first dot-separated part of a file name that starts with a digit.)
 
-Runtime switch: export PEAT_TRACTOR_PARSE_LLAMA=0 - do not record llama.cpp stages (default 1, LLAMA_PARSE=on builds only)
+Runtime switch: export PEAT_TRACTOR_PARSE_LLAMA=0 - do not record llama.cpp stages (default 1, builds with llama.cpp only)
 
 
 
@@ -163,9 +169,9 @@ export PEAT_TRACTOR_USE_SIGNALS=1 - Install handlers for some system signals to 
 export PEAT_TRACTOR_MAX_THREADS=<value> maximum allowed threads (default 6, safe selection is OMP_NUM_THREADS+5)
 export PEAT_TRACTOR_FULL_OMPT_UNWIND full (1) or partial (1st caller) (0) unwind of OpenMP events
 export PEAT_TRACTOR_PARSE_OPENACC=0|1 record OpenACC events (default 1, only in GPU builds (PARSE_GPU=on) with the GNU compiler); the library registers itself with the OpenACC runtime (it also appends itself to ACC_PROFLIB)
-export PEAT_TRACTOR_PARSE_LLAMA=0|1 record llama.cpp pipeline stages (default 1, only in LLAMA_PARSE=on builds), see "llama.cpp pipeline profiling" above
-export PEAT_TRACTOR_PARSE_GGML_CPU=0|1 record the ggml CPU kernels (default 0, only in LLAMA_PARSE=on builds), see "ggml CPU kernels" above
-export PEAT_TRACTOR_PARSE_CUDA=0|1 record CUDA (CUPTI) and cuBLAS (default 0, only in CUPTI_PARSE=on builds), see "CUDA profiling" above
+export PEAT_TRACTOR_PARSE_LLAMA=0|1 record llama.cpp pipeline stages (default 1, only in builds with llama.cpp), see "llama.cpp pipeline profiling" above
+export PEAT_TRACTOR_PARSE_GGML_CPU=0|1 record the ggml CPU kernels (default 0, only in builds with llama.cpp), see "ggml CPU kernels" above
+export PEAT_TRACTOR_PARSE_CUDA=0|1 record CUDA (CUPTI) and cuBLAS (default 0, only in builds with CUDA: PARSE_GPU=on with a CUDA toolkit found, or CUPTI_PARSE=on), see "CUDA profiling" above
 export PEAT_TRACTOR_CUDA_GRAPH_TRACE=1 record whole CUDA graphs instead of their kernels
 
 PTP Daemon can be executed either by hand using "&" or by tractor itself using values below

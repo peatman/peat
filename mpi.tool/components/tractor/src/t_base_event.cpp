@@ -145,6 +145,15 @@ int t_base_event::get_tid(pid_t tid_in)
 
 /* ---------------- nesting ---------------- */
 
+/* t_achieved_nesting_levels = max(it, levels): every thread raises it, so atomically (a lost update would leave it below
+   the depth of the records, and write_main_files() sizes the id columns by it) */
+static inline void t_raise_achieved_levels(int *achieved, int levels)
+{
+    int cur = __atomic_load_n(achieved, __ATOMIC_RELAXED);
+    while (levels > cur && !__atomic_compare_exchange_n(achieved, &cur, levels, true, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+    }
+}
+
 int t_base_event::enter_call(int tid)
 {
     int level = nesting_level[tid];
@@ -153,8 +162,7 @@ int t_base_event::enter_call(int tid)
         PMPI_Abort(MPI_COMM_WORLD, 912);
     }
     nesting_level[tid] = level + 1;
-    if (level + 1 > t_achieved_nesting_levels)
-        t_achieved_nesting_levels = level + 1;
+    t_raise_achieved_levels(&t_achieved_nesting_levels, level + 1);
     return level;
 }
 
@@ -188,6 +196,9 @@ static inline msl_adv_chain *t_new_adv_chain(t_base_event *b, msl_adv_chain *pre
 void t_base_event::init_level_storage(int t_tid, int level)
 {
     if (events_chain[t_tid][level] == NULL) {
+        /* the first record of this level: also the ones taking the level of the call they happen in without entering
+           one (OMPT, OpenACC; e.g. OpenMP barriers inside ggml_barrier) count for the depth of the trace */
+        t_raise_achieved_levels(&t_achieved_nesting_levels, level + 1);
         events_chain[t_tid][level] = t_new_adv_chain(this, NULL, uniq_index[t_tid][level]);
         events_start_chain[t_tid][level] = events_chain[t_tid][level];
         events_array[t_tid][level] = (msl_event *)events_chain[t_tid][level]->events_array;

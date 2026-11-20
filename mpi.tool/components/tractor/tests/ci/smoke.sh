@@ -232,6 +232,8 @@ trace_and_analyse() {
     for r in $(seq 0 $((ranks - 1))) ; do
         [ -s "tractor_t.mpi.$r.gz" ] || fail "$t/$mode: missing tractor_t.mpi.$r.gz"
     done
+    # the remark after "Build Date" listing the modules built into the library
+    zcat tractor_t.com.0.gz 2>/dev/null | grep -qE "^[0-9]+:Modules: MPI [0-9]" || fail "$t/$mode: no Modules remark in tractor_t.com.0.gz"
 
     # every (p)mat run gets its own copy of the raw trace and runs there without switches (output in <run>/out)
     new_run_dir serial

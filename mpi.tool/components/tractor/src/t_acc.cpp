@@ -158,6 +158,8 @@ static msl_event *record_acc_event(short func1, const long long *params)
     tsc_entry = peat_get_time_tid_core(&tid_in, &core_id);
     tid = __msl_get_tid(tid_in);
     const int level = __msl_current_level(tid);
+    if (level >= gt_info(t_max_nesting_levels)) /* inside a call at the deepest level: no level below it */
+        return NULL;
     __msl_allocate_event(tid, level, 0, &t_event, &counters);
     t_event->gpu.num_arguments = ACC_PARAMS_NUM;
     t_event->gpu.num_out_arguments = 0;

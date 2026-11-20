@@ -64,6 +64,7 @@ PEAT_Clock global_cuda_time = 0; /* CUDA records were taken: tractor::end() writ
 
 static CUpti_SubscriberHandle t_cupti_subscriber;
 static bool t_cupti_active = false;  /* subscribed and activity enabled */
+static bool t_cupti_tried = false;   /* t_cupti_init() ran (once: a CUPTI that fails to start is reported only once) */
 static bool t_cupti_flushed = false; /* the last flush is done: CUDA may be torn down after it */
 
 /* ---------------------------------------------------------------------------------------------------------------- */
@@ -365,6 +366,9 @@ static void CUPTIAPI t_cupti_buffer_completed(CUcontext ctx, uint32_t stream_id,
 {
     const bool record = !cuda_skip_parse && !tractor_finished && gt_info(tractor_initialized) > 0;
     CUpti_Activity *rec = NULL;
+    /* Memcpy5, Synchronization and GraphTrace instead of Memcpy6/Synchronization2/GraphTrace2: the newer records only add
+       fields at the end, so the older layouts read them too, and those exist in every CUPTI from CUDA 11.8 (API 18, the
+       Debian/Ubuntu packages) to 13.x (cupti_activity_deprecated.h). Kernel9 and Memset4 are already in API 18. */
     while (record && cuptiActivityGetNextRecord(buffer, valid_size, &rec) == CUPTI_SUCCESS) {
         switch (rec->kind) {
         case CUPTI_ACTIVITY_KIND_KERNEL:
@@ -377,7 +381,7 @@ static void CUPTIAPI t_cupti_buffer_completed(CUcontext ctx, uint32_t stream_id,
                                   args, 9);
         } break;
         case CUPTI_ACTIVITY_KIND_MEMCPY: {
-            const CUpti_ActivityMemcpy6 *m = (const CUpti_ActivityMemcpy6 *)rec;
+            const CUpti_ActivityMemcpy5 *m = (const CUpti_ActivityMemcpy5 *)rec;
             const long long args[] = {m->correlationId, m->streamId, (long long)m->bytes}; /* correlation, stream, bytes */
             t_cupti_device_record(t_memcpy_id(m->copyKind), m->contextId, m->streamId, m->start, m->end, -1, true, args, 3);
         } break;
@@ -387,7 +391,7 @@ static void CUPTIAPI t_cupti_buffer_completed(CUcontext ctx, uint32_t stream_id,
             t_cupti_device_record(CUDA_MEMSET_ID_THROUGH, m->contextId, m->streamId, m->start, m->end, -1, true, args, 3);
         } break;
         case CUPTI_ACTIVITY_KIND_SYNCHRONIZATION: {
-            const CUpti_ActivitySynchronization2 *s = (const CUpti_ActivitySynchronization2 *)rec;
+            const CUpti_ActivitySynchronization *s = (const CUpti_ActivitySynchronization *)rec;
             const short id = t_sync_id(s->type);
             if (id >= 0) {
                 const unsigned int stream = (s->streamId == CUPTI_SYNCHRONIZATION_INVALID_VALUE) ? T_CUPTI_NO_STREAM : s->streamId;
@@ -396,7 +400,7 @@ static void CUPTIAPI t_cupti_buffer_completed(CUcontext ctx, uint32_t stream_id,
             }
         } break;
         case CUPTI_ACTIVITY_KIND_GRAPH_TRACE: {
-            const CUpti_ActivityGraphTrace2 *g = (const CUpti_ActivityGraphTrace2 *)rec;
+            const CUpti_ActivityGraphTrace *g = (const CUpti_ActivityGraphTrace *)rec;
             const long long args[] = {g->correlationId, g->streamId, g->graphId}; /* correlation, stream, graph id */
             t_cupti_device_record(CUDA_GRAPH_ID_THROUGH, g->contextId, g->streamId, g->start, g->end, -1, true, args, 3);
         } break;
@@ -433,8 +437,9 @@ static void t_cupti_flush_at_exit(void)
 /* Called from tractor::init() when PEAT_TRACTOR_PARSE_CUDA=1, before the application initializes CUDA. */
 extern "C" void t_cupti_init(void)
 {
-    if (t_cupti_active)
+    if (t_cupti_tried)
         return;
+    t_cupti_tried = true;
     for (int i = CUDA_START_GROUP_THROUGH + 1; i < CUDA_END_GROUP_THROUGH; i++) {
         if (mpi_function_names[i] && strncmp(mpi_function_names[i], "cuda", 4) == 0 && strncmp(mpi_function_names[i], "cuda_", 5) != 0)
             t_runtime_ids()[mpi_function_names[i]] = (short)i;
@@ -458,4 +463,18 @@ extern "C" void t_cupti_init(void)
 extern "C" void t_cupti_finalize(void)
 {
     t_cupti_flush();
+}
+
+/* For the modules remark of the com file: whether CUPTI started (no: not asked for, or failed, e.g. without a driver). */
+extern "C" int t_cupti_recording(void)
+{
+    return t_cupti_active;
+}
+
+/* For the modules remark of the com file: the CUDA toolkit the library was built with, e.g. "CUDA 12.9/CUPTI 28". */
+extern "C" const char *t_cupti_build_info(void)
+{
+    static char info[64];
+    snprintf(info, sizeof(info), "CUDA %d.%d/CUPTI %d", CUDA_VERSION / 1000, (CUDA_VERSION % 1000) / 10, (int)CUPTI_API_VERSION);
+    return info;
 }

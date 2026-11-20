@@ -74,6 +74,8 @@ extern "C" void t_acc_finalize();
 extern "C" void t_cupti_init(void);
 extern "C" void t_cupti_finalize(void);
 extern "C" const char *t_cupti_kernel_name(int idx);
+extern "C" const char *t_cupti_build_info(void);
+extern "C" int t_cupti_recording(void);
 extern PEAT_Clock global_cuda_time;
 #endif
 
@@ -355,6 +357,63 @@ static const char *t_compiler_id()
     snprintf(id, sizeof(id), "unknown compiler");
 #endif
     return id;
+}
+
+// the modules built into the library, for the remark after "Build Date" in the com file; for the ones with a run-time
+// switch, whether they recorded in this run
+static std::string t_build_modules()
+{
+    std::ostringstream m;
+    m << "MPI " << MPI_VERSION << "." << MPI_SUBVERSION << "(" << _TRACTOR_LIB_SUFFIX_ << ")";
+#ifdef _PARSE_MPI_INTERNAL_
+    m << " MPI-internal";
+#endif
+#ifdef _T_OMPT_
+    m << " OMPT";
+#endif
+#ifdef GPUPARSE_CL
+    m << " OpenCL";
+#endif
+#ifdef GPUPARSE_ZE
+    m << " LevelZero";
+#endif
+#ifdef _T_ACC_
+    m << " OpenACC";
+#endif
+#ifdef _T_CUPTI_
+    // failed: PEAT_TRACTOR_PARSE_CUDA=1 but CUPTI did not start (reported on stderr), e.g. no driver
+    m << " " << t_cupti_build_info() << "(recording " << (cuda_skip_parse ? "off" : t_cupti_recording() ? "on" : "failed") << ")";
+#endif
+#ifdef _T_LLAMA_
+    m << " llama.cpp(stages " << (llama_skip_parse ? "off" : "on") << ", ggml CPU kernels " << (ggml_cpu_skip_parse ? "off" : "on") << ")";
+#endif
+#ifdef _TRANSPORT_PROFILE_
+    m << " transport";
+#endif
+#ifdef _HWCOUNTERS_ENABLED_
+    m << " HWC";
+#endif
+#ifdef _MEMPROFILE_
+    m << " memprofile";
+#endif
+#ifdef _TRACTOR_VIRT2PHYS_
+    m << " virt2phys";
+#endif
+#ifdef _TRACTOR_EXTRA_FIELDS_
+    m << " extra-fields";
+#endif
+#ifdef _TRACTOR_USE_PTPD_
+    m << " PTPD";
+#endif
+#ifdef _TRACTOR_DIAG_
+    m << " DIAG";
+#endif
+#ifdef USE_NANO_TIMER
+    m << " timer=nano";
+#else
+    m << " timer=tsc";
+#endif
+    return m.str();
 }
 
 static int is_true(char *str, int previous_value)
@@ -3344,6 +3403,7 @@ void tractor::write_com_file(const num_processed_events &num_of_events, /*user_r
     long core_id = get_core_id(); // get proc id for further writing to com file
 
     gzprintf(fps_com, "%d:---=== PEAT TRACTOR V%d.%d. Build Date %s(%s) by %s. ===---\n", PEAT_RT_Remark, _TRACTOR_MAJOR_VERSION_, _TRACTOR_MINOR_VERSION_, _TRACTOR_BUILD_DATE_, __DATE__, t_compiler_id());
+    gzprintf(fps_com, "%d:Modules: %s\n", PEAT_RT_Remark, t_build_modules().c_str());
     gzprintf(fps_com, "%d:Application begins. Max Threads %d. Return Level %u.\n", PEAT_RT_Remark, t_max_threads, max_ret_level);
     gzprintf(fps_com, "%d:msl_event=%d : pp=%d,req=%d,coll=%d,comm=%d,bl=%d,osc=%d,fio=%d,l=%d,pc=%d,transport=%d\n", PEAT_RT_Remark, sizeof(msl_event),
              sizeof(msl_event::p2p_pr_pb), sizeof(msl_event::requests), sizeof(msl_event::collective),

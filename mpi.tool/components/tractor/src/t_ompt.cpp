@@ -48,8 +48,12 @@ static msl_event *record_ompt_event(short func0, short func1, const void *pcode)
         return NULL;
     tsc_entry = peat_get_time_tid_core(&tid_in, &core_id);
     tid = __msl_get_tid(tid_in);
-    /* an OMPT record is a point in time: it takes the level of the call it happens in, without opening one */
-    __msl_allocate_event(tid, __msl_current_level(tid), 0, &t_event, &counters);
+    /* an OMPT record is a point in time: it takes the level of the call it happens in, without opening one; none inside
+       a call at the deepest level (PEAT_TRACTOR_MAX_NESTING_LEVELS): there is no level below it */
+    const int level = __msl_current_level(tid);
+    if (level >= gt_info(t_max_nesting_levels))
+        return NULL;
+    __msl_allocate_event(tid, level, 0, &t_event, &counters);
     if (gt_info(full_ompt_unwind)) {
         stack_unwind(gt_info(max_ret_level), counters.addrs, gt_info(ret_levels));
     } else {

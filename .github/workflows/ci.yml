@@ -288,6 +288,151 @@ jobs:
             mpi.tool/lib/gnu/
             mpi.tool/bin/gnu/
 
+  # llama.cpp and CUDA tracing (tests/ci/llama.sh): tractor's llama.cpp wrappers (pipeline stages, ggml CPU kernels) and
+  # its CUDA module (CUPTI activity records + runtime callbacks, cuBLAS wrappers), built by CMake (GCC and clang) and GNU
+  # make, against a pinned llama.cpp (shared CPU build with GCC: the CPU kernels are interposed only where ggml-cpu calls
+  # them through the PLT) and Ubuntu's CUDA packages (nvidia-cuda-dev + libcupti-dev: CUDA 12.0 with CUPTI API 18, the
+  # oldest the module reads, in the Debian layout that CUDA_ROOT detection has to find as /usr). llama-simple runs a 15M
+  # parameter model under each library: output unchanged, trace through mat and ctt, Modules remark. The runners have
+  # no GPU: CUPTI cannot start, which tractor must report and survive ("recording failed"); GPU records (kernels, copies,
+  # their binds) are checked by the same script on a box with a GPU and a CUDA llama.cpp.
+  # The clang build has OMPT on libomp, which also serves ggml's OpenMP: OMPT records nested in the ggml calls.
+  # The default build (no GPU) must include llama.cpp tracing when its headers are found, like OMPT, under the plain name.
+  llama:
+    name: llama.cpp + CUDA tracing
+    runs-on: ubuntu-24.04
+    env:
+      LLAMA_CPP_REF: 4c4a0f0a4246bc36a3724d12238d5624714dcb2f # llama.cpp master the wrappers were written for
+      LLAMA_CPP_DIR: ${{ github.workspace }}/.ci-llama/src
+      LLAMA_CPP_BUILD: ${{ github.workspace }}/.ci-llama/build
+      MODEL: ${{ github.workspace }}/.ci-llama/models/stories15M-q4_0.gguf
+      MODEL_URL: https://huggingface.co/ggml-org/models/resolve/main/tinyllamas/stories15M-q4_0.gguf
+      MODEL_SHA256: 66967fbece6dbe97886593fdbb73589584927e29119ec31f08090732d1861739
+      TRACTOR_SRC: mpi.tool/components/tractor/src
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: ggml-org/llama.cpp
+          ref: ${{ env.LLAMA_CPP_REF }}
+          path: .ci-llama/src
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++ clang libomp-dev cmake ninja-build perl libswitch-perl \
+            zlib1g-dev libhwloc-dev libunwind-dev libmpich-dev mpich nvidia-cuda-dev libcupti-dev curl
+          ls -l /usr/include/cupti.h /usr/include/cublas_v2.h /usr/lib/x86_64-linux-gnu/libcupti.so
+      - name: Cache llama.cpp build
+        id: llama-cache
+        uses: actions/cache@v6
+        with:
+          path: .ci-llama/build
+          key: llama-cpp-${{ env.LLAMA_CPP_REF }}-gnu-cpu-shared-ubuntu-24.04-v1
+      - name: Build llama.cpp (shared, CPU, GCC)
+        if: steps.llama-cache.outputs.cache-hit != 'true'
+        run: |
+          cmake -S "$LLAMA_CPP_DIR" -B "$LLAMA_CPP_BUILD" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DBUILD_SHARED_LIBS=ON -DGGML_NATIVE=OFF \
+            -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_TOOLS=OFF -DLLAMA_BUILD_SERVER=OFF -DLLAMA_BUILD_APP=OFF -DLLAMA_OPENSSL=OFF
+          cmake --build "$LLAMA_CPP_BUILD" --target llama-simple
+      - name: Cache model
+        id: model-cache
+        uses: actions/cache@v6
+        with:
+          path: .ci-llama/models
+          key: model-stories15M-q4_0-${{ env.MODEL_SHA256 }}
+      - name: Download model
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$(dirname "$MODEL")"
+          curl -fsSL --retry 3 -o "$MODEL" "$MODEL_URL"
+      - name: Check model and llama-simple
+        run: |
+          echo "$MODEL_SHA256  $MODEL" | sha256sum -c -
+          "$LLAMA_CPP_BUILD/bin/llama-simple" -m "$MODEL" -n 8 "Once upon a time" 2>/dev/null
+      - name: Provide omp-tools.h (OMPT=ON)
+        # as in the tractor job: only LLVM's omp-tools.h (GCC's libgomp has none), not clang's other headers
+        run: |
+          hdr=$(find /usr/lib/llvm-* /usr/include -name omp-tools.h 2>/dev/null | head -1)
+          [ -n "$hdr" ] || { echo "omp-tools.h not found"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/ompt" && cp "$hdr" "$RUNNER_TEMP/ompt/"
+          echo "CPATH=$RUNNER_TEMP/ompt" >> "$GITHUB_ENV"
+      - name: Build mat + ctt
+        run: |
+          cmake -S mpi.tool/components/ctt/src -B build/ctt -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/ctt && cmake --install build/ctt
+          cmake -S mpi.tool/components/mat/src -B build/mat -G Ninja -DCMAKE_BUILD_TYPE=Release -DMAT_TARGET=serial \
+            -DCMAKE_CXX_COMPILER=g++
+          cmake --build build/mat && cmake --install build/mat
+      - name: Build tractor (CMake, GCC) - default and GPU
+        run: |
+          # default: llama.cpp found -> built in (AUTO), no GPU -> no CUDA, plain name
+          cmake -S $TRACTOR_SRC -B build/tractor -G Ninja -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
+            -DTRACTOR_TARGET=mpich4 -DLLAMA_ROOT="$LLAMA_CPP_DIR" | tee build/tractor.cfg
+          grep -q "tractor: llama.cpp parsing: on (LLAMA=AUTO" build/tractor.cfg \
+            || { echo "::error::default build without llama.cpp tracing"; exit 1; }
+          ! grep -q "CUDA (CUPTI) parsing: on" build/tractor.cfg || { echo "::error::default build with CUDA"; exit 1; }
+          cmake --build build/tractor && cmake --install build/tractor
+          lib=mpi.tool/lib/gnu/libtractor.mpich4.so
+          ! ldd $lib | grep -q cupti || { echo "::error::$lib links libcupti"; exit 1; }
+          nm -D --defined-only $lib | grep -qw llama_process || { echo "::error::$lib has no llama.cpp wrappers"; exit 1; }
+          # GPU: CUDA (required) from the Debian packages: CUDA_ROOT detected as /usr, no -I/usr/include
+          cmake -S $TRACTOR_SRC -B build/tractor-gpu -G Ninja -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
+            -DTRACTOR_TARGET=mpich4 -DGPU=ON -DCUPTI=ON -DLLAMA=ON -DLLAMA_ROOT="$LLAMA_CPP_DIR" | tee build/tractor-gpu.cfg
+          grep -q "tractor: CUDA (CUPTI) parsing: on (CUPTI=ON, CUDA_ROOT='/usr')" build/tractor-gpu.cfg \
+            || { echo "::error::CUDA not found in the Debian layout (/usr)"; exit 1; }
+          ! grep -qE -- "-I/usr/include( |$)" build/tractor-gpu/build.ninja || { echo "::error::-I/usr/include in the build"; exit 1; }
+          cmake --build build/tractor-gpu && cmake --install build/tractor-gpu
+          ldd mpi.tool/lib/gnu/libtractor.mpich4.gpu.so | grep cupti
+      - name: Build tractor (CMake, clang, GPU)
+        env:
+          MPICH_CC: clang
+          MPICH_CXX: clang++
+        run: |
+          cmake -S $TRACTOR_SRC -B build/tractor-clang -G Ninja -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
+            -DTRACTOR_TARGET=mpich4 -DGPU=ON -DCUPTI=ON -DLLAMA=ON -DLLAMA_ROOT="$LLAMA_CPP_DIR" | tee build/tractor-clang.cfg
+          grep -q "CXX compiler identification is Clang" build/tractor-clang.cfg || { echo "::error::not built with clang"; exit 1; }
+          cmake --build build/tractor-clang && cmake --install build/tractor-clang
+          ls -l mpi.tool/lib/clang/libtractor.mpich4.gpu.so
+      - name: Build tractor with GNU make (GPU)
+        working-directory: mpi.tool/components/tractor/src
+        env:
+          MPICC: mpicc
+          MPICXX: mpicxx
+          MPIFC: mpif90
+          HWLOC_PATH: /usr
+        run: |
+          make clean COMPILER=gnu TARGET=mpich4 > /dev/null
+          make -j"$(nproc)" all COMPILER=gnu TARGET=mpich4 PARSE_GPU=on CUPTI_PARSE=on LLAMA_PARSE=on \
+            LLAMA_ROOT="$LLAMA_CPP_DIR" 2>&1 | tee "$RUNNER_TEMP/make.log"
+          [ "${PIPESTATUS[0]}" = 0 ] || exit 1
+          grep -q "tractor: CUDA (CUPTI) parsing: on (CUPTI_PARSE=on, CUDA_ROOT='/usr')" "$RUNNER_TEMP/make.log" \
+            || { echo "::error::make: CUDA not found in the Debian layout (/usr)"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/make-lib"
+          cp -v libtractor.mpich4.gpu.so.[0-9]*.[0-9]* "$RUNNER_TEMP/make-lib/"
+      - name: llama.cpp smoke test (llama-simple under tractor -> mat -> ctt)
+        run: |
+          status=0
+          for v in "cmake-gnu:mpi.tool/lib/gnu/libtractor.mpich4.so:0" \
+                   "cmake-gnu-gpu:mpi.tool/lib/gnu/libtractor.mpich4.gpu.so:1" \
+                   "cmake-clang-gpu:mpi.tool/lib/clang/libtractor.mpich4.gpu.so:1" \
+                   "make-gnu-gpu:$(ls "$RUNNER_TEMP"/make-lib/libtractor.mpich4.gpu.so.* | head -1):1" ; do
+            IFS=: read -r name lib cuda <<< "$v"
+            echo "::group::llama $name ($lib)"
+            SMOKE_WORKDIR=$RUNNER_TEMP/llama-$name LLAMA_SMOKE_CUDA=$cuda \
+              mpi.tool/components/tractor/tests/ci/llama.sh "$lib" "$LLAMA_CPP_BUILD/bin" "$MODEL" 16 \
+              || { status=1; echo "::error::llama smoke $name failed"; }
+            echo "::endgroup::"
+          done
+          exit $status
+      - name: Upload llama smoke logs and traces
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-llama
+          path: ${{ runner.temp }}/llama-*
+          if-no-files-found: ignore
+
   # Qt trace viewer.
   qtv:
     name: qTV (Qt6)

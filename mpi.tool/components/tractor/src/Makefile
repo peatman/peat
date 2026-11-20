@@ -146,8 +146,6 @@ CONTROLS+=-DGPUPARSE
 endif
 ifneq "$(GPU_CL)$(GPU_ZE)$(ACC)" "offoffoff"
 EXTRANAMELIB:=$(EXTRANAMELIB).gpu
-else
-$(warning PARSE_GPU=on but no GPU API (OpenCL, Level Zero, OpenACC) was found, GPU parsing is off)
 endif
 endif
 
@@ -387,39 +385,6 @@ ifeq "$(call mpi_proto_probe,int (*p)(MPI_Status*$(COMMA) MPI_Datatype$(COMMA) M
 cpp_input+=-D_MPI4_NO_STATUS_SET_ELEMENTS_C_
 endif
 
-# llama.cpp / ggml pipeline stages (CLASS_LLAMA in mpi_func.inc): LLAMA_PARSE=on LLAMA_ROOT=<llama.cpp checkout>.
-# The wrappers are compiled against that checkout's llama.h (some parameters are structures passed by value), so it has
-# to be the source tree the traced llama.cpp was built from. LLAMA_DEPRECATED=on adds the deprecated entry points
-# (llama_decode, llama_encode), off by default. Placed after the TARGET blocks: they assign cpp_input with '='.
-LLAMA_PARSE?=off
-LLAMA_DEPRECATED?=off
-ifeq "$(LLAMA_PARSE)" "on"
-ifeq "$(wildcard $(LLAMA_ROOT)/include/llama.h)" ""
-$(error LLAMA_PARSE=on needs LLAMA_ROOT pointing to a llama.cpp source tree ($(LLAMA_ROOT)/include/llama.h not found))
-endif
-INCLUDE+=-I$(LLAMA_ROOT)/include -I$(LLAMA_ROOT)/ggml/include
-CONTROLS+=-D_T_LLAMA_
-EXTRANAMELIB:=$(EXTRANAMELIB).llama
-ifeq "$(LLAMA_DEPRECATED)" "on"
-cpp_input+=-D_PARSE_LLAMA_DEPRECATED_
-endif
-endif
-
-# CUDA through CUPTI (t_cupti.cpp) and cuBLAS wrappers (CLASS_CUDA/CLASS_CUBLAS in mpi_func.inc): CUPTI_PARSE=on
-# CUDA_ROOT=<CUDA toolkit>. libcupti has to be the one of the CUDA version the application runs with (it is found
-# through the rpath set here). Recording is off unless PEAT_TRACTOR_PARSE_CUDA=1.
-CUPTI_PARSE?=off
-ifeq "$(CUPTI_PARSE)" "on"
-CUPTI_ROOT?=$(CUDA_ROOT)/extras/CUPTI
-ifeq "$(wildcard $(CUPTI_ROOT)/include/cupti.h)" ""
-$(error CUPTI_PARSE=on needs CUDA_ROOT pointing to a CUDA toolkit with CUPTI ($(CUPTI_ROOT)/include/cupti.h not found))
-endif
-INCLUDE+=-I$(CUDA_ROOT)/include -I$(CUPTI_ROOT)/include
-CONTROLS+=-D_T_CUPTI_
-OBJECTS+=t_cupti.o
-LIBS+=-L$(CUPTI_ROOT)/lib64 -lcupti -Wl,-rpath,$(CUPTI_ROOT)/lib64
-EXTRANAMELIB:=$(EXTRANAMELIB).cuda
-endif
 
 SHARED=-shared $(FPIC)
 
@@ -454,6 +419,87 @@ ifeq "$(COMPILER)" "nvc"
 # i.e. through the MPI C++ wrapper (MPICH_CXX=nvc++ etc. are set by env.sh for compiler=nvc)
 override MPICC=$(MPICXX)
 NOINLINE=-Mnoinline
+endif
+
+# llama.cpp / ggml pipeline stages and CPU kernels (CLASS_LLAMA, CLASS_GGML_CPU in mpi_func.inc): part of the base build
+# like OMPT, when it can be built. LLAMA_PARSE: auto (default: built when llama.cpp's headers are found and the probe
+# compiles), on (else an error) or off. The headers: LLAMA_ROOT (a source tree: include/ and ggml/include/, or an install
+# prefix: include/), else the installed ones (pkg-config llama, /usr/local/include, /usr/include). The probe,
+# t_llama_probe.cpp, takes every wrapped public function with the signature of its wrapper: a llama.cpp with another API
+# is left out instead of breaking the wrappers (two take structures by value, so it has to be the llama.cpp the traced
+# application is built with). No change of the library name. LLAMA_DEPRECATED=on adds the deprecated llama_decode,
+# llama_encode. Placed after the TARGET blocks (they assign cpp_input with '=') and the compiler ones (CXXMISC).
+LLAMA_PARSE?=auto
+LLAMA_DEPRECATED?=off
+LLAMA_ENABLED=off
+$(if $(filter auto on off,$(LLAMA_PARSE)),,$(error LLAMA_PARSE=$(LLAMA_PARSE) is not one of auto|on|off))
+ifneq "$(LLAMA_PARSE)" "off"
+ifneq "$(LLAMA_ROOT)" ""
+LLAMA_H_DIR:=$(if $(wildcard $(LLAMA_ROOT)/include/llama.h),$(LLAMA_ROOT)/include)
+LLAMA_INC:=$(LLAMA_H_DIR) $(if $(LLAMA_H_DIR),$(wildcard $(LLAMA_ROOT)/ggml/include))
+else
+LLAMA_H_DIR:=$(firstword $(foreach d,$(shell pkg-config --variable=includedir llama 2>/dev/null) /usr/local/include /usr/include,$(if $(wildcard $(d)/llama.h),$(d))))
+LLAMA_INC:=$(LLAMA_H_DIR)
+endif
+# never -I/usr/include: it is searched anyway, and given explicitly it breaks the #include_next of the C++ headers
+LLAMA_IFLAGS:=$(addprefix -I,$(filter-out /usr/include,$(LLAMA_INC)))
+llama_probe=$(shell $(MPICXX) $(CXXMISC) $(LLAMA_IFLAGS) $(if $(filter on,$(LLAMA_DEPRECATED)),-D_PARSE_LLAMA_DEPRECATED_) \
+            -c t_llama_probe.cpp -o /dev/null >/dev/null 2>&1 && echo yes || echo no)
+ifeq "$(if $(LLAMA_H_DIR),$(llama_probe),no)" "yes"
+LLAMA_ENABLED=on
+INCLUDE+=$(LLAMA_IFLAGS)
+CONTROLS+=-D_T_LLAMA_
+ifeq "$(LLAMA_DEPRECATED)" "on"
+cpp_input+=-D_PARSE_LLAMA_DEPRECATED_
+endif
+else ifeq "$(LLAMA_PARSE)" "on"
+$(error LLAMA_PARSE=on but the llama.cpp headers are not usable with $(MPICXX) $(CXXMISC) (llama.h in '$(LLAMA_H_DIR)', LLAMA_ROOT='$(LLAMA_ROOT)'): not found, or another llama.cpp API than the wrappers (see t_llama_probe.cpp))
+endif
+$(info tractor: llama.cpp parsing: $(LLAMA_ENABLED) (LLAMA_PARSE=$(LLAMA_PARSE), llama.h in '$(LLAMA_H_DIR)'))
+endif
+
+# CUDA through CUPTI (t_cupti.cpp) and cuBLAS wrappers (CLASS_CUDA/CLASS_CUBLAS in mpi_func.inc): one of the GPU APIs.
+# CUPTI_PARSE: auto with PARSE_GPU=on, off otherwise (default), on (a missing toolkit or a failing probe is an error) or
+# auto (built when the toolkit is found and the probe compiles, like OCL_PARSE/LZE_PARSE). A build with it is a GPU build
+# (.gpu in the library name, as with OpenCL, Level Zero, OpenACC). Only host CUDA headers are compiled, so any of the compilers
+# can do it; the probe is run with the compiler's own options (CXXMISC: -std=c++11 for intel), that's why this block
+# follows the compiler ones. The toolkit is CUDA_ROOT, else NVHPC_CUDA_HOME (env.sh, compiler=nvc:<cuda version>),
+# CUDA_HOME, CUDA_PATH, /opt/cuda, /usr/local/cuda, /usr. CUPTI is looked for in all layouts: extras/CUPTI/{include,lib64}
+# (NVIDIA installers, NVHPC), targets/x86_64-linux/{include,lib} (e.g. Arch's cuda) and include, lib/<multiarch>
+# (Debian/Ubuntu nvidia-cuda-dev + libcupti-dev, CUDA_ROOT=/usr: system directories are not added to -I/-rpath).
+# libcupti has to be the one of the CUDA version the application runs with (found through the rpath set here).
+# Recording is off unless PEAT_TRACTOR_PARSE_CUDA=1.
+CUPTI_PARSE?=$(if $(filter on,$(PARSE_GPU)),auto,off)
+CUPTI_ENABLED=off
+$(if $(filter auto on off,$(CUPTI_PARSE)),,$(error CUPTI_PARSE=$(CUPTI_PARSE) is not one of auto|on|off))
+ifneq "$(CUPTI_PARSE)" "off"
+cuda_root_of=$(if $(wildcard $(1)/include/cuda.h $(1)/targets/x86_64-linux/include/cuda.h),$(1))
+CUDA_ROOT?=$(firstword $(foreach d,$(NVHPC_CUDA_HOME) $(CUDA_HOME) $(CUDA_PATH) /opt/cuda /usr/local/cuda /usr,$(call cuda_root_of,$(d))))
+CUDA_INC:=$(patsubst %/cublas_v2.h,%,$(firstword $(wildcard $(CUDA_ROOT)/include/cublas_v2.h $(CUDA_ROOT)/targets/x86_64-linux/include/cublas_v2.h)))
+CUPTI_INC:=$(patsubst %/cupti.h,%,$(firstword $(wildcard $(CUDA_ROOT)/extras/CUPTI/include/cupti.h $(CUDA_ROOT)/targets/x86_64-linux/include/cupti.h $(CUDA_ROOT)/include/cupti.h)))
+CUPTI_LIB:=$(patsubst %/libcupti.so,%,$(firstword $(wildcard $(CUDA_ROOT)/extras/CUPTI/lib64/libcupti.so $(CUDA_ROOT)/targets/x86_64-linux/lib/libcupti.so $(CUDA_ROOT)/lib64/libcupti.so $(CUDA_ROOT)/lib/*-linux-gnu/libcupti.so)))
+cuda_sys_dir=$(filter /usr/include /usr/lib/%-linux-gnu /usr/lib /usr/lib64,$(1))
+CUPTI_CFLAGS:=$(addprefix -I,$(filter-out $(call cuda_sys_dir,$(CUDA_INC) $(CUPTI_INC)),$(sort $(CUDA_INC) $(CUPTI_INC))))
+CUPTI_LDFLAGS:=$(if $(call cuda_sys_dir,$(CUPTI_LIB)),,-L$(CUPTI_LIB) -Wl,-rpath,$(CUPTI_LIB)) -lcupti
+cupti_probe=$(shell printf '$(HASH)include <cupti.h>\n$(HASH)include <cublas_v2.h>\n$(HASH)include <cublasLt.h>\n$(HASH)include <cxxabi.h>\nint main(){uint64_t t; return (int)cuptiGetTimestamp(&t);}\n' | \
+             $(MPICXX) $(CXXMISC) $(CUPTI_CFLAGS) -x c++ - $(CUPTI_LDFLAGS) -o /dev/null >/dev/null 2>&1 && echo yes || echo no)
+ifeq "$(if $(and $(CUDA_INC),$(CUPTI_INC),$(CUPTI_LIB)),$(cupti_probe),no)" "yes"
+CUPTI_ENABLED=on
+INCLUDE+=$(CUPTI_CFLAGS)
+CONTROLS+=-D_T_CUPTI_
+OBJECTS+=t_cupti.o
+LIBS+=$(CUPTI_LDFLAGS)
+# a GPU build: .gpu, first in the name as for OpenCL/Level Zero/OpenACC (nothing precedes it there)
+ifeq "$(findstring .gpu,$(EXTRANAMELIB))" ""
+EXTRANAMELIB:=.gpu$(EXTRANAMELIB)
+endif
+else ifeq "$(CUPTI_PARSE)" "on"
+$(error CUPTI_PARSE=on but CUPTI/cuBLAS are not usable with $(MPICXX) $(CXXMISC) (CUDA_ROOT='$(CUDA_ROOT)': cuda/cublas headers in '$(CUDA_INC)', cupti.h in '$(CUPTI_INC)', libcupti in '$(CUPTI_LIB)'))
+endif
+$(info tractor: CUDA (CUPTI) parsing: $(CUPTI_ENABLED) (CUPTI_PARSE=$(CUPTI_PARSE), CUDA_ROOT='$(CUDA_ROOT)'))
+endif
+ifeq "$(PARSE_GPU)$(findstring .gpu,$(EXTRANAMELIB))" "on"
+$(warning PARSE_GPU=on but no GPU API (OpenCL, Level Zero, OpenACC, CUDA) was found, GPU parsing is off)
 endif
 
 # OpenACC interception (ACC, found by the PARSE_GPU detection above) is never set by hand
@@ -564,7 +610,7 @@ $(FUNCID): mpi_func.inc ../../common/mpi_func_ids.h
 	../../common/mpi_func_ids.pl -i ../../common/mpi_func_ids.h mpi_func.inc -o mpi_func_ids_through.h mpi_func_names.h mpi_func_ids_trans.h  
 
 mpi_layer.cpp: mpi_layer.cpp.in mpi_layer.cpp.in.end $(FUNCID)
-	./mpi_layer.pl -p $(USE_PRAGMA_WEAK) -e $(PRINT_EXTENDED_STUFF) -m $(MAXMPI) -t $(PCT) -c $(PARSE_GPU_APIS) -g $(LLAMA_PARSE) -u $(CUPTI_PARSE) -s $(mpi_layer_skip_core) -i mpi_func.inc -o mpi_layer.cpp $(transport_func_layers)
+	./mpi_layer.pl -p $(USE_PRAGMA_WEAK) -e $(PRINT_EXTENDED_STUFF) -m $(MAXMPI) -t $(PCT) -c $(PARSE_GPU_APIS) -g $(LLAMA_ENABLED) -u $(CUPTI_ENABLED) -s $(mpi_layer_skip_core) -i mpi_func.inc -o mpi_layer.cpp $(transport_func_layers)
 
 # transport_func_layers with "=outfile" makes mpi_layer.cpp's recipe also emit these
 # as a side effect; own recipe (not merged suffix-rule) avoids a -j race where

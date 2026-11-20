@@ -3,6 +3,10 @@
 export compiler=gcc # for environment script
 export COMPILER=gnu # for make
 
+# llama.cpp tracing is part of every build when its headers are found (LLAMA_ROOT=<llama.cpp source tree or prefix>,
+# else the installed ones), like OMPT; CUDA (CUPTI, cuBLAS) comes with the GPU builds (PARSE_GPU=on) when a CUDA
+# toolkit is found. Neither changes the library name.
+
 rm -f Build.${COMPILER}.log
 rm -f Build.${COMPILER}.dir
 
@@ -66,6 +70,8 @@ export TRANSPORT=on
 ./Build.sh mvapich:4.1g-mt-ofi-eng         mvapich4  off   off  on   off off off &
 ./Build.sh mvapich:4.1g-mt-ofi-eng         mvapich4  off   on   off  off off off &
 ./Build.sh mvapich:4.1g-mt-ofi-eng         mvapich4  off   on   on   off off off &
+
+
 
 
 wait
