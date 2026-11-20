@@ -245,7 +245,9 @@ PEAT_MPI_Func_ID Model_ID::translate_function_id(const char *field) const
     long long trace_id = 0;
     extract(trace_id, field, 10, false);
     if (trace_id == 0) { // not a number: the collector wrote the function name
-        return global_func_id.idx_by_name(field);
+        // a name the tables do not have is a GPU kernel recorded with its own name (tractor's t_cupti.cpp): it gets an id
+        // of its own, as cuda_kernel; through add_by_name() also for known names, so lookups never race with an addition
+        return global_func_id.add_by_name(field, CUDA_KERNEL_ID);
     }
     // a number is the collector's own id: always translate it through the trace's name/ID table
     std::map<PEAT_MPI_Func_ID, PEAT_MPI_Func_ID>::const_iterator it = model_function_tags.find((PEAT_MPI_Func_ID)trace_id);

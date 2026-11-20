@@ -302,6 +302,101 @@ void GPU::flush_pending()
             finish_cl(rank_it->first, *it, it->init, NULL);
         rank_it->second.clear();
     }
+    // CUDA GPU records whose host call is not in the trace (not traced, excluded): counted by their GPU time alone
+    PEAT_Reduced_Event_Info no_call;
+    no_call.func_id = TMPI_FUNC_ID_NONE;
+    for (std::map<PEAT_Rank, std::map<PEAT_ULNum, std::vector<Cuda_GPU_Record>>>::iterator rank_it = cuda_waiting.begin(); rank_it != cuda_waiting.end(); ++rank_it) {
+        for (std::map<PEAT_ULNum, std::vector<Cuda_GPU_Record>>::iterator it = rank_it->second.begin(); it != rank_it->second.end(); ++it)
+            for (size_t i = 0; i < it->second.size(); i++)
+                bind_cuda(rank_it->first, no_call, it->second[i]);
+    }
+    cuda_waiting.clear();
+    cuda_calls.clear();
+}
+
+// CUDA record kinds (ids of the CUDA group, mpi_func_ids.h): the host runtime calls are CUDALAUNCHKERNEL_ID ..
+// CUDAHOSTUNREGISTER_ID, the GPU records CUDA_KERNEL_ID .. CUDA_GRAPH_ID and the kernels, which are named in the records
+// (ids above TMPIfunc_id_Size, Func_ID::add_by_name). GPU record parameters: 0 correlation, 1 stream, then for copies and
+// memsets 2 bytes (see tractor's README).
+static bool cuda_is_call(PEAT_MPI_Func_ID id)
+{
+    return id >= CUDALAUNCHKERNEL_ID && id <= CUDAHOSTUNREGISTER_ID;
+}
+static bool cuda_is_gpu(PEAT_MPI_Func_ID id)
+{
+    return (id >= CUDA_KERNEL_ID && id <= CUDA_GRAPH_ID) || id > TMPIfunc_id_Size;
+}
+static bool cuda_is_transfer(PEAT_MPI_Func_ID id)
+{
+    return id >= CUDA_MEMCPY_HTOD_ID && id <= CUDA_MEMSET_ID;
+}
+static bool cuda_is_sync(PEAT_MPI_Func_ID id)
+{
+    return id >= CUDA_SYNC_CONTEXT_ID && id <= CUDA_SYNC_STREAM_WAIT_EVENT_ID;
+}
+
+// call: the host call (func_id TMPI_FUNC_ID_NONE when there is none); the time runs from its start to the end of the GPU work
+void GPU::bind_cuda(const PEAT_Rank rank, const PEAT_Reduced_Event_Info &call, const Cuda_GPU_Record &gpu)
+{
+    const bool has_call = call.func_id != TMPI_FUNC_ID_NONE;
+    const PEAT_Reduced_Event_Info &start = has_call ? call : gpu.info;
+    const PEAT_Clock cur_clock = gpu.info.time.mpi.out - start.time.mpi.in;
+    if (cuda_is_transfer(gpu.info.func_id)) {
+        PEAT_GPUT_Record record;
+        record.rank = rank;
+        record.bytes = gpu.bytes;
+        record.func_id[0] = start.func_id;
+        record.func_id[1] = gpu.info.func_id;
+        add_clock(printed_gpu_transfers[gpu.pc_ctl][record], cur_clock);
+    } else if (!cuda_is_sync(gpu.info.func_id)) {
+        PEAT_GPUE_Record record;
+        record.rank = rank;
+        record.handle = gpu.stream;
+        record.func_id[0] = start.func_id;
+        record.func_id[1] = gpu.info.func_id;
+        add_clock(printed_gpu_executions[gpu.pc_ctl][record], cur_clock);
+    }
+    if (has_call) {
+        output_bind->printf(rank, "%d:%s:%s:%s:%s\n", PEAT_RT_Bind_Completion,
+                            global_func_id.name_by_idx(call.func_id),
+                            peat_ids_string(call.ids).c_str(),
+                            global_func_id.name_by_idx(gpu.info.func_id),
+                            peat_ids_string(gpu.info.ids).c_str());
+    }
+}
+
+void GPU::parse_cuda(const PEAT_Rank rank, const Tractor_Event &event)
+{
+    if (event.params.empty()) // cuBLAS calls: no parameters, nothing to pair
+        return;
+    const PEAT_ULNum correlation = event.params.at(0);
+    PEAT_Reduced_Event_Info info;
+    info.time = event.tsc_time;
+    info.func_id = event.func_id;
+    info.ids = event.ids;
+    info.thread_id = event.thread_id;
+    if (cuda_is_call(event.func_id)) {
+        std::map<PEAT_ULNum, std::vector<Cuda_GPU_Record>> &waiting = cuda_waiting[rank];
+        std::map<PEAT_ULNum, std::vector<Cuda_GPU_Record>>::iterator it = waiting.find(correlation);
+        if (it != waiting.end()) { // its GPU records were read first (the trace is in start order, threads interleaved)
+            for (size_t i = 0; i < it->second.size(); i++)
+                bind_cuda(rank, info, it->second[i]);
+            waiting.erase(it);
+        }
+        cuda_calls[rank][correlation] = info; // kept: a call can have more GPU records (cudaGraphLaunch)
+    } else if (cuda_is_gpu(event.func_id)) {
+        Cuda_GPU_Record gpu;
+        gpu.info = info;
+        gpu.stream = event.params.size() > 1 ? event.params.at(1) : 0;
+        gpu.bytes = (cuda_is_transfer(event.func_id) && event.params.size() > 2) ? (PEAT_Message_Size)event.params.at(2) : 0;
+        gpu.pc_ctl = event.PControl.ctl;
+        std::map<PEAT_ULNum, PEAT_Reduced_Event_Info> &calls = cuda_calls[rank];
+        std::map<PEAT_ULNum, PEAT_Reduced_Event_Info>::const_iterator call = calls.find(correlation);
+        if (call != calls.end())
+            bind_cuda(rank, call->second, gpu);
+        else
+            cuda_waiting[rank][correlation].push_back(gpu);
+    }
 }
 
 // OpenACC and OpenCL events are complete in themselves: the OpenACC records are start/end pairs merged by tractor, the
@@ -313,6 +408,10 @@ enum { ACC_PARAM_ASYNC = 2, ACC_PARAM_BYTES = 3, ACC_PARAMS_NUM = 7 };
 
 void GPU::parse_GPU(const PEAT_Rank rank, const Tractor_Event &event)
 {
+    if (peat_is_cuda_func_id(event.func_id)) {
+        parse_cuda(rank, event);
+        return;
+    }
     const size_t np = event.params.size();
     switch (event.func_id) {
     case ACC_ENQUEUE_UPLOAD_ID:

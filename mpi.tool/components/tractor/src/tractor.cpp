@@ -70,6 +70,12 @@ extern ompt_finalize_tool_t ompt_finalize_tool;
 #ifdef _T_ACC_
 extern "C" void t_acc_finalize();
 #endif
+#ifdef _T_CUPTI_
+extern "C" void t_cupti_init(void);
+extern "C" void t_cupti_finalize(void);
+extern "C" const char *t_cupti_kernel_name(int idx);
+extern PEAT_Clock global_cuda_time;
+#endif
 
 int gettimeofday_counter = 0;
 int clock_gettime_counter = 0;
@@ -197,6 +203,9 @@ int parse_event_mask(char *events, char c_p[MPI_MAX_FUNCID_THROUGH])
 int level0 = 0;
 extern int mpi_skip_parse;
 extern int gpu_skip_parse;
+extern int llama_skip_parse;
+extern int ggml_cpu_skip_parse;
+extern int cuda_skip_parse;
 
 tractor::tractor(void)
 {
@@ -795,6 +804,31 @@ void tractor::parse_env_vars(void)
 #ifdef _T_ACC_
     parse_openacc = is_true(__msl_getenv("PEAT_TRACTOR_PARSE_OPENACC"), parse_openacc);
 #endif
+#ifdef _T_LLAMA_
+    llama_skip_parse = !is_true(__msl_getenv("PEAT_TRACTOR_PARSE_LLAMA"), 1);
+    ggml_cpu_skip_parse = !is_true(__msl_getenv("PEAT_TRACTOR_PARSE_GGML_CPU"), 0);
+    if (!ggml_cpu_skip_parse) {
+        /* the CPU kernels are called by every worker thread of the ggml CPU backend (one per core by default) and nest
+           five levels deep on the main thread (llama_process > ggml_backend_sched_graph_compute_async > ggml_graph_compute
+           > ggml_compute_forward_<op> > ggml_barrier): raise the defaults, which would abort the run, but not explicit settings */
+        if (__msl_getenv("PEAT_TRACTOR_MAX_THREADS") == NULL)
+            t_max_threads = t_max(t_max_threads, (int)sysconf(_SC_NPROCESSORS_ONLN) + 8);
+        if (__msl_getenv("PEAT_TRACTOR_MAX_NESTING_LEVELS") == NULL)
+            t_max_nesting_levels = t_max(t_max_nesting_levels, 8);
+    }
+#endif /* _T_LLAMA_ */
+#ifdef _T_CUPTI_
+    cuda_skip_parse = !is_true(__msl_getenv("PEAT_TRACTOR_PARSE_CUDA"), 0);
+    if (!cuda_skip_parse) {
+        /* every CUDA stream's GPU records take a thread of their own (t_cupti.cpp lanes), and the CUDA calls nest one level
+           under the llama.cpp stages (llama_sampler_sample > llama_get_logits_ith > ggml_backend_sched_synchronize >
+           cudaStreamSynchronize): raise the defaults, not explicit settings */
+        if (__msl_getenv("PEAT_TRACTOR_MAX_THREADS") == NULL)
+            t_max_threads = t_max(t_max_threads, (int)sysconf(_SC_NPROCESSORS_ONLN) + 24);
+        if (__msl_getenv("PEAT_TRACTOR_MAX_NESTING_LEVELS") == NULL)
+            t_max_nesting_levels = t_max(t_max_nesting_levels, 8);
+    }
+#endif /* _T_CUPTI_ */
     write_on_finalize = is_true(__msl_getenv("PEAT_TRACTOR_WRITE_ON_FINALIZE"), write_on_finalize);
 
     temp = __msl_getenv("PEAT_TRACTOR_COMPRESS_EVENTS");
@@ -1075,19 +1109,22 @@ void tractor::init(void)
     char tbuf[MAX_PATH];
     FILE *tfp, *tfp1;
     pid[0] = 0;
-    if (t_mpi_rank >= 0)
+    if (t_mpi_rank >= 0) {
         sprintf(pid, ".%u", t_mpi_rank);
-    else
-        sprintf(pid, ".%u", t_pid);
+    } else {
+        /* no MPI rank (not started by an MPI launcher, e.g. a llama.cpp process): the trace is laid out as rank 0
+           of a one-rank run, so the analysis tools read it as is, under a per-process template <template>_<pid>
+           (several such processes can share a directory). Not '.': the tools take the rank from the first
+           dot-separated part of the file name that starts with a digit (get_file_names() in common/utils.cpp) */
+        sprintf(tfilename + strlen(tfilename), "_%u", t_pid);
+        strcpy(pid, ".0");
+    }
     sprintf(mpi_filename, "%s.mpi%s%s", tfilename, pid, gz_ext);
     sprintf(hwc_filename, "%s.hwc%s%s", tfilename, pid, gz_ext);
     sprintf(com_filename, "%s.com%s%s", tfilename, pid, gz_ext);
 
-    if (t_mpi_rank == 0) {
+    if (t_mpi_rank <= 0) {
         sprintf(app_filename, "%s.app%s", tfilename, gz_ext);
-    }
-    if (t_mpi_rank < 0) {
-        sprintf(app_filename, "%s.app%s%s", tfilename, pid, gz_ext);
     }
     if (store_map) {
         sprintf(tbuf, "/proc/%u/maps", t_pid);
@@ -1215,7 +1252,12 @@ void tractor::init(void)
     for (i = 0; i < MPI_MAX_FUNCID_THROUGH; i++) {
         debug_printf("%s = %s\n", mpi_function_names[i], conoff[counting_permission[i] != 0]);
     }
+#ifdef _T_CUPTI_
+    if (!cuda_skip_parse)
+        t_cupti_init(); /* before the application initializes CUDA */
+#endif
     if (t_mpi_rank < 0) {
+        single_process_init();
         post_mpi_init();
     }
 
@@ -1270,6 +1312,8 @@ void tractor::pre_finalize(int abort)
 #ifdef _TRANSPORT_PROFILE_
     t_permit_collect_transport = 0;
 #endif
+    if (t_mpi_rank < 0)
+        single_process_nodes_info();
     int old_skip_parse =  mpi_skip_parse;
     mpi_skip_parse = 1;
     if (t_mpi_rank >= 0 && abort == 0) {
@@ -1448,6 +1492,7 @@ void tractor::ptpd_finalize(void)
 #endif
 extern PEAT_Clock global_tool_overhead;
 extern PEAT_Clock global_mpi_time;
+extern PEAT_Clock global_llama_time;
 extern PEAT_Clock global_gpu_time;
 extern PEAT_Clock global_parallel_app_time;
 extern PEAT_Clock global_progress_calls;
@@ -1541,6 +1586,9 @@ void tractor::end(void)
 #ifdef _T_ACC_
     t_acc_finalize();
 #endif
+#ifdef _T_CUPTI_
+    t_cupti_finalize(); /* the GPU records CUPTI still holds; a no-op when the exit handler already got them */
+#endif
 
 #ifdef _MEMPROFILE_
     PEAT_LNum max_memory_application_rss = mprof.get_max_memory_RSS_in_KB(); // in kibibytes
@@ -1548,8 +1596,14 @@ void tractor::end(void)
     PEAT_LNum max_memory_application_rs_scorrected = max_memory_application_rss - ((tractor_allocated /* + (mprof.get_total_events() * sizeof(memory_profiler_event))*/) / 1024); // in kibibytes
 #endif
     tractor_initialized = 0;
-    if (global_mpi_time > 0)
-        write_trace(); // in case LD_PRELOAD was used with 'wrong' app (like mpiexec.hydra etc)
+    /* in case LD_PRELOAD was used with 'wrong' app (like mpiexec.hydra etc); a non-MPI llama.cpp process
+       has no MPI time but its pipeline stages */
+    bool non_mpi_records = global_llama_time > 0;
+#ifdef _T_CUPTI_
+    non_mpi_records = non_mpi_records || global_cuda_time > 0;
+#endif
+    if (global_mpi_time > 0 || non_mpi_records)
+        write_trace();
     if (gt_ninfo)
         delete gt_ninfo;
     if (local_comms)
@@ -1669,6 +1723,52 @@ void tractor::get_rank_time(PEAT_Clock *start, PEAT_Clock *start_parallel, PEAT_
     *overall_tool_overhead = global_tool_overhead;
     *overall_MPI = global_mpi_time;
     *overall_GPU = global_gpu_time;
+    __DEBUG_EPILOG_TRACTOR_LAYER__
+}
+
+/* A process without MPI rank (no MPI launcher, e.g. a llama.cpp application) is described as a one-rank, one-node
+   world, with the same records nodes_info() gathers over MPI: start/stop sync points, the node (host, frequencies,
+   times) and its only rank 0. The analysis tools need them (frequencies for the time correction) to read the trace. */
+void tractor::single_process_init(void)
+{
+    __DEBUG_PROLOG_TRACTOR_LAYER__
+    if (gt_ninfo == NULL) {
+        rank_cw = 0;
+        size_cw = 1;
+        start_sync = (PEAT_Clock *)t_malloc(sizeof(PEAT_Clock), 128);
+        stop_sync = (PEAT_Clock *)t_malloc(sizeof(PEAT_Clock), 128);
+        gt_ninfo = new t_nodes_info;
+#ifdef USE_NANO_TIMER
+        first_par_tsc = start_sync[0] = stop_sync[0] = peat_get_nano_sec();
+#else
+        first_par_tsc = start_sync[0] = stop_sync[0] = rdtsca();
+#endif
+    }
+    __DEBUG_EPILOG_TRACTOR_LAYER__
+}
+
+void tractor::single_process_nodes_info(void)
+{
+    __DEBUG_PROLOG_TRACTOR_LAYER__
+    if (gt_ninfo != NULL && gt_ninfo->nodes_num == 0) { /* pre_finalize() may run twice: MPI_Finalize of a rankless MPI run, then end() */
+        char localhost[MAX_HOSTNAME];
+        gethostname(localhost, MAX_HOSTNAME);
+        localhost[MAX_HOSTNAME - 1] = 0;
+        stop_sync[0] = last_par_tsc;
+        get_topo();
+        gt_ninfo->allocate(1);
+        t_node_info &node = gt_ninfo->nodes[0];
+        node.set_hostname(localhost);
+        node.proc_freq[0] = proc_freq[0];
+        node.proc_freq[1] = proc_freq[1];
+        node.cpu_proc_freq[0] = cpu_proc_freq[0];
+        node.cpu_proc_freq[1] = cpu_proc_freq[1];
+        node.t_time[0] = first_tsc;
+        node.t_time[1] = first_par_tsc;
+        node.t_time[2] = last_par_tsc;
+        node.allocate(1);
+        node.mpi_ranks[0] = 0;
+    }
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
 
@@ -2280,6 +2380,11 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
             t_gzprintf(fps_mpi, k == 0 ? "%lld" : ":%lld", ids[k]);
             t_gzprintf(fps_hwc, k == 0 ? "%lld" : ":%lld", ids[k]);
         }
+#ifdef _T_CUPTI_
+        if (rec.func_id == CUDA_KERNEL_ID_THROUGH) { /* a GPU kernel is written with its own name, never as cuda_kernel's id */
+            t_gzprintf(fps_mpi, ":%d:%lld:%s", tid, children, t_cupti_kernel_name(rec.cuda.name_index));
+        } else
+#endif
         if (print_names) {
             t_gzprintf(fps_mpi, ":%d:%lld:%s", tid, children, mpi_function_names[rec.func_id]);
         } else {
@@ -2432,7 +2537,8 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
     #ifdef _T_GPU_STAT_
             if (func_base >= CL_START_GROUP && func_base < CL_END_GROUP ||
                 func_base >= ZE_START_GROUP && func_base < ZE_END_GROUP ||
-                func_base >= ACC_START_GROUP && func_base < ACC_END_GROUP) {
+                func_base >= ACC_START_GROUP && func_base < ACC_END_GROUP ||
+                peat_is_cuda_func_id(func_base)) {
                 t_gzprintf(fps_mpi, ":%d:%d:%d",
                            rec.gpu.num_arguments,      //
                            rec.gpu.num_out_arguments,  //
@@ -3155,10 +3261,12 @@ void tractor::write_stat_com_file(void)
                 double fratio_mpi = ((double)(overall_durations[f] * 100.0)) / ((double)(global_mpi_time));
                 gzprintf(fps_com, "%d:%34s|\t%19lld|\t%19lld(%06.2f%)(%06.2f%)|\t%18lld(%07.2f%)|\n", PEAT_RT_Remark, mpi_function_names[f], overall_entries[f], overall_durations[f], fratio, fratio_mpi, overall_tool_overhead[f], ratio);
             } else {
-                if (f == OMPT_PARALLEL_ID_THROUGH) {
+                /* llama.cpp stages are nested in each other: no common base to relate them to */
+                if (f == OMPT_PARALLEL_ID_THROUGH || (f >= LLAMA_START_GROUP_THROUGH && f <= LLAMA_END_GROUP_THROUGH)) {
                     gzprintf(fps_com, "%d:%34s|\t%19lld|\t%19lld(%06.2f%)(%06.2f%)|\t%18lld(%07.2f%)|\n", PEAT_RT_Remark, mpi_function_names[f], overall_entries[f], overall_durations[f], fratio, (double)0.0, overall_tool_overhead[f], ratio);
                 } else {
-                    if (f >= CL_START_GROUP_THROUGH && f <= CL_END_GROUP_THROUGH || f >= ZE_START_GROUP_THROUGH && f <= ZE_END_GROUP_THROUGH || f >= ACC_START_GROUP_THROUGH && f <= ACC_END_GROUP_THROUGH) {
+                    if (f >= CL_START_GROUP_THROUGH && f <= CL_END_GROUP_THROUGH || f >= ZE_START_GROUP_THROUGH && f <= ZE_END_GROUP_THROUGH || f >= ACC_START_GROUP_THROUGH && f <= ACC_END_GROUP_THROUGH ||
+                        f >= CUDA_START_GROUP_THROUGH && f <= CUDA_END_GROUP_THROUGH) {
                         double fratio_gpu = ((double)(overall_durations[f] * 100.0)) / ((double)(global_gpu_time));
                         gzprintf(fps_com, "%d:%34s|\t%19lld|\t%19lld(%06.2f%)(%06.2f%)|\t%18lld(%07.2f%)|\n", PEAT_RT_Remark, mpi_function_names[f], overall_entries[f], overall_durations[f], fratio, fratio_gpu, overall_tool_overhead[f], ratio);
                     } else {

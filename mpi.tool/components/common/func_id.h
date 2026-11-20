@@ -39,6 +39,10 @@ class Func_ID
     }
     const char *name_by_idx(PEAT_MPI_Func_ID idx) const;
     PEAT_MPI_Func_ID idx_by_name(const char *name) const;
+    // A function the tables do not have, named in the records themselves (a GPU kernel recorded with its own name, see
+    // tractor's t_cupti.cpp): registered once, with an id above the static ones and the properties of function `like`.
+    // Returns the id the name has (registered before or now). Thread safe against itself, not against idx_by_name().
+    PEAT_MPI_Func_ID add_by_name(const char *name, PEAT_MPI_Func_ID like);
     // const char *func_idOrNameByIdx(PEAT_MPI_Func_ID idx) const;//respects nameInsteadIdx. if nameInsteadIdx=true, returns name. Overwise return ID.
     // PEAT_Property event_dataByIdx(const PEAT_MPI_Func_ID id) const;
     PEAT_Bool check_property(const PEAT_MPI_Func_ID id, PEAT_Property property_id) const;

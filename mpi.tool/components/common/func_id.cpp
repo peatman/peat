@@ -18,6 +18,7 @@
 
 #include <cassert>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <stdio.h>
@@ -31,6 +32,7 @@
 #define _MPICH_ 3
 #define _OPENMPI_ 5
 #define _PARSE_MPI_INTERNAL_
+#define _PARSE_LLAMA_DEPRECATED_ // names of the deprecated llama.cpp entry points, for traces taken with LLAMA_DEPRECATED=on
 
 #include "func_id_def.h"
 
@@ -89,6 +91,34 @@ PEAT_MPI_Func_ID Func_ID::idx_by_name(const char *name) const
     if (func_idStoreUC.count(name) > 0)
         return func_idStoreUC.at(name);
     return TMPI_FUNC_ID_NONE;
+}
+
+PEAT_MPI_Func_ID Func_ID::add_by_name(const char *name, PEAT_MPI_Func_ID like)
+{
+    static std::mutex add_mutex;
+    static int next_id = TMPIfunc_id_Size + 1; // above every static id: no table is indexed by function id
+    std::lock_guard<std::mutex> lock(add_mutex);
+    const PEAT_MPI_Func_ID known = idx_by_name(name);
+    if (known != TMPI_FUNC_ID_NONE)
+        return known;
+    std::map<PEAT_MPI_Func_ID, const MPIFuncs *>::const_iterator base = funcStore.find(like);
+    if (base == funcStore.end())
+        return TMPI_FUNC_ID_NONE;
+    const PEAT_Property *p = base->second->prop;
+    const PEAT_MPI_Func_ID id = (PEAT_MPI_Func_ID)next_id++;
+    char *stored_name = new char[strlen(name) + 1]; // kept for the whole run, as the static names
+    strcpy(stored_name, name);
+    const MPIFuncs *entry = new MPIFuncs{id, base->second->prefix, stored_name, "", "", "",
+                                         {{p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15]}}};
+    funcStore[id] = entry;
+    func_idStore[stored_name] = id;
+    char tmps[1024];
+    strncpy(tmps, stored_name, sizeof(tmps) - 1);
+    tmps[sizeof(tmps) - 1] = 0;
+    peat_strupr(tmps);
+    func_idStoreUC[tmps] = id;
+    FIDCERR << "function " << stored_name << " added with id " << id << "\n";
+    return id;
 }
 
 /*

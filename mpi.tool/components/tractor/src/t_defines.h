@@ -33,7 +33,7 @@
 #endif
 /* GPU-style records (parameter lists in the extras) and their transfer/execution statistics:
    written for OpenCL/Level Zero (GPUPARSE) and for OpenACC */
-#if defined(GPUPARSE) || defined(_T_ACC_)
+#if defined(GPUPARSE) || defined(_T_ACC_) || defined(_T_CUPTI_)
 #define _T_GPU_STAT_
 #endif
 
@@ -118,6 +118,15 @@ static void debug_printf(const char *format, ...) {};
 #else
 #define __DEBUG_PROLOG_GPU_LAYER__
 #define __DEBUG_EPILOG_GPU_LAYER__
+#endif
+
+#ifdef _TRACTOR_DEBUG_LLAMA_LAYER_ENTRY_EXIT_
+#define _TRACTOR_DEBUG_ENTRY_EXIT_
+#define __DEBUG_PROLOG_LLAMA_LAYER__ __DEBUG_PROLOG__
+#define __DEBUG_EPILOG_LLAMA_LAYER__ __DEBUG_EPILOG__
+#else
+#define __DEBUG_PROLOG_LLAMA_LAYER__
+#define __DEBUG_EPILOG_LLAMA_LAYER__
 #endif
 
 #ifdef _TRACTOR_DEBUG_COMM_ENTRY_EXIT_
@@ -376,6 +385,14 @@ struct msl_event {
             short kind;
             short endpoint;
         } __attribute__((packed)) __attribute__((aligned(4))) ompt;
+#endif
+#ifdef _T_CUPTI_
+        struct { /* the GPU layout (same first members as gpu) and the name of a kernel */
+            int num_arguments;
+            int num_out_arguments;
+            int num_extra_arguments;
+            int name_index; /* cuda_kernel records: index of the kernel name (t_cupti_kernel_name()) */
+        } __attribute__((packed)) __attribute__((aligned(4))) cuda;
 #endif
     };
 };

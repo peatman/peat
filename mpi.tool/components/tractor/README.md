@@ -48,6 +48,53 @@ export PEAT_TRACTOR_COLLECT_TRANSPORT=1  - enable transport-API event collection
 
 Note: `PEAT_TRACTOR_TRANSPORT_LAYER` is currently non-functional - the env-var parsing in `src/tractor.cpp`, the `t_transport_layer` enum/struct member in `src/tractor.h`, and the runtime `gt_info(transport_layer)!=...` check that `src/mpi_layer.pl`'s `make_class_transport` would generate are all commented out. In practice this means a `TARGET=mvapich2 TRANSPORT=on` build records events for whichever of verbs/psm2 the process actually calls into (nothing is filtered by layer at runtime), and there is currently no way to select a layer for it.
 
+## llama.cpp pipeline profiling
+
+`LLAMA_PARSE=on LLAMA_ROOT=<llama.cpp source tree>` (CMake: `-DLLAMA=ON -DLLAMA_ROOT=...`) adds wrappers for the coarse llama.cpp stages, the `CLASS_LLAMA` entries of `../common/mpi_func.inc` (library suffix `.llama`): `llama_model_load_from_file`, `llama_init_from_model`, `llama_tokenize`, `llama_process`, `llama_get_logits_ith`, `llama_sampler_sample`, `llama_token_to_piece`, `llama_free`, `llama_model_free` and the scheduler calls libllama makes into libggml-base, `ggml_backend_sched_alloc_graph`, `ggml_backend_sched_graph_compute_async`, `ggml_backend_sched_synchronize` (the same for every ggml backend; with a GPU backend the device time shows up in `synchronize`).
+
+- They are found with `dlsym(RTLD_NEXT, ...)`, so llama.cpp has to be built with shared libraries (`-DBUILD_SHARED_LIBS=ON`), and compiled against `LLAMA_ROOT/include/llama.h` (two of them take structures by value): use the source tree the traced llama.cpp was built from.
+- Records are nested (`llama_process` -> `ggml_backend_sched_graph_compute_async`, ...), carry no parameters and are read as local events by mat/ctt/pet/qTV. Generated from `pinc/llama.code.inc`.
+- `LLAMA_DEPRECATED=on` (CMake `-DLLAMA_DEPRECATED=ON`) adds `llama_decode`/`llama_encode`, deprecated in llama.cpp in favour of `llama_process`; they are under `#ifdef _PARSE_LLAMA_DEPRECATED_` in `mpi_func.inc`.
+- A llama.cpp process does not need MPI: the trace is written at exit when it recorded any llama.cpp stage.
+
+### ggml CPU kernels
+
+The same builds also wrap the ggml CPU backend (`CLASS_GGML_CPU`, generated from the declarations in llama.cpp's `ggml/src/ggml-cpu/*.h`): `ggml_graph_compute` (once per graph), every `ggml_compute_forward_<op>` kernel, `ggml_cpu_extra_compute_forward` (the extra buffer types' own kernels - repacked Q4_0/Q4_K/IQ4_NL weights (`CPU_REPACK`), AMX, ...: their matmuls never call `ggml_compute_forward_mul_mat`) and `ggml_barrier` between nodes.
+
+- Off unless `PEAT_TRACTOR_PARSE_GGML_CPU=1`: every worker thread records its share of every node (some thousands of records per generated token). Measured on an 8-core desktop: about 5% slower generation; the default (pipeline stages only) is within noise.
+- With it on, `PEAT_TRACTOR_MAX_THREADS` defaults to the number of CPUs + 8 and `PEAT_TRACTOR_MAX_NESTING_LEVELS` to 8 (the main thread nests `llama_process` > `ggml_backend_sched_graph_compute_async` > `ggml_graph_compute` > kernel > `ggml_barrier`); explicit settings are kept. Too low limits abort the run.
+- Calls inside libggml-cpu are only intercepted when they go through the PLT: GCC's default for `-fPIC` code. Check a build with `objdump -d libggml-cpu.so | grep 'call.*ggml_compute_forward_rope@plt'`; clang and icx call (or inline) them directly unless built with `-fsemantic-interposition`.
+- `ggml_cpu_extra_compute_forward` is tried first for every node: a short record when the node is not one of an extra buffer type.
+
+## CUDA profiling (CUPTI) and cuBLAS
+
+`CUPTI_PARSE=on CUDA_ROOT=<CUDA toolkit>` (CMake: `-DCUPTI=ON -DCUDA_ROOT=...`, which also selects `PEAT_TIMER=nano`) adds `src/t_cupti.cpp` and the `CLASS_CUDA`/`CLASS_CUBLAS` entries of `../common/mpi_func.inc` (library suffix `.cuda`, linked to that toolkit's `libcupti`: use the CUDA version the application runs with). Recording is off unless `PEAT_TRACTOR_PARSE_CUDA=1`. Independent of `LLAMA_PARSE`, works for any CUDA application.
+
+- GPU activity (CUPTI activity API): every kernel, copy (`cuda_memcpy_htod`/`dtoh`/`dtod`/`ptop`/`htoh`), `cuda_memset` and synchronization (`cuda_sync_context`/`stream`/`event`/`stream_wait_event`), as top-level records on a thread lane of its own per CUDA context and stream. CUPTI takes its timestamps from tractor's clock, so they are on the host time line. A kernel record is written with the kernel's own name - demangled, without return type and parameter list, `::` as `.` (`:` separates the fields), e.g. `mul_mat_vec_q<(ggml_type)2, 1, false, false, false>` - instead of `cuda_kernel`; the tools give a name they do not know an id of its own (`Func_ID::add_by_name()`), so the kernels are reported one by one. `PEAT_TRACTOR_CUDA_GRAPH_TRACE=1` records whole CUDA graphs (`cuda_graph`) instead of their kernels.
+- Host CUDA runtime calls (CUPTI callback API): `cudaLaunchKernel`, `cudaMemcpyAsync`, `cudaStreamSynchronize`, ... (the `cuda*` entries of `mpi_func.inc`), nested where they are made (`llama_process` > `ggml_backend_sched_graph_compute_async` > `cudaLaunchKernel`). No call site address: from a CUPTI callback only libcupti's frames are at hand.
+- cuBLAS: `dlsym` wrappers of the compute calls ggml-cuda makes (`cublasGemmEx`, `cublasGemmBatchedEx`, `cublasGemmStridedBatchedEx`, `cublasSgemm_v2`, `cublasSgemmBatched`, `cublasSgemmStridedBatched`, `cublasStrsmBatched`, `cublasLtMatmul`); their GPU kernels are recorded by CUPTI under cuBLAS's names (e.g. `maxwell_sgemm_128x64_tn`).
+- Record layout: every CUDA and cuBLAS record has the class dependent part of the GPU class (`:num_arguments:num_out_arguments:num_extra_arguments`, see doc/Tractor.Trace.Format.Description.pdf), its arguments (hex) are:
+
+  | record | arguments |
+  |---|---|
+  | host CUDA call (`cuda*`) | correlation |
+  | kernel (written by its name) | correlation, stream, grid x, y, z, block x, y, z, shared memory bytes |
+  | `cuda_memcpy_*`, `cuda_memset` | correlation, stream, bytes |
+  | `cuda_sync_*` | correlation, stream (`ffffffff`: device wide) |
+  | `cuda_graph` | correlation, stream, graph id |
+  | cuBLAS call | none |
+
+  The correlation id is CUPTI's: a GPU record and the host call that caused it (`cudaLaunchKernel`, `cudaMemcpyAsync`, ...) have the same one. mat pairs them (`GPU::parse_cuda()`): one `PEAT_RT_Bind_Completion` line per pair in the bind file (call -> GPU record), and the time from the start of the call to the end of the GPU work in its GPU statistics (transfers keyed by bytes, executions by stream). qTV draws the pairs as GPU execution (launches, `cudaGraphLaunch`), GPU transfer (`cudaMemcpy*Async`, `cudaMemset*`) or completion (synchronizations) messages. The readers take every record of the CUDA group and every function they only know by the name in the record (`peat_is_cuda_func_id()` in `common/mpi_func_ids.h`) as a GPU class one.
+- With it on, `PEAT_TRACTOR_MAX_THREADS` defaults to the number of CPUs + 24 (stream lanes) and `PEAT_TRACTOR_MAX_NESTING_LEVELS` to 8; explicit settings are kept.
+- The GPU records still buffered by CUPTI are flushed from an exit handler registered at the first CUDA call (it runs before the CUDA runtime's own ones) and again before the trace is written.
+- Measured on a GTX 1080 with llama.cpp (1B model, every layer on the GPU): about 5-10% slower generation, 68k kernels per 128 tokens.
+
+## Processes without MPI rank
+
+A process not started by an MPI launcher (no `PMI_RANK`/`OMPI_COMM_WORLD_RANK`, e.g. a llama.cpp application) is written as rank 0 of a one-rank, one-node run, under the per-process template `<PEAT_TRACTOR_FILE>_<pid>`: `tractor_t_<pid>.app.gz`, `tractor_t_<pid>.{mpi,hwc,com}.0.gz`. The node records of the `.app` file (host, frequencies, sync points) are filled from the process itself, so ctt/mat/qTV read it as any other trace: `ctt -i tractor_t_<pid>`. (The pid is joined with `_`, not `.`: the tools take the rank from the first dot-separated part of a file name that starts with a digit.)
+
+Runtime switch: export PEAT_TRACTOR_PARSE_LLAMA=0 - do not record llama.cpp stages (default 1, LLAMA_PARSE=on builds only)
+
 
 
 Tractor usage guideline:
@@ -116,6 +163,10 @@ export PEAT_TRACTOR_USE_SIGNALS=1 - Install handlers for some system signals to 
 export PEAT_TRACTOR_MAX_THREADS=<value> maximum allowed threads (default 6, safe selection is OMP_NUM_THREADS+5)
 export PEAT_TRACTOR_FULL_OMPT_UNWIND full (1) or partial (1st caller) (0) unwind of OpenMP events
 export PEAT_TRACTOR_PARSE_OPENACC=0|1 record OpenACC events (default 1, only in GPU builds (PARSE_GPU=on) with the GNU compiler); the library registers itself with the OpenACC runtime (it also appends itself to ACC_PROFLIB)
+export PEAT_TRACTOR_PARSE_LLAMA=0|1 record llama.cpp pipeline stages (default 1, only in LLAMA_PARSE=on builds), see "llama.cpp pipeline profiling" above
+export PEAT_TRACTOR_PARSE_GGML_CPU=0|1 record the ggml CPU kernels (default 0, only in LLAMA_PARSE=on builds), see "ggml CPU kernels" above
+export PEAT_TRACTOR_PARSE_CUDA=0|1 record CUDA (CUPTI) and cuBLAS (default 0, only in CUPTI_PARSE=on builds), see "CUDA profiling" above
+export PEAT_TRACTOR_CUDA_GRAPH_TRACE=1 record whole CUDA graphs instead of their kernels
 
 PTP Daemon can be executed either by hand using "&" or by tractor itself using values below
 

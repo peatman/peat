@@ -158,6 +158,12 @@ class GPU : public Outputs
     void finish_cl_before(const PEAT_Rank rank, const Tractor_Event &event, const PEAT_Reduced_Event_Info &completion, std::list<CL_Command> &pending,
                           std::list<CL_Command>::iterator upto, PEAT_Handle queue, std::vector<PEAT_Handle> &deps);
 
+    // CUDA (tractor's t_cupti.cpp): a host CUDA call and the GPU records it caused have the same CUPTI correlation id
+    // (their first parameter). Each pair is bound (PEAT_RT_Bind_Completion: call -> GPU record) and its time from the
+    // start of the call to the end of the GPU work is counted as a transfer (copies, memsets, keyed by bytes) or an
+    // execution (kernels, graphs, keyed by stream); synchronizations are only bound.
+    void parse_cuda(const PEAT_Rank rank, const Tractor_Event &event);
+
     PEAT_Bool find_handle(PEAT_Rank rank, PEAT_MPI_Request request);
     PEAT_Bool update_handle(PEAT_Rank rank, PEAT_MPI_Request request, const Phase &phase);
 
@@ -177,6 +183,15 @@ class GPU : public Outputs
     std::map<PEAT_Rank, std::map<PEAT_Handle, Region_Exec>> executions;
     std::map<PEAT_Rank, std::list<CL_Command>> cl_pending;
     std::map<PEAT_Rank, std::map<PEAT_Handle, bool>> cl_out_of_order; // queue -> created with CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE
+    struct Cuda_GPU_Record { // a GPU record (kernel, copy, ...) of a CUDA call
+        PEAT_Reduced_Event_Info info;
+        PEAT_Message_Size bytes;
+        PEAT_Handle stream;
+        int pc_ctl;
+    };
+    std::map<PEAT_Rank, std::map<PEAT_ULNum, PEAT_Reduced_Event_Info>> cuda_calls;        // correlation -> host call
+    std::map<PEAT_Rank, std::map<PEAT_ULNum, std::vector<Cuda_GPU_Record>>> cuda_waiting; // correlation -> GPU records read before their call
+    void bind_cuda(const PEAT_Rank rank, const PEAT_Reduced_Event_Info &call, const Cuda_GPU_Record &gpu);
 
   public:
     std::map<int, std::map<PEAT_GPUT_Record, PEAT_Single_Event_Clock>> printed_gpu_transfers;

@@ -258,6 +258,8 @@ struct tractor : t_base_event {
     void ptpd_init(void);
     void ptpd_finalize(void);
     void post_mpi_init(void);
+    void single_process_init(void);       // no MPI rank: a one-rank, one-node "world" (see nodes_info)
+    void single_process_nodes_info(void); // fills gt_ninfo for it at the end of the run
     void post_ptpd_init(void);
     void pre_finalize(int);
     void init_extra(const int tid);

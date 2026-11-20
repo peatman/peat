@@ -200,6 +200,8 @@ EOF
 
 print STDERR "Parsing file $mpifuncids\n";
 my $enumCounter=0;
+# Line prefixes that mark an enum entry as a function ID
+my @func_id_prefixes = qw(MPI OMPI OMPT SMP PSM IBV PROCESS CL ZE ACC UCX UCP OFI FI LLAMA GGML CUDA CUBLAS);
 while( <IN> ) {
   chomp($_);
   my $line=$_;
@@ -208,7 +210,7 @@ while( <IN> ) {
   $line=~s/\/\/.*//g;
   $line=~s/,//g;
   $line=~s/ //g;
-  if ($line =~ "^MPI" || $line =~ "^OMPI" ||$line =~ "^SMP" || $line =~ "^PSM" || $line =~ "^IBV" || $line =~ "^PROCESS" || $line =~ "^CL" || $line =~ "^ZE" || $line =~ "^OMPT" || $line =~ "^ACC" || $line =~ "^UCX" || $line =~ "^UCP" || $line =~ "^OFI" || $line =~ "^FI") {
+  if (grep { index($line, $_) == 0 } @func_id_prefixes) {
     my @line1 = split('=',$line);
 #    print STDERR "$line1[0]  $line1[1] \n";
     if ($line1[1] eq "") {

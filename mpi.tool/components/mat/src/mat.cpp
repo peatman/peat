@@ -63,7 +63,9 @@ PEAT_Bool Mat::parse_single_event(const int rank)
             tsc_predictor[rank] = t_event.tsc_time.func.in;
             if(!nested_record) {
                 mpi_time = t_event.tsc_time.mpi.out - t_event.tsc_time.mpi.in;
-                if(t_event.func_id != MPI_INIT_ID && t_event.func_id != MPI_INIT_THREAD_ID && !is_omp(t_event.func_class)) {
+                // user code is the gap since the end of the previous top-level record of thread 0, the only thread that
+                // updates tsc_corrector: records of other threads (e.g. ggml CPU kernels of the worker threads) run inside it
+                if(t_event.func_id != MPI_INIT_ID && t_event.func_id != MPI_INIT_THREAD_ID && !is_omp(t_event.func_class) && t_event.thread_id == 0) {
                     uc_time = t_event.tsc_time.func.in - tsc_corrector[rank];
                 } else {
                     t_time = 0;

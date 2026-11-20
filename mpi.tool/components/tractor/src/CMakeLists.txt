@@ -336,6 +336,11 @@ set(ACC_PARSE "AUTO" CACHE STRING "OpenACC interception: AUTO|ON|OFF (needs acc_
 set_property(CACHE OCL_PARSE PROPERTY STRINGS AUTO ON OFF)
 set_property(CACHE LZE_PARSE PROPERTY STRINGS AUTO ON OFF)
 set_property(CACHE ACC_PARSE PROPERTY STRINGS AUTO ON OFF)
+set(LLAMA OFF  CACHE BOOL   "llama.cpp/ggml pipeline stage interception (LLAMA_PARSE), needs LLAMA_ROOT")
+set(LLAMA_ROOT "" CACHE PATH "llama.cpp source tree the traced llama.cpp was built from (its include/llama.h is used)")
+set(LLAMA_DEPRECATED OFF CACHE BOOL "also intercept the deprecated llama.cpp entry points (llama_decode, llama_encode)")
+set(CUPTI OFF CACHE BOOL "CUDA through CUPTI (GPU activity, host runtime calls) and cuBLAS wrappers (CUPTI_PARSE), needs CUDA_ROOT")
+set(CUDA_ROOT "" CACHE PATH "CUDA toolkit with CUPTI, of the CUDA version the traced application runs with")
 set(BUF  OFF   CACHE BOOL   "extra MPI buffer fields (MPIBUFFERS)")
 set(V2P  OFF   CACHE BOOL   "virtual->physical address resolution (VIRT2PHYS)")
 set(HWC  "off" CACHE STRING "hardware counters tag: off|RDPMC")
@@ -685,6 +690,43 @@ else()
   set(_pct off)
 endif()
 
+# llama.cpp / ggml pipeline stages (CLASS_LLAMA in mpi_func.inc), see the Makefile's LLAMA_PARSE
+set(TRACTOR_LLAMA_INCLUDE_DIRS)
+if(LLAMA)
+  if(NOT EXISTS "${LLAMA_ROOT}/include/llama.h")
+    message(FATAL_ERROR "tractor: LLAMA=ON needs LLAMA_ROOT pointing to a llama.cpp source tree (${LLAMA_ROOT}/include/llama.h not found)")
+  endif()
+  set(TRACTOR_LLAMA_INCLUDE_DIRS ${LLAMA_ROOT}/include ${LLAMA_ROOT}/ggml/include)
+  list(APPEND TRACTOR_CONTROLS _T_LLAMA_)
+  set(TRACTOR_EXTRANAME "${TRACTOR_EXTRANAME}.llama")
+  set(_parse_llama_flag on)
+  if(LLAMA_DEPRECATED)
+    list(APPEND _cpp_input -D_PARSE_LLAMA_DEPRECATED_)
+  endif()
+else()
+  set(_parse_llama_flag off)
+endif()
+
+# CUDA through CUPTI (t_cupti.cpp) and cuBLAS wrappers, see the Makefile's CUPTI_PARSE
+if(CUPTI)
+  set(_cupti_root ${CUDA_ROOT}/extras/CUPTI)
+  if(NOT EXISTS "${_cupti_root}/include/cupti.h")
+    message(FATAL_ERROR "tractor: CUPTI=ON needs CUDA_ROOT pointing to a CUDA toolkit with CUPTI (${_cupti_root}/include/cupti.h not found)")
+  endif()
+  list(APPEND TRACTOR_LLAMA_INCLUDE_DIRS ${CUDA_ROOT}/include ${_cupti_root}/include)
+  list(APPEND TRACTOR_SOURCES t_cupti.cpp)
+  list(APPEND TRACTOR_CONTROLS _T_CUPTI_)
+  list(APPEND TRACTOR_LIBS -L${_cupti_root}/lib64 cupti -Wl,-rpath,${_cupti_root}/lib64)
+  set(TRACTOR_EXTRANAME "${TRACTOR_EXTRANAME}.cuda")
+  set(_parse_cuda_flag on)
+  if(NOT _timer_lower STREQUAL "nano") # CUPTI timestamps are nanoseconds on tractor's clock (cuptiActivityRegisterTimestampCallback)
+    message(STATUS "tractor: CUPTI=ON uses PEAT_TIMER=nano (was ${PEAT_TIMER})")
+    set(_timer_lower nano)
+  endif()
+else()
+  set(_parse_cuda_flag off)
+endif()
+
 if(BUF)
   list(APPEND TRACTOR_CONTROLS _TRACTOR_EXTRA_FIELDS_)
   set(TRACTOR_EXTRANAME "${TRACTOR_EXTRANAME}.mbs")
@@ -766,7 +808,7 @@ if(DIAG)
   set(TRACTOR_OPT -O0)
   list(APPEND TRACTOR_CONTROLS
     _TRACTOR_DIAG_ _TRACTOR_DEBUG_TRACTOR_LAYER_ENTRY_EXIT_ _TRACTOR_DEBUG_TRANSPORT_LAYER_ENTRY_EXIT_
-    _TRACTOR_DEBUG_MPI_LAYER_ENTRY_EXIT_ _TRACTOR_DEBUG_GPU_LAYER_ENTRY_EXIT_
+    _TRACTOR_DEBUG_MPI_LAYER_ENTRY_EXIT_ _TRACTOR_DEBUG_GPU_LAYER_ENTRY_EXIT_ _TRACTOR_DEBUG_LLAMA_LAYER_ENTRY_EXIT_
     _TRACTOR_DEBUG_OMPT_ENTRY_EXIT_ _TRACTOR_DEBUG_ACC_ENTRY_EXIT_ _TRACTOR_DEBUG_COMM_ENTRY_EXIT_)
 else()
   set(TRACTOR_DBG_SUFFIX "")
@@ -838,7 +880,7 @@ add_custom_command(
 
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp ${_transport_shim_outputs}
-  COMMAND ${PERL_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer.pl -p on -e ${_print_extended_stuff} -m ${_maxmpi} -t ${_pct} -c ${_parse_gpu_flag}
+  COMMAND ${PERL_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer.pl -p on -e ${_print_extended_stuff} -m ${_maxmpi} -t ${_pct} -c ${_parse_gpu_flag} -g ${_parse_llama_flag} -u ${_parse_cuda_flag}
           -s ${_mpi_layer_skip_core} -i mpi_func.inc -o mpi_layer.cpp ${_transport_func_layers}
   DEPENDS mpi_layer.cpp.in mpi_layer.cpp.in.end mpi_layer.pl
           ${CMAKE_CURRENT_BINARY_DIR}/mpi_func_ids_through.h
@@ -924,7 +966,7 @@ else()
   target_compile_definitions(tractor PRIVATE ${TRACTOR_CONTROLS})
   target_compile_options(tractor PRIVATE ${TRACTOR_OPT} ${TRACTOR_CXX_MISC} ${TRACTOR_OMP_FLAG})
   target_link_options(tractor PRIVATE ${TRACTOR_OMP_FLAG})
-  target_include_directories(tractor PRIVATE . ${_common_dir} ${hwloc_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR} ${TRACTOR_GPU_INCLUDE_DIRS})
+  target_include_directories(tractor PRIVATE . ${_common_dir} ${hwloc_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR} ${TRACTOR_GPU_INCLUDE_DIRS} ${TRACTOR_LLAMA_INCLUDE_DIRS})
   target_link_libraries(tractor PRIVATE ${TRACTOR_LIBS} hwloc::hwloc)
   if(NOT _transport_upper STREQUAL "OFF")
     target_include_directories(tractor PRIVATE

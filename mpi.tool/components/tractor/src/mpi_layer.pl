@@ -49,6 +49,8 @@ my $funccount=0;
 my $parse_gpu=0;
 my $parse_gpu_cl=0; # OpenCL wrappers (-c on|cl|cl,ze)
 my $parse_gpu_ze=0; # Level Zero wrappers (-c on|ze|cl,ze)
+my $parse_llama=0;  # llama.cpp/ggml pipeline wrappers (-g on)
+my $parse_cuda=0;   # cuBLAS wrappers of the CUDA (CUPTI) build (-u on)
 my $skip_core=0;
 sub make_dup;
 my @transport_layers; 
@@ -954,6 +956,39 @@ eval $print_code;
 print STDERR "Function $prototype:$@ generated\n";
 }
 
+# llama.cpp / ggml pipeline stages (CLASS_LLAMA): the real function is found with dlsym(RTLD_NEXT) like the GPU
+# layer, the record is nested (stages called from inside a stage become its children) but carries no parameters,
+# so it is written as a plain record and every consumer reads it as a local event.
+sub make_class_llama {
+my $line=shift;
+my $skip_flag=shift; # run-time switch of the class: llama_skip_parse (CLASS_LLAMA) or ggml_cpu_skip_parse (CLASS_GGML_CPU)
+my @line=@$line;
+my $retcode=t_comm_func::purify_val($line[1]);
+my $funcname=$line[2];
+my $funcpars=t_comm_func::purify_val($line[3]);
+my $prototype="$retcode $funcname($funcpars)";
+my $t_func_pointer="static $retcode (*t_$funcname)($funcpars) = 0;";
+my $rtdl="if (!t_$funcname) { t_$funcname = reinterpret_cast<$retcode (*)($funcpars)>(dlsym(RTLD_NEXT, \"$funcname\")); }";
+# call arguments: the last identifier of every parameter (this class has no function pointer or array parameters)
+my @args;
+foreach my $par (split(',',$funcpars)) {
+  next if $par =~ /^\s*void\s*$/;
+  die "make_class_llama: can't find the parameter name in '$par' ($funcname)" unless $par =~ /(\w+)\s*$/;
+  push @args,$1;
+}
+my $args=join(', ',@args);
+my $funcid_through="$line[0]_THROUGH";
+my ($declare,$call,$return)=("","","");
+if ($retcode ne "void") {
+  $declare="$retcode rv;";
+  $call="rv = ";
+  $return="return rv;";
+}
+my $print_code=`cat pinc/llama.code.inc`;
+eval $print_code;
+print STDERR "Function $prototype:$@ generated\n";
+}
+
 
 sub make_internal_call {
 my $line=shift;
@@ -1033,7 +1068,10 @@ if ($properties =~/CLASS_BUF_LOCAL/) { make_class_buf_local($lineref);return;}
 if ($properties =~/CLASS_OSC/) { make_class_osc($lineref);return;} 
 if ($properties =~/CLASS_FIO/) { make_class_fio($lineref);return;} 
 if ($properties =~/CLASS_CL/) { make_class_gpu($lineref) if $parse_gpu_cl;return;} 
-if ($properties =~/CLASS_ZE/) { make_class_gpu($lineref) if $parse_gpu_ze;return;} 
+if ($properties =~/CLASS_ZE/) { make_class_gpu($lineref) if $parse_gpu_ze;return;}
+if ($properties =~/CLASS_LLAMA/) { make_class_llama($lineref,"llama_skip_parse") if $parse_llama;return;}
+if ($properties =~/CLASS_GGML_CPU/) { make_class_llama($lineref,"ggml_cpu_skip_parse") if $parse_llama;return;}
+if ($properties =~/CLASS_CUBLAS/) { make_class_llama($lineref,"cuda_skip_parse") if $parse_cuda;return;}
 if ($properties =~/CLASS_PSM2/) { make_class_transport($lineref,$transport_layer);return;} 
 if ($properties =~/CLASS_PSM3/) { make_class_transport($lineref,$transport_layer);return;} 
 if ($properties =~/CLASS_VERBS/) { make_class_transport($lineref,$transport_layer);return;} 
@@ -1137,6 +1175,69 @@ if ($parse_gpu == 1) {
   print "#endif // GPUPARSE\n";
 }
 
+# llama.cpp / ggml section: after the GPU one, so the input is either just past the core section (no GPU parsing)
+# or past the GPU section; in both cases the next llama_layer_starts_here is the start of it
+if ($parse_llama == 1) {
+  while( <IN> ) {
+    last if (/llama_layer_starts_here/);
+  }
+  print "#ifdef _T_LLAMA_\n";
+  print "#include <dlfcn.h>\n";
+  print "#include \"llama.h\" /* by-value parameters (llama_model_params, llama_context_params) need the real layouts */\n";
+  print "struct ggml_compute_params; /* ggml-cpu internals: the CLASS_GGML_CPU wrappers only pass the pointers on */\n";
+  print "struct ggml_threadpool;\n";
+  while( <IN> ) {
+    chomp($_);
+    my $line=$_;
+    last if ($line =~/exit_parsing_here/);
+
+    $line=~s/\/\/*//g;
+    $line=~s/\"//g;
+    $line=~s/{//g;
+    $line=~s/}//g;
+
+    @line = split(' COMMA ',$line);
+    $line[0]=~s/ //g;
+    $line[2]=~s/ //g;
+    if ($line[2] eq "") {next;}
+    $linecount++;
+    make_c_func(\@line);
+  }
+  print "#endif // _T_LLAMA_\n";
+}
+
+# CUDA section (cuBLAS wrappers; the CUPTI entries there are SKIP): after the llama.cpp one, same reading as above
+if ($parse_cuda == 1) {
+  while( <IN> ) {
+    last if (/cuda_layer_starts_here/);
+  }
+  print "#ifdef _T_CUPTI_\n";
+  print "#include <dlfcn.h>\n";
+  # the cuBLAS headers bring C++ (cuda_fp16.h operators): included outside the extern "C" block of mpi_layer.cpp.in
+  print "#if defined(__CPLUSPLUS__) || defined(__cplusplus)\n}\n#endif\n";
+  print "#include <cublas_v2.h>\n";
+  print "#include <cublasLt.h>\n";
+  print "#if defined(__CPLUSPLUS__) || defined(__cplusplus)\nextern \"C\" {\n#endif\n";
+  while( <IN> ) {
+    chomp($_);
+    my $line=$_;
+    last if ($line =~/exit_parsing_here/);
+
+    $line=~s/\/\/*//g;
+    $line=~s/\"//g;
+    $line=~s/{//g;
+    $line=~s/}//g;
+
+    @line = split(' COMMA ',$line);
+    $line[0]=~s/ //g;
+    $line[2]=~s/ //g;
+    if ($line[2] eq "") {next;}
+    $linecount++;
+    make_c_func(\@line);
+  }
+  print "#endif // _T_CUPTI_\n";
+}
+
 close (IN);
 
 return $linecount;
@@ -1218,6 +1319,8 @@ sub parse_command_line {
            $parse_gpu_ze=1 if $apis=~/\bze\b/;
            $parse_gpu=1 if $parse_gpu_cl || $parse_gpu_ze;
            $i++}
+         case "-g" {$parse_llama=1 if $ARGV[$i+1] eq "on"; $i++} # llama.cpp/ggml pipeline wrappers
+         case "-u" {$parse_cuda=1 if $ARGV[$i+1] eq "on"; $i++} # cuBLAS wrappers (CUDA/CUPTI build)
          case "-e" {$print_extended_stuff=1 if $ARGV[$i+1] eq "on"; $i++}
          case "-p" {$use_pragma_weak=1 if $ARGV[$i+1] eq "on";$i++}
          case "-l" {my $transport_layer = $ARGV[$i+1]; push (@transport_layers,$transport_layer); $i++} 

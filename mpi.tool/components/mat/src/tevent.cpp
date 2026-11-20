@@ -87,7 +87,8 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
         assert(tsc_time.mpi.out >= 0);
         assert(tsc_time.func.out >= 0);
 #else // correction instead of assert
-        assert(tsc_time.func.in >= 0);
+        // no check of tsc_time.func.in: it is the step from the start of the previous record of the merged trace, negative
+        // when a record of another thread started before the last nested record written (threads with nested records)
         assert(tsc_time.mpi.in >= 0);
         if (tsc_time.mpi.out < tsc_time.mpi.in)
             tsc_time.mpi.out = tsc_time.mpi.in;
@@ -220,7 +221,7 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
 
         func_class = PEAT_PROP_CLASS_COLLECTIVE;
     }
-    if (((func_id >= CL_START_GROUP) && (func_id < CL_END_GROUP)) || ((func_id >= ZE_START_GROUP) && (func_id < ZE_END_GROUP)) || ((func_id >= ACC_START_GROUP) && (func_id < ACC_END_GROUP))) {
+    if (((func_id >= CL_START_GROUP) && (func_id < CL_END_GROUP)) || ((func_id >= ZE_START_GROUP) && (func_id < ZE_END_GROUP)) || ((func_id >= ACC_START_GROUP) && (func_id < ACC_END_GROUP)) || peat_is_cuda_func_id(func_id)) {
         func_class = PEAT_PROP_CLASS_GPU;
         size_t num_params = 0, num_out_params = 0, num_extra_params = 0;
         extract(num_params, line_mpi.at(b + 1));

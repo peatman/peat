@@ -387,6 +387,40 @@ ifeq "$(call mpi_proto_probe,int (*p)(MPI_Status*$(COMMA) MPI_Datatype$(COMMA) M
 cpp_input+=-D_MPI4_NO_STATUS_SET_ELEMENTS_C_
 endif
 
+# llama.cpp / ggml pipeline stages (CLASS_LLAMA in mpi_func.inc): LLAMA_PARSE=on LLAMA_ROOT=<llama.cpp checkout>.
+# The wrappers are compiled against that checkout's llama.h (some parameters are structures passed by value), so it has
+# to be the source tree the traced llama.cpp was built from. LLAMA_DEPRECATED=on adds the deprecated entry points
+# (llama_decode, llama_encode), off by default. Placed after the TARGET blocks: they assign cpp_input with '='.
+LLAMA_PARSE?=off
+LLAMA_DEPRECATED?=off
+ifeq "$(LLAMA_PARSE)" "on"
+ifeq "$(wildcard $(LLAMA_ROOT)/include/llama.h)" ""
+$(error LLAMA_PARSE=on needs LLAMA_ROOT pointing to a llama.cpp source tree ($(LLAMA_ROOT)/include/llama.h not found))
+endif
+INCLUDE+=-I$(LLAMA_ROOT)/include -I$(LLAMA_ROOT)/ggml/include
+CONTROLS+=-D_T_LLAMA_
+EXTRANAMELIB:=$(EXTRANAMELIB).llama
+ifeq "$(LLAMA_DEPRECATED)" "on"
+cpp_input+=-D_PARSE_LLAMA_DEPRECATED_
+endif
+endif
+
+# CUDA through CUPTI (t_cupti.cpp) and cuBLAS wrappers (CLASS_CUDA/CLASS_CUBLAS in mpi_func.inc): CUPTI_PARSE=on
+# CUDA_ROOT=<CUDA toolkit>. libcupti has to be the one of the CUDA version the application runs with (it is found
+# through the rpath set here). Recording is off unless PEAT_TRACTOR_PARSE_CUDA=1.
+CUPTI_PARSE?=off
+ifeq "$(CUPTI_PARSE)" "on"
+CUPTI_ROOT?=$(CUDA_ROOT)/extras/CUPTI
+ifeq "$(wildcard $(CUPTI_ROOT)/include/cupti.h)" ""
+$(error CUPTI_PARSE=on needs CUDA_ROOT pointing to a CUDA toolkit with CUPTI ($(CUPTI_ROOT)/include/cupti.h not found))
+endif
+INCLUDE+=-I$(CUDA_ROOT)/include -I$(CUPTI_ROOT)/include
+CONTROLS+=-D_T_CUPTI_
+OBJECTS+=t_cupti.o
+LIBS+=-L$(CUPTI_ROOT)/lib64 -lcupti -Wl,-rpath,$(CUPTI_ROOT)/lib64
+EXTRANAMELIB:=$(EXTRANAMELIB).cuda
+endif
+
 SHARED=-shared $(FPIC)
 
 NOINLINE=-fno-inline # nvc++ does not know it, see COMPILER=nvc below
@@ -395,7 +429,7 @@ DEBUG_TESTS=-g $(NOINLINE)
 
 ifeq "$(DIAG)" "on"
 DBG=_dbg
-DEBUG+= $(NOINLINE) -D_TRACTOR_DIAG_ -D_TRACTOR_DEBUG_TRACTOR_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_TRANSPORT_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_MPI_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_GPU_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_OMPT_ENTRY_EXIT_ -D_TRACTOR_DEBUG_ACC_ENTRY_EXIT_ -D_TRACTOR_DEBUG_COMM_ENTRY_EXIT_ 
+DEBUG+= $(NOINLINE) -D_TRACTOR_DIAG_ -D_TRACTOR_DEBUG_TRACTOR_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_TRANSPORT_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_MPI_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_GPU_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_LLAMA_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_OMPT_ENTRY_EXIT_ -D_TRACTOR_DEBUG_ACC_ENTRY_EXIT_ -D_TRACTOR_DEBUG_COMM_ENTRY_EXIT_
 OPT=-O0
 OBJECTS+=t_debug.o
 LIBS+=-lunwind
@@ -530,7 +564,7 @@ $(FUNCID): mpi_func.inc ../../common/mpi_func_ids.h
 	../../common/mpi_func_ids.pl -i ../../common/mpi_func_ids.h mpi_func.inc -o mpi_func_ids_through.h mpi_func_names.h mpi_func_ids_trans.h  
 
 mpi_layer.cpp: mpi_layer.cpp.in mpi_layer.cpp.in.end $(FUNCID)
-	./mpi_layer.pl -p $(USE_PRAGMA_WEAK) -e $(PRINT_EXTENDED_STUFF) -m $(MAXMPI) -t $(PCT) -c $(PARSE_GPU_APIS) -s $(mpi_layer_skip_core) -i mpi_func.inc -o mpi_layer.cpp $(transport_func_layers)
+	./mpi_layer.pl -p $(USE_PRAGMA_WEAK) -e $(PRINT_EXTENDED_STUFF) -m $(MAXMPI) -t $(PCT) -c $(PARSE_GPU_APIS) -g $(LLAMA_PARSE) -u $(CUPTI_PARSE) -s $(mpi_layer_skip_core) -i mpi_func.inc -o mpi_layer.cpp $(transport_func_layers)
 
 # transport_func_layers with "=outfile" makes mpi_layer.cpp's recipe also emit these
 # as a side effect; own recipe (not merged suffix-rule) avoids a -j race where

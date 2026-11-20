@@ -536,6 +536,10 @@ enum PEAT_Property {
     PEAT_PROP_CLASS_OMPT,
     PEAT_PROP_CLASS_GPU, // CL, ZE and ACC
     PEAT_PROP_CLASS_ACC, // OpenACC profiling interface functions; consumers see them as PEAT_PROP_CLASS_GPU
+    PEAT_PROP_CLASS_LLAMA, // llama.cpp/ggml pipeline stages; written as plain records, consumers see them as PEAT_PROP_CLASS_LOCAL
+    PEAT_PROP_CLASS_GGML_CPU, // ggml CPU backend kernels (per thread, per node); plain records as PEAT_PROP_CLASS_LLAMA
+    PEAT_PROP_CLASS_CUDA,     // CUPTI: GPU activity (kernels, copies, ...) on stream lanes and host CUDA runtime calls; plain records
+    PEAT_PROP_CLASS_CUBLAS,   // cuBLAS compute calls (dlsym wrappers); plain records
     PEAT_PROP_CLASS_END,
     PEAT_PROP_T_PREFIX,
     PEAT_PROP_MV2_PREFIX,
@@ -648,6 +652,14 @@ static const char *print_record_properties(PEAT_Property id)
         return "GPU Related";
     case PEAT_PROP_CLASS_ACC:
         return "OpenACC Events";
+    case PEAT_PROP_CLASS_LLAMA:
+        return "llama.cpp Pipeline";
+    case PEAT_PROP_CLASS_GGML_CPU:
+        return "ggml CPU Kernels";
+    case PEAT_PROP_CLASS_CUDA:
+        return "CUDA";
+    case PEAT_PROP_CLASS_CUBLAS:
+        return "cuBLAS";
     case PEAT_PROP_CODE_ALL:
         return "All Functions";
     default:
