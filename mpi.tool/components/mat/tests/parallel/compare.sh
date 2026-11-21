@@ -3,7 +3,7 @@
 #   ./compare.sh <trace dir> [thread counts]        default thread counts: "1 2 3 4 8"
 # MAT=<serial mat> and MAT_OMP=<mat.omp> select the binaries (default: mpi.tool/bin/mat, mpi.tool/bin/mat.omp).
 # WORK=<dir> is where the runs go (default: <trace dir>.compare); every run gets its own copy of the raw trace.
-# mat.omp must write the same files as serial mat: .mpi/.hwc/.trace.info identical after unpacking, every .bind file the
+# mat.omp must write the same files as serial mat: .mpi/.trace.info identical after unpacking, every .bind file the
 # same records (sorted: threads may write a rank's bind records in a different order), and the same statistics report
 # apart from the timing lines. Differences are printed and kept in <WORK>/omp<N>/compare/. Exit status 1 on any.
 

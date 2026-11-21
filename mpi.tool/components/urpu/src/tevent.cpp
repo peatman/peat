@@ -24,17 +24,22 @@
 #include <sstream>
 #include <stdexcept>
 
-Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_hwc, const PEAT_Num num_tscs, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file) : rank(r), num_children(0), level(0)
+Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_trace, const PEAT_Num num_tscs, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file) : rank(r), num_children(0), uniq_id(0), level(0)
 {
-    const int b = 2 + num_tscs; // addresses follow the tsc block
+    PEAT_Record_Header hdr; // the header opens the trace-specific line of the record
+    user_region_file->parse_record_header(hdr, line_trace, rank);
+    num_children = hdr.num_children;
+    uniq_id = hdr.ids.at(0);
+    level = hdr.level;
+    const int b = hdr.trace_payload + num_tscs; // addresses follow the tsc block
     for (int i = 0; i < (int)num_addrs; i++) {
         PEAT_UID addr_id;
-        extract(addr_id, line_hwc.at(b + i));
+        extract(addr_id, line_trace.at(b + i));
         addr_key.add(addr_id);
     }
     for (int i = 0; i < (int)num_hwcs * 2; i++) {
         PEAT_HWC_Value hwc_value;
-        extract(hwc_value, line_hwc.at(b + num_addrs + i));
+        extract(hwc_value, line_trace.at(b + num_addrs + i));
         hwc_values.push_back(hwc_value);
     }
 }

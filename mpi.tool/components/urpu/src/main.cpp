@@ -112,8 +112,8 @@ int main(int argc, char **argv)
         Model_ID model_id_storage;
         model_id_storage.initialize(glob_param);
 
-        std::map<PEAT_Rank, std::string> HWC_files = get_file_names(glob_param.input_path, glob_param.trace_files, ".hwc", true);
-        glob_param.trace_comm_size = HWC_files.size();
+        std::map<PEAT_Rank, std::string> MPI_files = get_file_names(glob_param.input_path, glob_param.trace_files, ".mpi", true);
+        glob_param.trace_comm_size = MPI_files.size();
         std::string outpath = glob_param.input_path;
         peat_mkdir(outpath, glob_param.verbose);
 #ifdef PEAT_MPI
@@ -127,12 +127,12 @@ int main(int argc, char **argv)
         }
 #endif
 
-        for (std::map<PEAT_Rank, std::string>::const_iterator it = HWC_files.begin(); it != HWC_files.end(); ++it) {
+        for (std::map<PEAT_Rank, std::string>::const_iterator it = MPI_files.begin(); it != MPI_files.end(); ++it) {
 #ifdef PEAT_MPI
             if (glob_param.whole_ranks[it->first] == glob_param.comm_rank)
 #endif
             {
-                glob_param.pe_HWC_files_in_rank[it->first] = it->second;
+                glob_param.pe_MPI_files_in_rank[it->first] = it->second;
             }
         }
         urpu urpu(glob_param, model_id_storage);

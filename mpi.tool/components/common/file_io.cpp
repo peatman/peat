@@ -300,6 +300,18 @@ PEAT_Bool File_Storage_GZ::read_lines(String_Split &lines, const PEAT_Rank rank,
     return true;
 }
 
+PEAT_Bool File_Storage_GZ::read_record(String_Split &func_line, String_Split &trace_line, const PEAT_Rank rank, const char delim, const char term)
+{
+    trace_line.clear();
+    if (!read_lines(func_line, rank, delim, term)) {
+        return false;
+    }
+    if (func_line.empty()) { // end of the file: nothing to pair
+        return true;
+    }
+    return read_lines(trace_line, rank, delim, term);
+}
+
 std::ostream &operator<<(std::ostream &dbg, const File_Storage_GZ *me)
 {
     long numberOfFiles = (long)me->fptr.size();

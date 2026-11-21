@@ -141,7 +141,7 @@ Elements::Elements(QFileInfo &name, TV_TraceParts *swn) : ptp(NULL), model_id(NU
     current_candidate = 0;
 #ifdef _OPENMP
     trace_line_MPIs = new String_Split[omp_get_max_threads() + 1];
-    trace_line_HWCs = new String_Split[omp_get_max_threads() + 1];
+    trace_line_TRCs = new String_Split[omp_get_max_threads() + 1];
     trace_line_binds = new String_Split[omp_get_max_threads() + 1];
     trace_line_transports = new String_Split[omp_get_max_threads() + 1];
     locks = NULL;
@@ -161,7 +161,7 @@ Elements::~Elements()
     if (locks)
         delete[] locks;
     delete[] trace_line_MPIs;
-    delete[] trace_line_HWCs;
+    delete[] trace_line_TRCs;
     delete[] trace_line_binds;
     delete[] trace_line_transports;
 #endif
@@ -493,7 +493,6 @@ void Elements::compact_transport_events(int nthreads)
 
 bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
                                std::map<PEAT_Rank, std::string> &mpi_file_names,
-                               std::map<PEAT_Rank, std::string> &hwc_file_names,
                                std::map<PEAT_Rank, std::string> &bind_file_names,
                                std::map<PEAT_Rank, std::string> &transport_file_names,
                                const std::set<PEAT_Rank> &ranks_to_load,
@@ -501,13 +500,12 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
 {
     const QString prog_bar_text = pb->format();
     cancel_load = false;
-    if (!parse_trace_info_file(trace_info_file, mpi_file_names, hwc_file_names, bind_file_names, transport_file_names, ranks_to_load)) {
+    if (!parse_trace_info_file(trace_info_file, mpi_file_names, bind_file_names, transport_file_names, ranks_to_load)) {
         // TODO add messageBox?;
         return false;
     };
 
     File_Storage_GZ mpi_files(mpi_file_names, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE);
-    File_Storage_GZ hwc_files(hwc_file_names, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE);
     File_Storage_GZ bind_files(bind_file_names, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE);
     File_Storage_GZ transport_files(transport_file_names, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE);
     ranks_to_load_v.clear();
@@ -542,7 +540,7 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
     try {
         // std::string myPath = traceinfo.absolutePath().toStdString() + "/";
 
-        pb->setFormat("Reading mpi & hwc files (Esc cancels) " + prog_bar_text + " done");
+        pb->setFormat("Reading mpi files (Esc cancels) " + prog_bar_text + " done");
         pb->repaint();
         int rank_completed = 0;
         PEAT_Rank m_r = mpi_file_names.size();
@@ -559,7 +557,7 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
                 max_clock = LLONG_MAX;
             do {
                 TV_Event *event = NULL;
-                rc = get_event(ranks_to_load_v[r], &mpi_files, &hwc_files, min_clock, max_clock, &event, ptp);
+                rc = get_event(ranks_to_load_v[r], &mpi_files, min_clock, max_clock, &event, ptp);
 
 #ifdef _OPENMP
                 if (omp_get_thread_num() == 0)
@@ -589,7 +587,6 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
             } while (rc && !cancel_load);
             cut_events(ranks_to_load_v[r], max_id);
             mpi_files.close(r);
-            hwc_files.close(r);
 #pragma omp atomic
             rank_completed++;
         }
@@ -708,7 +705,6 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
 bool Elements::parse_trace_info_file(
     QFileInfo &trace_info_file,
     std::map<PEAT_Rank, std::string> &mpi_file_names,
-    std::map<PEAT_Rank, std::string> &hwc_file_names,
     std::map<PEAT_Rank, std::string> &bind_file_names,
     std::map<PEAT_Rank, std::string> &transport_file_names,
     const std::set<PEAT_Rank> &ranks_to_load)
@@ -723,7 +719,6 @@ bool Elements::parse_trace_info_file(
     // get the list of files objects by template
     QDir directory(abs_path);
     mpi_file_names.clear();
-    hwc_file_names.clear();
     bind_file_names.clear();
     transport_file_names.clear();
     QFileInfoList all_files_found = directory.entryInfoList(QStringList(file_tmpl + "*"), QDir::Files);
@@ -740,9 +735,6 @@ bool Elements::parse_trace_info_file(
 #ifndef TV_IGNORE_PROCESSED_OUTPUT
         if (type == trace_info.mpi_files && ranks_to_load.count(rank) == 1) {
             mpi_file_names[rank] = it->absoluteFilePath().toStdString();
-        }
-        if (type == trace_info.hwc_files && ranks_to_load.count(rank) == 1) {
-            hwc_file_names[rank] = it->absoluteFilePath().toStdString();
         }
 #endif
         if (type == trace_info.bind_files) { // bind files all to be read
@@ -768,7 +760,7 @@ bool Elements::parse_trace_info_file(
     // user_regions = new Address_File_Storage(trace_info.path.toStdString(), "", trace_info.trace_files.toStdString(), trace_info.com_ext.toStdString(), trace_info.app_ext.toStdString(), rank_set, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE,NULL);
 
     // transport files are always raw (tractor writes them directly, mat/pet never post-process them), so
-    // - unlike mpi/hwc - they live in trace_info.path, not next to trace.info. transport_files isn't always
+    // - unlike mpi - they live in trace_info.path, not next to trace.info. transport_files isn't always
     // recorded into trace.info (e.g. older traces), default to ".transport" like mat/pet do in that case.
     glob.transport_files = trace_info.transport_files.isEmpty() ? ".transport" : trace_info.transport_files.toStdString();
     std::map<PEAT_Rank, std::string> raw_transport_names = get_file_names(glob.input_path, glob.trace_files, glob.transport_files, false);
@@ -785,25 +777,19 @@ bool Elements::parse_trace_info_file(
         delete model_id;
         model_id = NULL;
     }
-    if (mpi_file_names.empty() && hwc_file_names.empty() && !ranks_to_load.empty()) {
-        // Either mat was run with --matching-only (no processed .mpi/.hwc files exist in the
+    if (mpi_file_names.empty() && !ranks_to_load.empty()) {
+        // Either mat was run with --matching-only (no processed .mpi files exist in the
         // output directory, only .bind), or TV_IGNORE_PROCESSED_OUTPUT is defined (default) so
-        // processed .mpi/.hwc files are never read even when present. Either way, fall back to the
+        // processed .mpi files are never read even when present. Either way, fall back to the
         // original raw trace files and do our own PTP real-time correction (mat always writes .bind
         // + trace.info, but only writes the per-rank timing sync boundaries into trace.info, not
         // per-event corrected timestamps).
         glob.mpi_files = trace_info.mpi_files.toStdString();
-        glob.hwc_files = trace_info.hwc_files.toStdString();
         glob.ptpd_ext = ".ptp";
         std::map<PEAT_Rank, std::string> raw_mpi_names = get_file_names(glob.input_path, glob.trace_files, glob.mpi_files, true);
-        std::map<PEAT_Rank, std::string> raw_hwc_names = get_file_names(glob.input_path, glob.trace_files, glob.hwc_files, true);
         for (std::map<PEAT_Rank, std::string>::const_iterator it = raw_mpi_names.begin(); it != raw_mpi_names.end(); ++it) {
             if (ranks_to_load.count(it->first) == 1)
                 mpi_file_names[it->first] = it->second;
-        }
-        for (std::map<PEAT_Rank, std::string>::const_iterator it = raw_hwc_names.begin(); it != raw_hwc_names.end(); ++it) {
-            if (ranks_to_load.count(it->first) == 1)
-                hwc_file_names[it->first] = it->second;
         }
 
         model_id = new Model_ID();
@@ -2243,47 +2229,50 @@ TV_Event *Elements::get_event(int x, int y, int width) const
     return (find_event(rank, clk, selector, thread));
 }
 
-PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, File_Storage_GZ *input_HWC, PEAT_Clock min_clock, PEAT_Clock max_clock, TV_Event **event, PTP *ptp)
+PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, PEAT_Clock min_clock, PEAT_Clock max_clock, TV_Event **event, PTP *ptp)
 {
     // PEAT_Bool possible_colt_included = false;
     *event = NULL;
 #ifdef _OPENMP
     String_Split &trace_line_MPI = trace_line_MPIs[omp_get_thread_num()];
-    String_Split &trace_line_HWC = trace_line_HWCs[omp_get_thread_num()];
+    String_Split &trace_line_TRC = trace_line_TRCs[omp_get_thread_num()];
 #endif
     trace_line_MPI.clear();
-    trace_line_HWC.clear();
+    trace_line_TRC.clear();
 
-    PEAT_Bool m = input_MPI->read_lines(trace_line_MPI, rank, ':', ';');
-    PEAT_Bool h = input_HWC->read_lines(trace_line_HWC, rank, ':', ';');
-    if (!(m || h))
+    // a record is two lines: the function-specific one (trace_line_MPI) and the trace-specific one (trace_line_TRC)
+    if (!input_MPI->read_record(trace_line_MPI, trace_line_TRC, rank, ':', ';'))
         return false;
-    if (trace_line_HWC.size() < 2) {
+    if (trace_line_TRC.size() < 2) {
         char tmp[256];
-        sprintf(tmp, "Not enough fields(%lu) on rank:%d\n", trace_line_HWC.size(), rank);
+        sprintf(tmp, "Not enough fields(%lu) on rank:%d\n", trace_line_TRC.size(), rank);
         peat_warning(tmp);
         return false;
     }
-    if (trace_line_MPI.size() < 2) {
+    if (trace_line_MPI.empty()) { // the function-specific line may hold just the function name
         char tmp[256];
         sprintf(tmp, "Not enough fields(%lu) on rank:%d\n", trace_line_MPI.size(), rank);
         peat_warning(tmp);
         return false;
     }
     PEAT_Record_Header hdr; // ids, thread and nesting of the record
-    user_regions->parse_record_header(hdr, trace_line_MPI, rank);
-    const int b = hdr.payload;      // function name on the .mpi line
-    const int hb = hdr.hwc_payload; // first tsc on the .hwc line
+    user_regions->parse_record_header(hdr, trace_line_TRC, rank);
+    const int b = hdr.payload;        // function name on the function-specific line
+    const int hb = hdr.trace_payload; // first tsc on the trace-specific line
     // raw traces: names or the collector's numeric ids (translated via the .app name/ID table);
     // mat's processed .mpi (read when model_id isn't loaded) always carries names
     const PEAT_MPI_Func_ID func_id = model_id ? model_id->translate_function_id(trace_line_MPI.at(b)) : global_func_id.idx_by_name(trace_line_MPI.at(b));
+    // the receive part of a send-receive is only a function-specific line: read it now, whether the record is used or not
+    String_Split second_mpi;
+    if (global_func_id.check_property(func_id, PEAT_PROP_DATA_TXRX))
+        input_MPI->read_lines(second_mpi, rank, ':', ';');
     PEAT_Time evt_time;
     PEAT_Clock func_start = 0, func_stop = 0;
     if (ptp) {
-        extract(evt_time.func.in, trace_line_HWC.at(hb), 10);
-        extract(evt_time.mpi.in, trace_line_HWC.at(hb + 1), 10);
-        extract(evt_time.mpi.out, trace_line_HWC.at(hb + 2), 10);
-        extract(evt_time.func.out, trace_line_HWC.at(hb + 3), 10);
+        extract(evt_time.func.in, trace_line_TRC.at(hb), 10);
+        extract(evt_time.mpi.in, trace_line_TRC.at(hb + 1), 10);
+        extract(evt_time.mpi.out, trace_line_TRC.at(hb + 2), 10);
+        extract(evt_time.func.out, trace_line_TRC.at(hb + 3), 10);
         evt_time.mpi.out = evt_time.func.out - evt_time.mpi.out;
 
         evt_time.func.in += tsc_predictor.at(rank);
@@ -2300,8 +2289,8 @@ PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, 
         func_start = evt_time.func.in;
         func_stop = evt_time.func.out;
     } else {
-        extract(func_start, trace_line_HWC.at(hb), 10, false);
-        extract(func_stop, trace_line_HWC.at(hb + 1), 10, false);
+        extract(func_start, trace_line_TRC.at(hb), 10, false);
+        extract(func_stop, trace_line_TRC.at(hb + 1), 10, false);
     }
     if (func_stop < min_clock)
         return true;
@@ -2350,7 +2339,7 @@ PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, 
     }
 
     (*event)->func_id = func_id; // read_event() re-reads only names; numeric ids need the trace's name/ID table
-    if (!(*event)->read_event(rank, trace_line_MPI, trace_line_HWC, evt_time, trace_info.num_addrs, hdr)) {
+    if (!(*event)->read_event(rank, trace_line_MPI, trace_line_TRC, evt_time, trace_info.num_addrs, hdr)) {
         delete *event;
         *event = NULL;
         return true;
@@ -2391,9 +2380,7 @@ PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, 
     }
 
     if (func_id == MPI_SENDRECV_ID || func_id == MPI_SENDRECV_REPLACE_ID || func_id == MPIC_SENDRECV_ID || func_id == MPIC_SENDRECV_REPLACE_ID) {
-        input_MPI->read_lines(trace_line_MPI, rank, ':', ';');
-        input_HWC->read_lines(trace_line_HWC, rank, ':', ';');
-        (*event)->read_event(rank, trace_line_MPI, trace_line_HWC, evt_time, trace_info.num_addrs, hdr);
+        (*event)->read_event(rank, second_mpi, trace_line_TRC, evt_time, trace_info.num_addrs, hdr);
     }
     return true;
 }

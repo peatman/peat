@@ -130,7 +130,7 @@ PEAT_Bool PET_Completion_Event::override_children()
     return is_children_overridden;
 }
 
-PET_Event *PET_Completion_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
+PET_Event *PET_Completion_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind)
 {
     Completion_Entry entry(input_request_num, addr);
     if (global_func_id.check_property(func_id, PEAT_PROP_NON_DETERMINISTIC) && !get_core()->get_mo()) {
@@ -143,7 +143,7 @@ PET_Event *PET_Completion_Event::write_event(File_Storage_GZ *gz_MPI, File_Stora
             return NULL; // scheduled for discard
         }
     }
-    PET_Local_Event::write_event(gz_MPI, gz_HWC, gz_bind, "", hwc_eol);
+    write_function_head(gz_MPI);
     gz_MPI->printf(rank, ":%d:%d:%d", input_request_num, triggered_requests.size(), flag);
     gz_MPI->printf(rank, ":%llx", addr);
     for (int i = 0; i < input_request_num; i++) {
@@ -156,12 +156,13 @@ PET_Event *PET_Completion_Event::write_event(File_Storage_GZ *gz_MPI, File_Stora
                        req_it->src,
                        req_it->t_bytes);
     }
-    gz_MPI->printf(rank, "%s", mpi_eol);
+    gz_MPI->printf(rank, "\n");
+    write_trace_line(gz_MPI);
     /*
     if (func_id == MPI_REQUEST_FREE_ID) {
         assert(0);//TODO: write handle
     }*/
-    PET_Coll_Event::write_event(gz_MPI, gz_HWC, gz_bind, mpi_eol, hwc_eol);
+    PET_Coll_Event::write_event(gz_MPI, gz_bind);
     return this;
 }
 PEAT_Bool PET_Completion_Event::bind()
@@ -516,9 +517,9 @@ PET_ToR_Event *find_event_by_request(PEAT_MPI_Request request, PET_Event *event)
     return NULL;
 }
 
-PEAT_Bool PET_Completion_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
+PEAT_Bool PET_Completion_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
-    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
+    PET_Local_Event::read_event(r_rank, mpi_string, trace_string, host, hdr);
     extract(input_request_num, mpi_string.at(hdr.payload + 1));
     extract(triggered_request_num, mpi_string.at(hdr.payload + 2));
     extract(flag, mpi_string.at(hdr.payload + 3));

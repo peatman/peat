@@ -308,7 +308,6 @@ int main(int argc, char **argv)
     glob_param.app_ext = ".app";
     glob_param.bind_files = ".bind";
     glob_param.mpi_files = ".mpi";
-    glob_param.hwc_files = ".hwc";
     glob_param.transport_files = ".transport";
     std::string trace_info_file;
     glob_param.input_path = ".";
@@ -365,7 +364,6 @@ int main(int argc, char **argv)
         model_id_storage.initialize(glob_param);
 
         std::map<PEAT_Rank, std::string> MPI_files = get_file_names(glob_param.input_path, glob_param.trace_files, glob_param.mpi_files, true);
-        std::map<PEAT_Rank, std::string> HWC_files = get_file_names(glob_param.input_path, glob_param.trace_files, glob_param.hwc_files, true);
         std::map<PEAT_Rank, std::string> transport_files = get_file_names(glob_param.input_path, glob_param.trace_files, glob_param.transport_files, false);
         PEAT_Rank mpi_info_files_num = (PEAT_Rank)MPI_files.size();
         PEAT_Rank chunk = mpi_info_files_num / glob_param.comm_size;
@@ -391,14 +389,6 @@ int main(int argc, char **argv)
             if (it->first >= model_rank_start && it->first < model_rank_end) {
                 glob_param.pe_transport_files_in_rank[it->first] = it->second;
                 // std::cout << "TRANSPORT: " << glob_param.pe_transport_files_in_rank[ it->first ] << std::endl;
-            }
-        }
-        for (std::map<PEAT_Rank, std::string>::const_iterator it = HWC_files.begin(); it != HWC_files.end(); ++it) {
-            if (it->first >= model_rank_start && it->first < model_rank_end) {
-                glob_param.pe_HWC_files_in_rank[it->first] = it->second;
-                glob_param.pe_HWC_files_in_rank_out[it->first] = make_out_file_name(glob_param.output_path, it->second, glob_param.output_files, ".gz");
-                // std::cout << "HWC: " << glob_param.pe_HWC_files_in_rank[ it->first ] << std::endl;
-                // std::cout << "HWC_OUT: " << glob_param.pe_HWC_files_in_rank_out[ it->first ] << std::endl;
             }
         }
         trace_info_file = make_out_file_name(glob_param.output_path + DIR_DELIMITER, glob_param.trace_files, ".trace.info", "");

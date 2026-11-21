@@ -252,7 +252,7 @@ tractor::tractor(void)
     parse_openacc = 1;
 #endif
     user_region_quality_range = 0.75;
-    fps_mpi = fps_hwc = fps_com = NULL;
+    fps_mpi = fps_com = NULL;
     gz_ext = ".gz";
     compression = 1;
     compression_level = Z_DEFAULT_COMPRESSION;
@@ -1179,7 +1179,6 @@ void tractor::init(void)
         strcpy(pid, ".0");
     }
     sprintf(mpi_filename, "%s.mpi%s%s", tfilename, pid, gz_ext);
-    sprintf(hwc_filename, "%s.hwc%s%s", tfilename, pid, gz_ext);
     sprintf(com_filename, "%s.com%s%s", tfilename, pid, gz_ext);
 
     if (t_mpi_rank <= 0) {
@@ -1571,7 +1570,7 @@ void tractor::finalize(void)
     mprof.initialize_object_addresses(g_shared_objects);
 #endif
     /*
-        write_trace(fps_mpi, fps_hwc,fps_com,fps_app);
+        write_trace(fps_mpi, fps_com,fps_app);
         for (i=0;i<t_tid_counter;i++) {
             destroy_whole_chain(events_start[i]);
             destroy_whole_chain(extras_start[i]);
@@ -2315,8 +2314,6 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
 
     if (t_write_main_files)
         fps_mpi = gzopen(mpi_filename, gz_mode);
-    if (t_write_main_files)
-        fps_hwc = gzopen(hwc_filename, gz_mode);
 
     /* (re)load the current block of a (thread, level) stream; realtime mode reads it back from the temporary file */
     auto load_block = [&](int tid, int level, bool first) -> void {
@@ -2433,79 +2430,22 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
         t_memory_event *cur_mems = current_mems_array[idx];
 #endif
         const short func_base = mpi_func_ids_trans[rec.func_id];
-        const long long children = second_line ? 0 : rec.num_children;
+        const long long children = rec.num_children;
         processed_events++;
-        for (int k = 0; k < id_columns; k++) {
-            t_gzprintf(fps_mpi, k == 0 ? "%lld" : ":%lld", ids[k]);
-            t_gzprintf(fps_hwc, k == 0 ? "%lld" : ":%lld", ids[k]);
-        }
+        /* A record is two lines: the function-specific one (the function name, or its id, then its parameters) and,
+           after it, the trace-specific one (the id path, thread, number of children, timestamps, addresses, counters).
+           A sendrecv has a second function-specific line (its receive part) after the trace-specific one. */
 #ifdef _T_CUPTI_
         if (rec.func_id == CUDA_KERNEL_ID_THROUGH) { /* a GPU kernel is written with its own name, never as cuda_kernel's id */
-            t_gzprintf(fps_mpi, ":%d:%lld:%s", tid, children, t_cupti_kernel_name(rec.cuda.name_index));
+            t_gzprintf(fps_mpi, "%s", t_cupti_kernel_name(rec.cuda.name_index));
         } else
 #endif
         if (print_names) {
-            t_gzprintf(fps_mpi, ":%d:%lld:%s", tid, children, mpi_function_names[rec.func_id]);
+            t_gzprintf(fps_mpi, "%s", mpi_function_names[rec.func_id]);
         } else {
-            t_gzprintf(fps_mpi, ":%d:%lld:%d", tid, children, (int)func_base);
+            t_gzprintf(fps_mpi, "%d", (int)func_base);
         }
 
-        if (max_thread_id < tid)
-            max_thread_id = tid;
-        PEAT_Clock l_tscs[4];
-        //perform local conversion instead of doing it in 1000 other places
-        l_tscs[0] = rec.tscs[0] - tsc_counter;
-        l_tscs[1] = rec.tscs[1] - rec.tscs[0];
-        l_tscs[2] = rec.tscs[3] - rec.tscs[2];
-        l_tscs[3] = rec.tscs[3] - rec.tscs[0];
-        tsc_counter = rec.tscs[0];
-        long long l_tsc_counter = rec.tscs[0]; // for comm queries
-        gzprintf(fps_hwc, ":%lld:%lld:%lld:%lld", l_tscs[0], l_tscs[1], l_tscs[2], l_tscs[3]);
-
-            for (int addr_ind = 0; addr_ind < num_addrs; addr_ind++) {
-                PEAT_Addr addr = cur_addrs[rc * num_addrs + addr_ind];
-                // debug_printf("Rank:%d  Addr(ind) = %lx(%d)\n",t_mpi_rank,addr,addr_ind);
-                if (addr_map.count(addr) > 0) {
-                    t_gzprintf(fps_hwc, ":%d", addr_map.at(addr).id);
-                } else {
-                    t_address t_addr;
-                    t_addr.id = global_id++;
-                    // todo add line number
-                    PEAT_Addr low, high, base;
-                    t_addr.binary = get_binary_by_addr(addr, base, low, high);
-                    //                   debug_printf("Rank: %d, addr %lld hits to %s(maps)\n",t_mpi_rank,addr,t_addr.binary.c_str());
-                    t_gzprintf(fps_hwc, ":%d", t_addr.id);
-                    binaries_map[t_addr.binary].addrs.push_back(addr);
-                    binaries_map[t_addr.binary].base_addr = base;
-                    binaries_map[t_addr.binary].load_addr = low;
-                    binaries_map[t_addr.binary].end_addr = high;
-                    addr_map[addr] = t_addr;
-                }
-            }
-
-    #ifdef _HWCOUNTERS_ENABLED_
-            for (int hwcs_ind = 0; hwcs_ind < num_hwcs * 2; hwcs_ind++) {
-                long long chwc = cur_hwc[rc * num_hwcs * 2 + hwcs_ind];
-                t_gzprintf(fps_hwc, ":%lld", chwc
-    #if 1
-                                                 - hwc_counter[tid][hwcs_ind % num_hwcs]
-    #endif
-                );
-                if (hwcs_ind < num_hwcs)
-                    hwc_counter[tid][hwcs_ind] = cur_hwc[rc * num_hwcs * 2 + hwcs_ind];
-            }
-    #endif
-    #ifdef _MEMPROFILE_STORE_
-            t_gzprintf(fps_hwc, ":%ld:%ld:%ld:%ld:%ld:%ld:%ld:%ld",
-                       cur_mems[rc * 2].vm_size,
-                       cur_mems[rc * 2].vm_RSS,
-                       cur_mems[rc * 2].ru_maxrss,
-                       cur_mems[rc * 2].mem_used_by_tractor,
-                       cur_mems[rc * 2 + 1].vm_size,
-                       cur_mems[rc * 2 + 1].vm_RSS,
-                       cur_mems[rc * 2 + 1].ru_maxrss,
-                       cur_mems[rc * 2 + 1].mem_used_by_tractor);
-    #endif
             PEAT_Clock tsc_mpi_entry = rec.tscs[1];
             PEAT_Clock tsc_mpi_exit = rec.tscs[2];
             long long *ext_count = &extras_counter[idx];
@@ -3060,37 +3000,99 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
     #endif // _T_PER_INTERVAL_STAT_WRITE_
     #endif
 
-    #ifdef _TRACTOR_EXTRA_FIELDS_
-            if (func_base >= MPI_START_FILE_GROUP && func_base < MPI_END_FILE_GROUP) {
-                print_address(fps_hwc, &rec.mpi_fio.buf);
+        t_gzprintf(fps_mpi, "\n"); /* ends the function-specific line */
+        /* the second record of a sendrecv repeats the trace-specific data of the first one: it is only the function-specific line */
+        if (!second_line) {
+            for (int k = 0; k < id_columns; k++) {
+                t_gzprintf(fps_mpi, k == 0 ? "%lld" : ":%lld", ids[k]);
             }
+            t_gzprintf(fps_mpi, ":%d:%lld", tid, children);
+            if (max_thread_id < tid)
+                max_thread_id = tid;
+            PEAT_Clock l_tscs[4];
+            //perform local conversion instead of doing it in 1000 other places
+            l_tscs[0] = rec.tscs[0] - tsc_counter;
+            l_tscs[1] = rec.tscs[1] - rec.tscs[0];
+            l_tscs[2] = rec.tscs[3] - rec.tscs[2];
+            l_tscs[3] = rec.tscs[3] - rec.tscs[0];
+            tsc_counter = rec.tscs[0];
+            t_gzprintf(fps_mpi, ":%lld:%lld:%lld:%lld", l_tscs[0], l_tscs[1], l_tscs[2], l_tscs[3]);
 
-            if (func_base >= MPI_START_BUFFERED_LOCAL_GROUP && func_base < MPI_END_BUFFERED_LOCAL_GROUP) {
-                print_address(fps_hwc, &rec.buf_local.buf[0]);
-                print_address(fps_hwc, &rec.buf_local.buf[1]);
-            }
-            if (func_base >= MPI_P2P_TRANSFER_START && func_base < MPI_P2P_TRANSFER_END ||
-                func_base >= MPI_P2P_PERSISTENT_INIT_START && func_base < MPI_P2P_PERSISTENT_INIT_END ||
-                func_base >= MPI_PROBE_START && func_base < MPI_PROBE_END) {
-                print_address(fps_hwc, &rec.p2p_pr_pb.buf);
-            }
-            if (func_base >= MPI_START_OSC_GROUP && func_base < MPI_END_OSC_GROUP) {
-                print_address(fps_hwc, &rec.one_sided_comm.buf);
-                print_address(fps_hwc, &rec.one_sided_comm.rbuf);
-                print_address(fps_hwc, &rec.one_sided_comm.cbuf);
-            }
+                for (int addr_ind = 0; addr_ind < num_addrs; addr_ind++) {
+                    PEAT_Addr addr = cur_addrs[rc * num_addrs + addr_ind];
+                    // debug_printf("Rank:%d  Addr(ind) = %lx(%d)\n",t_mpi_rank,addr,addr_ind);
+                    if (addr_map.count(addr) > 0) {
+                        t_gzprintf(fps_mpi, ":%d", addr_map.at(addr).id);
+                    } else {
+                        t_address t_addr;
+                        t_addr.id = global_id++;
+                        // todo add line number
+                        PEAT_Addr low, high, base;
+                        t_addr.binary = get_binary_by_addr(addr, base, low, high);
+                        //                   debug_printf("Rank: %d, addr %lld hits to %s(maps)\n",t_mpi_rank,addr,t_addr.binary.c_str());
+                        t_gzprintf(fps_mpi, ":%d", t_addr.id);
+                        binaries_map[t_addr.binary].addrs.push_back(addr);
+                        binaries_map[t_addr.binary].base_addr = base;
+                        binaries_map[t_addr.binary].load_addr = low;
+                        binaries_map[t_addr.binary].end_addr = high;
+                        addr_map[addr] = t_addr;
+                    }
+                }
 
-            if (func_base >= MPI_REQUEST_START && func_base < MPI_REQUEST_END) {
-                print_address(fps_hwc, &rec.requests.requests);
-                print_address(fps_hwc, &rec.requests.statuses);
-            }
-            if (func_base >= MPI_START_GENERAL_COLLECTIVE_GROUP && func_base < MPI_END_GENERAL_COLLECTIVE_GROUP) {
-                print_address(fps_hwc, &rec.collective.buf[0]);
-                print_address(fps_hwc, &rec.collective.buf[1]);
-            }
+    #ifdef _HWCOUNTERS_ENABLED_
+                for (int hwcs_ind = 0; hwcs_ind < num_hwcs * 2; hwcs_ind++) {
+                    long long chwc = cur_hwc[rc * num_hwcs * 2 + hwcs_ind];
+                    t_gzprintf(fps_mpi, ":%lld", chwc
+    #if 1
+                                                     - hwc_counter[tid][hwcs_ind % num_hwcs]
     #endif
-        t_gzprintf(fps_hwc, "\n");
-        t_gzprintf(fps_mpi, "\n");
+                    );
+                    if (hwcs_ind < num_hwcs)
+                        hwc_counter[tid][hwcs_ind] = cur_hwc[rc * num_hwcs * 2 + hwcs_ind];
+                }
+    #endif
+    #ifdef _MEMPROFILE_STORE_
+                t_gzprintf(fps_mpi, ":%ld:%ld:%ld:%ld:%ld:%ld:%ld:%ld",
+                         cur_mems[rc * 2].vm_size,
+                         cur_mems[rc * 2].vm_RSS,
+                         cur_mems[rc * 2].ru_maxrss,
+                         cur_mems[rc * 2].mem_used_by_tractor,
+                         cur_mems[rc * 2 + 1].vm_size,
+                         cur_mems[rc * 2 + 1].vm_RSS,
+                         cur_mems[rc * 2 + 1].ru_maxrss,
+                         cur_mems[rc * 2 + 1].mem_used_by_tractor);
+    #endif
+    #ifdef _TRACTOR_EXTRA_FIELDS_
+                if (func_base >= MPI_START_FILE_GROUP && func_base < MPI_END_FILE_GROUP) {
+                    print_address(fps_mpi, &rec.mpi_fio.buf);
+                }
+
+                if (func_base >= MPI_START_BUFFERED_LOCAL_GROUP && func_base < MPI_END_BUFFERED_LOCAL_GROUP) {
+                    print_address(fps_mpi, &rec.buf_local.buf[0]);
+                    print_address(fps_mpi, &rec.buf_local.buf[1]);
+                }
+                if (func_base >= MPI_P2P_TRANSFER_START && func_base < MPI_P2P_TRANSFER_END ||
+                    func_base >= MPI_P2P_PERSISTENT_INIT_START && func_base < MPI_P2P_PERSISTENT_INIT_END ||
+                    func_base >= MPI_PROBE_START && func_base < MPI_PROBE_END) {
+                    print_address(fps_mpi, &rec.p2p_pr_pb.buf);
+                }
+                if (func_base >= MPI_START_OSC_GROUP && func_base < MPI_END_OSC_GROUP) {
+                    print_address(fps_mpi, &rec.one_sided_comm.buf);
+                    print_address(fps_mpi, &rec.one_sided_comm.rbuf);
+                    print_address(fps_mpi, &rec.one_sided_comm.cbuf);
+                }
+
+                if (func_base >= MPI_REQUEST_START && func_base < MPI_REQUEST_END) {
+                    print_address(fps_mpi, &rec.requests.requests);
+                    print_address(fps_mpi, &rec.requests.statuses);
+                }
+                if (func_base >= MPI_START_GENERAL_COLLECTIVE_GROUP && func_base < MPI_END_GENERAL_COLLECTIVE_GROUP) {
+                    print_address(fps_mpi, &rec.collective.buf[0]);
+                    print_address(fps_mpi, &rec.collective.buf[1]);
+                }
+    #endif
+            t_gzprintf(fps_mpi, "\n"); /* ends the trace-specific line */
+        }
         return children;
     };
 
@@ -3199,8 +3201,6 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
     ret.nesting_levels = id_columns;
     if (fps_mpi)
         gzclose(fps_mpi);
-    if (fps_hwc)
-        gzclose(fps_hwc);
 
 #if defined(_TRANSPORT_PROFILE_)
     if (t_write_main_files && t_collect_transport && t_mpi_rank >= 0)

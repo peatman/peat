@@ -100,9 +100,9 @@ void PET_Start_Event::scale_event()
     PET_Local_Event::scale_event();
 }
 
-PET_Event *PET_Start_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
+PET_Event *PET_Start_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind)
 {
-    PET_Local_Event::write_event(gz_MPI, gz_HWC, gz_bind, "", hwc_eol);
+    write_function_head(gz_MPI);
     gz_MPI->printf(rank, ":%d:%d:%d", input_request_num, triggered_request_num, flag);
     gz_MPI->printf(rank, ":%llx", addr);
     for (int i = 0; i < input_request_num; i++) {
@@ -116,8 +116,9 @@ PET_Event *PET_Start_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ
         PET_Collective_Event *evt = event_it->second;
         evt->write_bind(gz_bind);
     }
-    gz_MPI->printf(rank, "%s", mpi_eol);
-    write_nested_records(gz_MPI, gz_HWC, gz_bind, mpi_eol, hwc_eol); // progress engine records issued inside this call
+    gz_MPI->printf(rank, "\n");
+    write_trace_line(gz_MPI);
+    write_nested_records(gz_MPI, gz_bind); // progress engine records issued inside this call
     return this;
 }
 
@@ -369,9 +370,9 @@ PET_Event *PET_Start_Event::get_prev_child_event()
     return p_events.at(int_event_index);
 };
 
-PEAT_Bool PET_Start_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
+PEAT_Bool PET_Start_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
-    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
+    PET_Local_Event::read_event(r_rank, mpi_string, trace_string, host, hdr);
     extract(input_request_num, mpi_string.at(hdr.payload + 1));
     extract(triggered_request_num, mpi_string.at(hdr.payload + 2));
     extract(flag, mpi_string.at(hdr.payload + 3));

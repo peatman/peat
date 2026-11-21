@@ -98,9 +98,9 @@ PEAT_Bool PET_ToR_Event::is_short(PEAT_Transports t) const
     return r;
 }
 
-PEAT_Bool PET_ToR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
+PEAT_Bool PET_ToR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
-    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
+    PET_Local_Event::read_event(r_rank, mpi_string, trace_string, host, hdr);
     extract(comm, mpi_string.at(hdr.payload + 1), 16);
     extract(peer_rank, mpi_string.at(hdr.payload + 2));
     extract(request, mpi_string.at(hdr.payload + 3), 16);
@@ -143,20 +143,25 @@ PEAT_Bool PET_ToR_Event::write_bind(File_Storage_GZ *gz_bind)
     }
     return true;
 }
-PET_Event *PET_ToR_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
+PET_Event *PET_ToR_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind)
 {
     is_written = true;
     if (host_event && !host_event->force_write)
         return this;
-    PET_Local_Event::write_event(gz_MPI, gz_HWC, gz_bind, "", "");
-    gz_MPI->printf(rank, ":%d:%d:%llx:%llx:%d:%lld%s",
-                   comm, peer_rank, request, message, tag, t_bytes, mpi_eol);
-    gz_HWC->printf(rank, "(%lld)%s", t_bytes, hwc_eol);
+    write_function_head(gz_MPI);
+    gz_MPI->printf(rank, ":%d:%d:%llx:%llx:%d:%lld\n",
+                   comm, peer_rank, request, message, tag, t_bytes);
+    char annotation[32];
+    snprintf(annotation, sizeof(annotation), "(%lld)", (long long)t_bytes);
+    write_trace_line(gz_MPI, annotation);
+    if (!second_function_line.empty()) {
+        gz_MPI->printf(rank, "%s\n", second_function_line.c_str());
+    }
     if (!is_persistent_init()) {
         write_bind(gz_bind);
         //		get_peer()->remote_written(check_tx());
     }
-    write_nested_records(gz_MPI, gz_HWC, gz_bind, mpi_eol, hwc_eol); // progress engine records issued inside this call
+    write_nested_records(gz_MPI, gz_bind); // progress engine records issued inside this call
     return this;
 }
 

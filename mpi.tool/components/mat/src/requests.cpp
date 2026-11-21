@@ -44,7 +44,7 @@ Requests::Requests(int s,
 	comm_func_store = NULL;
 }
 
-void Requests::initialize(PTP *p, Communicators *c, Request_Store *r, P2PAL *pp, Comm* cc, OSC* o, Collectives *cl, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
+void Requests::initialize(PTP *p, Communicators *c, Request_Store *r, P2PAL *pp, Comm* cc, OSC* o, Collectives *cl, File_Storage_GZ *MPI, File_Storage_GZ *bind)
 {
 	comm_store = c;
 	ptp = p;
@@ -53,7 +53,7 @@ void Requests::initialize(PTP *p, Communicators *c, Request_Store *r, P2PAL *pp,
 	osc_func_store = o;
 	coll_func_store = cl;
     comm_func_store = cc;
-	Outputs::initialize(MPI, HWC, bind);
+	Outputs::initialize(MPI, bind);
 }
 
 PEAT_Bool Requests::discard_P2P_event(const PEAT_Rank rank, const PEAT_MPI_Request request, PEAT_Bool is_remote)
@@ -554,8 +554,8 @@ void Requests::print_req_out(const Tractor_Event &event)
 {
     if (event.Requests.flag == 0 && skip_locals)
         return; // skip missed Tests
-#ifdef MAT_PROCESS_HWC_MPI_OUTPUT
-    output_MPI->printf(event.rank, "%s:%s:%d:%d:%d", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id),
+#ifdef MAT_PROCESS_MPI_OUTPUT
+    output_MPI->printf(event.rank, "%s:%d:%d:%d", global_func_id.name_by_idx(event.func_id),
                        event.Requests.input_request_num,
                        event.Requests.triggered_request_num,
                        event.Requests.flag);
@@ -568,26 +568,7 @@ void Requests::print_req_out(const Tractor_Event &event)
         output_MPI->printf(event.rank, ":%d:%d:%d:%lld", event.statuses[i].index, event.statuses[i].tag, event.statuses[i].src, event.statuses[i].bytes);
     }
     output_MPI->printf(event.rank, "\n");
-#if 0
-    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
-        event.tsc_time.func.in,
-        event.tsc_time.mpi.in,
-        event.tsc_time.mpi.out,
-        event.tsc_time.func.out,
-        event.tsc_time.pe.in,
-        event.tsc_time.pe.out);
-
-#else
-    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
-                       event.tsc_time.mpi.in,
-                       event.tsc_time.mpi.out,
-                       event.tsc_time.pe.in,
-                       event.tsc_time.pe.out);
-#endif
-    for (PEAT_Num i = 0; i < event.addrs.size(); i++) {
-        output_HWC->printf(event.rank, ":%lld", event.addrs.at(i));
-    }
-    output_HWC->printf(event.rank, "\n");
+    event.write_trace_line(output_MPI);
 #endif
 }
 

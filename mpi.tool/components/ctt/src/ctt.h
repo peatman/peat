@@ -96,7 +96,6 @@ class CTT
     std::vector<PEAT_Rank> whole_ranks;
     std::vector<PEAT_Rank> my_ranks;
     Func_ID *fid;
-    File_Storage_GZ *input_HWC;
     File_Storage_GZ *input_MPI;
     Address_File_Storage *user_region_store;
     Communicators *com_store;
@@ -108,7 +107,7 @@ class CTT
     std::map<PEAT_Rank, User_Address_Key> last_key;
     CTT(Global_Parameters &file_names, Model_ID &model_id_storage);
     ~CTT();
-    PEAT_Bool parse_single_event(const int rank, String_Split &line_mpi, String_Split &line_hwc, PEAT_Bool second_line);
+    PEAT_Bool parse_single_event(const int rank, String_Split &line_mpi, String_Split &line_trace, PEAT_Bool second_line);
     void process();
 
   private:

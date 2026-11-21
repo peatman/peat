@@ -45,12 +45,12 @@ PET_GPU_Event::~PET_GPU_Event()
 {
 }
 
-PEAT_Bool PET_GPU_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
+PEAT_Bool PET_GPU_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
     size_t num_params = 0, num_out_params = 0, num_extra_params = 0;
     rank = r_rank;
     node = get_core()->get_ptp()->get_tgt_node(rank);
-    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
+    PET_Local_Event::read_event(r_rank, mpi_string, trace_string, host, hdr);
     extract(num_params, mpi_string.at(hdr.payload + 1));
     params.resize(num_params);
     extract(num_out_params, mpi_string.at(hdr.payload + 2));
@@ -69,12 +69,12 @@ PEAT_Bool PET_GPU_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_st
     return true;
 }
 
-PET_Event *PET_GPU_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
+PET_Event *PET_GPU_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind)
 {
     size_t num_params = params.size();
     size_t num_out_params = out_params.size();
     size_t num_extra_params = extra_params.size();
-    PET_Local_Event::write_event(gz_MPI, gz_HWC, gz_bind, "", hwc_eol);
+    write_function_head(gz_MPI);
     gz_MPI->printf(rank, ":%zu", num_params);
     gz_MPI->printf(rank, ":%zu", num_out_params);
     gz_MPI->printf(rank, ":%zu", num_extra_params);
@@ -87,7 +87,6 @@ PET_Event *PET_GPU_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *
     for (size_t p = 0; p < num_extra_params; p++) {
         gz_MPI->printf(rank, ":%llx", extra_params[p]);
     }
-    gz_MPI->printf(rank, ":%s", mpi_eol);
-    is_written = true;
-    return this;
+    gz_MPI->printf(rank, "\n");
+    return write_trace_line(gz_MPI);
 }

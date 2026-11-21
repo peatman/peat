@@ -45,9 +45,9 @@ PET_OMPT_Event::~PET_OMPT_Event()
 {
 }
 
-PEAT_Bool PET_OMPT_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
+PEAT_Bool PET_OMPT_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
-    PEAT_Bool r = PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
+    PEAT_Bool r = PET_Local_Event::read_event(r_rank, mpi_string, trace_string, host, hdr);
     extract(kind, mpi_string.at(hdr.payload + 1));
     extract(endpoint, mpi_string.at(hdr.payload + 2));
     extract(task_data, mpi_string.at(hdr.payload + 3));
@@ -56,10 +56,10 @@ PEAT_Bool PET_OMPT_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_s
     return r;
 }
 
-PET_Event *PET_OMPT_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
+PET_Event *PET_OMPT_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind)
 {
     if (thread_id == 0 || (func_id != OMPT_PARALLEL_BEGIN_ID && func_id != OMPT_PARALLEL_END_ID))
-        return PET_Local_Event::write_event(gz_MPI, gz_HWC, gz_bind, mpi_eol, hwc_eol);
+        return PET_Local_Event::write_event(gz_MPI, gz_bind);
     is_written = true;
     return NULL;
 }

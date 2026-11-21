@@ -9,6 +9,7 @@ mpi.tool/components/tractor/Build*.dir
 mpi.tool/components/tractor/Build*.log
 mpi.tool/components/tractor/src-*
 *.o
+*.odt
 *.log
 *.bak
 *.so*

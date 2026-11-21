@@ -46,17 +46,17 @@
 #define P2PDELIM '|'
 #define SEC_OUTPUT(x) fixed << setprecision(0) << x << " ( " << setprecision(2) << x / freq << " sec)"
 
-PEAT_Bool PET_Local_Buf_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
+PEAT_Bool PET_Local_Buf_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
-    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
+    PET_Local_Event::read_event(r_rank, mpi_string, trace_string, host, hdr);
     extract(inbuf_size, mpi_string.at(hdr.payload + 1));
     extract(outbuf_size, mpi_string.at(hdr.payload + 2));
     return true;
 }
 
-PET_Event *PET_Local_Buf_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
+PET_Event *PET_Local_Buf_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind)
 {
-    PET_Local_Event::write_event(gz_MPI, gz_HWC, gz_bind, "", hwc_eol);
-    gz_MPI->printf(rank, ":%d:%d%s", inbuf_size, outbuf_size, mpi_eol);
-    return this;
+    write_function_head(gz_MPI);
+    gz_MPI->printf(rank, ":%d:%d\n", inbuf_size, outbuf_size);
+    return write_trace_line(gz_MPI);
 }

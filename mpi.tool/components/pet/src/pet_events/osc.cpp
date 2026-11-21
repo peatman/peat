@@ -37,9 +37,9 @@
 #include <mpi.h>
 #endif
 
-PEAT_Bool PET_OSC_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
+PEAT_Bool PET_OSC_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
-    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
+    PET_Local_Event::read_event(r_rank, mpi_string, trace_string, host, hdr);
     extract(comm, mpi_string.at(hdr.payload + 1), 16);
     extract(peer, mpi_string.at(hdr.payload + 2)); // already rank-resolved
     extract(request, mpi_string.at(hdr.payload + 3), 16);
@@ -49,10 +49,9 @@ PEAT_Bool PET_OSC_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_st
     return true;
 }
 
-PET_Event *PET_OSC_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
+PET_Event *PET_OSC_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind)
 {
-    PET_Local_Event::write_event(gz_MPI, gz_HWC, gz_bind, "", hwc_eol);
-    gz_MPI->printf(rank, ":%x:%d:%llx:%llx:%d:%lld%s", comm, peer, request, window, size, t_bytes, mpi_eol);
-    is_written = true;
-    return this;
+    write_function_head(gz_MPI);
+    gz_MPI->printf(rank, ":%x:%d:%llx:%llx:%d:%lld\n", comm, peer, request, window, size, t_bytes);
+    return write_trace_line(gz_MPI);
 }

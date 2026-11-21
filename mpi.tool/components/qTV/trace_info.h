@@ -44,7 +44,7 @@ class Trace_Info
     qint32 num_addrs;
     qint32 num_tscs;
     qint32 num_hwcs;
-    QString path, trace_files, mpi_files, hwc_files, bind_files, transport_files, com_ext, app_ext;
+    QString path, trace_files, mpi_files, bind_files, transport_files, com_ext, app_ext;
     std::vector<PEAT_UID> messages_in_rank;
     std::vector<PEAT_UID> events_in_rank;
     std::vector<PEAT_MPI_Time> mpi_times;

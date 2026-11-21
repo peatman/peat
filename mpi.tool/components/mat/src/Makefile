@@ -20,7 +20,7 @@
 #ZLIBINCLUDE=-I$(ZLIBHOME)/include
 ZLIBLIB=-lz
 
-DEFINES=-DMAT_PROCESS_HWC_MPI_OUTPUT
+DEFINES=-DMAT_PROCESS_MPI_OUTPUT
 
 # off returns collective matching to the old queue walk (see collectives.h); output must be identical either way.
 # No header dependencies here: run make clean when switching it.

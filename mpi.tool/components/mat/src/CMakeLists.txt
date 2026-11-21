@@ -73,7 +73,7 @@ endif()
 
 project(mat CXX)
 
-add_compile_definitions(MAT_PROCESS_HWC_MPI_OUTPUT)
+add_compile_definitions(MAT_PROCESS_MPI_OUTPUT)
 
 # OFF returns collective matching to the old queue walk (see collectives.h); output must be identical either way
 option(MAT_INDEXED_COLLECTIVES "Indexed collective matching instead of walking the queues" ON)

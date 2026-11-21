@@ -83,7 +83,7 @@ PET_Event::PET_Event(PET_Core *p) : PET_Time_Event(), pet_core(p), pet_node(NULL
                                     parent_event(NULL), host_event(NULL), container_event(NULL), nested_index_being_estimated(-1), progress_owner(NULL), 
                                     parallel_section_begin(NULL), prev_event(NULL), next_event(NULL),
                                     sub_t_applied(false), sub_t_ae(0), sub_t_t(0), sub_t_ae_t(0), sub_t_t_t(0),
-                                    uc_length(0), uco_length(0), finish_calculations(false), remaining_ee_events(0), treat_as_local(false), force_write(false), header_second_line(false)
+                                    uc_length(0), uco_length(0), finish_calculations(false), remaining_ee_events(0), treat_as_local(false), force_write(false)
 {
 }
 
@@ -136,17 +136,12 @@ void PET_Event::notify_before_destroy(PET_Event *event)
 
 std::string PET_Event::header_str() const
 {
-    return peat_record_header_string(ids, thread_id, header_second_line ? 0 : static_cast<PEAT_Signed_Num>(nested_events.size()));
-}
-
-std::string PET_Event::hwc_header_str() const
-{
-    return peat_record_hwc_header_string(ids, thread_id);
+    return peat_record_header_string(ids, thread_id, static_cast<PEAT_Signed_Num>(nested_events.size()));
 }
 
 /* a top-level call writes its nested records right after its own record in trace order
    (nested format: pre-order of the tree */
-void PET_Event::write_nested_records(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
+void PET_Event::write_nested_records(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind)
 {
     if (host_event)
         return; // a nested container: its records are written by the top-level call's list
@@ -157,7 +152,7 @@ void PET_Event::write_nested_records(File_Storage_GZ *gz_MPI, File_Storage_GZ *g
     force_write = true;
     for (int i = 0; i < size; i++) {
         if (kids[i])
-            kids[i]->write_event(gz_MPI, gz_HWC, gz_bind, mpi_eol, hwc_eol);
+            kids[i]->write_event(gz_MPI, gz_bind);
     }
     clear_reason(pr_event_not_estimated);
 }
@@ -321,21 +316,20 @@ void PET_Event::concatenate_event()
         get_core()->update_active_event_chain(sub_t_ae, this);
     }
 }
-PEAT_Bool PET_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
+PEAT_Bool PET_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
     // basic info
     rank = r_rank;
-    const int b = hdr.hwc_payload; // first tsc on the .hwc line
-    if (hwc_string.size() < static_cast<size_t>(b + 4))
+    const int b = hdr.trace_payload; // first tsc on the trace-specific line
+    if (trace_string.size() < static_cast<size_t>(b + 4))
         return false;
-    assert(hdr.same_ids(hwc_string)); // the .hwc twin carries the same ids
     ids = hdr.ids;
     thread_id = hdr.thread_id;
     // TSCs block
-    extract(e_time.func.in, hwc_string.at(b), 10);
-    extract(e_time.mpi.in, hwc_string.at(b + 1), 10);
-    extract(e_time.mpi.out, hwc_string.at(b + 2), 10);
-    extract(e_time.func.out, hwc_string.at(b + 3), 10);
+    extract(e_time.func.in, trace_string.at(b), 10);
+    extract(e_time.mpi.in, trace_string.at(b + 1), 10);
+    extract(e_time.mpi.out, trace_string.at(b + 2), 10);
+    extract(e_time.func.out, trace_string.at(b + 3), 10);
     e_time.mpi.out = e_time.func.out - e_time.mpi.out;
     /* clutch for ompt */
     if (e_time.mpi.in < 0) {
@@ -349,12 +343,12 @@ PEAT_Bool PET_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string
     }
 
     if (get_core()->model_id.num_tscs == 6) {
-        extract(e_time.pe.in, hwc_string.at(b + 4), 10);
-        extract(e_time.pe.out, hwc_string.at(b + 5), 10);
+        extract(e_time.pe.in, trace_string.at(b + 4), 10);
+        extract(e_time.pe.out, trace_string.at(b + 5), 10);
     }
     for (int i = 0; i < (int)get_core()->model_id.num_addrs; i++) {
         PEAT_UID addr;
-        extract(addr, hwc_string.at(b + get_core()->model_id.num_tscs + get_core()->model_id.num_hwcs + i));
+        extract(addr, trace_string.at(b + get_core()->model_id.num_tscs + get_core()->model_id.num_hwcs + i));
 #ifdef TRANSLATE_UIDS
         addrs.addr[i] = get_core()->get_addr_by_id(rank, addr);
 #else
@@ -365,16 +359,16 @@ PEAT_Bool PET_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string
     return true;
 }
 
-PET_Event *PET_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
+PET_Event *PET_Event::write_trace_line(File_Storage_GZ *gz_MPI, const char *annotation)
 {
 #ifdef REMOVE_T_OVERHEAD
-    gz_HWC->printf(rank, "%s:%lld:%lld:%lld:%lld", hwc_header_str().c_str(),
+    gz_MPI->printf(rank, "%s:%lld:%lld:%lld:%lld", header_str().c_str(),
                    e_time.mpi.in,
                    e_time.mpi.out,
                    e_time.pe.in,
                    e_time.pe.out);
 #else
-    gz_HWC->printf(rank, "%s:%lld:%lld:%lld:%lld:%lld:%lld", hwc_header_str().c_str(),
+    gz_MPI->printf(rank, "%s:%lld:%lld:%lld:%lld:%lld:%lld", header_str().c_str(),
                    e_time.func.in,
                    e_time.mpi.in,
                    e_time.mpi.out,
@@ -383,35 +377,35 @@ PET_Event *PET_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_H
                    e_time.pe.out);
 #endif
     for (int i = 0; i < (int)get_core()->model_id.num_addrs; i++) {
-        gz_HWC->printf(rank, ":%lx", addrs.addr[i]);
+        gz_MPI->printf(rank, ":%lx", addrs.addr[i]);
     }
 #if 1 // def _DEBUG
     /*
     PEAT_Clock total_uc_o = get_core()->stat.get_stat(Event_Set_Stat::tst_orig)[rank].uncovered_UR_length;
     PEAT_Clock total_uc_m = get_core()->stat.get_stat(Event_Set_Stat::tst_post)[rank].uncovered_UR_length;
-    gzprintf(gz_HWC, ";  \t ef=%lld:of=%lld\t st=%lld:se=%lld:stt=%lld:ste=%lld:uo=%lld:ue=%lld:tuo=%lld:tue=%lld%s", event_parts.meat, o_event_parts.meat, sub_t_t, sub_t_ae, sub_t_t_t, sub_t_ae_t,uco_length, uc_length,
-             total_uc_o, total_uc_m,hwc_eol);
+    gzprintf(gz_MPI, ";  \t ef=%lld:of=%lld\t st=%lld:se=%lld:stt=%lld:ste=%lld:uo=%lld:ue=%lld:tuo=%lld:tue=%lld%s", event_parts.meat, o_event_parts.meat, sub_t_t, sub_t_ae, sub_t_t_t, sub_t_ae_t,uco_length, uc_length,
+             total_uc_o, total_uc_m,"\n");
     */
     PEAT_Clock head = t_time.func.in - e_time.func.in;
     PEAT_Clock tail = t_time.func.out - e_time.func.out;
     PEAT_Ratio r = (PEAT_Ratio)o_event_parts.meat / (PEAT_Ratio)event_parts.meat;
     PEAT_Ratio r_t = (PEAT_Ratio)o_event_parts.duration() / (PEAT_Ratio)event_parts.duration();
-    gz_HWC->printf(rank, ";  \t ef=%lld:of=%lld:r=%lf:%lf\t st=%lld:se=%lld(%lld):head=%lld:tail=%lld", event_parts.meat, o_event_parts.meat, r, r_t, sub_t_t, sub_t_ae, sub_t_ae_t, head, tail);
-    gz_HWC->printf(rank, " \t %s", global_func_id.name_by_idx(func_id));
+    gz_MPI->printf(rank, ";  \t ef=%lld:of=%lld:r=%lf:%lf\t st=%lld:se=%lld(%lld):head=%lld:tail=%lld", event_parts.meat, o_event_parts.meat, r, r_t, sub_t_t, sub_t_ae, sub_t_ae_t, head, tail);
+    gz_MPI->printf(rank, " \t %s", global_func_id.name_by_idx(func_id));
     std::map<std::string, PEAT_LNum> transport_funcs;
     for (std::list<PET_Transport_Event>::const_iterator transport_event_it = transport_events.cbegin(); transport_event_it != transport_events.cend(); ++transport_event_it) {
         transport_funcs[global_func_id.name_by_idx(transport_event_it->func_id)] += transport_event_it->l_num_calls;
     }
     for (std::map<std::string, PEAT_LNum>::const_iterator transport_func_it = transport_funcs.cbegin(); transport_func_it != transport_funcs.cend(); ++transport_func_it) {
-        gz_HWC->printf(rank, " %s(%lld)", transport_func_it->first.c_str(), transport_func_it->second);
+        gz_MPI->printf(rank, " %s(%lld)", transport_func_it->first.c_str(), transport_func_it->second);
     }
-    gz_HWC->printf(rank, "%s", hwc_eol);
+    gz_MPI->printf(rank, "%s\n", annotation);
 
     if (tail - head != sub_t_ae) {
         pet_throw_error(pet_core, this, NULL, "Moving length mismatch\n");
     }
 #else
-    gz_HWC->printf(rank, "%s", hwc_eol);
+    gz_MPI->printf(rank, "%s\n", annotation);
 #endif
     get_core()->events_processed[rank]++;
     is_written = true;

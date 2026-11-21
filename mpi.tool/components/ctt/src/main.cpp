@@ -238,9 +238,8 @@ int main(int argc, char **argv)
 
         if (need_determine_fs)
             determine_fs_rank(model_id_storage, glob_param, num);
-        std::map<PEAT_Rank, std::string> HWC_files = get_file_names(glob_param.input_path, glob_param.trace_files, ".hwc", glob_param.rank_set, true);
         std::map<PEAT_Rank, std::string> MPI_files = get_file_names(glob_param.input_path, glob_param.trace_files, ".mpi", glob_param.rank_set, true);
-        glob_param.trace_comm_size = HWC_files.size();
+        glob_param.trace_comm_size = MPI_files.size();
 
         glob_param.whole_ranks.resize(glob_param.trace_comm_size);
         glob_param.my_ranks.reserve(glob_param.trace_comm_size);
@@ -264,7 +263,6 @@ int main(int argc, char **argv)
         for (std::vector<PEAT_Rank>::const_iterator it = glob_param.my_ranks.cbegin(); it != glob_param.my_ranks.cend(); ++it) {
             {
                 glob_param.pe_MPI_files_in_rank[*it] = MPI_files.at(*it);
-                glob_param.pe_HWC_files_in_rank[*it] = HWC_files.at(*it);
             }
         }
         CTT ctt(glob_param, model_id_storage);

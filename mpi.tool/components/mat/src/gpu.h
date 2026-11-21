@@ -141,7 +141,7 @@ class GPU : public Outputs
     // cur_transfer/cur_exec cache raw pointers into the transfers/executions maps; copying would alias/invalidate them.
     GPU(const GPU &) = delete;
     GPU &operator=(const GPU &) = delete;
-    void initialize(PTP *p, Communicators *c, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
+    void initialize(PTP *p, Communicators *c, File_Storage_GZ *MPI, File_Storage_GZ *bind);
     void parse_GPU(const PEAT_Rank rank, const Tractor_Event &event);
     // transfers and executions that are complete in one event (OpenACC and OpenCL calls), unlike the Level Zero ones
     // which are matched with the event that signals their completion

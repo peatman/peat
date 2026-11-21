@@ -37,13 +37,13 @@ GPU::GPU(
 {
 }
 
-void GPU::initialize(PTP *p, Communicators *c, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
+void GPU::initialize(PTP *p, Communicators *c, File_Storage_GZ *MPI, File_Storage_GZ *bind)
 {
     assert(c);
     assert(p);
     comm_store = c;
     ptp = p;
-    Outputs::initialize(MPI, HWC, bind);
+    Outputs::initialize(MPI, bind);
 }
 
 GPU::~GPU()
@@ -53,28 +53,8 @@ GPU::~GPU()
 }
 void GPU::print_GPU_out(const Tractor_Event &event)
 {
-#ifdef MAT_PROCESS_HWC_MPI_OUTPUT
-    output_MPI->printf(event.rank, "%s:%s", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id));
-#if 0
-    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
-        event.tsc_time.func.in,
-        event.tsc_time.mpi.in,
-        event.tsc_time.mpi.out,
-        event.tsc_time.func.out,
-        event.tsc_time.pe.in,
-        event.tsc_time.pe.out);
-
-#else
-    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
-                       event.tsc_time.mpi.in,
-                       event.tsc_time.mpi.out,
-                       event.tsc_time.pe.in,
-                       event.tsc_time.pe.out);
-#endif
-    for (PEAT_Num i = 0; i < event.addrs.size(); i++) {
-        output_HWC->printf(event.rank, ":%lld", event.addrs.at(i));
-    }
-    output_HWC->printf(event.rank, "\n");
+#ifdef MAT_PROCESS_MPI_OUTPUT
+    output_MPI->printf(event.rank, "%s", global_func_id.name_by_idx(event.func_id));
     size_t num_params = event.params.size();
     size_t num_out_params = event.out_params.size();
     output_MPI->printf(event.rank, ":%zu", num_params);
@@ -86,6 +66,7 @@ void GPU::print_GPU_out(const Tractor_Event &event)
         output_MPI->printf(event.rank, ":%llx", event.out_params[p]);
     }
     output_MPI->printf(event.rank, "\n");
+    event.write_trace_line(output_MPI);
 #endif
     print_GPU_bind(event);
 }

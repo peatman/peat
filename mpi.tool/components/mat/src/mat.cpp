@@ -41,23 +41,25 @@ PEAT_Bool Mat::parse_single_event(const int rank)
 {
     Mat_Worker &w = worker();
     w.line_mpi.clear();
-    w.line_hwc.clear();
-    if (!input_MPI->is_file_good(rank) || (!globals.matching_only && !input_HWC->is_file_good(rank))) {
+    if (!input_MPI->is_file_good(rank)) {
         return false;
     }
-    input_MPI->read_lines(w.line_mpi, rank, ':');
-    if (!globals.matching_only) {
-        input_HWC->read_lines(w.line_hwc, rank, ':');
+    if (w.second_line) {
+        // the receive part of a send-receive is only a function-specific line, it shares the trace-specific line of the send part
+        input_MPI->read_lines(w.line_mpi, rank, ':');
+    } else {
+        w.line_trace.clear();
+        input_MPI->read_record(w.line_mpi, w.line_trace, rank, ':');
     }
     // matdbg(0) << "P" << rank << std::endl;
-    if (w.line_mpi.size() < 2) {
+    if (w.line_mpi.empty() || w.line_trace.size() < 2) {
         return false;
     }
-    Tractor_Event t_event(rank, w.line_mpi, w.line_hwc, model_id.num_hwcs, model_id.num_addrs, user_region_store, comm_store, model_id);
+    Tractor_Event t_event(rank, w.line_mpi, w.line_trace, !globals.matching_only, model_id.num_hwcs, model_id.num_addrs, user_region_store, comm_store, model_id);
     PEAT_MPI_Func_ID mpifunc = t_event.func_id;
     const bool nested_record = t_event.level > 0;
     PEAT_Clock mpi_time = 0, uc_time = 0, t_time = 0, occ_inc = 0;
-    if (!globals.matching_only) { // tsc_time is all sentinel (-1) without hwc data, so these are meaningless
+    if (!globals.matching_only) { // tsc_time is all sentinel (-1) when the timestamps are not read, so these are meaningless
         if (!w.second_line) {
             t_event.tsc_time.func.in += tsc_predictor.at(rank);
             tsc_predictor[rank] = t_event.tsc_time.func.in;
@@ -144,6 +146,7 @@ PEAT_Bool Mat::parse_single_event(const int rank)
         if (global_func_id.check_property(mpifunc, PEAT_PROP_DATA_TXRX)) {
             if (w.second_line) {
                 w.recv_line = t_event;
+                w.recv_line.second_line = true;
                 w.recv_line.tsc_time = w.send_line.tsc_time;
                 w.recv_line.tsc_u_time = w.send_line.tsc_u_time;
 #ifdef PEAT_MPI
@@ -405,7 +408,7 @@ void Mat::wait_for_global_quiescence()
     }
 }
 #endif
-Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : ptp(NULL), input_MPI(NULL), input_HWC(NULL), events_processed(0), globals(glob), model_id(model_id_storage)
+Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : ptp(NULL), input_MPI(NULL), events_processed(0), globals(glob), model_id(model_id_storage)
 {
     // output_model = 0;
     // output_model_message = 0;
@@ -446,13 +449,10 @@ Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : ptp(NULL), input
     user_region_store = new Address_File_Storage(globals, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, &model_id_storage);
 
     input_MPI = new File_Storage_GZ(globals.pe_MPI_files_in_rank, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, globals.verbose);
-    input_HWC = new File_Storage_GZ(globals.pe_HWC_files_in_rank, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, globals.verbose);
-#ifdef MAT_PROCESS_HWC_MPI_OUTPUT
+#ifdef MAT_PROCESS_MPI_OUTPUT
     output_MPI = new File_Storage_GZ(globals.pe_MPI_files_in_rank_out, PEAT_FIO_FLAG_WRITE, "w9", globals.verbose);
-    output_HWC = new File_Storage_GZ(globals.pe_HWC_files_in_rank_out, PEAT_FIO_FLAG_WRITE, "w9", globals.verbose);
 #else
     output_MPI = NULL;
-    output_HWC = NULL;
 #endif
     output_bind = new File_Storage_GZ(globals.pe_bind_files_in_rank_out, PEAT_FIO_FLAG_WRITE, "w9", globals.verbose);
 
@@ -484,20 +484,18 @@ Mat::Mat(Global_Parameters &glob, Model_ID &model_id_storage) : ptp(NULL), input
 									 &active_deliveries, whole_ranks, my_ranks, globals.comm_compute, globals.comm_rank
 #endif
 	);
-    comm_func_store->initialize(ptp, comm_store, req_store, request_func_store, output_MPI, output_HWC, output_bind);
-    osc_func_store->initialize(ptp, comm_store, req_store, request_func_store, output_MPI, output_HWC, output_bind);
-    gpu_func_store->initialize(ptp, comm_store, output_MPI, output_HWC, output_bind);
-	coll_func_store->initialize(ptp, comm_store, req_store, comm_func_store, request_func_store, output_MPI, output_HWC, output_bind);
-	p2p_func_store->initialize(ptp, comm_store, req_store, request_func_store, gpu_func_store, output_MPI, output_HWC, output_bind);
-	request_func_store->initialize(ptp, comm_store, req_store, p2p_func_store, comm_func_store, osc_func_store, coll_func_store, output_MPI, output_HWC, output_bind);
+    comm_func_store->initialize(ptp, comm_store, req_store, request_func_store, output_MPI, output_bind);
+    osc_func_store->initialize(ptp, comm_store, req_store, request_func_store, output_MPI, output_bind);
+    gpu_func_store->initialize(ptp, comm_store, output_MPI, output_bind);
+	coll_func_store->initialize(ptp, comm_store, req_store, comm_func_store, request_func_store, output_MPI, output_bind);
+	p2p_func_store->initialize(ptp, comm_store, req_store, request_func_store, gpu_func_store, output_MPI, output_bind);
+	request_func_store->initialize(ptp, comm_store, req_store, p2p_func_store, comm_func_store, osc_func_store, coll_func_store, output_MPI, output_bind);
 }
 Mat::~Mat()
 {
     delete input_MPI;
-    delete input_HWC;
-#ifdef MAT_PROCESS_HWC_MPI_OUTPUT
+#ifdef MAT_PROCESS_MPI_OUTPUT
     delete output_MPI;
-    delete output_HWC;
 #endif
     delete output_bind;
     delete user_region_store;
@@ -542,7 +540,7 @@ void Mat::process_omp_ranks()
         workers[rank->first % nthreads]->ranks.push_back(rank->first);
         fprintf(stderr, "Thread:%d is handling rank %d.\n", rank->first % nthreads, rank->first);
     }
-    File_Storage_GZ *const outputs[] = {output_MPI, output_HWC, output_bind};
+    File_Storage_GZ *const outputs[] = {output_MPI, output_bind};
     for (File_Storage_GZ *out : outputs)
         if (out)
             out->set_deferred(true);
@@ -614,7 +612,7 @@ void Mat::process_omp_ranks()
 #define CYCLE_EVENT 100000
 void Mat::process()
 {
-    const double bytes_step = (double)(input_MPI->get_all_files_size() + input_HWC->get_all_files_size()) * 0.01;
+    const double bytes_step = (double)input_MPI->get_all_files_size() * 0.01;
     PEAT_Ratio time_since_last_active = Wtime();
     // timeline.clear();
     p2p_func_store->resize_queues(comm_store->get_comm_world_rank_count());
@@ -936,9 +934,9 @@ void Mat::write_trace_info(const std::string &name)
             throw std::runtime_error(tmp.str());
         }
         traceinfo_file.printf(0, "PEATTRACEINFO\n");
-        traceinfo_file.printf(0, "%d|%s|%s|%s|%s|%s|%s|%s|%s\n", PEAT_RT_Paths, peat_get_relative_path(globals.output_path, globals.input_path).c_str(),
+        traceinfo_file.printf(0, "%d|%s|%s|%s|%s|%s|%s|%s\n", PEAT_RT_Paths, peat_get_relative_path(globals.output_path, globals.input_path).c_str(),
                              globals.trace_files.c_str(),
-                             globals.mpi_files.c_str(), globals.hwc_files.c_str(), globals.bind_files.c_str(), globals.transport_files.c_str(), globals.com_ext.c_str(), globals.app_ext.c_str());
+                             globals.mpi_files.c_str(), globals.bind_files.c_str(), globals.transport_files.c_str(), globals.com_ext.c_str(), globals.app_ext.c_str());
         traceinfo_file.printf(0, "%d|%lld\n", PEAT_RT_CPU_Freq, ptp->get_trace_freq(0));
         traceinfo_file.printf(0, "%d|%d|%d|%d\n", PEAT_RT_Var_Block_Info, model_id.num_tscs, model_id.num_hwcs, model_id.num_addrs);
         if (coll_func_store->collectives_bound > 0)

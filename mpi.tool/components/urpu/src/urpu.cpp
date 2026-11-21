@@ -30,16 +30,16 @@
     std::cerr
 PEAT_Bool urpu::parse_single_event(const int rank)
 {
-    String_Split line_hwc;
-    if (!input_HWC->is_file_good(rank)) {
+    String_Split line_mpi, line_trace;
+    if (!input_MPI->is_file_good(rank)) {
         return false;
     }
-    input_HWC->read_lines(line_hwc, rank, ':');
+    input_MPI->read_record(line_mpi, line_trace, rank, ':');
     // urpu_dbg(0) << "P" << rank << std::endl;
-    if (line_hwc.size() < 2) {
+    if (line_trace.size() < 2) {
         return false;
     }
-    Tractor_Event tLine(rank, line_hwc, model_id.num_tscs, model_id.num_hwcs, model_id.num_addrs, user_region_file);
+    Tractor_Event tLine(rank, line_trace, model_id.num_tscs, model_id.num_hwcs, model_id.num_addrs, user_region_file);
     if (tLine.level > 0) // nested record (issued inside another traced call): no user code in front of it
         return false;
     if (last_idx[rank] == tLine.uniq_id) {
@@ -71,7 +71,7 @@ PEAT_Bool urpu::parse_single_event(const int rank)
 }
 urpu::urpu(Global_Parameters &glob, Model_ID &model_id_storage) : globals(glob), model_id(model_id_storage)
 {
-    input_HWC = 0;
+    input_MPI = 0;
 #ifdef PEAT_MPI
     total_completed_ranks = 0;
 #endif
@@ -83,7 +83,7 @@ urpu::urpu(Global_Parameters &glob, Model_ID &model_id_storage) : globals(glob),
 
     PEAT_Rank trace_comm_size = (PEAT_Rank)file_input_com_names.size();
 
-    input_HWC = new File_Storage_GZ(globals.pe_HWC_files_in_rank, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, globals.verbose);
+    input_MPI = new File_Storage_GZ(globals.pe_MPI_files_in_rank, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, globals.verbose);
     user_region_file = new Address_File_Storage(globals, PEAT_FIO_FLAG_WRITE, &model_id_storage);
 
 #ifdef PEAT_MPI
@@ -94,24 +94,23 @@ urpu::urpu(Global_Parameters &glob, Model_ID &model_id_storage) : globals(glob),
 }
 urpu::~urpu()
 {
-    if (input_HWC)
-        delete input_HWC;
+    if (input_MPI)
+        delete input_MPI;
     if (user_region_file)
         delete user_region_file;
 }
 void urpu::process()
 {
-    const double total_event_num = (double)(input_HWC->get_all_files_size());
+    const double total_event_num = (double)(input_MPI->get_all_files_size());
     const double bytes_step = total_event_num * 0.01;
     long cur_percent = 1;
     PEAT_Ratio start_estimation = Wtime();
     PEAT_Ratio time_since_last_active = Wtime();
-    String_Split trace_line_MPI, trace_line_HWC;
 
     PEAT_Num completions = 0;
     if (model_id.num_hwcs == 2) {
-        while ((input_HWC->is_any_file_good() || completions > 0)) {
-            for (std::map<PEAT_Rank, std::string>::const_iterator rank = globals.pe_HWC_files_in_rank.begin(); rank != globals.pe_HWC_files_in_rank.end(); ++rank) {
+        while ((input_MPI->is_any_file_good() || completions > 0)) {
+            for (std::map<PEAT_Rank, std::string>::const_iterator rank = globals.pe_MPI_files_in_rank.begin(); rank != globals.pe_MPI_files_in_rank.end(); ++rank) {
                 parse_single_event(rank->first);
             }
         }

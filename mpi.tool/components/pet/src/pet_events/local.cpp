@@ -37,7 +37,7 @@
 #include <mpi.h>
 #endif
 
-PEAT_Bool PET_Local_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
+PEAT_Bool PET_Local_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
     rank = r_rank;
     node = get_core()->get_ptp()->get_tgt_node(rank);
@@ -45,7 +45,7 @@ PEAT_Bool PET_Local_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_
     thread_id = hdr.thread_id;
     func_id = get_core()->model_id.translate_function_id(mpi_string.at(hdr.payload)); // names and the collector's numeric ids
     parent_func_id = func_id;
-    PET_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
+    PET_Event::read_event(r_rank, mpi_string, trace_string, host, hdr);
     if (func_id == MPI_PCONTROL_ID) {
         extract(p_control_id, mpi_string.at(hdr.payload + 1), 10, false);
     }
@@ -53,10 +53,14 @@ PEAT_Bool PET_Local_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_
     return true;
 }
 
-PET_Event *PET_Local_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
+void PET_Local_Event::write_function_head(File_Storage_GZ *gz_MPI)
 {
-    PET_Event::write_event(gz_MPI, gz_HWC, gz_bind, mpi_eol, hwc_eol);
-    gz_MPI->printf(rank, "%s:%s%s", header_str().c_str(), global_func_id.name_by_idx(func_id), mpi_eol);
-    is_written = true;
-    return this;
+    gz_MPI->printf(rank, "%s", global_func_id.name_by_idx(func_id));
+}
+
+PET_Event *PET_Local_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind)
+{
+    write_function_head(gz_MPI);
+    gz_MPI->printf(rank, "\n");
+    return write_trace_line(gz_MPI);
 }

@@ -94,7 +94,7 @@ Collectives::Collectives(int pos
 #endif
 }
 
-void Collectives::initialize(PTP *p, Communicators *cs, Request_Store *rs, Comm *c, Requests* r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
+void Collectives::initialize(PTP *p, Communicators *cs, Request_Store *rs, Comm *c, Requests* r, File_Storage_GZ *MPI, File_Storage_GZ *bind)
 {
     assert(c);
     assert(p);
@@ -103,7 +103,7 @@ void Collectives::initialize(PTP *p, Communicators *cs, Request_Store *rs, Comm 
     req_store = rs;
     comm_func_store = c;
     request_func_store = r;
-    Outputs::initialize(MPI, HWC, bind);
+    Outputs::initialize(MPI, bind);
 }
 
 Collectives::~Collectives()
@@ -113,17 +113,17 @@ Collectives::~Collectives()
 }
 void Collectives::print_collective_out(const Tractor_Event &event)
 {
-#ifdef MAT_PROCESS_HWC_MPI_OUTPUT
+#ifdef MAT_PROCESS_MPI_OUTPUT
     switch(event.func_class) {
     case PEAT_PROP_CLASS_FIO:
-        output_MPI->printf(event.rank, "%s:%s:%x:%llx:%llx:%lld:%lld", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id),
+        output_MPI->printf(event.rank, "%s:%x:%llx:%llx:%lld:%lld", global_func_id.name_by_idx(event.func_id),
             event.MPIFIO.comm, event.MPIFIO.fh, event.MPIFIO.request, event.MPIFIO.offset, event.MPIFIO.bytes);
         break;
     case PEAT_PROP_CLASS_COMM:
-		comm_func_store->print_comm_out(event);
-        break;
+		comm_func_store->print_comm_out(event); // writes both lines of the record
+        return;
     case PEAT_PROP_CLASS_COLLECTIVE:
-        output_MPI->printf(event.rank, "%s:%s:%x:%d:%llx:%d:%d", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id),
+        output_MPI->printf(event.rank, "%s:%x:%d:%llx:%d:%d", global_func_id.name_by_idx(event.func_id),
                            event.Collective.comm, event.Collective.root, event.Collective.request, event.Collective.rw_fields0, event.Collective.rw_fields1);
         for (PEAT_Signed_Num j = 0; j < event.Collective.rw_fields0; j++) {
             output_MPI->printf(event.rank, ":%lld", event.send_bytes[j]);
@@ -132,29 +132,12 @@ void Collectives::print_collective_out(const Tractor_Event &event)
             output_MPI->printf(event.rank, ":%lld", event.recv_bytes[j]);
         }
         break;
+    default:
+        output_MPI->printf(event.rank, "%s", global_func_id.name_by_idx(event.func_id));
+        break;
     }
-
-#if 0
-    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
-            event.tsc_time.func.in,
-            event.tsc_time.mpi.in,
-            event.tsc_time.mpi.out,
-            event.tsc_time.func.out,
-            event.tsc_time.pe.in,
-            event.tsc_time.pe.out);
-
-#else
-    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
-                       event.tsc_time.mpi.in,
-                       event.tsc_time.mpi.out,
-                       event.tsc_time.pe.in,
-                       event.tsc_time.pe.out);
-#endif
-    for (PEAT_Num i = 0; i < event.addrs.size(); i++) {
-        output_HWC->printf(event.rank, ":%lld", event.addrs.at(i));
-    }
-    output_HWC->printf(event.rank, "\n");
     output_MPI->printf(event.rank, "\n");
+    event.write_trace_line(output_MPI);
 #endif
 }
 void Collectives::print_collective_err(const MAT_Collective &record, PEAT_Rank my_rank)
@@ -235,7 +218,7 @@ void Collectives::print_collective_bind(const MAT_Collective &record)
     }
 #ifdef PRINT_STAT
     /***************************************************************************/
-    if (!record.coll_events_list.empty() && output_HWC && output_HWC->get_number_of_files() > 0) { // no timing data to compute stats/imbalance from when hwc files aren't read
+    if (!record.coll_events_list.empty() && output_MPI && output_MPI->get_number_of_files() > 0) { // no timing data to compute stats/imbalance from when only matching
         // col_file->write_line(header);
         // col_file->put_records(record);
         MAT_Collective_Record r_col;

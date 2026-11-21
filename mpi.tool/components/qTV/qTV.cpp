@@ -1207,7 +1207,7 @@ bool TV::load_model(QFileInfo &trace_file, const std::set<PEAT_Rank> &ranks_to_l
     shown->hidden_ranks.clear(); // the first picture, kept for Reset, shows every loaded rank
     elements = new Elements(trace_file, shown);
     loading = true; // Esc is taken by cancel_running() from the event loop the reading runs
-    const bool loaded = elements->load_model_data(pb, sr, mpi_file_names, hwc_file_names, bind_file_names, transport_file_names, ranks_to_load, tmin, tmax, load_threads, tp);
+    const bool loaded = elements->load_model_data(pb, sr, mpi_file_names, bind_file_names, transport_file_names, ranks_to_load, tmin, tmax, load_threads, tp);
     loading = false;
     if (!loaded) {
         qDebug() << "Failed in trace parser.";

@@ -74,13 +74,13 @@ void Global_Parameters::print()
     printf("Output path %s.\n", output_path.c_str());
     printf("User Regions File: %s.\n", user_region_file.c_str());
     printf("PEAT_Transport File: %s.\n", transport_file.c_str());
-    printf("Trace Files: %s<%s|%s|%s>.<rank>[.gz] %s%s.<rank>[.gz], %s%s[.gz].\n", trace_files.c_str(), mpi_files.c_str(), hwc_files.c_str(), transport_files.c_str(), trace_files.c_str(), com_ext.c_str(), trace_files.c_str(), app_ext.c_str());
+    printf("Trace Files: %s<%s|%s>.<rank>[.gz] %s%s.<rank>[.gz], %s%s[.gz].\n", trace_files.c_str(), mpi_files.c_str(), transport_files.c_str(), trace_files.c_str(), com_ext.c_str(), trace_files.c_str(), app_ext.c_str());
     if (mpi_time_file.length() > 0)
         printf("MPI Time File: %s.\n", mpi_time_file.c_str());
     if (map_file.length() > 0)
         printf("Map File: %s.\n", map_file.c_str());
     if (output_files.length() > 0)
-        printf("Output Files : %s<%s|%s>.<rank>%s[.gz].\n", trace_files.c_str(), mpi_files.c_str(), hwc_files.c_str(), output_files.c_str());
+        printf("Output Files : %s%s.<rank>%s[.gz].\n", trace_files.c_str(), mpi_files.c_str(), output_files.c_str());
     if (bind_files.length() > 0)
         printf("Bind Files: %s%s.<rank>[.gz].\n", trace_files.c_str(), bind_files.c_str());
     if (functions_split_file.length() > 0)
@@ -261,46 +261,19 @@ Address_File_Storage::Address_File_Storage(const Global_Parameters &globals, int
 
 /* ---------------- trace record header / nesting cursor ---------------- */
 
-void PEAT_Record_Header::parse(const String_Split &line, int id_columns)
+void PEAT_Record_Header::parse(const String_Split &trace_line, int id_columns)
 {
     if (id_columns < 1)
         id_columns = 1;
     ids.resize(id_columns);
     for (int i = 0; i < id_columns; i++) {
-        extract(ids[i], line.at(i));
+        extract(ids[i], trace_line.at(i));
     }
-    extract(thread_id, line.at(id_columns));
-    extract(num_children, line.at(id_columns + 1));
-    payload = id_columns + 2;
-    hwc_payload = id_columns;
+    extract(thread_id, trace_line.at(id_columns));
+    extract(num_children, trace_line.at(id_columns + 1));
+    payload = 0;
+    trace_payload = id_columns + 2;
     level = peat_ids_level(ids);
-}
-
-void PEAT_Record_Header::parse_hwc(const String_Split &line, int id_columns)
-{
-    ids.resize(id_columns);
-    for (int i = 0; i < id_columns; i++) {
-        extract(ids[i], line.at(i));
-    }
-    thread_id = 0;      // not on the .hwc line
-    num_children = -1; // not on the .hwc line
-    payload = id_columns + 2;
-    hwc_payload = id_columns;
-    level = peat_ids_level(ids);
-}
-
-PEAT_Bool PEAT_Record_Header::same_ids(const String_Split &line) const
-{
-    int columns = static_cast<int>(ids.size());
-    if (static_cast<int>(line.size()) < columns)
-        return false;
-    for (int i = 0; i < columns; i++) {
-        PEAT_UID id = -1;
-        extract(id, line.at(i));
-        if (id != ids[i])
-            return false;
-    }
-    return true;
 }
 
 std::string peat_ids_string(const PEAT_Event_IDs &ids)
@@ -341,28 +314,14 @@ std::string peat_record_header_string(const std::vector<PEAT_UID> &ids, PEAT_Thr
     std::string out = peat_ids_string(ids);
     snprintf(buf, sizeof(buf), ":%d", static_cast<int>(thread_id));
     out += buf;
-    if (num_children >= 0) {
-        snprintf(buf, sizeof(buf), ":%d", static_cast<int>(num_children));
-        out += buf;
-    }
+    snprintf(buf, sizeof(buf), ":%d", static_cast<int>(num_children));
+    out += buf;
     return out;
-}
-
-std::string peat_record_hwc_header_string(const std::vector<PEAT_UID> &ids, PEAT_Thread thread_id)
-{
-    std::vector<PEAT_UID> t_id;
-    t_id.push_back(ids.at(0));
-    return peat_record_header_string(t_id, thread_id, -1);
 }
 
 std::string PEAT_Record_Header::to_string() const
 {
     return peat_record_header_string(ids, thread_id, num_children );
-}
-
-std::string PEAT_Record_Header::to_hwc_string() const
-{
-    return peat_record_hwc_header_string(ids, thread_id);
 }
 
 void Address_File_Storage::parse(const String_Split &lines, const PEAT_Rank rank)

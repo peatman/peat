@@ -41,7 +41,7 @@ class urpu
     std::vector<PEAT_Rank> completed_ranks;
 #endif
     Func_ID *fid;
-    File_Storage_GZ *input_HWC;
+    File_Storage_GZ *input_MPI; // .mpi files: function-specific and trace-specific line per record
     Address_File_Storage *user_region_file;
     const Global_Parameters globals;
     const Model_ID &model_id;

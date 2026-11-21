@@ -50,7 +50,7 @@ struct Mat_Time {
 struct Mat_Worker {
     std::vector<PEAT_Rank> ranks;
     std::map<PEAT_Clock, PEAT_Rank> timeline; // next event of each rank, by time
-    String_Split line_mpi, line_hwc;
+    String_Split line_mpi, line_trace; // function-specific and trace-specific lines of the record
     PEAT_Bool second_line = false; // between the two lines of a send-receive record
     Tractor_Event send_line, recv_line;
     std::map<PEAT_Num, std::map<PEAT_Property, Mat_Time>> timings; // per PC level and class; summed into Mat::timings
@@ -70,9 +70,7 @@ class Mat
     Requests *request_func_store;
     Request_Store* req_store;
     File_Storage_GZ *input_MPI;
-    File_Storage_GZ *input_HWC;
     File_Storage_GZ *output_MPI;
-    File_Storage_GZ *output_HWC;
     File_Storage_GZ *output_bind;
     std::vector<PEAT_LNum> rank_events_processed;
     PEAT_LNum events_processed;

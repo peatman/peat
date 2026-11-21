@@ -433,24 +433,22 @@ class PET_Core
     PEAT_Mutex coll_mutex;
     PEAT_Mutex rank_mutex;
     String_Split *trace_line_MPIs;
-    String_Split *trace_line_HWCs;
+    String_Split *trace_line_TRCs;
 #else
     String_Split trace_line_MPI;
-    String_Split trace_line_HWC;
+    String_Split trace_line_TRC;
 
 #endif
     std::vector<std::list<Coll_Storage>> coll_store;
 
-    PET_Event *get_event(const PEAT_Rank rank, String_Split &trace_line_MPI, String_Split &trace_line_HWC, PET_Event *host_evt, PET_Event *container = NULL);
+    PET_Event *get_event(const PEAT_Rank rank, String_Split &trace_line_MPI, String_Split &trace_line_TRC, PET_Event *host_evt, PET_Event *container = NULL);
     Event_Set_Stat stat;
     PTP *ptp;
     PEAT_Transport *transport;
 
     File_Storage_GZ *input_MPI;
-    File_Storage_GZ *input_HWC;
     File_Storage_GZ *input_transport;
     File_Storage_GZ *output_MPI;
-    File_Storage_GZ *output_HWC;
     File_Storage_GZ *output_bind;
     std::vector<PEAT_Clock> output_model_tsc;
 

@@ -139,7 +139,6 @@ struct PET_Event : public PET_Time_Event {
        Nested format: filled while reading; legacy format: filled by PET_Coll_Event::build_nesting(). */
     std::vector<PET_Event *> flat_events;
     PEAT_Bool force_write;        // set while the top-level call writes its nested records
-    PEAT_Bool header_second_line; // writing the second sendrecv line (header carries num_children = 0)
     PEAT_UID sub_index() const { return ids.size() > 1 ? ids[1] : -1; } // index inside the top-level call (depth one)
     void set_sub_index(PEAT_UID index)                                    // synthetic records created by PET (persistent request starts)
     {
@@ -164,9 +163,11 @@ struct PET_Event : public PET_Time_Event {
         return flat_events.empty() ? nested_events : flat_events;
     }
     PET_Event *get_prev_child_event(PET_Event *event);   // predecessor of a nested record of this call
-    std::string header_str() const;                      // record header for the .mpi output line
-    std::string hwc_header_str() const;                  // record header for the .hwc output line
-    void write_nested_records(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol);
+    std::string header_str() const;                      // header of the trace-specific output line: ids, thread, children
+    /* the trace-specific line of the record (header, timestamps, addresses), written after its function-specific line;
+       annotation is appended to the trailing comment */
+    PET_Event *write_trace_line(File_Storage_GZ *gz_MPI, const char *annotation = "");
+    void write_nested_records(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind);
     /* nesting (see container_event) */
     PET_Event *get_container_event() const { return container_event; }
     PEAT_Bool has_nested() const { return !nested_events.empty(); }
@@ -234,11 +235,11 @@ struct PET_Event : public PET_Time_Event {
     PEAT_Bool clear_estimated();
     virtual PEAT_Bool can_be_destroyed();
 
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr);
     virtual void post_read_event() {}
 
     virtual void scale_event();
-    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol = "\n", const char *hwc_eol = "\n");
+    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind) = 0; // both lines of the record, then its nested records
     virtual PEAT_Bool bind() { return true; }
     virtual PEAT_Bool query_release();
     virtual PEAT_Bool release();
@@ -407,8 +408,9 @@ struct PET_Local_Event : public PET_Event {
     PEAT_Signed_Num p_control_id;
     PET_Local_Event(PET_Core *p) : PET_Event(p), p_control_id(0) {}
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_LOCAL; }
-    virtual PEAT_Bool read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
-    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol = "\n", const char *hwc_eol = "\n");
+    virtual PEAT_Bool read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr);
+    void write_function_head(File_Storage_GZ *gz_MPI); // function-specific line up to the parameters: the function name
+    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind);
 };
 
 struct PET_GPU_Event : public PET_Local_Event {
@@ -419,8 +421,8 @@ struct PET_GPU_Event : public PET_Local_Event {
   public:
     PET_GPU_Event(PET_Core *p);
     ~PET_GPU_Event();
-    virtual PEAT_Bool read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
-    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol = "\n", const char *hwc_eol = "\n");
+    virtual PEAT_Bool read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr);
+    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind);
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_GPU; }
 };
 
@@ -430,8 +432,8 @@ struct PET_Local_Buf_Event : public PET_Local_Event {
   public:
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_LOCAL_BUF; }
     PET_Local_Buf_Event(PET_Core *p) : PET_Local_Event(p), inbuf_size(0), outbuf_size(0) {}
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
-    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol = "\n", const char *hwc_eol = "\n");
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr);
+    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind);
 };
 struct PET_OSC_Event : public PET_Local_Event {
     PEAT_MPI_Comm comm;
@@ -443,12 +445,13 @@ struct PET_OSC_Event : public PET_Local_Event {
   public:
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_OSC; }
     PET_OSC_Event(PET_Core *p) : PET_Local_Event(p), comm(0), peer(-1), request(0), window(0), size(0), t_bytes(0) {}
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
-    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol = "\n", const char *hwc_eol = "\n");
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr);
+    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind);
     virtual PEAT_Message_Size get_tx_bytes() const { return check_tx() ? t_bytes : -1; }
     virtual PEAT_Message_Size get_rx_bytes() const { return check_rx() ? t_bytes : -1; }
 };
 struct PET_ToR_Event : public PET_Local_Event {
+    std::string second_function_line; // receive part of a send-receive that PET does not interpret (Isendrecv...): written back as read
     PEAT_MPI_Comm comm;
     PEAT_LNum t_bytes;
     PEAT_MPI_Tag tag;
@@ -537,9 +540,9 @@ struct PET_ToR_Event : public PET_Local_Event {
     virtual ~PET_ToR_Event();
     virtual void notify_before_destroy(PET_Event *event);
 
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr);
     PEAT_Bool write_bind(File_Storage_GZ *gz_bind);
-    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol = "\n", const char *hwc_eol = "\n");
+    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind);
     virtual PEAT_Bool safe_to_delete();
     virtual PEAT_Bool ready_to_estimate();
     virtual PEAT_Bool can_be_destroyed();
@@ -805,8 +808,8 @@ struct PET_TaR_Event : public PET_ToR_Event {
         }
     }
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_TAR; }
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
-    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol = "\n", const char *hwc_eol = "\n");
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr);
+    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind);
     virtual PEAT_Bool estimate(Estimation_Event *event);
     // virtual PEAT_Bool is_estimated();
     virtual PEAT_Bool get_tx_paired() const { return peer_event != NULL; };
@@ -973,7 +976,7 @@ struct PET_Coll_Event : public PET_Local_Event {
     virtual PEAT_Bool ready_to_estimate();
     virtual PEAT_Bool estimate(Estimation_Event *event);
     virtual PEAT_Bool is_estimated() const;
-    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol = "\n", const char *hwc_eol = "\n");
+    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind);
     virtual PEAT_Rank get_rank_read_suggestion();
     virtual PEAT_Clock get_overlap() const
     {
@@ -1071,9 +1074,9 @@ struct PET_Collective_Event : public PET_Coll_Event {
     virtual void notify_before_destroy(PET_Event *event);
     PEAT_Bool progress_events_estimated() const;
     PEAT_Clock get_records_finish() const; // latest transfer/record finish over own and progress records, -1 if unknown yet
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr);
     virtual void post_read_event();
-    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol = "\n", const char *hwc_eol = "\n");
+    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind);
     PEAT_Bool write_bind(File_Storage_GZ *gz_bind);
     virtual PEAT_Transports get_msg_transport_id() const { return PEAT_TRANSPORT_COLLECTIVE; }
     virtual PEAT_Rank get_ranks_num() const { return (PEAT_Rank)ranks.size(); }
@@ -1103,8 +1106,8 @@ struct PET_Comm_Event : public PET_Coll_Event {
     PET_Comm_Event(PET_Core *p) : PET_Coll_Event(p), newcomm(0), remotecomm(0), request(0) {}
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_COMM; }
     virtual PEAT_MPI_Request get_mpi_request() const { return request; }
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
-    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *eol = "\n", const char *hwc_eol = "\n");
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr);
+    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind);
     virtual void post_read_event();
     virtual PEAT_Bool is_bound() const;
     virtual PEAT_Bool is_assembled() const;
@@ -1133,10 +1136,10 @@ struct PET_Start_Event : public PET_Coll_Event {
     PET_Start_Event(PET_Core *p) : PET_Coll_Event(p), input_request_num(0), triggered_request_num(0), flag(-1), is_all_bound(false), shutdown_initiated(false), addr(NULL) {}
     virtual ~PET_Start_Event();
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_START; }
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr);
     virtual void scale_event();
     void set_times();
-    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *eol = "\n", const char *hwc_eol = "\n");
+    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind);
     std::map<PEAT_MPI_Request, PET_ToR_Event> inits;
     virtual PEAT_Bool safe_to_delete();
     virtual PEAT_Bool can_be_destroyed();
@@ -1249,8 +1252,8 @@ struct PET_Completion_Event : public PET_Start_Event {
   public:
     PET_Completion_Event(PET_Core *p) : PET_Start_Event(p), is_children_overridden(false), is_chained(false), end_submitted(false), discarded(false) {}
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_COMPLETION; }
-    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
-    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *eol = "\n", const char *hwc_eol = "\n");
+    virtual PEAT_Bool read_event(PEAT_Rank r, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr);
+    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind);
     virtual PEAT_Bool bind();
     virtual PEAT_Bool ready_to_estimate();
     virtual PEAT_Bool is_estimated() const;
@@ -1328,8 +1331,8 @@ struct PET_OMPT_Event : public PET_Local_Event {
     ~PET_OMPT_Event();
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_OMPT; }
     virtual PEAT_Bool estimate(Estimation_Event *event);
-    virtual PEAT_Bool read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr);
-    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *eol = "\n", const char *hwc_eol = "\n");
+    virtual PEAT_Bool read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr);
+    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind);
     virtual void insert();
     void insert(PEAT_Bool skip_nested); // special version for children
 

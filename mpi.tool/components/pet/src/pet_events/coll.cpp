@@ -138,9 +138,9 @@ void PET_Coll_Event::scale_event()
     get_core()->handle_coll(this);
 }
 
-PET_Event *PET_Coll_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
+PET_Event *PET_Coll_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind)
 {
-    write_nested_records(gz_MPI, gz_HWC, gz_bind, mpi_eol, hwc_eol); // trace order, nested records included
+    write_nested_records(gz_MPI, gz_bind); // trace order, nested records included
     return this;
 }
 

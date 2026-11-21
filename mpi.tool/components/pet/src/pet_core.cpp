@@ -53,7 +53,6 @@ PET_Core::PET_Core(const Global_Parameters &glob, const Model_ID &model_id_stora
     user_region_file = 0;
     func_split = 0;
     input_MPI = 0;
-    input_HWC = 0;
     input_transport = 0;
     loop_counter = 0;
     freq = 1000000000; // default value, will be fixed by data file information.
@@ -82,7 +81,7 @@ PET_Core::PET_Core(const Global_Parameters &glob, const Model_ID &model_id_stora
     // match_mutexes = new PEAT_Mutex[trace_comm_size];
     //  ins_rem_mutexes = new PEAT_Mutex[trace_comm_size];
     trace_line_MPIs = new String_Split[omp_get_max_threads() + 1];
-    trace_line_HWCs = new String_Split[omp_get_max_threads() + 1];
+    trace_line_TRCs = new String_Split[omp_get_max_threads() + 1];
 #endif
     for (std::map<PEAT_Rank, PEAT_Clock>::iterator it = com_store->frame_tsc_start.begin(); it != com_store->frame_tsc_start.end(); ++it) {
         tsc_corrector.at(it->first) = it->second;
@@ -90,10 +89,8 @@ PET_Core::PET_Core(const Global_Parameters &glob, const Model_ID &model_id_stora
     }
 
     input_MPI = new File_Storage_GZ(globals.pe_MPI_files_in_rank, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, globals.verbose);
-    input_HWC = new File_Storage_GZ(globals.pe_HWC_files_in_rank, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, globals.verbose);
     input_transport = new File_Storage_GZ(globals.pe_transport_files_in_rank, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, globals.verbose);
     output_MPI = new File_Storage_GZ(globals.pe_MPI_files_in_rank_out, PEAT_FIO_FLAG_WRITE, "w9", globals.verbose);
-    output_HWC = new File_Storage_GZ(globals.pe_HWC_files_in_rank_out, PEAT_FIO_FLAG_WRITE, "w9", globals.verbose);
     output_bind = new File_Storage_GZ(globals.pe_bind_files_in_rank_out, PEAT_FIO_FLAG_WRITE, "w9", globals.verbose);
 
     user_region_file = new Address_File_Storage(globals, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, &model_id_storage);
@@ -140,15 +137,13 @@ PET_Core::~PET_Core()
     delete transport;   // prof_hw = 0;
     delete com_store;   // com_store = 0;
     delete input_MPI;   // input_MPI = 0;
-    delete input_HWC;   // input_HWCpor = 0;
     delete input_transport;   // input_HWCpor = 0;
     delete output_MPI;  // output_MPI = 0;
-    delete output_HWC;  // output_HWC = 0;
     delete output_bind; // output_bind = 0;
 #ifdef PEAT_OMP
     delete[] read_mutexes;
     delete[] trace_line_MPIs;
-    delete[] trace_line_HWCs;
+    delete[] trace_line_TRCs;
     // delete[] ins_rem_mutexes;
 //	delete[] match_mutexes;
 #endif
@@ -349,10 +344,10 @@ PEAT_Bool PET_Core::process_events()
         {
 #ifdef PEAT_OMP
             String_Split &trace_line_MPI = trace_line_MPIs[omp_get_thread_num()];
-            String_Split &trace_line_HWC = trace_line_HWCs[omp_get_thread_num()];
+            String_Split &trace_line_TRC = trace_line_TRCs[omp_get_thread_num()];
 #endif
             trace_line_MPI.clear();
-            trace_line_HWC.clear();
+            trace_line_TRC.clear();
 #pragma omp for schedule(dynamic)
             for (std::vector<PET_Node>::iterator node_it = nodes.begin(); node_it != nodes.end(); ++node_it) {
                 PEAT_Clock clk;
@@ -371,7 +366,7 @@ PEAT_Bool PET_Core::process_events()
                                         PEAT_Num local_reads = 0;
                                         PET_Event *read_event = NULL;
                                         do {
-                                            read_event = get_event(rank_it->first, trace_line_MPI, trace_line_HWC, NULL);
+                                            read_event = get_event(rank_it->first, trace_line_MPI, trace_line_TRC, NULL);
                                             if (read_event == NULL) {
                                                 break;
                                             }
@@ -416,7 +411,7 @@ PEAT_Bool PET_Core::process_events()
                                     PEAT_MPI_Func_ID missing = evt->missing_event();
                                     PET_Event *read_event = NULL;
                                     do {
-                                        read_event = get_event(r, trace_line_MPI, trace_line_HWC, NULL);
+                                        read_event = get_event(r, trace_line_MPI, trace_line_TRC, NULL);
                                         // assert(event);
                                         if (read_event == NULL) {
                                             if (remove_orphans(r)) {
@@ -484,7 +479,7 @@ PEAT_Bool PET_Core::process_events()
 									PEAT_MPI_Func_ID missing = evt->missing_event();
 									PEAT_Num local_reads = 0;
 									do {
-										read_event = get_event(rank_it->first, trace_line_MPI, trace_line_HWC, NULL);
+										read_event = get_event(rank_it->first, trace_line_MPI, trace_line_TRC, NULL);
 										//assert(read_event);
 										/*if (read_event == NULL && is_rank_read(rank_it->first)) { // && (*thread_it)->thread_num==0
 											pet_throw_error(this, NULL, NULL, "No more events but they are...required. Is the trace valid?\n");
@@ -618,7 +613,7 @@ void PET_Core::write_ompt_regions()
                     PEAT_Clock head = event->t_time.func.in - event->e_time.func.in;
                     PEAT_Clock tail = event->t_time.func.out - event->e_time.func.out;
                     event->sub_t_ae = tail - head; // to eliminate error thrown during write;
-                    event->write_event(output_MPI, output_HWC, output_bind);
+                    event->write_event(output_MPI, output_bind);
                 }
             }
         }
@@ -690,7 +685,7 @@ void PET_Core::cache()
     PEAT_Rank start_rank = globals.pe_MPI_files_in_rank.begin()->first;
     PEAT_Rank finish_rank = globals.pe_MPI_files_in_rank.rbegin()->first;
     PEAT_Rank ranks_processed = 0;
-#pragma omp parallel for schedule(dynamic) // private(trace_line_MPI, trace_line_HWC)
+#pragma omp parallel for schedule(dynamic) // private(trace_line_MPI, trace_line_TRC)
     for (PEAT_Rank rank = start_rank; rank <= finish_rank; ++rank) {
         // PET_Node &node = nodes[ptp->get_tgt_node(rank->first)];
         PEAT_Ratio start_caching = Wtime();
@@ -707,11 +702,11 @@ void PET_Core::cache()
         do {
 #ifdef PEAT_OMP
             String_Split &trace_line_MPI = trace_line_MPIs[omp_get_thread_num()];
-            String_Split &trace_line_HWC = trace_line_HWCs[omp_get_thread_num()];
+            String_Split &trace_line_TRC = trace_line_TRCs[omp_get_thread_num()];
 #endif
             trace_line_MPI.clear();
-            trace_line_HWC.clear();
-            event = get_event(rank, trace_line_MPI, trace_line_HWC, NULL);
+            trace_line_TRC.clear();
+            event = get_event(rank, trace_line_MPI, trace_line_TRC, NULL);
         } while (event->ids[0] < events_to_read);
         PEAT_Ratio time = Wtime() - start_caching;
         PEAT_Ratio cache_bw = (events_to_read + 1) / time;
@@ -932,7 +927,7 @@ PEAT_Bool PET_Core::write_event_and_update_stat(PET_Event *event)
             return false;
     }
     std::cerr << global_func_id.name_by_idx(event->func_id) << " Rank:" << event->rank << "(" << event->thread_id << ").ID:" << event->ids_str() << ". Done." << std::endl;
-    event = event->write_event(output_MPI, output_HWC, output_bind);
+    event = event->write_event(output_MPI, output_bind);
     if (!event)
         return false;
     event_processed++;
@@ -1484,9 +1479,9 @@ void PET_Core::write_trace_info(const std::string& name)
 	}
 	gzFile trace_info_file_ptr = traceinfo_file.get_file_ptr(0);
 	gzprintf( trace_info_file_ptr, "PEATTRACEINFO\n" );
-	gzprintf( trace_info_file_ptr, "%d|%s|%s|%s|%s|%s|%s|%s|%s\n", PEAT_RT_Paths, globals.input_path.c_str(),
+	gzprintf( trace_info_file_ptr, "%d|%s|%s|%s|%s|%s|%s|%s\n", PEAT_RT_Paths, globals.input_path.c_str(),
 		globals.trace_files.c_str(),
-		globals.mpi_files.c_str(), globals.hwc_files.c_str(), globals.bind_files.c_str(), globals.transport_files.c_str(), globals.com_ext.c_str(), globals.app_ext.c_str() );
+		globals.mpi_files.c_str(), globals.bind_files.c_str(), globals.transport_files.c_str(), globals.com_ext.c_str(), globals.app_ext.c_str() );
 	gzprintf( trace_info_file_ptr, "%d|%lld\n", PEAT_RT_CPU_Freq, get_target_freq());
 	gzprintf( trace_info_file_ptr, "%d|%d|%d|%d\n", PEAT_RT_Var_Block_Info, model_id.num_tscs, model_id.num_hwcs, model_id.num_addrs );
 	if ( collectives_bound >0) traceinfo_file.printf(0, "%d|%lld\n", PEAT_RT_Bind_Collective, collectives_bound);
@@ -1527,9 +1522,9 @@ void PET_Core::write_trace_info(const std::string &name)
             throw std::runtime_error(tmp.str());
         }
         traceinfo_file.printf(0, "PEATTRACEINFO\n");
-        traceinfo_file.printf(0, "%d|%s|%s|%s|%s|%s|%s|%s|%s\n", PEAT_RT_Paths, peat_get_relative_path(globals.output_path, globals.input_path).c_str(),
+        traceinfo_file.printf(0, "%d|%s|%s|%s|%s|%s|%s|%s\n", PEAT_RT_Paths, peat_get_relative_path(globals.output_path, globals.input_path).c_str(),
                              globals.trace_files.c_str(),
-                             globals.mpi_files.c_str(), globals.hwc_files.c_str(), globals.bind_files.c_str(), globals.transport_files.c_str(), globals.com_ext.c_str(), globals.app_ext.c_str());
+                             globals.mpi_files.c_str(), globals.bind_files.c_str(), globals.transport_files.c_str(), globals.com_ext.c_str(), globals.app_ext.c_str());
         traceinfo_file.printf(0, "%d|%lld\n", PEAT_RT_CPU_Freq, ptp->get_trace_freq(0));
         traceinfo_file.printf(0, "%d|%d|%d|%d\n", PEAT_RT_Var_Block_Info, model_id.num_tscs, model_id.num_hwcs, model_id.num_addrs);
         if (collectives_bound > 0)

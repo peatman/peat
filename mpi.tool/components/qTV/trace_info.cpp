@@ -57,13 +57,11 @@ bool Trace_Info::parse_trace_info_file(QFileInfo &tracefile)
             path = make_absolute_path(trace_info_file, path);
             trace_files = lines.at(2);
             mpi_files = lines.at(3);
-            hwc_files = lines.at(4);
-            bind_files = lines.at(5);
-            transport_files = lines.at(6);
-            com_ext = lines.at(7);
-            app_ext = lines.at(8);
+            bind_files = lines.at(4);
+            transport_files = lines.at(5);
+            com_ext = lines.at(6);
+            app_ext = lines.at(7);
             // mpi_files.remove( '.' );
-            // hwc_files.remove( '.' );
             // bind_files.remove( '.' );
             // transport_files.remove( '.' );
             // com_ext.remove( '.' );
@@ -185,7 +183,7 @@ bool Trace_Info::parse_trace_info_file(QFileInfo &tracefile)
 }
 bool Trace_Info::has_transport_files() const
 {
-    // transport files are always raw (see Elements::parse_trace_info_file), so - unlike mpi/hwc - they
+    // transport files are always raw (see Elements::parse_trace_info_file), so - unlike mpi - they
     // live in `path`, not next to trace.info. transport_files isn't always recorded into trace.info
     // (e.g. older traces), default to ".transport" like mat/pet/Elements do in that case.
     if (path.isEmpty() || trace_files.isEmpty())

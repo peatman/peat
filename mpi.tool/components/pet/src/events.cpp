@@ -417,17 +417,16 @@ void PET_Core::fill_next_event(PET_Event *event)
     re_fill_queue = true;
 }
 
-PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MPI, String_Split &trace_line_HWC, PET_Event *host_evt, PET_Event *container)
+PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MPI, String_Split &trace_line_TRC, PET_Event *host_evt, PET_Event *container)
 {
     assert(com_store);
     assert(user_region_file);
     PET_Event *event = NULL;
-    PEAT_Bool r_mpi = input_MPI->read_lines(trace_line_MPI, rank, ':');
-    PEAT_Bool r_hwc = input_HWC->read_lines(trace_line_HWC, rank, ':');
-    if (!(r_mpi && r_hwc))
+    // a record is two lines: the function-specific one (trace_line_MPI) and the trace-specific one (trace_line_TRC)
+    if (!input_MPI->read_record(trace_line_MPI, trace_line_TRC, rank, ':'))
         return NULL;
-    if (trace_line_HWC.size() < 2) {
-        if (!input_MPI->is_file_good(rank) || !input_HWC->is_file_good(rank)) {
+    if (trace_line_TRC.size() < 2) {
+        if (!input_MPI->is_file_good(rank)) {
             if (!ranks_read[rank]) {
                 ranks_read[rank] = true;
             }
@@ -436,7 +435,7 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
     }
 
     PEAT_Record_Header hdr; // ids, thread and nesting of the record
-    user_region_file->parse_record_header(hdr, trace_line_MPI, rank);
+    user_region_file->parse_record_header(hdr, trace_line_TRC, rank);
     const PEAT_MPI_Func_ID func_id = model_id.translate_function_id(trace_line_MPI.at(hdr.payload)); // names and the collector's numeric ids
 
     if (func_id >= MPI_START_FILE_GROUP && func_id < MPI_END_FILE_GROUP) {
@@ -476,15 +475,21 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
     } else {
         event = new PET_Local_Event(this);
     }
-    if (!event->read_event(rank, trace_line_MPI, trace_line_HWC, host_evt, hdr)) {
+    if (!event->read_event(rank, trace_line_MPI, trace_line_TRC, host_evt, hdr)) {
         delete event;
         return NULL;
     }
     // event->node = ptp->get_tgt_node(rank);
-    if (func_id == MPI_SENDRECV_ID || func_id == MPI_SENDRECV_REPLACE_ID || func_id == MPIC_SENDRECV_ID || func_id == MPIC_SENDRECV_REPLACE_ID) {
-        input_MPI->read_lines(trace_line_MPI, rank, ':');
-        input_HWC->read_lines(trace_line_HWC, rank, ':');
-        event->read_event(rank, trace_line_MPI, trace_line_HWC, host_evt, hdr); // same header, tscs of the receive part
+    if (global_func_id.check_property(func_id, PEAT_PROP_DATA_TXRX)) {
+        input_MPI->read_lines(trace_line_MPI, rank, ':'); // the receive part is only a function-specific line
+        if (func_id == MPI_SENDRECV_ID || func_id == MPI_SENDRECV_REPLACE_ID || func_id == MPIC_SENDRECV_ID || func_id == MPIC_SENDRECV_REPLACE_ID) {
+            event->read_event(rank, trace_line_MPI, trace_line_TRC, host_evt, hdr); // same header and trace line, peer/tag/bytes of the receive part
+        } else if (PET_ToR_Event *tor = dynamic_cast<PET_ToR_Event *>(event)) {
+            for (PEAT_Num i = 0; i < trace_line_MPI.size(); i++) { // not interpreted: kept as it is for the output
+                tor->second_function_line += (i ? ":" : "");
+                tor->second_function_line += trace_line_MPI.at(i);
+            }
+        }
     }
     event->pet_rank->register_event_by_ids(event); // O(1) lookup by id path, any nesting depth: replaces the old child-walk search
     /*if (event->rank == 23 && event->ids[0] == 59) {
@@ -511,8 +516,8 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
     }
     PET_Event *top = host_evt ? host_evt : event;
     for (PEAT_Signed_Num i = 0; i < hdr.num_children; i++) {
-        String_Split t_trace_line_MPI, t_trace_line_HWC;
-        PET_Event *child_event = get_event(rank, t_trace_line_MPI, t_trace_line_HWC, top, event);
+        String_Split t_trace_line_MPI, t_trace_line_TRC;
+        PET_Event *child_event = get_event(rank, t_trace_line_MPI, t_trace_line_TRC, top, event);
         if (child_event == NULL)
             break; // truncated trace
     }

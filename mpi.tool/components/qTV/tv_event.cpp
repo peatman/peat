@@ -30,30 +30,29 @@ TV_Event::~TV_Event()
         delete addrs;
 }
 
-PEAT_Bool TV_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
+PEAT_Bool TV_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
 {
     // basic info
     rank = r_rank;
-    const int b = hdr.hwc_payload; // first tsc field on the .hwc line
-    assert(hwc_string.size() >= static_cast<size_t>(b + 4));
-    if (hwc_string.size() < static_cast<size_t>(b + 4))
+    const int b = hdr.trace_payload; // first tsc field on the trace-specific line
+    assert(trace_string.size() >= static_cast<size_t>(b + 4));
+    if (trace_string.size() < static_cast<size_t>(b + 4))
         return false;
-    assert(hdr.same_ids(hwc_string)); // the .hwc twin carries the same ids and thread
     // TSCs block
     if (evt_time.func.out > 0) { // read and corrected in get_event
         e_time = evt_time;
     }
     else { // hasn't read and corrected in get_event
-        extract(e_time.func.in, hwc_string.at(b), 10);
-        extract(e_time.func.out, hwc_string.at(b + 1), 10);
-        extract(e_time.pe.in, hwc_string.at(b + 2), 10);
-        extract(e_time.pe.out, hwc_string.at(b + 3), 10);
+        extract(e_time.func.in, trace_string.at(b), 10);
+        extract(e_time.func.out, trace_string.at(b + 1), 10);
+        extract(e_time.pe.in, trace_string.at(b + 2), 10);
+        extract(e_time.pe.out, trace_string.at(b + 3), 10);
 
     }
     addrs = new Event_Address_Info(num_addrs);
     for (int i = 0; i < (int)num_addrs; i++) {
         PEAT_UID addr;
-        extract(addr, hwc_string.at(b + 4 + i));
+        extract(addr, trace_string.at(b + 4 + i));
         addrs->addr[i] = addr;
     }
     // sanity check (and if pe information was not written)
@@ -63,7 +62,7 @@ PEAT_Bool TV_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string,
         e_time.pe.out = e_time.func.out;
     return true;
 }
-PEAT_Bool TV_Local_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
+PEAT_Bool TV_Local_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
 {
     rank = r_rank;
     ids = hdr.ids; // the whole path, the bind files refer to it
@@ -73,23 +72,23 @@ PEAT_Bool TV_Local_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_s
     if (funcid == 0) {
         func_id = global_func_id.idx_by_name(mpi_string.at(hdr.payload));
     } // else: a numeric id is the collector's own; Elements has already set func_id through Model_ID::translate_function_id()
-    TV_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs, hdr);
+    TV_Event::read_event(r_rank, mpi_string, trace_string, evt_time, num_addrs, hdr);
     if (func_id == MPI_PCONTROL_ID) {
         extract(p_control_id, mpi_string.at(hdr.payload + 1), 10, false);
     }
     // update_pending();
     return true;
 }
-PEAT_Bool TV_Local_Buf_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
+PEAT_Bool TV_Local_Buf_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
 {
-    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs, hdr);
+    TV_Local_Event::read_event(r_rank, mpi_string, trace_string, evt_time, num_addrs, hdr);
     extract(buf_count, mpi_string.at(hdr.payload + 1));
     extract(buf_size, mpi_string.at(hdr.payload + 2));
     return true;
 }
-PEAT_Bool TV_OSC_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
+PEAT_Bool TV_OSC_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
 {
-    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs, hdr);
+    TV_Local_Event::read_event(r_rank, mpi_string, trace_string, evt_time, num_addrs, hdr);
     extract(comm, mpi_string.at(hdr.payload + 1), 16);
     extract(peer_rank, mpi_string.at(hdr.payload + 2)); // already rank-resolved
     extract(request, mpi_string.at(hdr.payload + 3), 16);
@@ -110,9 +109,9 @@ TV_Coll_Event::~TV_Coll_Event()
     */
 }
 
-PEAT_Bool TV_Collective_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
+PEAT_Bool TV_Collective_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
 {
-    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs, hdr);
+    TV_Local_Event::read_event(r_rank, mpi_string, trace_string, evt_time, num_addrs, hdr);
     extract(comm, mpi_string.at(hdr.payload + 1), 16);
     extract(root, mpi_string.at(hdr.payload + 2));
     extract(request, mpi_string.at(hdr.payload + 3), 16);
@@ -146,9 +145,9 @@ PEAT_Bool TV_Collective_Event::read_event(PEAT_Rank r_rank, const String_Split &
     return true;
 }
 
-PEAT_Bool TV_Comm_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
+PEAT_Bool TV_Comm_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
 {
-    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs, hdr);
+    TV_Local_Event::read_event(r_rank, mpi_string, trace_string, evt_time, num_addrs, hdr);
     extract(comm, mpi_string.at(hdr.payload + 1), 16);
     extract(newcomm, mpi_string.at(hdr.payload + 2), 16);
     extract(remotecomm, mpi_string.at(hdr.payload + 3), 16);
@@ -162,9 +161,9 @@ TV_Start_Event::~TV_Start_Event()
         delete *event_it;
     }
 }
-PEAT_Bool TV_Start_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
+PEAT_Bool TV_Start_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
 {
-    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs, hdr);
+    TV_Local_Event::read_event(r_rank, mpi_string, trace_string, evt_time, num_addrs, hdr);
     extract(input_request_num, mpi_string.at(hdr.payload + 1));
     extract(triggered_request_num, mpi_string.at(hdr.payload + 2));
     extract(flag, mpi_string.at(hdr.payload + 3));
@@ -228,9 +227,9 @@ PEAT_Bool TV_Start_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_s
     }
     return true;
 }
-PEAT_Bool TV_Completion_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
+PEAT_Bool TV_Completion_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
 {
-    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs, hdr);
+    TV_Local_Event::read_event(r_rank, mpi_string, trace_string, evt_time, num_addrs, hdr);
     extract(input_request_num, mpi_string.at(hdr.payload + 1));
     extract(triggered_request_num, mpi_string.at(hdr.payload + 2));
     extract(flag, mpi_string.at(hdr.payload + 3));
@@ -269,9 +268,9 @@ PEAT_Bool TV_Completion_Event::read_event(PEAT_Rank r_rank, const String_Split &
     return true;
 }
 
-PEAT_Bool TV_ToR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
+PEAT_Bool TV_ToR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
 {
-    TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs, hdr);
+    TV_Local_Event::read_event(r_rank, mpi_string, trace_string, evt_time, num_addrs, hdr);
     extract(comm, mpi_string.at(hdr.payload + 1), 16);
     extract(peer_rank, mpi_string.at(hdr.payload + 2));
     extract(request, mpi_string.at(hdr.payload + 3), 16);
@@ -284,10 +283,10 @@ PEAT_Bool TV_ToR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_str
     return true;
 }
 
-PEAT_Bool TV_TaR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
+PEAT_Bool TV_TaR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
 {
     if (!process_second_line) {
-        TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs, hdr);
+        TV_Local_Event::read_event(r_rank, mpi_string, trace_string, evt_time, num_addrs, hdr);
         extract(comm, mpi_string.at(hdr.payload + 1), 16);
         extract(peer_rank, mpi_string.at(hdr.payload + 2)); // COMMWORLD based No need to translate
         /*
@@ -306,14 +305,14 @@ PEAT_Bool TV_TaR_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_str
     return true;
 }
 
-PEAT_Bool TV_OMPT_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
+PEAT_Bool TV_OMPT_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
 {
-    return TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs, hdr);
+    return TV_Local_Event::read_event(r_rank, mpi_string, trace_string, evt_time, num_addrs, hdr);
 }
 
-PEAT_Bool TV_GPU_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
+PEAT_Bool TV_GPU_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, const PEAT_Time &evt_time, const PEAT_Num num_addrs, const PEAT_Record_Header &hdr)
 {
-    return TV_Local_Event::read_event(r_rank, mpi_string, hwc_string, evt_time, num_addrs, hdr);
+    return TV_Local_Event::read_event(r_rank, mpi_string, trace_string, evt_time, num_addrs, hdr);
 }
 // uid:tid:func_name_or_id:tsc0:tsc1:tsc2:tsc3:total_clocks_bitween_calls:num_calls (see t_transport_profiler::write_transport_file)
 PEAT_Bool TV_Transport_Event::read_transport_event(PEAT_Rank r_rank, const String_Split &transport_string)

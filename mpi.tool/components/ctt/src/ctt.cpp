@@ -31,27 +31,36 @@
     if (globals.verbose > x) \
     std::cerr
 
-PEAT_Bool CTT::parse_single_event(const int rank, String_Split &line_mpi, String_Split &line_hwc, PEAT_Bool second_line)
+PEAT_Bool CTT::parse_single_event(const int rank, String_Split &line_mpi, String_Split &line_trace, PEAT_Bool second_line)
 {
     line_mpi.clear();
-    line_hwc.clear();
-    if (!input_MPI->is_file_good(rank) || !input_HWC->is_file_good(rank)) {
+    if (!input_MPI->is_file_good(rank)) {
         return false;
     }
-    input_MPI->read_lines(line_mpi, rank, ':');
-    input_HWC->read_lines(line_hwc, rank, ':');
+    if (second_line) {
+        // the receive part of a send-receive is only a function-specific line, it shares the trace-specific line of the send part
+        input_MPI->read_lines(line_mpi, rank, ':');
+    } else {
+        line_trace.clear();
+        input_MPI->read_record(line_mpi, line_trace, rank, ':');
+    }
     // ctt_dbg(0) << "P" << rank << std::endl;
-    if (line_mpi.size() < 2) {
+    if (line_mpi.empty() || line_trace.size() < 2) {
         return false;
     }
     PEAT_Record_Header hdr; // ids, thread and nesting of the record
-    user_region_store->parse_record_header(hdr, line_mpi, rank);
+    user_region_store->parse_record_header(hdr, line_trace, rank);
     // report/filter by function name also when the collector wrote numeric ids
     const PEAT_MPI_Func_ID func_id = model_id.translate_function_id(line_mpi.at(hdr.payload));
     std::string mpi_func = (func_id != TMPI_FUNC_ID_NONE) ? global_func_id.name_by_idx(func_id) : line_mpi.at(hdr.payload);
-    if (globals.func_set.count(mpi_func) < 1 && (!globals.func_set.empty()))
+    if (globals.func_set.count(mpi_func) < 1 && (!globals.func_set.empty())) {
+        if (!second_line && global_func_id.check_property(func_id, PEAT_PROP_DATA_TXRX)) { // skip the receive part of a send-receive too
+            String_Split skipped;
+            input_MPI->read_lines(skipped, rank, ':');
+        }
         return true;
-    Tractor_Event t_event(rank, line_mpi, line_hwc, model_id.num_hwcs, model_id.num_addrs, user_region_store, com_store, model_id);
+    }
+    Tractor_Event t_event(rank, line_mpi, line_trace, model_id.num_hwcs, model_id.num_addrs, user_region_store, com_store, model_id);
     Tractor_Event send_line, recv_line;
     if(!second_line && (t_event.ids.size()<2 || t_event.ids[1] < 0)) { //count only 'user' events
 #pragma omp atomic
@@ -73,9 +82,8 @@ PEAT_Bool CTT::parse_single_event(const int rank, String_Split &line_mpi, String
                 parse_P2PRx(rank, recv_line, f_event);
             } else {
                 send_line = t_event;
-                String_Split line_mpi;
-                String_Split line_hwc;
-                parse_single_event(rank, line_mpi, line_hwc,true);
+                String_Split line_mpi; // the trace-specific line is the one of the send part
+                parse_single_event(rank, line_mpi, line_trace, true);
             }
         } else {
             if (global_func_id.check_property(mpifunc, PEAT_PROP_DATA_TX)) { // send f.i
@@ -134,7 +142,7 @@ PEAT_Bool CTT::parse_single_event(const int rank, String_Split &line_mpi, String
     }
     return true;
 }
-CTT::CTT(Global_Parameters &glob, Model_ID &model_id_storage) :  input_HWC(NULL), input_MPI(NULL), globals(glob), model_id(model_id_storage), events_processed(0)
+CTT::CTT(Global_Parameters &glob, Model_ID &model_id_storage) :  input_MPI(NULL), globals(glob), model_id(model_id_storage), events_processed(0)
 {
     // Open *com* files
     std::map<PEAT_Rank, std::string> file_input_com_names = get_file_names(globals.input_path, globals.trace_files, globals.com_ext, globals.rank_set, true);
@@ -159,13 +167,10 @@ CTT::CTT(Global_Parameters &glob, Model_ID &model_id_storage) :  input_HWC(NULL)
     user_region_store = new Address_File_Storage(globals, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, &model_id_storage);
 
     input_MPI = new File_Storage_GZ(globals.pe_MPI_files_in_rank, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, globals.verbose);
-    input_HWC = new File_Storage_GZ(globals.pe_HWC_files_in_rank, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, globals.verbose);
 }
 
 CTT::~CTT()
 {
-    if (input_HWC)
-        delete input_HWC;
     if (input_MPI)
         delete input_MPI;
     if (user_region_store)
@@ -190,7 +195,7 @@ void CTT::process()
     PEAT_Ratio start_estimation = Wtime();
     PEAT_Ratio prev_step = start_estimation;
     std::vector<PEAT_Rank> ranks;
-    for (std::map<PEAT_Rank, std::string>::const_iterator rank = globals.pe_HWC_files_in_rank.begin(); rank != globals.pe_HWC_files_in_rank.end(); ++rank) {
+    for (std::map<PEAT_Rank, std::string>::const_iterator rank = globals.pe_MPI_files_in_rank.begin(); rank != globals.pe_MPI_files_in_rank.end(); ++rank) {
         ranks.push_back(rank->first);
         std::map<std::string, std::list<CTT_Event>> temp_funcs_out;
         funcs_out[rank->first] = temp_funcs_out;
@@ -200,10 +205,10 @@ void CTT::process()
 #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < rank_size; i++) {
         String_Split line_mpi;
-        String_Split line_hwc;
+        String_Split line_trace;
         PEAT_Rank rank = ranks.at(i);
         while (input_MPI->is_file_good(rank)) {
-            parse_single_event(rank, line_mpi, line_hwc, false);
+            parse_single_event(rank, line_mpi, line_trace, false);
             if (events_processed > total_event_num * cur_percent / 100) {
 #ifdef PEAT_OMP
                 if (omp_get_thread_num() == 0)

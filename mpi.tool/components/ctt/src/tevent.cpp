@@ -40,39 +40,38 @@ void Tractor_Event::get_extra_txrx(const String_Split &line, const Communicators
     extract(P2P.bytes, line.at(block_auxiliary_start+3), 16);
     */
 }
-Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, const String_Split &line_hwc, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file, const Communicators *com_store, const Model_ID &model_id) : rank(r), num_children(0), level(0)
+Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, const String_Split &line_trace, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file, const Communicators *com_store, const Model_ID &model_id) : rank(r), num_children(0), level(0)
 {
     // no need to check line.size() due line.at() throw an exception
     //  First read the record header (ids, thread, nesting)
     PEAT_Record_Header hdr;
-    user_region_file->parse_record_header(hdr, line_mpi, rank);
+    user_region_file->parse_record_header(hdr, line_trace, rank);
     ids = hdr.ids;
     thread_id = hdr.thread_id;
     level = hdr.level;
     num_children = hdr.num_children;
-    const int b = hdr.payload;     // first payload field on the .mpi line
-    const int h = hdr.hwc_payload; // first tsc on the .hwc line
+    const int b = hdr.payload;       // function name on the function-specific line, its parameters follow
+    const int h = hdr.trace_payload; // first tsc on the trace-specific line
     func_id = model_id.translate_function_id(line_mpi.at(b)); // names and the collector's numeric ids
-    assert(hdr.same_ids(line_hwc));
-    extract(tsc_time.func.in, line_hwc.at(h), 10);
-    extract(tsc_time.mpi.in, line_hwc.at(h + 1), 10);
-    extract(tsc_time.mpi.out, line_hwc.at(h + 2), 10);
-    extract(tsc_time.func.out, line_hwc.at(h + 3), 10);
+    extract(tsc_time.func.in, line_trace.at(h), 10);
+    extract(tsc_time.mpi.in, line_trace.at(h + 1), 10);
+    extract(tsc_time.mpi.out, line_trace.at(h + 2), 10);
+    extract(tsc_time.func.out, line_trace.at(h + 3), 10);
     tsc_time.mpi.out = tsc_time.func.out - tsc_time.mpi.out;
     for (int i = 0; i < (int)num_addrs; i++) {
         PEAT_UID addr;
-        extract(addr, line_hwc.at(h + 4 + i));
+        extract(addr, line_trace.at(h + 4 + i));
         addrs.push_back(addr);
         // addrs.push_back(user_region_file->get_addr_by_id(rank, addr)->addr);
     }
     //  Hardware counters are following to addrs (num_hwcs)
     // memory info is 8 cells, since not widely used  skip for now
-    PEAT_Num hwc_size = (PEAT_Num)line_hwc.size();
-    for (PEAT_Num i = h + 4 + num_hwcs + num_addrs; i < hwc_size; i += 2) {
+    PEAT_Num trace_size = (PEAT_Num)line_trace.size();
+    for (PEAT_Num i = h + 4 + num_hwcs + num_addrs; i < trace_size; i += 2) {
         PEAT_MPI_Memory_Buffer buf;
-        if (strlen(line_hwc.at(i)) > 0) { // bug in soe versions of tractor
-            extract(buf.addr, line_hwc.at(i), 16);
-            extract(buf.size, line_hwc.at(i + 1));
+        if (strlen(line_trace.at(i)) > 0) { // bug in soe versions of tractor
+            extract(buf.addr, line_trace.at(i), 16);
+            extract(buf.size, line_trace.at(i + 1));
         }
         buffers.push_back(buf);
     }

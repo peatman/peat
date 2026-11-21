@@ -34,7 +34,7 @@ class OSC : public Outputs
   public:
     OSC(int v = false);
 
-    void initialize(PTP *p, Communicators *c, Request_Store *rs, Requests* r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
+    void initialize(PTP *p, Communicators *c, Request_Store *rs, Requests* r, File_Storage_GZ *MPI, File_Storage_GZ *bind);
 
     void parse_osc(const PEAT_Rank rank, Tractor_Event &event);
     void print_osc_out(const Tractor_Event &event);

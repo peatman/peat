@@ -38,9 +38,9 @@
 #include <mpi.h>
 #endif
 
-PEAT_Bool PET_Collective_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &hwc_string, PET_Event *host, const PEAT_Record_Header &hdr)
+PEAT_Bool PET_Collective_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr)
 {
-    PET_Local_Event::read_event(r_rank, mpi_string, hwc_string, host, hdr);
+    PET_Local_Event::read_event(r_rank, mpi_string, trace_string, host, hdr);
     extract(comm, mpi_string.at(hdr.payload + 1), 16);
     extract(root, mpi_string.at(hdr.payload + 2));
     extract(request, mpi_string.at(hdr.payload + 3), 16);
@@ -117,9 +117,9 @@ PEAT_Bool PET_Collective_Event::write_bind(File_Storage_GZ *gz_bind)
     return true;
 }
 
-PET_Event *PET_Collective_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_HWC, File_Storage_GZ *gz_bind, const char *mpi_eol, const char *hwc_eol)
+PET_Event *PET_Collective_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind)
 {
-    PET_Local_Event::write_event(gz_MPI, gz_HWC, gz_bind, "", hwc_eol);
+    write_function_head(gz_MPI);
     gz_MPI->printf(rank, ":%x:%d:%llx:%d:%d",
                    comm, root, request, tx_bytes.size(), rx_bytes.size());
     for (int i = 0; i < (int)tx_bytes.size(); i++) {
@@ -128,11 +128,12 @@ PET_Event *PET_Collective_Event::write_event(File_Storage_GZ *gz_MPI, File_Stora
     for (int i = 0; i < (int)rx_bytes.size(); i++) {
         gz_MPI->printf(rank, ":%lld", rx_bytes.get(i));
     }
-    gz_MPI->printf(rank, "%s", mpi_eol);
+    gz_MPI->printf(rank, "\n");
+    write_trace_line(gz_MPI);
     if (!is_persistent_init()) {
         write_bind(gz_bind);
     }
-    PET_Coll_Event::write_event(gz_MPI, gz_HWC, gz_bind, mpi_eol, hwc_eol);
+    PET_Coll_Event::write_event(gz_MPI, gz_bind);
 
     return this;
 }
