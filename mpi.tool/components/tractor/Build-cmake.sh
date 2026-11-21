@@ -11,11 +11,9 @@ rm -rf $src_tmp
 mkdir -p $src_tmp
 cd $src_tmp
 
-# llama.cpp and CUDA tracing from the environment, as in Build.sh: LLAMA_ROOT=<llama.cpp source tree>
-# [LLAMA_DEPRECATED=on], CUPTI_PARSE=auto|on [CUDA_ROOT=<CUDA toolkit>]
+# llama.cpp and CUDA tracing (LLAMA_PARSE, LLAMA_ROOT, LLAMA_DEPRECATED, CUPTI_PARSE, CUDA_ROOT) are read from the
+# environment by CMakeLists.txt, as the Makefile does
 cmake -DCMAKE_C_COMPILER=$MPICC -DCMAKE_CXX_COMPILER=$MPICXX -DPEAT_TIMER=nano \
-    ${LLAMA_ROOT:+-DLLAMA=ON -DLLAMA_ROOT=$LLAMA_ROOT} ${LLAMA_DEPRECATED:+-DLLAMA_DEPRECATED=$LLAMA_DEPRECATED} \
-    ${CUPTI_PARSE:+-DCUPTI=$CUPTI_PARSE} ${CUDA_ROOT:+-DCUDA_ROOT=$CUDA_ROOT} \
     ../src
 
 cmake --build .
