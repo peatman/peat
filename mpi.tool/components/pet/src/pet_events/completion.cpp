@@ -77,7 +77,8 @@ PEAT_Bool PET_Completion_Event::override_children()
                 // PET_Request& pet_req = *req_it;
                 // event->event_parts = 0;
                 switch (event->get_event_type()) {
-                case PET_EVENT_TYPE_TOR: {
+                case PET_EVENT_TYPE_TOR:
+                case PET_EVENT_TYPE_TAR: { // MPI_Isendrecv*
                     PET_ToR_Event *evt = static_cast<PET_ToR_Event *>(event);
                     tor_events[req_it->request] = evt;
                     evt->set_block(true); // evt->set_verify();
@@ -189,11 +190,18 @@ PEAT_Bool PET_Completion_Event::self_discard()
     get_core()->update_active_event_chain(sub_t, this);
     get_core()->remove_entry(this);
     discarded = true;
+    get_core()->event_processed++; // merged into the call completing the chain: never written, but done
     return true;
 }
 PEAT_Bool PET_Completion_Event::patch_nd_event(Completion_Chain *chain)
 {
-    PEAT_Num size = chain->entry.size();
+    // the merged call waits for the live requests of the chain only: an inactive slot never had anything to complete
+    std::vector<PEAT_Num> live; // chain slots
+    for (PEAT_Num i = 0; i < chain->entry.size(); i++) {
+        if (!chain->entry[i].inactive)
+            live.push_back(i);
+    }
+    PEAT_Num size = live.size();
     if (size > 1) {
         func_id = MPI_WAITALL_ID;
     } else {
@@ -202,12 +210,13 @@ PEAT_Bool PET_Completion_Event::patch_nd_event(Completion_Chain *chain)
     input_request_num = triggered_request_num = size;
     input_requests.resize(size);
     for (PEAT_Num i = 0; i < size; i++) {
-        input_requests[i] = chain->entry[i].request;
+        const Extended_Request &slot = chain->entry[live[i]];
+        input_requests[i] = slot.request;
 
         if (find_triggered_request(input_requests[i]) == NULL) {
             // extract request information from chain
             PEAT_Bool bfound = false;
-            for (std::list<PET_Completion_Event *>::iterator event_it = chain->entry[i].events.begin(); event_it != chain->entry[i].events.end(); ++event_it) {
+            for (std::list<PET_Completion_Event *>::const_iterator event_it = slot.events.begin(); event_it != slot.events.end(); ++event_it) {
                 PET_Completion_Event *event = *event_it;
                 PET_Request *req = event->find_triggered_request(input_requests[i]);
                 if (req) {
@@ -339,13 +348,19 @@ PEAT_Bool PET_Completion_Event::estimate(Estimation_Event *event)
     PEAT_Bool is_estimation_finished = true;
     if (global_func_id.check_property(func_id, PEAT_PROP_NON_DETERMINISTIC) && !is_chained) {
         Completion_Entry entry(input_request_num, addr);
+        const PEAT_MPI_Request request_null = get_core()->get_comm()->get_MPI_REQUEST_NULL();
         for (PEAT_Num i = 0; i < input_request_num; i++) {
-            if (input_requests[i] == get_core()->get_comm()->get_MPI_REQUEST_NULL())
+            // 0: a request already completed when it was posted (read_event skips it among the triggered ones too)
+            if (input_requests[i] == request_null || input_requests[i] == 0)
                 continue;
             PEAT_Bool is_completed = false;
             if (find_triggered_request(input_requests[i]))
                 is_completed = true;
             get_core()->add_request_to_chain(rank, entry, i, input_requests[i], this, is_completed);
+        }
+        for (PEAT_Num i = 0; i < input_request_num; i++) {
+            if (input_requests[i] == request_null || input_requests[i] == 0)
+                get_core()->mark_inactive_slot(rank, entry, i, input_requests[i], this);
         }
         is_chained = true;
     }
@@ -458,7 +473,7 @@ PEAT_Bool PET_Completion_Event::estimate(Estimation_Event *event)
                 if (event_parts.meat > MIN_COMPLETION_TIME) event_parts.meat = MIN_COMPLETION_TIME;
             }*/
             // event_parts.epilog = o_event_parts.epilog;
-            if (global_func_id.check_property(func_id, PEAT_PROP_NON_DETERMINISTIC)) {
+            if (global_func_id.check_property(func_id, PEAT_PROP_NON_DETERMINISTIC) && chain) {
                 // patch current event to WAIT(ALL)
                 patch_nd_event(chain);
                 // and remove chain

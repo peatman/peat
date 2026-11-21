@@ -37,6 +37,17 @@
 #include <mpi.h>
 #endif
 
+/* A standalone MPI_Ixxx adopted by its completion left the active list then (remove_entry) but stays in its rank's
+   pairing list, where peers and request lookups still find it; it goes from there when the completion deletes it,
+   or remove_orphans/find_event_by_request walk a freed event. */
+static void delete_adopted_event(PET_Event *evt)
+{
+    PET_Rank *pet_rank = evt->get_rank();
+    if (pet_rank)
+        pet_rank->remove_pre_entry(evt);
+    delete evt;
+}
+
 PET_Start_Event::~PET_Start_Event()
 {
     //	if (!is_colt()) { // for collective transfers those functions are deleted by "head" collective destructor
@@ -50,7 +61,7 @@ PET_Start_Event::~PET_Start_Event()
             continue;
         done.insert(evt);
         if (evt->host_event == NULL) {
-            delete evt; // standalone MPI_Ixxx: owned by this completion
+            delete_adopted_event(evt); // standalone MPI_Ixxx: owned by this completion
         } else {
             evt->notify_before_destroy(this); // collective transfer: owned by its container
         }
@@ -59,7 +70,7 @@ PET_Start_Event::~PET_Start_Event()
         if (done.count(event_it->second))
             continue;
         if (event_it->second->host_event == NULL) {
-            delete event_it->second;
+            delete_adopted_event(event_it->second);
         } else {
             event_it->second->notify_before_destroy(this);
         }
@@ -68,7 +79,7 @@ PET_Start_Event::~PET_Start_Event()
         if (done.count(event_it->second))
             continue;
         if (event_it->second->host_event == NULL) {
-            delete event_it->second;
+            delete_adopted_event(event_it->second);
         } else {
             event_it->second->notify_before_destroy(this);
         }

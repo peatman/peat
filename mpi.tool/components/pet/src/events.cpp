@@ -453,7 +453,8 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
                (func_id >= MPI_PROBE_START && func_id < MPI_PROBE_END) ||
                (func_id >= MPI_P2P_COLL_TRANSFER_START && func_id < MPI_P2P_COLL_TRANSFER_END) ||
                (func_id >= MPI_P2P_COLL_PROBE_START && func_id < MPI_P2P_COLL_PROBE_END)) {
-        if (func_id != MPI_SENDRECV_ID && func_id != MPI_SENDRECV_REPLACE_ID && func_id != MPIC_SENDRECV_ID && func_id != MPIC_SENDRECV_REPLACE_ID) {
+        // a send-receive (blocking or not: MPI_(I)Sendrecv(_replace)(_c), MPIC_Sendrecv...) has two directions, each with its own peer
+        if (!global_func_id.check_property(func_id, PEAT_PROP_DATA_TXRX)) {
             event = new PET_ToR_Event(this);
         } else {
             event = new PET_TaR_Event(this);
@@ -482,8 +483,8 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
     // event->node = ptp->get_tgt_node(rank);
     if (global_func_id.check_property(func_id, PEAT_PROP_DATA_TXRX)) {
         input_MPI->read_lines(trace_line_MPI, rank, ':'); // the receive part is only a function-specific line
-        if (func_id == MPI_SENDRECV_ID || func_id == MPI_SENDRECV_REPLACE_ID || func_id == MPIC_SENDRECV_ID || func_id == MPIC_SENDRECV_REPLACE_ID) {
-            event->read_event(rank, trace_line_MPI, trace_line_TRC, host_evt, hdr); // same header and trace line, peer/tag/bytes of the receive part
+        if (event->get_event_type() == PET_EVENT_TYPE_TAR) {
+            event->read_event(rank, trace_line_MPI, trace_line_TRC, host_evt, hdr); // same header and trace line, peer/tag/bytes (and request) of the receive part
         } else if (PET_ToR_Event *tor = dynamic_cast<PET_ToR_Event *>(event)) {
             for (PEAT_Num i = 0; i < trace_line_MPI.size(); i++) { // not interpreted: kept as it is for the output
                 tor->second_function_line += (i ? ":" : "");

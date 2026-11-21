@@ -31,8 +31,9 @@
 struct Extended_Request {
     PEAT_MPI_Request request;
     PEAT_Bool completed;
+    PEAT_Bool inactive; // no live request ever held in this slot (MPI_REQUEST_NULL, or 0: already completed when posted, e.g. MPICH's MPI_Ibsend)
     std::list<PET_Completion_Event *> events;
-    Extended_Request() : request(-1), completed(false) {};
+    Extended_Request() : request(-1), completed(false), inactive(false) {};
 };
 
 struct Completion_Chain {
@@ -261,13 +262,39 @@ class PET_Rank
         }
         return true;
     }
+    /* A slot of an existing chain whose request is MPI_REQUEST_NULL or 0 and that never held a live request has
+       nothing to wait for: it is complete from the start. Without this the chain never completes (no triggered
+       request ever names it), stays after the loop and the next loop over the same array hits a completed slot. */
+    PEAT_Bool mark_inactive_slot(Completion_Entry &entry, PEAT_Num index, PEAT_MPI_Request req, PET_Completion_Event *event)
+    {
+        if (completion_chains.count(entry) == 0)
+            return false; // no live request in this call: nothing chained, as before
+        Completion_Chain &chain = completion_chains.at(entry);
+        if (chain.is_locked() || index >= chain.entry.size())
+            return false;
+        Extended_Request &e_req = chain.entry[index];
+        if (e_req.request != -1 && !e_req.inactive)
+            return false; // held a live request earlier in the loop: its own completion counts
+        e_req.request = req;
+        e_req.inactive = true;
+        e_req.completed = true;
+        if (chain.is_completed()) {
+            chain.lock(event);
+        }
+        return true;
+    }
+    /* lookups only: operator[] here used to leave an empty chain behind for a call that has nothing chained (e.g. a
+       MPI_Waitany whose only remaining request was already completed when posted), and the next loop over the same
+       array then indexed its empty slot vector */
     Completion_Chain *get_chain(Completion_Entry &entry)
     {
-        return &completion_chains[entry];
+        std::map<Completion_Entry, Completion_Chain>::iterator it = completion_chains.find(entry);
+        return it == completion_chains.end() ? NULL : &it->second;
     }
     PET_Event *get_lock(Completion_Entry &entry)
     {
-        return get_chain(entry)->get_locker();
+        Completion_Chain *chain = get_chain(entry);
+        return chain ? chain->get_locker() : NULL;
     }
 
     void check_and_allocate_threads(PEAT_Thread max_thread_id)

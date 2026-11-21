@@ -699,7 +699,7 @@ struct PET_ToR_Event : public PET_Local_Event {
     PEAT_Clock get_cts_finish(PEAT_DIRECTION direction) const;
     PEAT_Clock get_message_start(PEAT_DIRECTION direction) const;
     PEAT_Clock get_message_finish(PEAT_DIRECTION direction) const;
-    PEAT_Clock get_ack_finish(PEAT_DIRECTION direction) const;
+    virtual PEAT_Clock get_ack_finish(PEAT_DIRECTION direction) const;
     PEAT_Bool get_up_status(PEAT_DIRECTION direction) const;
     virtual PEAT_Bool check_up_status() const;
 
@@ -735,6 +735,7 @@ struct PET_ToR_Event : public PET_Local_Event {
     {
         return (!(comp_event == NULL)) || request == 0 || is_persistent_init() || treat_as_local;
     }
+    virtual PEAT_Rank get_rx_peer_rank() const { return peer_rank; } // destination of the receive side's control messages (CTS, ACK)
     virtual PEAT_Bool ready_to_bind() const
     {
         return completion_received() || treat_as_local;
@@ -780,22 +781,30 @@ struct PET_TaR_Event : public PET_ToR_Event {
        (possibly different) peer; ids is the first physical line's own id path (send side), ids_2 the second
        line's (recv side) - captured so a bind-store lookup can resolve each direction separately. */
     PEAT_Event_IDs ids_2;
+    /* MPI_Isendrecv*: the tractor writes the request on the receive line only (the send line has 0): request is that
+       one, request_tx the send line's, kept to write the record back as read. comp_event is the receive-side peer here,
+       so the completing record (MPI_Wait & co.) has its own pointer. */
+    PEAT_MPI_Request request_tx;
+    PET_Event *completion_event;
 
   public:
     PET_TaR_Event(PET_Core *p) : PET_ToR_Event(p), process_second_line(false), t_bytes_2(-1), tag_2(-1), peer_rank_2(-1),
-                                 peer_func_id_2(TMPI_FUNC_ID_NONE), peer_completion_func_id_2(TMPI_FUNC_ID_NONE)
+                                 peer_func_id_2(TMPI_FUNC_ID_NONE), peer_completion_func_id_2(TMPI_FUNC_ID_NONE),
+                                 request_tx(0), completion_event(NULL)
     {
     }
     PET_TaR_Event(const PET_TaR_Event &s) : PET_ToR_Event(s.pet_core), process_second_line(s.process_second_line),
                                             t_bytes_2(s.t_bytes_2), tag_2(s.tag_2), peer_rank_2(s.peer_rank_2),
                                             peer_ids_2(s.peer_ids_2),
                                             peer_completion_ids_2(s.peer_completion_ids_2),
-                                            peer_func_id_2(s.peer_func_id_2), peer_completion_func_id_2(s.peer_completion_func_id_2)
+                                            peer_func_id_2(s.peer_func_id_2), peer_completion_func_id_2(s.peer_completion_func_id_2),
+                                            request_tx(s.request_tx), completion_event(s.completion_event)
     {
     }
     PET_TaR_Event(const PET_ToR_Event &s) : PET_ToR_Event(s.pet_core), process_second_line(false),
                                             t_bytes_2(-1), tag_2(-1), peer_rank_2(-1),
-                                            peer_func_id_2(TMPI_FUNC_ID_NONE), peer_completion_func_id_2(TMPI_FUNC_ID_NONE)
+                                            peer_func_id_2(TMPI_FUNC_ID_NONE), peer_completion_func_id_2(TMPI_FUNC_ID_NONE),
+                                            request_tx(0), completion_event(NULL)
     {
         if (s.check_tx()) {
             peer_func_id_2 = s.peer_func_id;
@@ -816,6 +825,15 @@ struct PET_TaR_Event : public PET_ToR_Event {
     virtual PEAT_Bool get_rx_paired() const { return comp_event != NULL; };
     virtual PEAT_Message_Size get_tx_bytes() const { return t_bytes; };
     virtual PEAT_Message_Size get_rx_bytes() const { return t_bytes_2; };
+    virtual PEAT_Message_Size get_real_rx_bytes() const { return check_real_rx() ? t_bytes_2 : -1; };
+    /* a direction whose peer is MPI_PROC_NULL moves no data: it is never bound, transported or waited for */
+    PEAT_Bool is_null_peer(PEAT_Rank r) const;
+    virtual PEAT_Bool check_tx() const { return PET_ToR_Event::check_tx() && !is_null_peer(peer_rank); }
+    virtual PEAT_Bool check_rx() const { return PET_ToR_Event::check_rx() && !is_null_peer(peer_rank_2); }
+    virtual PEAT_Bool check_real_tx() const { return PET_ToR_Event::check_real_tx() && !is_null_peer(peer_rank); }
+    virtual PEAT_Bool check_real_rx() const { return PET_ToR_Event::check_real_rx() && !is_null_peer(peer_rank_2); }
+    virtual PEAT_Rank get_rx_peer_rank() const { return peer_rank_2; }
+    virtual PEAT_Clock get_ack_finish(PEAT_DIRECTION direction) const;
     virtual PEAT_MPI_Tag get_send_tag() const
     {
         return tag;
@@ -832,20 +850,25 @@ struct PET_TaR_Event : public PET_ToR_Event {
     {
         return peer_rank_2;
     }
+    // the status of a completed MPI_Isendrecv* describes its receive part; a receive from MPI_PROC_NULL has nothing to update
     virtual void set_recv_tag(PEAT_MPI_Tag t)
     {
+        if (!check_rx())
+            return;
         if(tag_2 != t && tag_2 >= 0) {
             char buf[256];
-            sprintf(buf, "Tag Mismatch %d received %d rank %d,ids=%s, parent=%lld\n", tag_2, t, rank, ids_str().c_str(), comp_event->ids[0]);
+            snprintf(buf, sizeof(buf), "Tag Mismatch %d received %d rank %d,ids=%s\n", tag_2, t, rank, ids_str().c_str());
             pet_throw_error(pet_core, this, NULL, buf);
         }
         tag_2 = t;
     }
     virtual void set_src(PEAT_Rank r)
     {
+        if (!check_rx())
+            return;
         if(peer_rank_2 != r && peer_rank_2 >= 0) {
             char buf[256];
-            sprintf(buf, "Rank Mismatch %d received %d rank %d,ids=%s, parent=%lld\n", peer_rank_2, r, rank, ids_str().c_str(), comp_event->ids[0]);
+            snprintf(buf, sizeof(buf), "Rank Mismatch %d received %d rank %d,ids=%s\n", peer_rank_2, r, rank, ids_str().c_str());
             pet_throw_error(pet_core, this, NULL, buf);
         }
         peer_rank_2 = r;
@@ -854,10 +877,14 @@ struct PET_TaR_Event : public PET_ToR_Event {
     virtual PEAT_Bool is_rdv(PEAT_DIRECTION direction) const;
     virtual PEAT_Bool is_smp(PEAT_DIRECTION direction) const;
     virtual PEAT_Bool bind();
-    virtual PEAT_MPI_Request get_mpi_request() const { return 0; }
+    virtual PEAT_MPI_Request get_mpi_request() const { return request; }
     virtual PET_Event *get_completion() const
     {
-        return NULL;
+        return completion_event;
+    }
+    virtual PEAT_Bool completion_received() const
+    {
+        return completion_event != NULL || request == 0 || treat_as_local;
     }
     virtual PET_Event *get_peer_for_send() const
     {
@@ -867,7 +894,7 @@ struct PET_TaR_Event : public PET_ToR_Event {
     {
         return comp_event;
     }
-    virtual void set_completion(PET_Event *event) {}
+    virtual void set_completion(PET_Event *event) { completion_event = event; }
     virtual void set_peer_for_send(PET_ToR_Event *event)
     {
         peer_event = event;
@@ -886,14 +913,16 @@ struct PET_TaR_Event : public PET_ToR_Event {
     }
     virtual PEAT_Bool is_bound() const
     {
-        return (get_peer_for_send() != NULL) && (get_peer_for_recv() != NULL);
+        return (!check_tx() || get_peer_for_send() != NULL) && (!check_rx() || get_peer_for_recv() != NULL);
     }
     PEAT_Bool write_bind(File_Storage_GZ *gz_bind);
     virtual PEAT_Rank get_rank_read_suggestion()
     {
-        if (get_peer_for_send() == NULL)
+        if (!completion_received()) // MPI_Isendrecv*: its receive source may be known from the completion only
+            return rank;
+        if (check_tx() && get_peer_for_send() == NULL)
             return get_dest();
-        if (get_peer_for_recv() == NULL)
+        if (check_rx() && get_peer_for_recv() == NULL)
             return get_src();
         return -1;
     }

@@ -170,6 +170,10 @@ class PET_Core
         }
         return get_pet_rank(rank)->add_request_to_chain(entry, index, req, event, completed);
     }
+    PEAT_Bool mark_inactive_slot(PEAT_Rank rank, Completion_Entry &entry, PEAT_Num index, PEAT_MPI_Request req, PET_Completion_Event *event)
+    {
+        return get_pet_rank(rank)->mark_inactive_slot(entry, index, req, event);
+    }
     Completion_Chain *get_chain(PEAT_Rank rank, Completion_Entry &entry)
     {
         return get_pet_rank(rank)->get_chain(entry);

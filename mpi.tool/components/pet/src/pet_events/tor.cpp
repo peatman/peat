@@ -186,7 +186,7 @@ PEAT_Bool PET_ToR_Event::place_cts(PEAT_Clock clk_start)
 {
     if (cts.start < 0) {
         TE_Event cts_evt;
-        cts_evt.dst = peer_rank;
+        cts_evt.dst = get_rx_peer_rank();
         cts_evt.src = rank;
         cts_evt.owner = this;
         cts_evt.size = -1; // special transport for cts
@@ -219,7 +219,7 @@ PEAT_Bool PET_ToR_Event::place_ack(PEAT_Clock clk_start)
 {
     if (ack.start < 0) {
         TE_Event ack_evt;
-        ack_evt.dst = peer_rank;
+        ack_evt.dst = get_rx_peer_rank();
         ack_evt.src = rank;
         ack_evt.size = -1;
         ack_evt.owner = this;
@@ -652,6 +652,12 @@ PEAT_MPI_Func_ID PET_ToR_Event::translate_func_id() const
     switch (func_id) {
     case MPI_SENDRECV_ID:
     case MPI_SENDRECV_REPLACE_ID:
+    case MPI_SENDRECV_C_ID:
+    case MPI_SENDRECV_REPLACE_C_ID:
+    case MPI_ISENDRECV_ID:
+    case MPI_ISENDRECV_REPLACE_ID:
+    case MPI_ISENDRECV_C_ID:
+    case MPI_ISENDRECV_REPLACE_C_ID:
     case MPI_ISEND_ID:
         return MPI_SEND_ID;
     case MPI_ISSEND_ID:
@@ -1062,6 +1068,12 @@ void PET_ToR_Event::handle_event(Estimation_Event *event)
         submit(event->start, EET_NOTIFY, host_event, this, NULL);
     }
     if (parent_event && parent_event != host_event && parent_event != current_event) {
+        submit(event->start, EET_NOTIFY, parent_event, this, NULL);
+    } else if (parent_event && parent_event != host_event && parent_event == current_event && finish_calculations &&
+               (event->type == EET_MSG_RECV || event->type == EET_ACK_RECV || event->type == EET_CTS_RECV || event->type == EET_RTS_RECV)) {
+        // this call is over and its completion (MPI_Wait & co.) waits for it: an arrival delivered through someone
+        // else's progress (the sender's progress ping came before this call started and went to the then-current
+        // call) must still wake the completion up, or it never sees the transfer finish
         submit(event->start, EET_NOTIFY, parent_event, this, NULL);
     }
     get_core()->delete_ee_entry(event);
