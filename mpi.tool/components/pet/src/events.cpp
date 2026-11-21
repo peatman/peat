@@ -454,7 +454,9 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
                (func_id >= MPI_P2P_COLL_TRANSFER_START && func_id < MPI_P2P_COLL_TRANSFER_END) ||
                (func_id >= MPI_P2P_COLL_PROBE_START && func_id < MPI_P2P_COLL_PROBE_END)) {
         // a send-receive (blocking or not: MPI_(I)Sendrecv(_replace)(_c), MPIC_Sendrecv...) has two directions, each with its own peer
-        if (!global_func_id.check_property(func_id, PEAT_PROP_DATA_TXRX)) {
+        if ((func_id >= MPI_PROBE_START && func_id < MPI_PROBE_END) || (func_id >= MPI_P2P_COLL_PROBE_START && func_id < MPI_P2P_COLL_PROBE_END)) {
+            event = new PET_Probe_Event(this);
+        } else if (!global_func_id.check_property(func_id, PEAT_PROP_DATA_TXRX)) {
             event = new PET_ToR_Event(this);
         } else {
             event = new PET_TaR_Event(this);

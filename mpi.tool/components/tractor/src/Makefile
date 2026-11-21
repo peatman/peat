@@ -424,7 +424,7 @@ endif
 # llama.cpp / ggml pipeline stages and CPU kernels (CLASS_LLAMA, CLASS_GGML_CPU in mpi_func.inc): part of the base build
 # like OMPT, when it can be built. LLAMA_PARSE: auto (default: built when llama.cpp's headers are found and the probe
 # compiles), on (else an error) or off. The headers: LLAMA_ROOT (a source tree: include/ and ggml/include/, or an install
-# prefix: include/), else the installed ones (pkg-config llama, /usr/local/include, /usr/include). The probe,
+# prefix: include/; default: the contrib/llama.cpp submodule if checked out), else the installed ones (pkg-config llama, /usr/local/include, /usr/include). The probe,
 # t_llama_probe.cpp, takes every wrapped public function with the signature of its wrapper: a llama.cpp with another API
 # is left out instead of breaking the wrappers (two take structures by value, so it has to be the llama.cpp the traced
 # application is built with). No change of the library name. LLAMA_DEPRECATED=on adds the deprecated llama_decode,
@@ -434,6 +434,12 @@ LLAMA_DEPRECATED?=off
 LLAMA_ENABLED=off
 $(if $(filter auto on off,$(LLAMA_PARSE)),,$(error LLAMA_PARSE=$(LLAMA_PARSE) is not one of auto|on|off))
 ifneq "$(LLAMA_PARSE)" "off"
+# LLAMA_ROOT not given: the llama.cpp submodule of contrib (when it is checked out), else the installed headers below
+ifeq "$(LLAMA_ROOT)" ""
+ifneq "$(wildcard ../../contrib/llama.cpp/include/llama.h)" ""
+LLAMA_ROOT:=$(abspath ../../contrib/llama.cpp)
+endif
+endif
 ifneq "$(LLAMA_ROOT)" ""
 LLAMA_H_DIR:=$(if $(wildcard $(LLAMA_ROOT)/include/llama.h),$(LLAMA_ROOT)/include)
 LLAMA_INC:=$(LLAMA_H_DIR) $(if $(LLAMA_H_DIR),$(wildcard $(LLAMA_ROOT)/ggml/include))

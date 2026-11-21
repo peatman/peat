@@ -450,6 +450,7 @@ struct PET_OSC_Event : public PET_Local_Event {
     virtual PEAT_Message_Size get_tx_bytes() const { return check_tx() ? t_bytes : -1; }
     virtual PEAT_Message_Size get_rx_bytes() const { return check_rx() ? t_bytes : -1; }
 };
+struct PET_Probe_Event;
 struct PET_ToR_Event : public PET_Local_Event {
     std::string second_function_line; // receive part of a send-receive that PET does not interpret (Isendrecv...): written back as read
     PEAT_MPI_Comm comm;
@@ -468,6 +469,7 @@ struct PET_ToR_Event : public PET_Local_Event {
     TE_Event p_rts, p_cts, rx_message, p_ack;
     TE_Event fake_evt;
     std::list<PET_Event *> blanks;
+    std::vector<PET_Probe_Event *> waiting_probes; // rendezvous probes that saw this receive's message: woken by its RTS
 
   public:
     PET_ToR_Event(PET_Core *p) : PET_Local_Event(p), comm(0), t_bytes(0), tag(-1), peer_rank(-1), request(0), message(0),
@@ -929,6 +931,30 @@ struct PET_TaR_Event : public PET_ToR_Event {
     virtual PEAT_Rank get_ranks_num() const { return 3; }
 };
 
+
+/* MPI_Probe, MPI_Mprobe, MPI_Iprobe/MPI_Improbe (flag set). mat binds a probe to the receive that got the message it saw
+   (PEAT_RT_Bind_Probe). Eager message: the probe is local. Rendezvous message: it ends no earlier than the sender's RTS
+   arrives (the receive gets the RTS and wakes its waiting probes). No binding (no message found or never received, a probe
+   inside a collective, no bind store): local. A flag-0 MPI_Iprobe keeps 0 in the request field it shares with the flag. */
+struct PET_Probe_Event : public PET_ToR_Event {
+    PET_ToR_Event *probe_recv;    // the receive that got the message (same rank), rendezvous only
+    PEAT_Event_IDs recv_ids;      // its id path (bind output)
+    PEAT_MPI_Func_ID recv_func_id;
+    PEAT_Rank wait_rank;          // rank to read until the receive and its send are there
+
+  public:
+    PET_Probe_Event(PET_Core *p) : PET_ToR_Event(p), probe_recv(NULL), recv_func_id(TMPI_FUNC_ID_NONE), wait_rank(-1) {}
+    virtual ~PET_Probe_Event() { detach(); }
+    void detach(); // leave the receive's waiting list
+    void recv_destroyed() { probe_recv = NULL; }
+    virtual PEAT_Bool bind();
+    virtual PEAT_Bool is_bound() const { return treat_as_local || probe_recv != NULL; }
+    virtual PEAT_Bool completion_received() const { return true; } // never completed by a request
+    virtual PET_Event *query_request(PEAT_MPI_Request req) { return NULL; }
+    virtual PEAT_Rank get_rank_read_suggestion() { return is_bound() ? -1 : wait_rank; }
+    virtual PEAT_Bool estimate(Estimation_Event *event);
+    virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind);
+};
 
 struct PET_Coll_Event : public PET_Local_Event {
   protected:

@@ -137,6 +137,7 @@ class P2PAL : public Outputs
         matching_queues[0].resize(size);
         matching_queues[1].resize(size);
         held_receives.resize(size);
+        waiting_probes.resize(size);
 #ifdef PEAT_OMP
         rank_locks.reset(new Mat_Spin_Lock[size]);
         n_rank_locks = static_cast<PEAT_Rank>(size);
@@ -197,6 +198,20 @@ class P2PAL : public Outputs
         Rank_Guard &operator=(const Rank_Guard &) = delete;
     };
     std::vector<std::map<PEAT_MPI_Comm, std::list<MAT_P2P_Record *>>> held_receives; // [receiving rank][comm], posting order
+    /* Probes (MPI_Probe, MPI_Mprobe, MPI_Iprobe/MPI_Improbe that found a message). A probe sees the message that the first
+       receive of its envelope posted after it gets (messages of one envelope match receives in posting order), so when
+       that receive is paired (bind_pair) every waiting probe of the receiving rank with the envelope of the pair posted
+       before it is bound to it: PEAT_RT_Bind_Probe, written in the probing rank's file. A probe whose message is never
+       received stays unbound. */
+    struct MAT_Probe_Record {
+        PEAT_MPI_Comm comm;
+        PEAT_Rank peer;
+        PEAT_MPI_Tag tag;
+        PEAT_MPI_Func_ID func_id;
+        PEAT_Event_IDs ids;
+    };
+    std::vector<std::list<MAT_Probe_Record>> waiting_probes; // [probing rank], posting order
+    void bind_probes(const MAT_P2P_Record &send, const MAT_P2P_Record &recv);
     PEAT_Bool unresolved_wildcard(const MAT_P2P_Record &r) const { return !r.is_send && r.request > 0 && is_wild_card(r); }
     PEAT_Bool hold_receive(const PEAT_Rank rank, MAT_P2P_Record *record);
     void release_receives(const PEAT_Rank rank, const PEAT_MPI_Comm comm);

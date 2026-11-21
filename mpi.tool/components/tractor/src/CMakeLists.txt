@@ -350,7 +350,7 @@ set_property(CACHE LZE_PARSE PROPERTY STRINGS AUTO ON OFF)
 set_property(CACHE ACC_PARSE PROPERTY STRINGS AUTO ON OFF)
 set(LLAMA AUTO CACHE STRING "llama.cpp/ggml pipeline stage and CPU kernel interception (LLAMA_PARSE): AUTO|ON|OFF, part of the base build when it can be built")
 set_property(CACHE LLAMA PROPERTY STRINGS AUTO ON OFF)
-set(LLAMA_ROOT "" CACHE PATH "llama.cpp source tree or install prefix the traced llama.cpp was built from (default: the installed headers)")
+set(LLAMA_ROOT "" CACHE PATH "llama.cpp source tree or install prefix the traced llama.cpp was built from (default: contrib/llama.cpp if checked out, else the installed headers)")
 set(LLAMA_DEPRECATED OFF CACHE BOOL "also intercept the deprecated llama.cpp entry points (llama_decode, llama_encode)")
 set(CUPTI "" CACHE STRING "CUDA through CUPTI (GPU activity, host runtime calls) and cuBLAS wrappers (CUPTI_PARSE): OFF|ON|AUTO, default AUTO with GPU=ON, OFF otherwise")
 set_property(CACHE CUPTI PROPERTY STRINGS "" OFF ON AUTO)
@@ -704,7 +704,8 @@ endif()
 
 # llama.cpp / ggml pipeline stages and CPU kernels (CLASS_LLAMA, CLASS_GGML_CPU in mpi_func.inc), see the Makefile's
 # LLAMA_PARSE: part of the base build when it can be built. LLAMA: AUTO (default), ON (else an error) or OFF. Headers:
-# LLAMA_ROOT (source tree: include/ and ggml/include/, or install prefix: include/), else the installed ones; the probe
+# LLAMA_ROOT (source tree: include/ and ggml/include/, or install prefix: include/; default: the contrib/llama.cpp
+# submodule if checked out), else the installed ones; the probe
 # t_llama_probe.cpp checks that their API is the one of the wrappers.
 set(TRACTOR_LLAMA_INCLUDE_DIRS)
 set(_parse_llama_flag off)
@@ -717,6 +718,10 @@ else()
   set(_llama_mode AUTO)
 endif()
 if(NOT _llama_mode STREQUAL "OFF")
+  # LLAMA_ROOT not given: the llama.cpp submodule of contrib (when it is checked out), else the installed headers below
+  if(NOT LLAMA_ROOT AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../contrib/llama.cpp/include/llama.h")
+    get_filename_component(LLAMA_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../contrib/llama.cpp" ABSOLUTE)
+  endif()
   unset(_llama_h_dir)
   set(_llama_incs)
   if(LLAMA_ROOT)

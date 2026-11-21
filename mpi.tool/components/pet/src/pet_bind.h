@@ -54,6 +54,9 @@ class PET_Bind_Store
     std::map<PET_Bind_Key, PET_Bind_Key> completion_map;  // initiator/request -> the record that completes/starts it (Bind_Completion/Initiation/Destroying)
     std::map<PET_Bind_Key, PET_Bind_Key> completed_map;   // reverse of completion_map: completion record -> what it completes
     std::map<PET_Bind_Key, std::vector<PET_Bind_Key>> collective_map; // any member -> every member of that collective call (Bind_Collective)
+    std::map<PET_Bind_Key, PET_Bind_Key> probe_map;      // probe -> the receive (same rank) that got the message it saw (Bind_Probe)
+    std::map<PET_Bind_Key, PEAT_MPI_Func_ID> probe_recv_func; // probe -> that receive's function
+    std::map<PET_Bind_Key, std::pair<PEAT_MPI_Func_ID, PEAT_LNum>> recv_send_info; // receiver-half -> its sender's function and the size (Bind_Peer)
     PEAT_Bool loaded;
     PEAT_LNum peer_count, completion_count, collective_count, parse_errors;
 
@@ -72,6 +75,9 @@ class PET_Bind_Store
     const PET_Bind_Key *find_completion(PEAT_Rank rank, const PEAT_Event_IDs &ids) const;      // this record is the initiator: what completes it
     const PET_Bind_Key *find_completed_event(PEAT_Rank rank, const PEAT_Event_IDs &ids) const; // this record is the completion: what it completes
     const std::vector<PET_Bind_Key> *find_collective(PEAT_Rank rank, const PEAT_Event_IDs &ids) const;
+    const PET_Bind_Key *find_probe_recv(PEAT_Rank rank, const PEAT_Event_IDs &ids, PEAT_MPI_Func_ID *recv_func_id = NULL) const; // this record is a probe: the receive of its message
+    // this record receives: the function of the record sending to it and the message size, known even after that record is gone
+    PEAT_Bool find_send_info(PEAT_Rank rank, const PEAT_Event_IDs &ids, PEAT_MPI_Func_ID &send_func_id, PEAT_LNum &size) const;
 
   private:
     void parse_rank_file(const Global_Parameters &globals, PEAT_Rank rank, int id_columns, int verbose);

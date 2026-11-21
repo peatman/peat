@@ -49,10 +49,14 @@ void PET_Bind_Store::parse_rank_file(const Global_Parameters &globals, PEAT_Rank
             PEAT_Rank rank_b = -1;
             extract(rank_b, line.at(pos + 1));
             PEAT_Event_IDs ids_b;
-            peat_ids_parse(line, pos + 2, id_columns, ids_b);
+            int pos_b = peat_ids_parse(line, pos + 2, id_columns, ids_b);
             // the line is always sender-half:receiver-half (see P2PAL::print_P2PF); never symmetric
             send_peer_map[PET_Bind_Key(rank_a, ids_a)] = PET_Bind_Key(rank_b, ids_b);
             recv_peer_map[PET_Bind_Key(rank_b, ids_b)] = PET_Bind_Key(rank_a, ids_a);
+            PEAT_LNum size = -1;
+            if (pos_b < (int)line.size()) // pos_b: the field after ids_b
+                extract(size, line.at(pos_b));
+            recv_send_info[PET_Bind_Key(rank_b, ids_b)] = std::make_pair(global_func_id.idx_by_name(line.at(1)), size);
             peer_count++;
         } break;
         case PEAT_RT_Bind_Completion:
@@ -66,6 +70,14 @@ void PET_Bind_Store::parse_rank_file(const Global_Parameters &globals, PEAT_Rank
             completion_map[key_a] = key_b; // A is the initiator/request: B completes it
             completed_map[key_b] = key_a;  // B is the completion: it completes A
             completion_count++;
+        } break;
+        case PEAT_RT_Bind_Probe: { // func_P:idsP:func_R:idsR (both records belong to this rank)
+            PEAT_Event_IDs ids_p;
+            int pos = peat_ids_parse(line, 2, id_columns, ids_p);
+            PEAT_Event_IDs ids_r;
+            peat_ids_parse(line, pos + 1, id_columns, ids_r);
+            probe_map[PET_Bind_Key(rank, ids_p)] = PET_Bind_Key(rank, ids_r);
+            probe_recv_func[PET_Bind_Key(rank, ids_p)] = global_func_id.idx_by_name(line.at(pos)); // pos: the field after ids_p
         } break;
         case PEAT_RT_Bind_Collective: { // func:(rank:ids)*
             std::vector<PET_Bind_Key> members;
@@ -134,4 +146,24 @@ const std::vector<PET_Bind_Key> *PET_Bind_Store::find_collective(PEAT_Rank rank,
 {
     std::map<PET_Bind_Key, std::vector<PET_Bind_Key>>::const_iterator it = collective_map.find(PET_Bind_Key(rank, ids));
     return it == collective_map.end() ? NULL : &it->second;
+}
+
+const PET_Bind_Key *PET_Bind_Store::find_probe_recv(PEAT_Rank rank, const PEAT_Event_IDs &ids, PEAT_MPI_Func_ID *recv_func_id) const
+{
+    std::map<PET_Bind_Key, PET_Bind_Key>::const_iterator it = probe_map.find(PET_Bind_Key(rank, ids));
+    if (it == probe_map.end())
+        return NULL;
+    if (recv_func_id)
+        *recv_func_id = probe_recv_func.at(it->first);
+    return &it->second;
+}
+
+PEAT_Bool PET_Bind_Store::find_send_info(PEAT_Rank rank, const PEAT_Event_IDs &ids, PEAT_MPI_Func_ID &send_func_id, PEAT_LNum &size) const
+{
+    std::map<PET_Bind_Key, std::pair<PEAT_MPI_Func_ID, PEAT_LNum>>::const_iterator it = recv_send_info.find(PET_Bind_Key(rank, ids));
+    if (it == recv_send_info.end())
+        return false;
+    send_func_id = it->second.first;
+    size = it->second.second;
+    return true;
 }

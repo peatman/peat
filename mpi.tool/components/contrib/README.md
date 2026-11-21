@@ -11,6 +11,7 @@ Code in this directory may have a different licence and copyright than `peat` an
 - `zlib/` - zlib compression library source used by tools that need compression support.  See [zlib/README](zlib/README). Modified to work with more than 8192 simultaneously opened files on windows.
 - `psm3/` - psm3 header to compile fab_layer shim library.
 - `libfabric/` - patched version of libfabric to trace ofi calls (available only with patched MPIs).
+- `llama.cpp/` - upstream [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp), pinned to release `v1.0.0` (unmodified); source of the headers and test builds for tractor's llama.cpp/ggml tracing.
 
 These directories contain upstream or separately maintained code. Keep local changes focused on integration requirements and preserve the original component documentation.
 

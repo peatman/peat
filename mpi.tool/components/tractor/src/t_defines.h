@@ -72,14 +72,16 @@ extern FILE *debug_fp;
 }
 #endif
 // #define debug_printf(args...) if (debug_fp) { fprintf(debug_fp, ##args); fprintf(debug_fp, "%p\n",debug_fp); fflush(debug_fp);} else { fprintf(stderr, ##args); fprintf(stderr, "%p\n",debug_fp); fflush(stderr);}
-#define debug_printf(args...)      \
-    if (debug_fp) {                \
-        fprintf(debug_fp, ##args); \
-        fflush(debug_fp);          \
-    } else {                       \
-        fprintf(stderr, ##args);   \
-        fflush(stderr);            \
-    }
+#define debug_printf(args...)          \
+    do {                               \
+        if (debug_fp) {                \
+            fprintf(debug_fp, ##args); \
+            fflush(debug_fp);          \
+        } else {                       \
+            fprintf(stderr, ##args);   \
+            fflush(stderr);            \
+        }                              \
+    } while (0)
 #else
 static void debug_printf(const char *format, ...) {};
 #endif

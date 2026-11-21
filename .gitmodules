@@ -7,3 +7,6 @@
 [submodule "mpi.tool/components/contrib/libfabric"]
 	path = mpi.tool/components/contrib/libfabric
 	url = https://github.com/peatman/libfabric.git
+[submodule "mpi.tool/components/contrib/llama.cpp"]
+	path = mpi.tool/components/contrib/llama.cpp
+	url = https://github.com/ggml-org/llama.cpp.git

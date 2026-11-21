@@ -1196,6 +1196,8 @@ PEAT_Bool PET_ToR_Event::on_update(TE_Event *te_event)
         if (estimation_started) {
             submit(te_event->finish + te_event->tr_env.post_delay, EET_RTS_RECV, this, this, te_event);
         }
+        for (size_t i = 0; i < waiting_probes.size(); i++) // probes blocked on this message: its RTS is there
+            submit(te_event->finish + te_event->tr_env.post_delay, EET_NOTIFY, waiting_probes[i], this, NULL);
         break;
     case TE_Event_CTS: {
         cts = *te_event;
@@ -1262,6 +1264,123 @@ PET_ToR_Event::~PET_ToR_Event()
 {
     if (parent_event)
         parent_event->notify_before_destroy(this);
+    for (size_t i = 0; i < waiting_probes.size(); i++)
+        waiting_probes[i]->recv_destroyed();
+}
+
+void PET_Probe_Event::detach()
+{
+    if (probe_recv == NULL)
+        return;
+    std::vector<PET_Probe_Event *> &w = probe_recv->waiting_probes;
+    for (size_t i = 0; i < w.size(); i++) {
+        if (w[i] == this) {
+            w.erase(w.begin() + i);
+            break;
+        }
+    }
+}
+
+PEAT_Bool PET_Probe_Event::bind()
+{
+    if (is_bound())
+        return true;
+#ifdef _PET_USE_BIND_STORE_
+    const PET_Bind_Store &bind_store = get_core()->get_bind_store();
+    PEAT_MPI_Func_ID bound_recv_func = TMPI_FUNC_ID_NONE;
+    const PET_Bind_Key *recv_key = host_event == NULL ? bind_store.find_probe_recv(rank, ids, &bound_recv_func) : NULL;
+    if (recv_key == NULL) { // no message found or never received, or a probe inside a collective (its container models it)
+        set_treat_as_local();
+        return true;
+    }
+    recv_ids = recv_key->ids; // passed on to the output bind file whatever the model does with the probe
+    recv_func_id = bound_recv_func;
+    // eager or rendezvous, as the sender decides it (PET_ToR_Event::is_rdv(TX)) - from mat's binding of the receive: the
+    // send itself may be estimated and gone by now
+    const PET_Bind_Key *send_key = bind_store.find_recv_peer(rank, recv_key->ids);
+    PEAT_MPI_Func_ID send_func_id = TMPI_FUNC_ID_NONE;
+    PEAT_LNum size = -1;
+    if (send_key == NULL || !bind_store.find_send_info(rank, recv_key->ids, send_func_id, size) || send_func_id == TMPI_FUNC_ID_NONE) {
+        set_treat_as_local();
+        return true;
+    }
+    const PEAT_Bool smp = get_core()->get_ptp()->is_SMP_tgt(send_key->rank, rank);
+    const PEAT_Bool rdv = size >= get_core()->get_eager_threshold(smp, global_func_id.check_property(send_func_id, PEAT_PROP_NON_BLOCK)) ||
+                          global_func_id.check_property(send_func_id, PEAT_PROP_DATA_SYNC);
+    if (!rdv) { // eager: the message is there as soon as it is sent - nothing to wait for
+        set_treat_as_local();
+        return true;
+    }
+    PET_Event *recv = get_core()->get_pet_rank(rank)->find_event_by_ids(recv_key->ids);
+    if (recv == NULL) {
+        wait_rank = rank; // the receive follows the probe: read on
+        return false;
+    }
+    if (recv->get_event_type() != PET_EVENT_TYPE_TOR && recv->get_event_type() != PET_EVENT_TYPE_TAR) { // e.g. a persistent receive's start
+        set_treat_as_local();
+        return true;
+    }
+    probe_recv = static_cast<PET_ToR_Event *>(recv);
+    probe_recv->waiting_probes.push_back(this);
+    return true;
+#else
+    set_treat_as_local(); // no binding of probes without mat's bind files
+    return true;
+#endif
+}
+
+PEAT_Bool PET_Probe_Event::estimate(Estimation_Event *event)
+{
+    if (treat_as_local)
+        return PET_Local_Event::estimate(event);
+    handle_event(event); // start/end/nested like any blocking point-to-point call; neither direction sends anything
+    if (is_estimated() || finish_calculations || !estimation_started)
+        return true;
+    if (has_nested() && !nested_all_estimated())
+        return true;
+    if (probe_recv == NULL || probe_recv->p_rts.finish < 0)
+        return true; // the RTS of the message isn't there yet: the receive wakes this probe when it arrives
+    // as a blocking receive waiting for its message, the message being the RTS
+    PEAT_Clock f_in = e_time.mpi.in + event_parts.prolog;
+    PEAT_Clock f_out = f_in + event_parts.meat;
+    PEAT_Clock m_in = probe_recv->p_rts.start;
+    PEAT_Clock m_out = probe_recv->p_rts.finish + probe_recv->p_rts.tr_env.post_delay;
+    PEAT_Clock sub_t = f_out - m_out;
+    if (m_out <= f_in) {
+        sub_t = event_parts.meat; // the RTS came before the probe was called
+    } else if (f_in < m_in && f_in > 0) {
+        event_parts.stat.wait = m_in - f_in;
+    }
+    sub_t = clamp_sub_t_to_nested(sub_t, f_out);
+    if (sub_t > event_parts.meat)
+        sub_t = event_parts.meat;
+    event_parts.adjust(0, sub_t, 0);
+    concatenate_event();
+    finish_calculations = true;
+    detach();
+    probe_recv = NULL;
+    submit(e_time.func.out, EET_FUNC_END, this, this, NULL);
+    return true;
+}
+
+PET_Event *PET_Probe_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind)
+{
+    is_written = true;
+    if (host_event && !host_event->force_write)
+        return this;
+    write_function_head(gz_MPI);
+    gz_MPI->printf(rank, ":%d:%d:%llx:%llx:%d:%lld\n",
+                   comm, peer_rank, request, message, tag, t_bytes);
+    char annotation[32];
+    snprintf(annotation, sizeof(annotation), "(%lld)", (long long)t_bytes);
+    write_trace_line(gz_MPI, annotation);
+    if (!recv_ids.empty()) {
+        gz_bind->printf(rank, "%d:%s:%s:%s:%s\n", PEAT_RT_Bind_Probe,
+                        global_func_id.name_by_idx(func_id), ids_str().c_str(),
+                        global_func_id.name_by_idx(recv_func_id), peat_ids_string(recv_ids).c_str());
+    }
+    write_nested_records(gz_MPI, gz_bind);
+    return this;
 }
 
 void PET_ToR_Event::notify_before_destroy(PET_Event *event)

@@ -445,12 +445,32 @@ void P2PAL::bind_pair(std::list<MAT_P2P_Record *>::iterator send_it, std::list<M
     P2P_Event_Key send_key(*lP), recv_key(*rP);
     lP->peer_assigned = rP->peer_assigned = true;
     print_P2PF(*lP, *rP);
+    bind_probes(*lP, *rP);
     matching_queues[qt_send][lP->rank][send_key].erase(send_it);
     matching_queues[qt_recv][rP->rank][recv_key].erase(recv_it);
     if (lP->request == 0)
         delete lP;
     if (rP->request == 0)
         delete rP;
+}
+
+void P2PAL::bind_probes(const MAT_P2P_Record &send, const MAT_P2P_Record &recv)
+{
+    // called under the pair's locks (bind_pair): the receiving rank's probes are guarded by its lock
+    if (recv.rank < 0 || recv.rank >= static_cast<PEAT_Rank>(waiting_probes.size()))
+        return;
+    std::list<MAT_Probe_Record> &probes = waiting_probes[recv.rank];
+    for (std::list<MAT_Probe_Record>::iterator it = probes.begin(); it != probes.end();) {
+        // envelope of the message: the sender, its tag, the receiver's communicator; posted before the receive
+        if (it->peer == send.rank && it->tag == send.tag && it->comm == recv.comm && it->ids < recv.ph.ids) {
+            output_bind->printf(recv.rank, "%d:%s:%s:%s:%s\n", PEAT_RT_Bind_Probe,
+                                global_func_id.name_by_idx(it->func_id), peat_ids_string(it->ids).c_str(),
+                                global_func_id.name_by_idx(recv.ph.func_id), peat_ids_string(recv.ph.ids).c_str());
+            it = probes.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
 void P2PAL::write_HNT() const
@@ -686,6 +706,21 @@ void P2PAL::parse_P2PPb(PEAT_Rank rank, const Tractor_Event &event)
     if (global_func_id.check_property(event.func_id, PEAT_PROP_MESSAGE)) {
         matching_messages[event.rank][event.P2P.message] = PEAT_MPI_Translation_Message(event.P2P.tag, event.P2P.peer, event.P2P.comm, event.P2P.transfered_bytes);
 	}   
+    // the tractor writes a nonblocking probe's flag in the request field (a union): 0 - no message found, nothing to bind
+    const PEAT_Bool nonblocking = event.func_id == MPI_IPROBE_ID || event.func_id == MPI_IMPROBE_ID;
+    const PEAT_Bool found = !nonblocking || event.P2P.request != 0;
+    // source and tag are the resolved ones (status) for a wildcard probe; one on MPI_PROC_NULL returns at once
+    if (found && event.P2P.peer >= 0 && event.P2P.peer != comm_store->get_MPI_PROC_NULL() &&
+        event.P2P.peer != comm_store->get_MPI_ANY_SOURCE() && event.P2P.tag != comm_store->get_MPI_ANY_TAG()) {
+        MAT_Probe_Record probe;
+        probe.comm = !global_func_id.check_property(event.func_id, PEAT_PROP_COMM) ? PEAT_MPI_Comm(2) : event.P2P.comm; // as parse_P2PRx
+        probe.peer = event.P2P.peer;
+        probe.tag = event.P2P.tag;
+        probe.func_id = event.func_id;
+        probe.ids = event.ids;
+        Rank_Guard guard(*this, rank); // bind_pair of another thread may take this rank's probes
+        waiting_probes[rank].push_back(probe);
+    }
 #if 0
     const PEAT_MPI_Comm comm = !global_func_id.check_property(event.func_id, PEAT_PROP_COMM) ? 2 : event.P2P.comm;
     PEAT_MPI_Status flag = event.P2P.flag;
