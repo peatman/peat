@@ -146,12 +146,13 @@ typedef enum PEAT_Record_Type {
     // HWLOC related
     PEAT_RT_HWLOC_Node_Record,
     PEAT_RT_HWLOC_Proc_Record,
-    // PET Related
+    // MAT/PET Related
     PEAT_RT_Frame_Marker,
     PEAT_RT_Paths,
     PEAT_RT_Bind_Collective,
     PEAT_RT_Bind_Peer,
-    PEAT_RT_Bind_Initiation,
+    PEAT_RT_Bind_Probe, 
+    PEAT_RT_Bind_Initiation, 
     PEAT_RT_Bind_Completion,
     PEAT_RT_Bind_Destroying,
     PEAT_RT_PET_Final_Stat_Orig,
@@ -329,6 +330,9 @@ static const char *print_record_type(PEAT_Record_Type id)
         break;
     case PEAT_RT_Bind_Peer:
         return "PEAT_RT_Bind_Peer";
+        break;
+    case PEAT_RT_Bind_Probe:
+        return "PEAT_RT_Bind_Probe";
         break;
     case PEAT_RT_Bind_Initiation:
         return "PEAT_RT_Bind_Initiation";
