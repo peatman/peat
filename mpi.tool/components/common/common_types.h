@@ -461,14 +461,12 @@ struct PEAT_Collective_Bytes {
 };
 
 struct Outputs {
-    File_Storage_GZ *output_MPI;
-    File_Storage_GZ *output_HWC;
+    File_Storage_GZ *output_MPI; // the .mpi file: two lines per record, function-specific then trace-specific
     File_Storage_GZ *output_bind;
-    Outputs() : output_MPI(NULL), output_HWC(NULL), output_bind(NULL) {}
-    void initialize(File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
+    Outputs() : output_MPI(NULL), output_bind(NULL) {}
+    void initialize(File_Storage_GZ *MPI, File_Storage_GZ *bind)
     {
         output_MPI = MPI;
-        output_HWC = HWC;
         output_bind = bind;
     };
 };
@@ -511,7 +509,6 @@ struct Global_Parameters {
     std::string output_files;
     std::string bind_files;
     std::string mpi_files;
-    std::string hwc_files;
     std::string transport_files;
     std::string ptpd_ext;
     std::string app_ext;
@@ -563,10 +560,8 @@ struct Global_Parameters {
     PEAT_Num trace_comm_size;
 
     std::map<PEAT_Rank, std::string> pe_MPI_files_in_rank;
-    std::map<PEAT_Rank, std::string> pe_HWC_files_in_rank;
     std::map<PEAT_Rank, std::string> pe_transport_files_in_rank;
     std::map<PEAT_Rank, std::string> pe_MPI_files_in_rank_out;
-    std::map<PEAT_Rank, std::string> pe_HWC_files_in_rank_out;
     std::map<PEAT_Rank, std::string> pe_bind_files_in_rank_out;
     std::set<PEAT_Rank> rank_set;
     std::set<std::string> func_set;
@@ -775,25 +770,23 @@ int peat_ids_parse(const String_Split &line, int pos, int columns, PEAT_Event_ID
 int peat_ids_level(const PEAT_Event_IDs &ids);                                                 // nesting depth, 0 for a top-level record
 inline PEAT_Bool peat_ids_nested(const PEAT_Event_IDs &ids) { return peat_ids_level(ids) > 0; }
 
+/* A trace record is two lines of the .mpi file: the function-specific line (the function name, or its id, and the
+   parameters of its class) and the trace-specific line (the id path, thread, number of children, timestamps, addresses,
+   counters). The header is the beginning of the trace-specific line. */
 struct PEAT_Record_Header {
     PEAT_Event_IDs ids;           // id path, ids[0] is the top-level (primary) id
     PEAT_Thread thread_id;
-    PEAT_Signed_Num num_children; // direct children; -1 in the legacy format (unknown at header level)
+    PEAT_Signed_Num num_children; // direct children
     int level;                    // nesting depth, 0 for a top-level record
-    int payload;                  // index of the first payload field on the .mpi line (function name)
-    int hwc_payload;              // index of the first payload field on the .hwc line (first tsc): nested lines carry the ids only
-    PEAT_Record_Header() : thread_id(0), num_children(-1), level(0), payload(3), hwc_payload(1) {}
-    void parse(const String_Split &line, int id_columns);     // from the .mpi line
-    void parse_hwc(const String_Split &line, int id_columns); // from the .hwc line alone (no thread/num_children in the nested format)
+    int payload;                  // index of the first field of the function-specific line (function name); its parameters follow
+    int trace_payload;            // index of the first payload field of the trace-specific line (first tsc), after the header
+    PEAT_Record_Header() : thread_id(0), num_children(-1), level(0), payload(0), trace_payload(3) {}
+    void parse(const String_Split &trace_line, int id_columns); // from the trace-specific line
     PEAT_Bool same_ids(const PEAT_Record_Header &other) const { return ids == other.ids && thread_id == other.thread_id; }
-    PEAT_Bool same_ids(const String_Split &line) const; // compares the id columns of another line (the .hwc twin)
-    std::string to_string() const;                     // the .mpi header as written: "id_0:...:tid[:num_children]"
-    std::string to_hwc_string() const;                 // the .hwc header as written: nested "id_0:...", legacy "primary:secondary:tid"
+    std::string to_string() const; // the header as written: "id_0:...:tid:num_children"
 };
-/* the .mpi header as written to a trace: "id_0:...:tid[:num_children]" (num_children < 0: legacy format) */
+/* the header of the trace-specific line as written to a trace: "id_0:...:tid:num_children" */
 std::string peat_record_header_string(const std::vector<PEAT_UID> &ids, PEAT_Thread thread_id, PEAT_Signed_Num num_children);
-/* the .hwc header as written to a trace: nested format "id_0:...:id_{n-1}", legacy "primary:secondary:tid" */
-std::string peat_record_hwc_header_string(const std::vector<PEAT_UID> &ids, PEAT_Thread thread_id);
 
 struct Address_File_Storage {
     PEAT_Num num_addrs;
@@ -805,7 +798,7 @@ struct Address_File_Storage {
     std::map<PEAT_Rank, PEAT_UID> last_event_idx;
     std::map<PEAT_Rank, PEAT_UID> last_transport_event_idx;
     std::map<PEAT_Rank, PEAT_Thread> last_thread_idx;
-    std::map<PEAT_Rank, int> id_columns;          // id columns in the .mpi/.hwc records 
+    std::map<PEAT_Rank, int> id_columns;          // id columns in the trace-specific line of the .mpi records
     File_Storage_GZ *UR_File;
     const Model_ID *m_id;
 
@@ -836,13 +829,10 @@ struct Address_File_Storage {
                 cols = it->second;
         return cols;
     }
-    void parse_record_header(PEAT_Record_Header &header, const String_Split &line, const PEAT_Rank rank) const
+    // trace_line: the trace-specific line of the record
+    void parse_record_header(PEAT_Record_Header &header, const String_Split &trace_line, const PEAT_Rank rank) const
     {
-        header.parse(line, get_id_columns(rank));
-    }
-    void parse_record_hwc_header(PEAT_Record_Header &header, const String_Split &line, const PEAT_Rank rank) const
-    {
-        header.parse_hwc(line, get_id_columns(rank));
+        header.parse(trace_line, get_id_columns(rank));
     }
     // Address_File_Storage &operator = (const Address_File_Storage &rhs);
     void put_records(const User_Region_Store &user_regions);

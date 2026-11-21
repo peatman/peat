@@ -140,6 +140,10 @@ class File_Storage_GZ
         return false;
     }
     virtual PEAT_Bool read_lines(String_Split &lines, const PEAT_Rank rank, const char delim, const char term = 0);
+    /* Reads the next trace record: two lines of the file, the function-specific one into func_line and the trace-specific
+       one into trace_line. At the end of the file (or if the record is cut) the lines come back empty, like read_lines()
+       does; the rank must not be read by several threads at once. */
+    PEAT_Bool read_record(String_Split &func_line, String_Split &trace_line, const PEAT_Rank rank, const char delim, const char term = 0);
     virtual void puts(PEAT_Rank rank, const std::string &line)
     {
         if (!(flags & PEAT_FIO_FLAG_WRITE)) {

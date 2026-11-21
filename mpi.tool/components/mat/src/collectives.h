@@ -178,7 +178,7 @@ class Collectives : public Outputs
 
     );
     virtual ~Collectives();
-    void initialize(PTP *p, Communicators *cs, Request_Store *rs, Comm *c, Requests* r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
+    void initialize(PTP *p, Communicators *cs, Request_Store *rs, Comm *c, Requests* r, File_Storage_GZ *MPI, File_Storage_GZ *bind);
     void parse_collective(const PEAT_Rank rank, const Tractor_Event &event, PEAT_Bool is_remote);
     PEAT_Bool empty() const;
     PEAT_Num collective_queue_size() const;

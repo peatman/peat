@@ -41,7 +41,7 @@ class Requests : public Outputs
 #endif
             int v = false);
 
-    void initialize(PTP *p, Communicators *c, Request_Store *r, P2PAL *pp, Comm* cc, OSC* o, Collectives *cl, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind);
+    void initialize(PTP *p, Communicators *c, Request_Store *r, P2PAL *pp, Comm* cc, OSC* o, Collectives *cl, File_Storage_GZ *MPI, File_Storage_GZ *bind);
 
     void parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is_remote);
     PEAT_Bool is_persistent_request(const PEAT_Rank rank, const PEAT_MPI_Request request, PEAT_Bool is_remote);

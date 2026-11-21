@@ -55,12 +55,10 @@ bool Trace_Info::parse_trace_info_file(QFileInfo &tracefile)
             path = make_absolute_path(trace_info_file, path);
             trace_files = lines.at(2);
             mpi_files = lines.at(3);
-            hwc_files = lines.at(4);
-            bind_files = lines.at(5);
-            com_ext = lines.at(7);
-            app_ext = lines.at(8);
+            bind_files = lines.at(4);
+            com_ext = lines.at(6);
+            app_ext = lines.at(7);
             // mpi_files.remove( '.' );
-            // hwc_files.remove( '.' );
             // bind_files.remove( '.' );
             // com_ext.remove( '.' );
             // app_ext.remove( '.' );

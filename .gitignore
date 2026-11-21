@@ -8,6 +8,7 @@ mpi.tool/components/tractor/Build*.dir
 mpi.tool/components/tractor/Build*.log
 mpi.tool/components/tractor/src-TARGET*
 *.o
+*.odt
 *.log
 *.so*
 mpi.tool/components/qTV/build.cl

@@ -96,7 +96,6 @@ struct tractor : t_base_event {
     int t_write_main_files;
     int t_use_signals;
     char mpi_filename[1024];
-    char hwc_filename[1024];
     char com_filename[1024];
     char app_filename[1024];
 
@@ -152,7 +151,6 @@ struct tractor : t_base_event {
     PEAT_Ratio user_region_quality_range;
 
     gzFile fps_mpi;
-    gzFile fps_hwc;
     gzFile fps_com;
     gzFile fps_app;
     char *gz_ext;

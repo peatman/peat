@@ -224,7 +224,7 @@ tractor::tractor(void)
     parse_openmp = 1;
 #endif
     user_region_quality_range = 0.75;
-    fps_mpi = fps_hwc = fps_com = NULL;
+    fps_mpi = fps_com = NULL;
     gz_ext = ".gz";
     compression = 1;
     compression_level = Z_DEFAULT_COMPRESSION;
@@ -923,7 +923,6 @@ void tractor::init(void)
     else
         sprintf(pid, ".%u", t_pid);
     sprintf(mpi_filename, "%s.mpi%s%s", tfilename, pid, gz_ext);
-    sprintf(hwc_filename, "%s.hwc%s%s", tfilename, pid, gz_ext);
     sprintf(com_filename, "%s.com%s%s", tfilename, pid, gz_ext);
 
     if (t_mpi_rank == 0) {
@@ -1291,7 +1290,7 @@ void tractor::finalize(void)
         return;
     so_walker(g_shared_objects);
     /*
-        write_trace(fps_mpi, fps_hwc,fps_com,fps_app);
+        write_trace(fps_mpi, fps_com,fps_app);
         for (i=0;i<t_tid_counter;i++) {
             destroy_whole_chain(events_start[i]);
             destroy_whole_chain(extras_start[i]);
@@ -1922,8 +1921,6 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
 
     if (t_write_main_files)
         fps_mpi = gzopen(mpi_filename, gz_mode);
-    if (t_write_main_files)
-        fps_hwc = gzopen(hwc_filename, gz_mode);
 
     /* (re)load the current block of a (thread, level) stream; realtime mode reads it back from the temporary file */
     auto load_block = [&](int tid, int level, bool first) -> void {
@@ -2007,50 +2004,16 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
         msl_event &rec = current_array[idx][rc];
         void **cur_addrs = current_addrs_array[idx];
         const short func_base = mpi_func_ids_trans[rec.func_id];
-        const long long children = second_line ? 0 : rec.num_children;
+        const long long children = rec.num_children;
         processed_events++;
-        for (int k = 0; k < id_columns; k++) {
-            t_gzprintf(fps_mpi, k == 0 ? "%lld" : ":%lld", ids[k]);
-            t_gzprintf(fps_hwc, k == 0 ? "%lld" : ":%lld", ids[k]);
-        }
+        /* A record is two lines: the function-specific one (the function name, or its id, then its parameters) and,
+           after it, the trace-specific one (the id path, thread, number of children, timestamps, addresses, counters).
+           A sendrecv has a second function-specific line (its receive part) after the trace-specific one. */
         if (print_names) {
-            t_gzprintf(fps_mpi, ":%d:%lld:%s", tid, children, mpi_function_names[rec.func_id]);
+            t_gzprintf(fps_mpi, "%s", mpi_function_names[rec.func_id]);
         } else {
-            t_gzprintf(fps_mpi, ":%d:%lld:%d", tid, children, (int)func_base);
+            t_gzprintf(fps_mpi, "%d", (int)func_base);
         }
-
-        if (max_thread_id < tid)
-            max_thread_id = tid;
-        PEAT_Clock l_tscs[4];
-        //perform local conversion instead of doing it in 1000 other places
-        l_tscs[0] = rec.tscs[0] - tsc_counter;
-        l_tscs[1] = rec.tscs[1] - rec.tscs[0];
-        l_tscs[2] = rec.tscs[3] - rec.tscs[2];
-        l_tscs[3] = rec.tscs[3] - rec.tscs[0];
-        tsc_counter = rec.tscs[0];
-        long long l_tsc_counter = rec.tscs[0]; // for comm queries
-        gzprintf(fps_hwc, ":%lld:%lld:%lld:%lld", l_tscs[0], l_tscs[1], l_tscs[2], l_tscs[3]);
-
-            for (int addr_ind = 0; addr_ind < num_addrs; addr_ind++) {
-                PEAT_Addr addr = cur_addrs[rc * num_addrs + addr_ind];
-                // debug_printf("Rank:%d  Addr(ind) = %lx(%d)\n",t_mpi_rank,addr,addr_ind);
-                if (addr_map.count(addr) > 0) {
-                    t_gzprintf(fps_hwc, ":%d", addr_map.at(addr).id);
-                } else {
-                    t_address t_addr;
-                    t_addr.id = global_id++;
-                    // todo add line number
-                    PEAT_Addr low, high, base;
-                    t_addr.binary = get_binary_by_addr(addr, base, low, high);
-                    //                   debug_printf("Rank: %d, addr %lld hits to %s(maps)\n",t_mpi_rank,addr,t_addr.binary.c_str());
-                    t_gzprintf(fps_hwc, ":%d", t_addr.id);
-                    binaries_map[t_addr.binary].addrs.push_back(addr);
-                    binaries_map[t_addr.binary].base_addr = base;
-                    binaries_map[t_addr.binary].load_addr = low;
-                    binaries_map[t_addr.binary].end_addr = high;
-                    addr_map[addr] = t_addr;
-                }
-            }
 
             PEAT_Clock tsc_mpi_entry = rec.tscs[1];
             PEAT_Clock tsc_mpi_exit = rec.tscs[2];
@@ -2530,8 +2493,46 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
     #endif // _T_PER_INTERVAL_STAT_WRITE_
     #endif
 
-        t_gzprintf(fps_hwc, "\n");
-        t_gzprintf(fps_mpi, "\n");
+        t_gzprintf(fps_mpi, "\n"); /* ends the function-specific line */
+        /* the second record of a sendrecv repeats the trace-specific data of the first one: it is only the function-specific line */
+        if (!second_line) {
+            for (int k = 0; k < id_columns; k++) {
+                t_gzprintf(fps_mpi, k == 0 ? "%lld" : ":%lld", ids[k]);
+            }
+            t_gzprintf(fps_mpi, ":%d:%lld", tid, children);
+            if (max_thread_id < tid)
+                max_thread_id = tid;
+            PEAT_Clock l_tscs[4];
+            //perform local conversion instead of doing it in 1000 other places
+            l_tscs[0] = rec.tscs[0] - tsc_counter;
+            l_tscs[1] = rec.tscs[1] - rec.tscs[0];
+            l_tscs[2] = rec.tscs[3] - rec.tscs[2];
+            l_tscs[3] = rec.tscs[3] - rec.tscs[0];
+            tsc_counter = rec.tscs[0];
+            t_gzprintf(fps_mpi, ":%lld:%lld:%lld:%lld", l_tscs[0], l_tscs[1], l_tscs[2], l_tscs[3]);
+
+                for (int addr_ind = 0; addr_ind < num_addrs; addr_ind++) {
+                    PEAT_Addr addr = cur_addrs[rc * num_addrs + addr_ind];
+                    // debug_printf("Rank:%d  Addr(ind) = %lx(%d)\n",t_mpi_rank,addr,addr_ind);
+                    if (addr_map.count(addr) > 0) {
+                        t_gzprintf(fps_mpi, ":%d", addr_map.at(addr).id);
+                    } else {
+                        t_address t_addr;
+                        t_addr.id = global_id++;
+                        // todo add line number
+                        PEAT_Addr low, high, base;
+                        t_addr.binary = get_binary_by_addr(addr, base, low, high);
+                        //                   debug_printf("Rank: %d, addr %lld hits to %s(maps)\n",t_mpi_rank,addr,t_addr.binary.c_str());
+                        t_gzprintf(fps_mpi, ":%d", t_addr.id);
+                        binaries_map[t_addr.binary].addrs.push_back(addr);
+                        binaries_map[t_addr.binary].base_addr = base;
+                        binaries_map[t_addr.binary].load_addr = low;
+                        binaries_map[t_addr.binary].end_addr = high;
+                        addr_map[addr] = t_addr;
+                    }
+                }
+            t_gzprintf(fps_mpi, "\n"); /* ends the trace-specific line */
+        }
         return children;
     };
 
@@ -2632,8 +2633,6 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
     ret.nesting_levels = id_columns;
     if (fps_mpi)
         gzclose(fps_mpi);
-    if (fps_hwc)
-        gzclose(fps_hwc);
 
     __DEBUG_EPILOG_TRACTOR_LAYER__
     return (ret);

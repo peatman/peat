@@ -77,7 +77,7 @@ void help(int rank)
         printf("--input=<mask> (-i) select input file mask (default tractor_t)\n");
         printf("--output=<dir> (-o) select output directory (default ./out)\n");
         printf("--wdir=<dir> (-w) select working (input) directory (default current one)\n");
-        printf("--matching-only (-m) only write .bind files, don't rewrite .mpi/.hwc, don't open .hwc input, and skip negative-time correction/imbalance calculation (default off)\n");
+        printf("--matching-only (-m) only write .bind files, don't rewrite .mpi, don't read the timestamps of the trace, and skip negative-time correction/imbalance calculation (default off)\n");
         printf("--verbose (-v) print additional info\n");
         printf("\n");
     }
@@ -109,7 +109,6 @@ int main(int argc, char **argv)
     glob_param.trace_files = TRACEFILEMASK;
     glob_param.ptpd_ext = ".ptp";
     glob_param.mpi_files = ".mpi";
-    glob_param.hwc_files = ".hwc";
     glob_param.app_ext = ".app";
     glob_param.bind_files = ".bind";
     glob_param.transport_files = ".transport";
@@ -210,16 +209,12 @@ int main(int argc, char **argv)
         Model_ID model_id_storage;
         if (glob_param.output_path.empty()) {
             // matching-only writes just the .bind files: put them next to the raw trace (pet assumes bind files
-            // live alongside .mpi/.hwc). A full run also rewrites .mpi/.hwc, which must not land on the input, hence "out".
+            // live alongside .mpi). A full run also rewrites .mpi, which must not land on the input, hence "out".
             glob_param.output_path = glob_param.matching_only ? glob_param.input_path : glob_param.input_path + DIR_DELIMITER + "out";
         }
         model_id_storage.initialize(glob_param);
 
         std::map<PEAT_Rank, std::string> MPI_files = get_file_names(glob_param.input_path, glob_param.trace_files, glob_param.mpi_files, true);
-        std::map<PEAT_Rank, std::string> HWC_files;
-        if (!glob_param.matching_only) {
-            HWC_files = get_file_names(glob_param.input_path, glob_param.trace_files, glob_param.hwc_files, true);
-        }
         glob_param.trace_comm_size = MPI_files.size();
         peat_mkdir(glob_param.output_path, glob_param.verbose);
         trace_info_file = make_out_file_name(glob_param.output_path, glob_param.trace_files, ".trace.info", "");
@@ -241,7 +236,7 @@ int main(int argc, char **argv)
             {
                 glob_param.pe_MPI_files_in_rank[*it] = MPI_files.at(*it);
                 std::string mpi_out_name = make_out_file_name(glob_param.output_path, MPI_files.at(*it), glob_param.output_files, ".gz");
-                // bind files don't carry the ".out" marker mpi/hwc output does: they're the only output written
+                // bind files don't carry the ".out" marker mpi output does: they're the only output written
                 // in matching-only mode (-m), so there's no risk of colliding with the input .bind file, and
                 // dropping it keeps the name pet/qTV expect (see get_file_names/parse_trace_info_file, which
                 // only look for the ".bind" substring and a rank digit - neither cares about a trailing suffix).
@@ -249,8 +244,6 @@ int main(int argc, char **argv)
                 bind_out_name.replace(bind_out_name.rfind(glob_param.mpi_files), glob_param.mpi_files.length(), glob_param.bind_files);
                 glob_param.pe_bind_files_in_rank_out[*it] = bind_out_name;
                 if (!glob_param.matching_only) {
-                    glob_param.pe_HWC_files_in_rank[*it] = HWC_files.at(*it);
-                    glob_param.pe_HWC_files_in_rank_out[*it] = make_out_file_name(glob_param.output_path, HWC_files.at(*it), glob_param.output_files, ".gz");
                     glob_param.pe_MPI_files_in_rank_out[*it] = mpi_out_name;
                 }
             }

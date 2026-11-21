@@ -22,7 +22,7 @@
 # SMOKE_PMAT_RANKS (default "1 2 4"), each the same way in its own <test>.<names|ids>/pmat<N> (log pmat<N>/mat.log). It
 # must exit 0, finish processing, report ("Rank:<r> is handling rank <t>.", printed only by a PEAT_MPI build) every trace
 # rank exactly once from the right one of its N ranks (t % N) - a serial mat run under the launcher would not - and
-# write the same output as serial mat: .mpi/.hwc/.trace.info identical after unpacking, .bind the same records after
+# write the same output as serial mat: .mpi/.trace.info identical after unpacking, .bind the same records after
 # concatenating and sorting all bind files. Differences are printed and kept in pmat<N>/compare/.
 # pmat is experimental: its failures are reported ("PMAT FAIL", a ::warning:: annotation on GitHub Actions) but do not
 # change the exit status, unless SMOKE_PMAT_STRICT=1.
@@ -131,7 +131,7 @@ bind_where() {
     done | head -3 | paste -sd' '
 }
 
-# compare_out <serial run dir> <pmat run dir>: <run>/out must hold the same files; .mpi/.hwc/.trace.info identical after
+# compare_out <serial run dir> <pmat run dir>: <run>/out must hold the same files; .mpi/.trace.info identical after
 # unpacking, .bind the same records once all files are concatenated and sorted (pmat may split them differently).
 # Differences are printed (file, line, first records) and kept in full in <pmat run dir>/compare/.
 compare_out() {

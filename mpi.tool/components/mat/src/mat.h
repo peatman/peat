@@ -49,9 +49,7 @@ class Mat
     Requests *request_func_store;
     Request_Store* req_store;
     File_Storage_GZ *input_MPI;
-    File_Storage_GZ *input_HWC;
     File_Storage_GZ *output_MPI;
-    File_Storage_GZ *output_HWC;
     File_Storage_GZ *output_bind;
     std::vector<PEAT_LNum> rank_events_processed;
     PEAT_LNum events_processed;
@@ -98,8 +96,7 @@ class Mat
     PEAT_Bool second_line;
 
   private:
-    String_Split line_mpi;
-    String_Split line_hwc;
+    String_Split line_mpi, line_trace; // function-specific and trace-specific lines of the record
 };
 
 #endif

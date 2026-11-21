@@ -64,39 +64,34 @@ class Elements
     std::vector<std::list<TV_Event *>> psection;
 #ifdef _OPENMP
     String_Split *trace_line_MPIs;
-    String_Split *trace_line_HWCs;
+    String_Split *trace_line_TRCs; // trace-specific lines
     String_Split *trace_line_binds;
-    String_Split *translated_hwcs;
 #else
     String_Split trace_line_MPI;
-    String_Split trace_line_HWC;
+    String_Split trace_line_TRC; // trace-specific line
     String_Split trace_line_bind;
-    String_Split translated_hwc;
 #endif
     PTP *ptp; 
     Model_ID *model_id; 
     std::vector<PEAT_Clock> tsc_predictor;
-    void translate_hwc_line(const PEAT_Rank rank, const PEAT_MPI_Func_ID func_id, const bool is_second_line, PTP *ptp, const String_Split &hwc, String_Split &out_hwc);
   public:
     Elements(QFileInfo &name, TV_TraceParts *swn);
     ~Elements();
     bool load_model_data(QProgressBar *pb, QScrollBar *sr,
                          std::map<PEAT_Rank, std::string> &mpi_file_names,
-                         std::map<PEAT_Rank, std::string> &hwc_file_names,
                          std::map<PEAT_Rank, std::string> &bind_file_names,
                          const std::set<PEAT_Rank> &ranks_to_load,
                          int tmin, int tmax, int load_threads, TV_TraceParts &ign);
     bool parse_trace_info_file(
         QFileInfo &trace_info,
         std::map<PEAT_Rank, std::string> &mpi_file_names,
-        std::map<PEAT_Rank, std::string> &hwc_file_names,
         std::map<PEAT_Rank, std::string> &bind_file_names,
         const std::set<PEAT_Rank> &ranks_to_load);
 
     void draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImage, QImage *threadImages[], int render_threads, qint32 start, qint32 stop);
     void draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImage, QImage *threadImages[], int render_threads, const qreal start_time, const qreal stop_time);
     void move_viewport(int direction);
-    PEAT_Bool get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, File_Storage_GZ *input_HWC, PEAT_Clock min_clock, PEAT_Clock max_clock, TV_Event **event, PTP *ptp = NULL);
+    PEAT_Bool get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, PEAT_Clock min_clock, PEAT_Clock max_clock, TV_Event **event, PTP *ptp = NULL);
     PEAT_Bool get_message(const PEAT_Rank rank, File_Storage_GZ *input_bind, TV_TraceParts &tp);
     void compact_events(int nthreads);
     

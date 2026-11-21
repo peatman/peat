@@ -62,7 +62,7 @@ P2PAL::P2PAL(File_Storage_GZ *f, int s, int pos,
     gpu = NULL;
 }
 
-void P2PAL::initialize(PTP *p, Communicators *c, Request_Store *rs, Requests *r, GPU *g, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
+void P2PAL::initialize(PTP *p, Communicators *c, Request_Store *rs, Requests *r, GPU *g, File_Storage_GZ *MPI, File_Storage_GZ *bind)
 {
     assert(c);
     assert(p);
@@ -73,7 +73,7 @@ void P2PAL::initialize(PTP *p, Communicators *c, Request_Store *rs, Requests *r,
     request_func_store = r;
     gpu = g;
     messages_bound.resize(ptp->get_rank_num());
-    Outputs::initialize(MPI, HWC, bind);
+    Outputs::initialize(MPI, bind);
 }
 
 P2PAL::~P2PAL()
@@ -84,30 +84,11 @@ P2PAL::~P2PAL()
 
 void P2PAL::print_P2PL(const Tractor_Event &event)
 {
-#ifdef MAT_PROCESS_HWC_MPI_OUTPUT
-    output_MPI->printf(event.rank, "%s:%s:%x:%d:%llx:%llx:%d:%lld\n", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id),
+#ifdef MAT_PROCESS_MPI_OUTPUT
+    output_MPI->printf(event.rank, "%s:%x:%d:%llx:%llx:%d:%lld\n", global_func_id.name_by_idx(event.func_id),
                        event.P2P.comm, event.P2P.peer, event.P2P.request, event.P2P.message, event.P2P.tag, event.P2P.transfered_bytes);
 
-#if 0
-    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
-        event.tsc_time.func.in,
-        event.tsc_time.mpi.in,
-        event.tsc_time.mpi.out,
-        event.tsc_time.func.out,
-        event.tsc_time.pe.in,
-        event.tsc_time.pe.out);
-
-#else
-    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
-                       event.tsc_time.mpi.in,
-                       event.tsc_time.mpi.out,
-                       event.tsc_time.pe.in,
-                       event.tsc_time.pe.out);
-#endif
-    for (PEAT_Num i = 0; i < event.addrs.size(); i++) {
-        output_HWC->printf(event.rank, ":%lld", event.addrs.at(i));
-    }
-    output_HWC->printf(event.rank, "\n");
+    event.write_trace_line(output_MPI);
 #endif
 }
 void P2PAL::print_P2PE(const MAT_P2P_Record &event)
@@ -187,7 +168,7 @@ void P2PAL::print_P2PF(const MAT_P2P_Record &left, const MAT_P2P_Record &right)
         output_bind->puts(right.rank, &tbuf[4]);
     }
 #ifdef PRINT_STAT
-    if (output_HWC && output_HWC->get_number_of_files() > 0) { // no timing data to compute stats/imbalance from when hwc files aren't read
+    if (output_MPI && output_MPI->get_number_of_files() > 0) { // no timing data to compute stats/imbalance from when only matching
         int pc_level = left.pc_level;
         PEAT_P2P_Record r_left;
         r_left.func_id = left.ph.func_id;
@@ -259,33 +240,13 @@ void P2PAL::print_Local(const Tractor_Event &event)
 {
     if (skip_locals)
         return;
-#ifdef MAT_PROCESS_HWC_MPI_OUTPUT
+#ifdef MAT_PROCESS_MPI_OUTPUT
     if (event.landbuf.buf_size >= 0 || event.landbuf.buf_count >= 0) {
-        output_MPI->printf(event.rank, "%s:%s:%lld:%lld\n", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id), event.landbuf.buf_count, event.landbuf.buf_size);
+        output_MPI->printf(event.rank, "%s:%lld:%lld\n", global_func_id.name_by_idx(event.func_id), event.landbuf.buf_count, event.landbuf.buf_size);
     } else {
-        output_MPI->printf(event.rank, "%s:%s\n", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id));
+        output_MPI->printf(event.rank, "%s\n", global_func_id.name_by_idx(event.func_id));
     }
-#if 0
-    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
-        event.tsc_time.func.in,
-        event.tsc_time.mpi.in,
-        event.tsc_time.mpi.out,
-        event.tsc_time.func.out,
-        event.tsc_time.pe.in,
-        event.tsc_time.pe.out);
-
-#else
-    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
-                       event.tsc_time.mpi.in,
-                       event.tsc_time.mpi.out,
-                       event.tsc_time.pe.in,
-                       event.tsc_time.pe.out);
-
-#endif
-    for (PEAT_Num i = 0; i < event.addrs.size(); i++) {
-        output_HWC->printf(event.rank, ":%lld", event.addrs.at(i));
-    }
-    output_HWC->printf(event.rank, "\n");
+    event.write_trace_line(output_MPI);
 #endif
 }
 

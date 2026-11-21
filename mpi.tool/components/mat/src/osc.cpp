@@ -35,13 +35,13 @@ OSC::OSC(int v) : verbose(v)
 	request_func_store = NULL;
 }
 
-void OSC::initialize(PTP *p, Communicators *c, Request_Store *rs, Requests* r, File_Storage_GZ *MPI, File_Storage_GZ *HWC, File_Storage_GZ *bind)
+void OSC::initialize(PTP *p, Communicators *c, Request_Store *rs, Requests* r, File_Storage_GZ *MPI, File_Storage_GZ *bind)
 {
 	comm_store = c;
 	ptp = p;
 	req_store = rs;
 	request_func_store = r;
-	Outputs::initialize(MPI, HWC, bind);
+	Outputs::initialize(MPI, bind);
 }
 
 void OSC::parse_osc(const PEAT_Rank rank, Tractor_Event &event)
@@ -72,21 +72,13 @@ PEAT_Bool OSC::update_request(const PEAT_Rank rank, PEAT_MPI_Request request, co
 
 void OSC::print_osc_out(const Tractor_Event &event)
 {
-#ifdef MAT_PROCESS_HWC_MPI_OUTPUT
-    output_MPI->printf(event.rank, "%s:%s:%x:%x:%x:%llx", event.header_str().c_str(), global_func_id.name_by_idx(event.func_id),
+#ifdef MAT_PROCESS_MPI_OUTPUT
+    output_MPI->printf(event.rank, "%s:%x:%x:%x:%llx", global_func_id.name_by_idx(event.func_id),
                        event.Comms.comm,
                        event.Comms.newcomm,
                        event.Comms.remote_comm,
                        event.Comms.request);
     output_MPI->printf(event.rank, "\n");
-    output_HWC->printf(event.rank, "%s:%lld:%lld:%lld:%lld", event.hwc_header_str().c_str(),
-                       event.tsc_time.mpi.in,
-                       event.tsc_time.mpi.out,
-                       event.tsc_time.pe.in,
-                       event.tsc_time.pe.out);
-    for (PEAT_Num i = 0; i < event.addrs.size(); i++) {
-        output_HWC->printf(event.rank, ":%lld", event.addrs.at(i));
-    }
-    output_HWC->printf(event.rank, "\n");
+    event.write_trace_line(output_MPI);
 #endif
 }

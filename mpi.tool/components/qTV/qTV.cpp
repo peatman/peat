@@ -807,7 +807,7 @@ void TV::load_model(QFileInfo &trace_file, const std::set<PEAT_Rank> &ranks_to_l
     }
     communicators_data.reset();
     elements = new Elements(trace_file, shown);
-    if (!elements->load_model_data(pb, sr, mpi_file_names, hwc_file_names, bind_file_names, ranks_to_load, tmin, tmax, load_threads, tp)) {
+    if (!elements->load_model_data(pb, sr, mpi_file_names, bind_file_names, ranks_to_load, tmin, tmax, load_threads, tp)) {
         qDebug() << "Failed in trace parser.";
     }
     // qDebug() << *elements;
