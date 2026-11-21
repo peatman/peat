@@ -24,6 +24,26 @@ See [doc/README.md](doc/README.md) for older build/usage/trace-format documentat
 - `src/pinc/` - per-call-category C++ code snippets included by the generated MPI layer (collectives, requests, local/buffer handling, GPU).
 - `doc/` - readme and trace format description documents.
 - `Build.sh`/`BuildAllg.sh`/`BuildAlli.sh` - build scripts for GNU/Intel toolchains across supported MPI.
+
+## Known issues
+
+### MPI-IO on stock (unpatched) MPICH-based MPIs: ROMIO's internal calls leak into the trace
+
+ROMIO is meant to make all its internal MPI calls through `PMPI_*` (`src/mpi/romio/adio/include/mpipr.h` renames them), so the trace shows the application's `MPI_File_*` call only. In older releases that list is incomplete, and the missing calls reach tractor's `MPI_*` wrappers. They run on a communicator ROMIO created with `PMPI_Comm_dup`, which tractor never sees created. Result:
+
+- `Can't find communicator <handle>` errors on stderr when the trace is written;
+- records of those calls carry the raw communicator handle instead of a global id, and their peer ranks are wrong (negated);
+- the application itself is not affected.
+
+| MPI (stock)                     | calls that leak                                                                                                                           |
+|---------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
+| MPICH 3.4.x, MVAPICH2 2.3.x     | `MPI_Iallgather`/`MPI_Iallreduce`/`MPI_Ialltoall`/`MPI_Ibcast` (`MPI_File_iread_all`, `MPI_File_iwrite_all`), `MPI_Win_*`/`MPI_Get`/`MPI_Put` (one-sided aggregation) |
+| MPICH 4.3.x, MVAPICH 4.1        | only the large-count `_c` calls (`MPI_Isend_c`, `MPI_Irecv_c`, ...), which this tractor does not wrap (MPI-3 only), so nothing reaches the trace |
+| MPICH 5.0.1, 5.0.2              | none                                                                                                                                      |
+
+All MPIs also leak one `MPI_File_set_errhandler(MPI_FILE_NULL, ...)` at finalize (ROMIO's `ad_end.c`); `mpipr.h` deliberately leaves ROMIO's own `MPI_File_*` names alone.
+
+Workaround: for MVAPICH2 2.3.5/2.3.7-1 use an MVAPICH2 built with the hook patch from `mpi.tool/patches` (it completes `mpipr.h`); for MPICH 3.4.x there is no patch in this branch, use a newer MPICH.
  
 
 
