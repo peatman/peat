@@ -29,16 +29,16 @@ $prototype {
     pid_t tid_in;
     int tid;
     msl_event *f_event;
-    bool l_skip_parse=tractor_finished || (gt_info(t_permit_collect_transport)==0);
+    bool l_skip_parse=tractor_finished || !T_TRANSPORT_LAYOUT_OK || (gt_info(t_permit_collect_transport)==0);
     $rtdl // if necessary initialize pointer
     // init_transport_hooks();
-    if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
+    if(__builtin_expect((!l_skip_parse && counting_permission[$funcid_through]>0),1)) {
         tsc_entry = peat_get_time_tid(&tid_in);
         tid=__msl_get_tid(tid_in);
         reused=__msl_transport_reuse_event(tid,&f_event,$funcid_through);
         if (!reused) __msl_transport_allocate_event(tid,&f_event,$funcid_through);
         tsc_mpi_entry=peat_get_time();
-    } //if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1))
+    } //if(__builtin_expect((!l_skip_parse && counting_permission[$funcid_through]>0),1))
 #else
     $declare
 #endif
@@ -46,7 +46,7 @@ $prototype {
     ${call}$funcname($funcpars);
 #endif
 #ifndef _TRACTOR_PASSTHROUGH_
-    if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
+    if(__builtin_expect((!l_skip_parse && counting_permission[$funcid_through]>0),1)) {
         tsc_mpi_exit = peat_get_time();
         if (!reused) {
             f_event->func_id = $funcid_through;
@@ -73,7 +73,7 @@ $prototype {
         overall_entries[$funcid_through]++;
         overall_tool_overhead[$funcid_through] += local_tool_overhead;
 #endif
-    } //if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1))
+    } //if(__builtin_expect((!l_skip_parse && counting_permission[$funcid_through]>0),1))
 #endif
     __DEBUG_EPILOG_TRANSPORT_LAYER__
     $return

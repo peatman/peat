@@ -1267,7 +1267,13 @@ while( <IN> ) {
  }
   print "#if defined(_TRANSPORT_PROFILE_)\n" unless $is_shim;
   print "#include \"t_transport.h\"\n";
-  if ($is_shim) { $transport_reentrant_declared=0; }
+  if ($is_shim) {
+    $transport_reentrant_declared=0;
+    # the shim records nothing unless the preloaded core library has the same struct tractor layout (tractor.h)
+    print "extern \"C\" void tractor_transport_layout(long *v) __attribute__((weak));\n";
+    print "static const bool t_transport_layout_ok = t_transport_check_layout(tractor_transport_layout, \"$transport_layer\");\n";
+    print "#undef T_TRANSPORT_LAYOUT_OK\n#define T_TRANSPORT_LAYOUT_OK t_transport_layout_ok\n";
+  }
   if (!$transport_reentrant_declared) {
     print "static thread_local bool t_transport_reentrant = false;\n";
     $transport_reentrant_declared=1;

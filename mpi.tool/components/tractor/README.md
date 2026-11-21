@@ -101,6 +101,26 @@ A process not started by an MPI launcher (no `PMI_RANK`/`OMPI_COMM_WORLD_RANK`, 
 
 Runtime switch: export PEAT_TRACTOR_PARSE_LLAMA=0 - do not record llama.cpp stages (default 1, builds with llama.cpp only)
 
+## Known issues
+
+### MPI-IO on stock (unpatched) MPICH-based MPIs: ROMIO's internal calls leak into the trace
+
+ROMIO is meant to make all its internal MPI calls through `PMPI_*` (`src/mpi/romio/adio/include/mpipr.h` renames them), so the trace shows the application's `MPI_File_*` call only. In older releases that list is incomplete, and the missing calls reach tractor's `MPI_*` wrappers. They run on a communicator ROMIO created with `PMPI_Comm_dup`, which a stock tractor never sees created. Result:
+
+- `Can't find communicator <handle>` errors on stderr when the trace is written;
+- records of those calls carry the raw communicator handle instead of a global id, and their peer ranks are wrong (negated);
+- the application itself is not affected.
+
+| MPI (stock)                     | calls that leak                                                                                                                           |
+|---------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
+| MPICH 5.0.1, 5.0.2              | none                                                                                                                                      |
+| MPICH 4.3.x, MVAPICH 4.1        | the large-count `_c` calls of collective I/O (`MPI_Isend_c`, `MPI_Irecv_c`, `MPI_Issend_c`, `MPI_Bcast_c`, `MPI_Alltoallv_c`, `MPI_Get_c`, `MPI_Put_c`, ...) |
+| MPICH 3.4.x, MVAPICH2 2.3.x     | `MPI_Iallgather`/`MPI_Iallreduce`/`MPI_Ialltoall`/`MPI_Ibcast` (`MPI_File_iread_all`, `MPI_File_iwrite_all`), `MPI_Win_*`/`MPI_Get`/`MPI_Put` (one-sided aggregation) |
+
+All MPIs also leak one `MPI_File_set_errhandler(MPI_FILE_NULL, ...)` at finalize (ROMIO's `ad_end.c`); `mpipr.h` deliberately leaves ROMIO's own `MPI_File_*` names alone.
+
+Workaround: use an MPI built with the hook patches from `mpi.tool/patches` (they complete `mpipr.h`, see note 3 in its README) and the engineering tractor (`*.eng.so`), or MPICH >= 5.0.1. The engineering tractor alone (on an MPI patched before `mpipr.h` was completed) already resolves the communicator - it learns it from the `mpi_internal_comm_create` hook - but the calls still appear in the trace.
+
 
 
 Tractor usage guideline:

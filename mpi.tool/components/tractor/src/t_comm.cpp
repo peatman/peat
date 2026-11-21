@@ -272,16 +272,16 @@ bool t_local_comms::get_local_comm_id(const MPI_Comm comm, const PEAT_Clock cur_
     debug_printf("Obtaining global communicator for %x after TSC time %lld at rank %d (commstore %p)\n", (int)(intptr_t)comm, cur_time, t_mpi_rank,(void *) &comm_store);
     debug_printf("Obtaining global communicator for %x after TSC time %lld at rank %d (commstore size is %d)\n", (int)(intptr_t)comm, cur_time, t_mpi_rank,comm_store.size());
     if (comm != 0 && comm != MPI_COMM_NULL && comm != MPI_COMM_SELF && comm != MPI_COMM_WORLD) {
-        if (is_internal) {
-            if (find_comm_in_map(mpi_internal_comm_store, comm, cur_time, result)) {
-                __DEBUG_EPILOG_COMM_LAYER__
-                return true;
-            }
-        } else {
-            if (find_comm_in_map(comm_store, comm, cur_time, result)) {
-                __DEBUG_EPILOG_COMM_LAYER__
-                return true;
-            }
+        /* look in the requested store first, then in the other one: a user-level call can run on a
+         * communicator the MPI library created internally (e.g. ROMIO's MPI_Isend_c on the file's
+         * PMPI_Comm_dup'ed communicator, known only through mpi_internal_comm_create). User and
+         * internal handles share one handle space and validity windows, so the match is unique and
+         * internal communicators have their own global ids. */
+        std::map<MPI_Comm, std::list<t_comm>> &first = is_internal ? mpi_internal_comm_store : comm_store;
+        std::map<MPI_Comm, std::list<t_comm>> &second = is_internal ? comm_store : mpi_internal_comm_store;
+        if (find_comm_in_map(first, comm, cur_time, result) || find_comm_in_map(second, comm, cur_time, result)) {
+            __DEBUG_EPILOG_COMM_LAYER__
+            return true;
         }
         std::cerr << "Error in communicator t_comm::get_local_comm_id function. Can't find communicator " << std::hex << comm << " after TSC time " << std::dec << cur_time << " at rank " << t_mpi_rank << ".\n";
         debug_printf("Error in communicator t_comm::get_local_comm_id function. Can't find communicator %x after TSC time %lld at rank %d internal %d.\n", (int)(intptr_t)comm, cur_time, t_mpi_rank, is_internal);

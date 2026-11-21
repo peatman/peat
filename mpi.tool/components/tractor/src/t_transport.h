@@ -19,6 +19,12 @@
 #ifndef __T_TRANSPORT_H__
 #define __T_TRANSPORT_H__
 
+/* transport wrappers record only while this holds: always in the core library, a standalone shim redefines it to
+ * its struct tractor layout check (mpi_layer.pl, t_transport_check_layout() in tractor.h) */
+#ifndef T_TRANSPORT_LAYOUT_OK
+#define T_TRANSPORT_LAYOUT_OK true
+#endif
+
 #if 0
 #ifdef _VERBS_PROFILE_
 #ifdef __cplusplus

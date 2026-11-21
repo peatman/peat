@@ -2120,3 +2120,115 @@
      { MPID_STATE_MPIDI_CH3I_ACCEPTQ_DEQUEUE, "MPIDI_CH3I_Acceptq_dequeue", (const char *)0 },
      { MPID_STATE_MPIDI_CH3I_ACCEPTQ_ENQUEUE, "MPIDI_CH3I_Acceptq_enqueue", (const char *)0 },
      { MPID_STATE_MPIDI_CH3I_ACCUMULATE, "MPIDI_CH3I_Accumulate", (const char *)0 },
+--- a/src/mpi/romio/adio/include/mpipr.h
++++ b/src/mpi/romio/adio/include/mpipr.h
+@@ -106,6 +106,8 @@
+ #define MPI_Gather PMPI_Gather
+ #undef MPI_Gatherv
+ #define MPI_Gatherv PMPI_Gatherv
++#undef MPI_Get
++#define MPI_Get PMPI_Get
+ #undef MPI_Get_count
+ #define MPI_Get_count PMPI_Get_count
+ #undef MPI_Get_elements
+@@ -150,6 +152,14 @@
+ #define MPI_Group_translate_ranks PMPI_Group_translate_ranks
+ #undef MPI_Group_union
+ #define MPI_Group_union PMPI_Group_union
++#undef MPI_Iallgather
++#define MPI_Iallgather PMPI_Iallgather
++#undef MPI_Iallreduce
++#define MPI_Iallreduce PMPI_Iallreduce
++#undef MPI_Ialltoall
++#define MPI_Ialltoall PMPI_Ialltoall
++#undef MPI_Ibcast
++#define MPI_Ibcast PMPI_Ibcast
+ #undef MPI_Ibsend
+ #define MPI_Ibsend PMPI_Ibsend
+ #undef MPI_Init
+@@ -184,12 +194,18 @@
+ #define MPI_Op_free PMPI_Op_free
+ #undef MPI_Pack
+ #define MPI_Pack PMPI_Pack
++#undef MPI_Pack_external
++#define MPI_Pack_external PMPI_Pack_external
++#undef MPI_Pack_external_size
++#define MPI_Pack_external_size PMPI_Pack_external_size
+ #undef MPI_Pack_size
+ #define MPI_Pack_size PMPI_Pack_size
+ #undef MPI_Pcontrol
+ #define MPI_Pcontrol PMPI_Pcontrol
+ #undef MPI_Probe
+ #define MPI_Probe PMPI_Probe
++#undef MPI_Put
++#define MPI_Put PMPI_Put
+ #undef MPI_Recv
+ #define MPI_Recv PMPI_Recv
+ #undef MPI_Recv_init
+@@ -228,6 +244,8 @@
+ #define MPI_Start PMPI_Start
+ #undef MPI_Startall
+ #define MPI_Startall PMPI_Startall
++#undef MPI_Status_set_elements_x
++#define MPI_Status_set_elements_x PMPI_Status_set_elements_x
+ #undef MPI_Test
+ #define MPI_Test PMPI_Test
+ #undef MPI_Test_cancelled
+@@ -248,11 +266,17 @@
+ #define MPI_Type_contiguous PMPI_Type_contiguous
+ #undef MPI_Type_count
+ #define MPI_Type_count PMPI_Type_count
++#undef MPI_Type_create_hindexed
++#define MPI_Type_create_hindexed PMPI_Type_create_hindexed
+ /* #define MPI_Type_create_darray PMPI_Type_create_darray */
+ #undef MPI_Type_create_indexed_block
+ #define MPI_Type_create_indexed_block PMPI_Type_create_indexed_block
+ #undef MPI_Type_create_hindexed_block
+ #define MPI_Type_create_hindexed_block PMPI_Type_create_hindexed_block
++#undef MPI_Type_create_resized
++#define MPI_Type_create_resized PMPI_Type_create_resized
++#undef MPI_Type_create_struct
++#define MPI_Type_create_struct PMPI_Type_create_struct
+ /* #define MPI_Type_create_subarray PMPI_Type_create_subarray */
+ #undef MPI_Type_extent
+ #define MPI_Type_extent PMPI_Type_extent
+@@ -262,6 +286,8 @@
+ #define MPI_Type_get_contents PMPI_Type_get_contents
+ #undef MPI_Type_get_envelope
+ #define MPI_Type_get_envelope PMPI_Type_get_envelope
++#undef MPI_Type_get_extent
++#define MPI_Type_get_extent PMPI_Type_get_extent
+ #undef MPI_Type_get_true_extent
+ #define MPI_Type_get_true_extent PMPI_Type_get_true_extent
+ #undef MPI_Type_hindexed
+@@ -274,18 +300,30 @@
+ #define MPI_Type_lb PMPI_Type_lb
+ #undef MPI_Type_size
+ #define MPI_Type_size PMPI_Type_size
++#undef MPI_Type_size_x
++#define MPI_Type_size_x PMPI_Type_size_x
+ #undef MPI_Type_struct
+ #define MPI_Type_struct PMPI_Type_struct
+ #undef MPI_Type_ub
+ #define MPI_Type_ub PMPI_Type_ub
++#undef MPI_Unpack_external
++#define MPI_Unpack_external PMPI_Unpack_external
+ #undef MPI_Type_vector
+ #define MPI_Type_vector PMPI_Type_vector
++#undef MPI_Win_create
++#define MPI_Win_create PMPI_Win_create
+ #undef MPI_Unpack
+ #define MPI_Unpack PMPI_Unpack
++#undef MPI_Win_free
++#define MPI_Win_free PMPI_Win_free
+ #undef MPI_Wait
+ #define MPI_Wait PMPI_Wait
++#undef MPI_Win_lock
++#define MPI_Win_lock PMPI_Win_lock
+ #undef MPI_Waitall
+ #define MPI_Waitall PMPI_Waitall
++#undef MPI_Win_unlock
++#define MPI_Win_unlock PMPI_Win_unlock
+ #undef MPI_Waitany
+ #define MPI_Waitany PMPI_Waitany
+ #undef MPI_Waitsome

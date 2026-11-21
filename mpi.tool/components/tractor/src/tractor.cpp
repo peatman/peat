@@ -3730,6 +3730,15 @@ tractor_debug::~tractor_debug(void)
 tractor_debug t_info_debug;
 #else
 tractor t_info;
+#endif
+#ifdef _TRANSPORT_PROFILE_
+/* checked by the transport shims before they touch t_info, see t_transport_check_layout() */
+extern "C" void tractor_transport_layout(long *v)
+{
+    t_transport_layout(v);
+}
+#endif
+#ifndef _TRACTOR_DIAG_
 
 #ifdef _OPENMPI_
 extern "C" int t_addr_in_fortran_lib(const void *addr)

@@ -17,8 +17,9 @@ ranks_arg=$3
 
 toolchain=${TOOLCHAIN:-intel}
 case $toolchain in
+    intel ) compiler=oneAPI:2026.1.0 ; mpi_default=mpich:4.3.2x-mt-ofi-eng ; libsubdir=intel ;;
 #    intel ) compiler=oneAPI:2026.1.0 ; mpi_default=mpich:5.0.2x-mt-ofi-eng ; libsubdir=intel ;;
-    intel ) compiler=oneAPI:2026.1.0 ; mpi_default=mvapich:4.1x-mt-ofi-eng ; libsubdir=intel ;;
+#    intel ) compiler=oneAPI:2026.1.0 ; mpi_default=mvapich:4.1x-mt-ofi-eng ; libsubdir=intel ;;
     gcc )   compiler=gcc ; mpi_default=mpich:5.0.2g-mt-ofi-eng ; libsubdir=gnu ;;
     nvc )   compiler=${NVC_COMPILER:-nvc:12.9} ; mpi_default=mpich:5.0.2g-mt-ofi-eng ; libsubdir=nvc ;;
     clang ) compiler=clang ; mpi_default=mpich:5.0.2g-mt-ofi-eng ; libsubdir=clang ;;
@@ -26,14 +27,36 @@ case $toolchain in
 esac
 export compiler
 export mpi_type=${mpi_type:-$mpi_default}
-export libfabric_eng='-eng'
+# an engineering MPI links the engineering libfabric, a stock one the stock libfabric
+case $mpi_type in
+    *-eng ) export libfabric_eng='-eng' ;;
+    * )     export libfabric_eng='' ;;
+esac
 . env.sh
 set -x
 #TRACTOR=0
 libdir=${TRACTOR_LIBDIR:-$(realpath ../../../../lib/$libsubdir)}
+# the tractor library follows the MPI in use, e.g. mpich:5.0.2x-mt-ofi-eng -> libtractor.mpich5.eng.so
+# (env.sh has split it into mpi_type=mpich and mpi_version=5.0.2x-mt-ofi-eng)
+case $mpi_type:$mpi_version in
+    mpich:3.* )   tractor_target=mpich3 ;;
+    mpich:4.* )   tractor_target=mpich4 ;;
+    mpich:5.* )   tractor_target=mpich5 ;;
+    mvapich:2.* ) tractor_target=mvapich2 ;;
+    mvapich:4.* ) tractor_target=mvapich4 ;;
+    openmpi:5.* ) tractor_target=openmpi5 ;;
+    impi:* )      tractor_target=impi ;;
+    * )           echo "no tractor library known for mpi_type=$mpi_type mpi_version=$mpi_version" ; exit 2 ;;
+esac
+case $mpi_version in
+    *-eng ) tractor_target=$tractor_target.eng ;;
+esac
 if [ "${TRACTOR:-1}" != "0" ] ; then
-LD_PRELOAD=$libdir/libtractor.mvapich4.eng.so
-LD_PRELOAD="$LD_PRELOAD:$libdir/libtractor_transport_ofi.so"
+LD_PRELOAD=$libdir/libtractor.$tractor_target.so
+# the transport shims need an engineering tractor (TRANSPORT=on) and the engineering libfabric
+case $mpi_version in
+    *-eng ) LD_PRELOAD="$LD_PRELOAD:$libdir/libtractor_transport_ofi.so" ;;
+esac
 fi
 
 export PEAT_TRACTOR_PRINT_FUNC_NAMES=1
