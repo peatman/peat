@@ -38,6 +38,8 @@ class DrawOptionsDialog : public QDialog
     QSpinBox *spin_row_height;
     QCheckBox *check_offscreen_messages;
     QComboBox *combo_color_mode;
+    QSpinBox *spin_timelines;                  // timelines per rank
+    QSpinBox *spin_class_timeline[TV_CLASS_MAX]; // TV_Class -> timeline
 };
 
 #endif // __DRAWOPTIONSDIALOG_H__

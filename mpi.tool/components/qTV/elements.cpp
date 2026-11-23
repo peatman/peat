@@ -449,6 +449,7 @@ PEAT_Bool Elements::get_transport_event(const PEAT_Rank rank, File_Storage_GZ *i
 
 void Elements::compact_events(int nthreads)
 {
+    max_event_duration.assign(eventsV.size(), 0);
 #pragma omp parallel for schedule(dynamic) num_threads(nthreads)
     for (PEAT_Rank rank = 0; rank < eventsV.size(); ++rank) {
         //    for (std::vector<std::vector<TV_Event*>>::iterator rank_it = eventsV.begin(); rank_it != eventsV.end(); ++rank_it, ++r) {
@@ -456,6 +457,7 @@ void Elements::compact_events(int nthreads)
         for (std::vector<TV_Event *>::iterator event_it = eventsV.at(rank).begin(); event_it != eventsV.at(rank).end(); ++event_it) {
             TV_Event *evt = *event_it;
             if (evt) {
+                max_event_duration[rank] = qMax(max_event_duration[rank], PEAT_Clock(evt->e_time.func.duration()));
                 eventsV.at(rank)[index] = evt;
 #ifdef QTV_TR_VECTOR
                 events_tr.at(rank)[evt->ids[0]] = index;
@@ -471,6 +473,7 @@ void Elements::compact_events(int nthreads)
 
 void Elements::compact_transport_events(int nthreads)
 {
+    max_transport_duration.assign(events_transportV.size(), 0);
 #pragma omp parallel for schedule(dynamic) num_threads(nthreads)
     for (PEAT_Rank rank = 0; rank < events_transportV.size(); ++rank) {
         //    for (std::vector<std::vector<TV_Event*>>::iterator rank_it = eventsV.begin(); rank_it != eventsV.end(); ++rank_it, ++r) {
@@ -478,6 +481,7 @@ void Elements::compact_transport_events(int nthreads)
         for (std::vector<TV_Transport_Event*>::iterator event_it = events_transportV.at(rank).begin(); event_it != events_transportV.at(rank).end(); ++event_it) {
             TV_Transport_Event* evt = *event_it;
             if (evt) {
+                max_transport_duration[rank] = qMax(max_transport_duration[rank], PEAT_Clock(evt->e_time.func.duration()));
                 events_transportV.at(rank)[index] = evt;
 #ifdef QTV_TR_VECTOR
                 events_transport_tr.at(rank)[evt->ids[0]] = index;
@@ -511,14 +515,7 @@ bool Elements::load_model_data(QProgressBar *pb, QScrollBar *sr,
     ranks_to_load_v.clear();
     ranks_to_load_v_rev.clear();
     ranks_to_load_v_rev.resize(bind_file_names.size());
-    max_mpi_tid.clear();
-    max_mpi_tid.resize(bind_file_names.size());
-    max_transport_tid.clear();
-    max_transport_tid.resize(bind_file_names.size());
-    max_omp_tid.clear();
-    max_omp_tid.resize(bind_file_names.size());
-    max_gpu_tid.clear();
-    max_gpu_tid.resize(bind_file_names.size());
+    max_class_tid.assign(bind_file_names.size(), std::array<PEAT_Thread, TV_CLASS_MAX>{});
     transport_tsc_predictor.assign(bind_file_names.size(), 0);
     PEAT_Rank r = 0;
     for (std::set<PEAT_Rank>::const_iterator rank_it = ranks_to_load.cbegin(); rank_it != ranks_to_load.cend(); ++rank_it, ++r) {
@@ -909,14 +906,15 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
         // draw user code rect
         p[tid]->setPen(Qt::NoPen);
         p[tid]->setBrush(tv_colors.event_brushes[TV_BRUSH_EVENT_TYPE_USER_CODE]);
-        long y_start = paint.mpi_ulc.at(r);
-        long pix_in_rank = (get_mpi_threads(r) + get_transport_threads(r) + get_omp_threads(r) + get_gpu_threads(r)) * paint.thread_height;
+        long y_start = paint.rank_ulc.at(r);
+        long pix_in_rank = paint.rank_height.at(r);
         p[tid]->drawRect(0, y_start, s_width, pix_in_rank);
+        // taken before the separator is drawn over (0, y_start): thin events are drawn only over this colour
+        QColor user_region_color = threadImages[tid]->pixel(0, y_start);
         if (y_start > 0) { // separator above every rank but the topmost drawn one
             p[tid]->setPen(line_rank);
             p[tid]->drawLine(0, y_start, s_width, y_start);
         }
-        QColor user_region_color = threadImages[tid]->pixel(0, y_start);
         // p[tid]->setOpacity(current_opacity);
 
         if (it_rank.empty())
@@ -973,18 +971,8 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                 // long y_start = ranks_to_load_v_rev[cur_func_ptr->rank] * pixInRank + (pixInRank - (heightPercent * pixInRank)) * 0.5; //base
                 assert(ranks_to_load_v_rev[cur_func_ptr->rank] == r);
                 PEAT_Rank cur_func_rank = ranks_to_load_v_rev[cur_func_ptr->rank];
-                long y_start = thread_height * cur_func_ptr->thread;
-                if (cur_func->is_mpi()) {
-                    y_start += paint.mpi_ulc.at(cur_func_rank);
-                } else {
-                    if (cur_func->is_omp()) {
-                        y_start += paint.omp_ulc.at(cur_func_rank);
-                    } else {
-                        if (cur_func->is_gpu()) {
-                            y_start += paint.gpu_ulc.at(cur_func_rank);
-                        }
-                    }
-                }
+                // nested records are drawn on the timeline of their top-level record
+                long y_start = thread_height * cur_func_ptr->thread + paint.class_ulc(cur_func_rank, cur_func->tv_class());
                 p[tid]->setOpacity(1.0);
                 QColor cc = threadImages[tid]->pixel(x_start, y_start);
                 if (cc != user_region_color && (f_width < shown->func_min_width)) {
@@ -1057,7 +1045,7 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                     if (!shown->omp_functions[1])
                         continue;
                     p[tid]->setBrush(tv_colors.event_brushes[TV_BRUSH_EVENT_TYPE_OMPT_PARALLEL]);
-                    height = thread_height * get_omp_threads(r);
+                    height = thread_height * get_class_threads(r, TV_CLASS_OPENMP);
                     break;
                 default:
                     p[tid]->setBrush(tv_colors.event_brushes[TV_BRUSH_EVENT_TYPE_OTHER]);
@@ -1141,7 +1129,7 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                     f_width += x_start;
                     x_start = 0;
                 }
-                long transport_y_start = thread_height * cur_transport->thread + paint.transport_ulc.at(r);
+                long transport_y_start = paint.event_y(r, cur_transport);
                 p[tid]->setOpacity(1.0);
                 QColor transport_cc = threadImages[tid]->pixel(x_start, transport_y_start);
                 if (transport_cc != user_region_color && (f_width < shown->func_min_width)) {
@@ -1165,7 +1153,7 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
         QString rstr = "R" + QString::number(ranks_to_load_v[r]);
         const int label_step = pix_in_rank > 0 ? qMax(1, int((font_height + pix_in_rank - 1) / pix_in_rank)) : 1;
         if (r % label_step == 0)
-            p[tid]->drawText(5, paint.mpi_ulc.at(r) + w_min_name_h, rstr);
+            p[tid]->drawText(5, paint.rank_ulc.at(r) + w_min_name_h, rstr);
         p[tid]->setOpacity(current_opacity);
     }
     QPainter f(finalImage);
@@ -1257,8 +1245,8 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                         no_draw_elems++;
                         continue;
                     }
-                    y_from += paint.mpi_ulc.at(ranks_to_load_v_rev[from->rank]);
-                    y_to += paint.mpi_ulc.at(ranks_to_load_v_rev[to->rank]);
+                    y_from += paint.class_ulc(ranks_to_load_v_rev[from->rank], from->tv_class());
+                    y_to += paint.class_ulc(ranks_to_load_v_rev[to->rank], to->tv_class());
                     y_from -= y_offset; // always start from center
                     y_to -= y_offset;   // always start from center
                     p[tid]->drawLine(x_from, y_from + from_thread_height * 0.5, x_to + wdt_to, y_to + to_thread_height * 0.5);
@@ -1268,8 +1256,8 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                     break;
                 case TV_PEN_MESSAGE_TYPE_GPU_HD_TRANSFER:
                 case TV_PEN_MESSAGE_TYPE_GPU_EXEC:
-                    y_from += paint.gpu_ulc.at(ranks_to_load_v_rev[from->rank]);
-                    y_to += paint.gpu_ulc.at(ranks_to_load_v_rev[to->rank]);
+                    y_from += paint.class_ulc(ranks_to_load_v_rev[from->rank], from->tv_class());
+                    y_to += paint.class_ulc(ranks_to_load_v_rev[to->rank], to->tv_class());
                     p[tid]->drawLine(x_from + wdt_from * 0.5, y_from, x_to + wdt_to * 0.5, y_to);
                     // p[tid]->setPen(message_pens[TV_PEN_MESSAGE_TYPE_NONE]);
                     p[tid]->drawPoint(x_from + wdt_from * 0.5, y_from);
@@ -1285,8 +1273,8 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                         no_draw_elems++;
                         continue;
                     }
-                    y_from += paint.mpi_ulc.at(ranks_to_load_v_rev[from->rank]);
-                    y_to += paint.mpi_ulc.at(ranks_to_load_v_rev[to->rank]);
+                    y_from += paint.class_ulc(ranks_to_load_v_rev[from->rank], from->tv_class());
+                    y_to += paint.class_ulc(ranks_to_load_v_rev[to->rank], to->tv_class());
                     p[tid]->drawLine(x_from + wdt_from * 0.5, y_from, x_to + wdt_to * 0.5, y_to);
                     // p[tid]->setPen(message_pens[TV_PEN_MESSAGE_TYPE_NONE]);
                     p[tid]->drawPoint(x_from + wdt_from * 0.5, y_from);
@@ -1298,8 +1286,8 @@ void Elements::draw_elements(QProgressBar *pb, QScrollBar *sr, QImage *finalImag
                 case TV_PEN_MESSAGE_TYPE_COLLECTIVE_COMPLETION:
                     if (!shown->mpi_messages[collective_message_flag(it_msg->second.msg_type)] || !shown->mpi_functions[TV_MPI_FUNC_GROUP_COLLECTIVES])
                         continue;
-                    y_from += paint.mpi_ulc.at(ranks_to_load_v_rev[from->rank]);
-                    y_to += paint.mpi_ulc.at(ranks_to_load_v_rev[to->rank]);
+                    y_from += paint.class_ulc(ranks_to_load_v_rev[from->rank], from->tv_class());
+                    y_to += paint.class_ulc(ranks_to_load_v_rev[to->rank], to->tv_class());
                     y_from -= y_offset; // always start from center
                     y_to -= y_offset;   // always start from center
                     // a collective line joins different ranks, so it is vertical when they are in sync (e.g. the
@@ -1381,51 +1369,28 @@ int Elements::bind_ids(const String_Split &line, int pos, PEAT_Rank rank, PEAT_E
     return peat_ids_parse(line, pos, user_regions->get_id_columns(rank), ids);
 }
 
-TV_Event *Elements::find_event(PEAT_Rank rank, PEAT_Clock clk, int thread, int selector) const
+// The records are in start order; a record covering clk starts in [clk - max_duration, clk]. Scanning that window
+// finds also the long ones (OpenMP regions, waits, GPU syncs) that began long before the records next to clk.
+template <typename T>
+void Elements::events_at(const std::vector<T *> &v, PEAT_Clock max_duration, PEAT_Clock clk, int thread, int timeline, std::vector<TV_Event *> &found) const
 {
-    EventRankTypeConstIter it_func = lower_bound(eventsV.at(rank), clk);
-
-    if (it_func != eventsV.at(rank).end()) {
-        TV_Event *cur_event = *it_func;
-        while (cur_event && cur_event->e_time.func.out < clk) {
-            ++it_func;
-            if (it_func == eventsV.at(rank).end()) {
-                return NULL;
-            }
-            cur_event = *it_func;
-        }
-        if (cur_event->e_time.func.in > clk) return NULL;
-        while (cur_event) {
-            if (thread != cur_event->thread) {
-                ++it_func;
-                if (it_func == eventsV.at(rank).end())
-                    return NULL;
-                cur_event = *it_func;
-                while (cur_event && cur_event->e_time.func.out < clk && thread != cur_event->thread) {
-                    ++it_func;
-                    if (it_func == eventsV.at(rank).end()) {
-                        return NULL;
-                    }
-                    cur_event = *it_func;
-                }
-                if (thread != cur_event->thread)
-                    return NULL;
-            }
-            if (cur_event->e_time.func.in > clk) return NULL;
-            // selector match
-            if (selector == 0 && (cur_event->is_mpi()))
-                return cur_event;
-            if (selector == 1 && (cur_event->is_omp()))
-                return cur_event;
-            if (selector == 2 && (cur_event->is_gpu()))
-                return cur_event;
-            ++it_func;
-            if (it_func == eventsV.at(rank).end()) {
-                return NULL;
-            }
-        }
+    if (v.empty())
+        return;
+    const size_t first_found = found.size();
+    typename std::vector<T *>::const_iterator it = lower_bound(v, clk);
+    while (it != v.end() && (*it == NULL || (*it)->e_time.func.in <= clk)) // past the last record starting by clk
+        ++it;
+    while (it != v.begin()) {
+        --it;
+        const T *e = *it;
+        if (e == NULL)
+            continue;
+        if (e->e_time.func.in + max_duration < clk)
+            break; // this one and the earlier ones end before clk
+        if (e->e_time.func.in <= clk && e->e_time.func.out >= clk && e->thread == thread && paint.timeline_of(e->tv_class()) == timeline)
+            found.push_back(const_cast<T *>(e));
     }
-    return NULL;
+    std::reverse(found.begin() + first_found, found.end());
 }
 
 TV_Transport_Event *Elements::find_transport_event(PEAT_Rank rank, PEAT_Clock clk, int thread) const
@@ -1495,26 +1460,11 @@ bool Elements::add_event(TV_Event *event, TV_TraceParts &tp)
             }
         } while (true);
 #endif
-        std::vector<PEAT_Thread> *max_tid;
-        switch (event->get_event_type()) {
-        case TV_EVENT_TYPE_OMPT_LOCAL:
-        case TV_EVENT_TYPE_OMPT_TARGET_DATA:
-        case TV_EVENT_TYPE_OMPT_PARALLEL:
-            max_tid = &max_omp_tid;
-            break;
-        case TV_EVENT_TYPE_GPU_LOCAL:
-        case TV_EVENT_TYPE_GPU_TRANSFER:
-        case TV_EVENT_TYPE_GPU_EXECUTION:
-            max_tid = &max_gpu_tid;
-            break;
-        default:
-            max_tid = &max_mpi_tid;
-            break;
-        }
+        PEAT_Thread &max_tid = max_class_tid[event->rank][event->tv_class()];
         if (!event->is_nested()) {
             eventsV[event->rank][event->ids[0]] = event;
-            if (event->thread + 1 > (*max_tid)[event->rank])
-                (*max_tid)[event->rank] = event->thread + 1;
+            if (event->thread + 1 > max_tid)
+                max_tid = event->thread + 1;
         } else { // nested record: attach to its top-level record (any event may host nested records)
             TV_Event *host = eventsV[event->rank][event->ids[0]];
             if (!host || !host->put_event(event))
@@ -1533,8 +1483,9 @@ bool Elements::add_transport_event(TV_Transport_Event* event, TV_TraceParts& tp)
         return false;
 
     try {
-        if (event->thread + 1 > max_transport_tid[event->rank])
-            max_transport_tid[event->rank] = event->thread + 1;
+        PEAT_Thread &max_tid = max_class_tid[event->rank][TV_CLASS_TRANSPORT];
+        if (event->thread + 1 > max_tid)
+            max_tid = event->thread + 1;
     }
     catch (const std::bad_alloc& e) {
         qDebug() << "Elements::addFunction. No memory. Size:" << fsize() << " sizeof " << sizeof(TV_Event) << e.what();
@@ -2191,42 +2142,46 @@ void Elements::get_user_addresses_in_region(QTreeWidget *tw, const PEAT_Clock st
     tw->setGeometry(rect);
     // tw->sortColumn();
 }
-TV_Event *Elements::get_event(int x, int y, int width) const
+void Elements::get_events(int x, int y, int width, std::vector<TV_Event *> &found) const
 {
     // Implement the logic to generate the tooltip based on the x and y coordinates
     // simple linear search at the moment, can be optimized later
     int rank = -1;
     int thread = -1;
-    int selector = -1;
-    for (int r = 0; r < ranks_to_load_v.size(); ++r) {
+    int timeline = -1;
+    for (int r = 0; r < ranks_to_load_v.size() && paint.thread_height > 0; ++r) {
         if (row_hidden(r))
             continue; // not in the picture: its rows take no place
-        long rank_top = paint.mpi_ulc.at(r);
-        long pix_in_rank = (get_mpi_threads(r) + get_transport_threads(r) + get_omp_threads(r) + get_gpu_threads(r)) * paint.thread_height;
+        long rank_top = paint.rank_ulc.at(r);
+        long pix_in_rank = paint.rank_height.at(r);
         if (y >= rank_top && y < rank_top + pix_in_rank) {
-            if (y > paint.gpu_ulc.at(r)) {
-                selector = 2;
-                thread = (y - paint.gpu_ulc.at(r)) / paint.thread_height;
-            } else if (y > paint.omp_ulc.at(r)) {
-                selector = 1;
-                thread = (y - paint.omp_ulc.at(r)) / paint.thread_height;
-            } else if (y > paint.transport_ulc.at(r)) {
-                selector = 3;
-                thread = (y - paint.transport_ulc.at(r)) / paint.thread_height;
-            } else if (y > paint.mpi_ulc.at(r)) {
-                selector = 0;
-                thread = (y - paint.mpi_ulc.at(r)) / paint.thread_height;
+            for (int tl = 0; tl < TV_MAX_TIMELINES; tl++) {
+                const long tl_top = paint.timeline_ulc(r, tl);
+                if (y >= tl_top && y < tl_top + paint.timeline_rows(r, tl) * paint.thread_height) {
+                    timeline = tl;
+                    thread = (y - tl_top) / paint.thread_height;
+                    break;
+                }
             }
             rank = ranks_to_load_v.at(r);
             break;
         }
     }
-    PEAT_Clock clk = convert_mouse_to_ticks(x, 0, width);
-    if (rank < 0)
-        return NULL;
-    if (selector == 3)
-        return find_transport_event(rank, clk, thread);
-    return (find_event(rank, clk, selector, thread));
+    if (rank < 0 || timeline < 0)
+        return;
+    const PEAT_Clock clk = convert_mouse_to_ticks(x, 0, width);
+    // the trace records first, then the transport records: a timeline may hold any of the classes
+    if (size_t(rank) < eventsV.size() && size_t(rank) < max_event_duration.size())
+        events_at(eventsV[rank], max_event_duration[rank], clk, thread, timeline, found);
+    if (size_t(rank) < events_transportV.size() && size_t(rank) < max_transport_duration.size())
+        events_at(events_transportV[rank], max_transport_duration[rank], clk, thread, timeline, found);
+}
+
+TV_Event *Elements::get_event(int x, int y, int width) const
+{
+    std::vector<TV_Event *> found;
+    get_events(x, y, width, found);
+    return found.empty() ? NULL : found.front();
 }
 
 PEAT_Bool Elements::get_event(const PEAT_Rank rank, File_Storage_GZ *input_MPI, PEAT_Clock min_clock, PEAT_Clock max_clock, TV_Event **event, PTP *ptp)
@@ -2585,20 +2540,12 @@ QRect Elements::get_event_rect(const TV_Event *e, int width) const
     if (e == NULL || e->rank < 0 || static_cast<size_t>(e->rank) >= ranks_to_load_v_rev.size() || !(zoom_time_stop > zoom_time_start))
         return QRect();
     const PEAT_Rank r = ranks_to_load_v_rev[e->rank];
-    if (r < 0 || static_cast<size_t>(r) >= paint.mpi_ulc.size() || row_hidden(r))
+    if (r < 0 || static_cast<size_t>(r) >= paint.rank_ulc.size() || row_hidden(r))
         return QRect();
     const double pix_in_tic = width / (zoom_time_stop - zoom_time_start);
     const double x0 = qBound(-10.0, (e->e_time.func.in - zoom_time_start) * pix_in_tic, width + 10.0);
     const double x1 = qBound(-10.0, (e->e_time.func.out - zoom_time_start) * pix_in_tic, width + 10.0);
-    int y = paint.thread_height * e->thread;
-    if (e->is_transport())
-        y += paint.transport_ulc.at(r);
-    else if (e->is_omp())
-        y += paint.omp_ulc.at(r);
-    else if (e->is_gpu())
-        y += paint.gpu_ulc.at(r);
-    else
-        y += paint.mpi_ulc.at(r);
+    const int y = paint.event_y(r, e);
     return QRect(int(x0), y, qMax(2, int(x1 - x0)), paint.thread_height);
 }
 

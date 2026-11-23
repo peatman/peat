@@ -58,6 +58,27 @@ static PEAT_Bool equal(TV_Event_Type send, TV_Event_Type recv)
 #endif
 struct TV_Coll_Event;
 
+// Class of a trace record by its function id (the records of the *.transport files are TV_CLASS_TRANSPORT whatever
+// their id, see TV_Event::tv_class()). Same id ranges as in Elements::get_event, which picks the record type.
+inline TV_Class tv_class_of_func_id(long long func_id)
+{
+    if (func_id >= OMPT_START_GROUP && func_id < OMPT_END_GROUP)
+        return TV_CLASS_OPENMP;
+    if (func_id >= ACC_START_GROUP && func_id < ACC_END_GROUP)
+        return TV_CLASS_OPENACC;
+    if (func_id >= CL_START_GROUP && func_id < CL_END_GROUP)
+        return TV_CLASS_OPENCL;
+    if (func_id >= ZE_START_GROUP && func_id < ZE_END_GROUP)
+        return TV_CLASS_LEVEL_ZERO;
+    if (func_id >= LLAMA_START_GROUP && func_id < LLAMA_END_GROUP)
+        return TV_CLASS_LLAMA;
+    if (func_id >= GGML_CPU_START_GROUP && func_id < GGML_CPU_END_GROUP)
+        return TV_CLASS_GGML_CPU;
+    if (peat_is_cuda_func_id(func_id)) // also the GPU kernels, named in the records (ids above TMPIfunc_id_Size)
+        return TV_CLASS_CUDA;
+    return TV_CLASS_MPI;
+}
+
 // Text descriptions of TV_Event::get_event_group() and TV_Event::get_event_type().
 inline const char *tv_event_group_name(int group)
 {
@@ -210,6 +231,7 @@ struct TV_Event {
     virtual bool is_omp() const { return false; }
     virtual bool is_gpu() const { return false; }
     virtual bool is_transport() const { return false; }
+    TV_Class tv_class() const { return is_transport() ? TV_CLASS_TRANSPORT : tv_class_of_func_id(func_id); }
 };
 
 struct TV_Local_Event : public TV_Event {

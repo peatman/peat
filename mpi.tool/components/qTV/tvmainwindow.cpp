@@ -88,6 +88,9 @@ TVMainWindow::TVMainWindow(QWidget *parent)
         // "Drawing/color_by_function" is the flag this mode has replaced
         shown.color_mode = settings.contains("Drawing/color_mode") ? qBound(0, settings.value("Drawing/color_mode").toInt(), TV_COLOR_MODE_MAX - 1)
                                                                    : (settings.value("Drawing/color_by_function", false).toBool() ? TV_COLOR_BY_FUNCTION : TV_COLOR_BY_KIND);
+        shown.timeline_count = qBound(1, settings.value("Drawing/timelines", TV_DEFAULT_TIMELINES).toInt(), TV_MAX_TIMELINES);
+        for (int c = 0; c < TV_CLASS_MAX; c++)
+            shown.class_timeline[c] = qBound(0, settings.value(QString("Timelines/") + tv_class_name(c), tv_default_timeline(c)).toInt(), TV_MAX_TIMELINES - 1);
         // the hidden communicators are not kept: their ids belong to one trace
         flags_from_string(settings.value("Filter/mpi_functions").toString(), shown.mpi_functions, TV_MPI_FUNC_GROUP_MAX);
         flags_from_string(settings.value("Filter/mpi_messages").toString(), shown.mpi_messages, 7);
@@ -621,6 +624,9 @@ void TVMainWindow::save_drawing_settings()
     settings.setValue("Drawing/offscreen_messages", shown.draw_offscreen_messages);
     settings.setValue("Drawing/row_height", shown.row_height_percent);
     settings.setValue("Drawing/color_mode", shown.color_mode);
+    settings.setValue("Drawing/timelines", shown.timeline_count);
+    for (int c = 0; c < TV_CLASS_MAX; c++)
+        settings.setValue(QString("Timelines/") + tv_class_name(c), shown.class_timeline[c]);
 }
 
 void TVMainWindow::show_legend_window()

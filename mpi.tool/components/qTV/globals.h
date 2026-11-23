@@ -65,7 +65,53 @@ enum TV_Color_Mode {
     TV_COLOR_BY_SIZE,     // message size: from blue (1 byte) to red (1 GB and more), grey for events without data
     TV_COLOR_MODE_MAX
 };
+// Classes of events. Every class is drawn on one of the timelines of a rank (TV_TraceParts::class_timeline); the
+// class of an event is given by its function id (tv_class_of_func_id() in tv_event.h). Keep tv_class_name() and
+// tv_default_timeline() in step with this list; the names are the keys of the settings.
+enum TV_Class {
+    TV_CLASS_MPI,        // MPI functions, MPI-internal (MPIC_/MPID_) functions, and whatever is not in a class below
+    TV_CLASS_OPENMP,     // OMPT
+    TV_CLASS_OPENACC,    // OpenACC profiling interface
+    TV_CLASS_CUDA,       // CUDA runtime/driver/cuBLAS and GPU kernels
+    TV_CLASS_OPENCL,     // OpenCL
+    TV_CLASS_LEVEL_ZERO, // oneAPI Level Zero
+    TV_CLASS_LLAMA,      // llama.cpp / ggml backend scheduler
+    TV_CLASS_GGML_CPU,   // ggml CPU backend kernels
+    TV_CLASS_TRANSPORT,  // records of the *.transport files
+    TV_CLASS_MAX
+};
+#define TV_MAX_TIMELINES 16
+#define TV_DEFAULT_TIMELINES 4
+inline const char *tv_class_name(int c)
+{
+    static const char *const names[TV_CLASS_MAX] = {"MPI", "OpenMP", "OpenACC", "CUDA", "OpenCL", "Level Zero", "llama", "ggml CPU", "Transport"};
+    return c >= 0 && c < TV_CLASS_MAX ? names[c] : "Unknown";
+}
+// 0: MPI, 1: OpenMP, 2: all GPU and llama, 3: transport
+inline int tv_default_timeline(int c)
+{
+    switch (c) {
+    case TV_CLASS_MPI:
+        return 0;
+    case TV_CLASS_OPENMP:
+        return 1;
+    case TV_CLASS_TRANSPORT:
+        return 3;
+    default:
+        return 2;
+    }
+}
 struct TV_TraceParts {
+    TV_TraceParts()
+    {
+        for (int c = 0; c < TV_CLASS_MAX; c++)
+            class_timeline[c] = tv_default_timeline(c);
+    }
+    // Timelines of a rank, from top to bottom; a timeline has as many rows as the most threads of the classes put on it
+    // (none if no class is), so an unused one takes no place.
+    int timeline_count = TV_DEFAULT_TIMELINES; // 1 ... TV_MAX_TIMELINES
+    int class_timeline[TV_CLASS_MAX];          // TV_Class -> timeline; numbers past timeline_count go to the last one
+    int timeline_of(int c) const { return qBound(0, class_timeline[c], timeline_count - 1); }
     bool mpi_functions[TV_MPI_FUNC_GROUP_MAX] = {true, true, true, true, true, true};
     // p2p, blocking collectives, initiation, completion, collective init, collective start, collective completion
     bool mpi_messages[7] = {true, true, true, true, true, true, true};

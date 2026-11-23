@@ -408,23 +408,25 @@ void TV::draw_main_image()
         if (hidden_rows == ranks) { // nothing would be left to draw: the filter is ignored
             elements->paint.hidden.assign(ranks, 0);
         }
-        int mpi_ulc = 0, transport_ulc, omp_ulc, gpu_ulc;
+        // the timelines of a rank from top to bottom; a timeline has as many rows as the most threads of its classes
+        Elements_Paint &paint = elements->paint;
+        for (int c = 0; c < TV_CLASS_MAX; c++)
+            paint.class_timeline[c] = shown->timeline_of(c);
+        int ulc = 0;
         for (int a = 0; a < ranks; a++) {
-            elements->paint.mpi_ulc[a] = mpi_ulc;
-            const bool row_shown = !elements->paint.hidden[a];
-            int mpi_threads = row_shown ? elements->get_mpi_threads(a) : 0;
-            int transport_threads = row_shown ? elements->get_transport_threads(a) : 0;
-            int omp_threads = row_shown ? elements->get_omp_threads(a) : 0;
-            int gpu_threads = row_shown ? elements->get_gpu_threads(a) : 0;
-            transport_ulc = (mpi_ulc + mpi_threads * elements->paint.thread_height);
-            omp_ulc = (transport_ulc + transport_threads * elements->paint.thread_height);
-            gpu_ulc = (omp_ulc + omp_threads * elements->paint.thread_height);
-            mpi_ulc = (gpu_ulc + gpu_threads * elements->paint.thread_height);
-            elements->paint.transport_ulc[a] = transport_ulc;
-            elements->paint.omp_ulc[a] = omp_ulc;
-            elements->paint.gpu_ulc[a] = gpu_ulc;
+            paint.rank_ulc[a] = ulc;
+            const bool row_shown = !paint.hidden[a];
+            int rows[TV_MAX_TIMELINES] = {};
+            for (int c = 0; c < TV_CLASS_MAX && row_shown; c++)
+                rows[paint.class_timeline[c]] = qMax(rows[paint.class_timeline[c]], int(elements->get_class_threads(a, c)));
+            for (int tl = 0; tl < TV_MAX_TIMELINES; tl++) {
+                paint.tl_ulc[size_t(a) * TV_MAX_TIMELINES + tl] = ulc;
+                paint.tl_rows[size_t(a) * TV_MAX_TIMELINES + tl] = rows[tl];
+                ulc += rows[tl] * paint.thread_height;
+            }
+            paint.rank_height[a] = ulc - paint.rank_ulc[a];
         }
-        elements->paint.height = mpi_ulc;
+        paint.height = ulc;
         elements->paint.width = width();
 
         image_creating = true; // block
@@ -1020,10 +1022,16 @@ bool TV::event(QEvent *e)
     }
     if (e->type() == QEvent::ToolTip && main_image) {
         QHelpEvent *he = static_cast<QHelpEvent *>(e);
-        TV_Event *evt = elements->get_event(he->pos().x(), he->pos().y(), main_image->width());
+        // every record under the pointer: classes that share a timeline share its rows too
+        std::vector<TV_Event *> found;
+        elements->get_events(he->pos().x(), he->pos().y(), main_image->width(), found);
+        const size_t max_shown = 8; // a tooltip taller than the screen is cut by Qt
         QString tool_tip;
-        if (evt) {
-            tool_tip = QString("Function:%1\nRank:%2\n").arg(global_func_id.name_by_idx(evt->func_id)).arg(evt->rank);
+        for (size_t n = 0; n < found.size() && n < max_shown; n++) {
+            const TV_Event *evt = found[n];
+            if (n > 0)
+                tool_tip += "\n";
+            tool_tip += QString("Function:%1\nClass:%2\nRank:%3\n").arg(global_func_id.name_by_idx(evt->func_id)).arg(tv_class_name(evt->tv_class())).arg(evt->rank);
             const qreal clock_freq = elements->get_frequency();
             if (clock_freq > 0) {
                 tool_tip += QString("Duration:%1 (%L2 clk)\nStart:%3 from the trace start\n")
@@ -1046,9 +1054,13 @@ bool TV::event(QEvent *e)
                 const TV_Transport_Event *transport_evt = static_cast<const TV_Transport_Event *>(evt);
                 tool_tip += QString("Calls:%1\nClocks between calls:%2\n").arg(transport_evt->num_calls).arg(transport_evt->total_clocks_bitween_calls);
             }
-        } else {
-            tool_tip = QString("User Code/Thread wait");
         }
+        if (found.size() > max_shown)
+            tool_tip += QString("\n... and %1 more (Info shows all of them)").arg(found.size() - max_shown);
+        if (found.empty())
+            tool_tip = QString("User Code/Thread wait");
+        else
+            tool_tip = tool_tip.trimmed();
         QToolTip::showText(he->globalPos(), tool_tip, this);
         return true;
     }
@@ -1466,19 +1478,22 @@ QString TV::region_title(const QString &kind, PEAT_Clock start, PEAT_Clock stop)
 void TV::look_for_info()
 {
     if (elements && main_image && !image_creating) {
-        TV_Event *evt = elements->get_event(focus_point_stop.x(), focus_point_stop.y(), main_image->width());
-        if (!evt) {
+        // every record at the point, of every class on that timeline
+        std::vector<TV_Event *> found;
+        elements->get_events(focus_point_stop.x(), focus_point_stop.y(), main_image->width(), found);
+        if (found.empty()) {
             return;
         }
+        const TV_Event *evt = found.front();
         QTreeWidget *info_view = new QTreeWidget;
         info_view->setWordWrap(false);
         info_view->setColumnCount(12);
-        info_view->setHeaderLabels(QStringList() << "Name" << "Group" << "Type" << "Rank" << "Comm" << "Thread" << "IDs" << "Start Time" << "End Time" << "Duration" << "Duration (us)" << "Source Location");
+        info_view->setHeaderLabels(QStringList() << "Name" << "Class" << "Type" << "Rank" << "Comm" << "Thread" << "IDs" << "Start Time" << "End Time" << "Duration" << "Duration (us)" << "Source Location");
 
         std::function<QTreeWidgetItem *(const TV_Event *)> add_event_item = [&](const TV_Event *e) -> QTreeWidgetItem * {
             QTreeWidgetItem *func_item = new QTreeWidgetItem((QTreeWidget *)0);
             func_item->setText(0, global_func_id.name_by_idx(e->func_id));
-            func_item->setText(1, tv_event_group_name(e->get_event_group()));
+            func_item->setText(1, tv_class_name(e->tv_class()));
             func_item->setTextAlignment(1, Qt::AlignHCenter);
             func_item->setText(2, tv_event_type_name(e->get_event_type()));
             func_item->setTextAlignment(2, Qt::AlignHCenter);
@@ -1552,8 +1567,8 @@ void TV::look_for_info()
             return func_item;
         };
 
-        QTreeWidgetItem *root_item = add_event_item(evt);
-        info_view->addTopLevelItem(root_item);
+        for (size_t n = 0; n < found.size(); n++)
+            info_view->addTopLevelItem(add_event_item(found[n]));
 
         // Connect click handler to open source files
         connect(info_view, &QTreeWidget::itemClicked, this, &TV::handle_info_item_clicked);
@@ -1591,7 +1606,10 @@ void TV::look_for_info()
         connect(info_view, &QTreeWidget::itemExpanded, info_view, [fit_size](QTreeWidgetItem *) { fit_size(); });
         connect(info_view, &QTreeWidget::itemCollapsed, info_view, [fit_size](QTreeWidgetItem *) { fit_size(); });
 
-        show_detail_view(info_view, tr("Info: %1, rank %2, IDs %3").arg(global_func_id.name_by_idx(evt->func_id)).arg(evt->rank).arg(QString::fromStdString(peat_ids_string(evt->ids))));
+        QString title = tr("Info: %1, rank %2, IDs %3").arg(global_func_id.name_by_idx(evt->func_id)).arg(evt->rank).arg(QString::fromStdString(peat_ids_string(evt->ids)));
+        if (found.size() > 1)
+            title += tr(" and %n more", "", int(found.size() - 1));
+        show_detail_view(info_view, title);
     }
 }
 void TV::look_for_functions()

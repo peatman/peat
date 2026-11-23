@@ -27,6 +27,7 @@
 #include <QStatusBar>
 #include <QTableWidget>
 #include <QTreeWidget>
+#include <array>
 #include <atomic>
 #include <mutex>
 
@@ -40,29 +41,35 @@ struct PEAT_Viewport {
     PEAT_Clock start, end;
     PEAT_Viewport(PEAT_Clock s = 0, PEAT_Clock e = 0) : start(s), end(e) {};
 };
+// Layout of the picture: a rank has TV_MAX_TIMELINES timelines from top to bottom, a timeline has rows (threads) of
+// thread_height pixels; a timeline without rows takes no place.
 struct Elements_Paint {
     int width, height;
     int thread_height;
-    std::vector<qint32> mpi_ulc;
-    std::vector<qint32> transport_ulc;
-    std::vector<qint32> omp_ulc;
-    std::vector<qint32> gpu_ulc;
+    int class_timeline[TV_CLASS_MAX]; // TV_Class -> timeline, as the picture was drawn (TV_TraceParts::timeline_of)
+    std::vector<qint32> rank_ulc;     // per drawn rank: top of its first timeline
+    std::vector<qint32> rank_height;  // per drawn rank: all of its rows
+    std::vector<qint32> tl_ulc;       // per drawn rank and timeline (r * TV_MAX_TIMELINES + timeline): top of the timeline
+    std::vector<qint32> tl_rows;      // per drawn rank and timeline: number of rows
     std::vector<char> hidden; // per drawn row: the rank was hidden (TV_TraceParts::hidden_ranks) when the picture was made
     void clear(int ranks)
     {
         width = height = thread_height = 0;
+        for (int c = 0; c < TV_CLASS_MAX; c++)
+            class_timeline[c] = 0;
         hidden.assign(ranks > 0 ? ranks : 0, 0);
-        mpi_ulc.clear();
-        transport_ulc.clear();
-        omp_ulc.clear();
-        gpu_ulc.clear();
-        if (ranks > 0) {
-            mpi_ulc.resize(ranks);
-            transport_ulc.resize(ranks);
-            omp_ulc.resize(ranks);
-            gpu_ulc.resize(ranks);
-        }
+        rank_ulc.assign(ranks > 0 ? ranks : 0, 0);
+        rank_height.assign(ranks > 0 ? ranks : 0, 0);
+        tl_ulc.assign(ranks > 0 ? size_t(ranks) * TV_MAX_TIMELINES : 0, 0);
+        tl_rows.assign(ranks > 0 ? size_t(ranks) * TV_MAX_TIMELINES : 0, 0);
     }
+    qint32 timeline_ulc(int r, int tl) const { return tl_ulc.at(size_t(r) * TV_MAX_TIMELINES + tl); }
+    qint32 timeline_rows(int r, int tl) const { return tl_rows.at(size_t(r) * TV_MAX_TIMELINES + tl); }
+    int timeline_of(int c) const { return class_timeline[c]; }
+    // top of row 0 of the timeline of the class in drawn rank r
+    qint32 class_ulc(int r, TV_Class c) const { return timeline_ulc(r, class_timeline[c]); }
+    // top of the row of the event (e->thread) in drawn rank r
+    qint32 event_y(int r, const TV_Event *e) const { return class_ulc(r, e->tv_class()) + thread_height * e->thread; }
     Elements_Paint() { clear(0); }
 };
 class Elements
@@ -112,7 +119,9 @@ class Elements
     TV_Event *find_event(PEAT_Rank rank, PEAT_UID top_id) const;             // top-level record by its id
     TV_Event *find_event(PEAT_Rank rank, const PEAT_Event_IDs &ids) const;    // any record by its id path
     int bind_ids(const String_Split &line, int pos, PEAT_Rank rank, PEAT_Event_IDs &ids) const; // id columns of a bind record, returns the next field
-    TV_Event *find_event(PEAT_Rank rank, PEAT_Clock clk, int thread, int selector) const;
+    // the top-level records on the row (timeline, thread) of the rank that cover clk, appended to found in start order
+    template <typename T>
+    void events_at(const std::vector<T *> &v, PEAT_Clock max_duration, PEAT_Clock clk, int thread, int timeline, std::vector<TV_Event *> &found) const;
     void resolve_collectives(TV_TraceParts &tp); // draws pending_colls once bind_completion_map is complete
     TV_Transport_Event *find_transport_event(PEAT_Rank rank, PEAT_Clock clk, int thread) const;
 
@@ -141,48 +150,10 @@ class Elements
         }
         return result;
     }
-    inline PEAT_Thread get_max_mpi_threads() const
+    // most threads of the class in drawn rank t
+    inline PEAT_Thread get_class_threads(PEAT_Rank t, int c) const
     {
-        PEAT_Thread tid = 0;
-        for (auto a : max_mpi_tid) {
-            if (tid < a)
-                tid = a;
-        }
-        return tid;
-    }
-    inline PEAT_Thread get_max_omp_threads() const
-    {
-        PEAT_Thread tid = 0;
-        for (auto a : max_omp_tid) {
-            if (tid < a)
-                tid = a;
-        }
-        return tid;
-    }
-    inline PEAT_Thread get_max_gpu_threads() const
-    {
-        PEAT_Thread tid = 0;
-        for (auto a : max_gpu_tid) {
-            if (tid < a)
-                tid = a;
-        }
-        return tid;
-    }
-    inline PEAT_Thread get_mpi_threads(PEAT_Thread t) const
-    {
-        return max_mpi_tid.at(ranks_to_load_v.at(t));
-    }
-    inline PEAT_Thread get_transport_threads(PEAT_Thread t) const
-    {
-        return max_transport_tid.at(ranks_to_load_v.at(t));
-    }
-    inline PEAT_Thread get_omp_threads(PEAT_Thread t) const
-    {
-        return max_omp_tid.at(ranks_to_load_v.at(t));
-    }
-    inline PEAT_Thread get_gpu_threads(PEAT_Thread t) const
-    {
-        return max_gpu_tid.at(ranks_to_load_v.at(t));
+        return max_class_tid.at(ranks_to_load_v.at(t))[c];
     }
 
     inline PEAT_Rank get_draw_rank_count() const
@@ -266,7 +237,8 @@ class Elements
     void get_functions_in_region(QTableWidget *mpi_tw, QTableWidget *omp_tw, QTableWidget *gpu_tw, QTableWidget *transport_tw, const PEAT_Clock start, const PEAT_Clock stop, const PEAT_Num height) const;
     void get_messages_in_region(QTableWidget *initiation, QTableWidget *completion, QTableWidget *p2p, QTreeWidget *collective, QTableWidget *gpu, const PEAT_Clock start, const PEAT_Clock stop, const PEAT_Num height) const;
     void get_user_addresses_in_region(QTreeWidget *tw, const PEAT_Clock start, const PEAT_Clock stop, const PEAT_Num height) const;
-    TV_Event *get_event(int x, int y, int width) const;
+    TV_Event *get_event(int x, int y, int width) const;                       // the first of get_events, NULL if none
+    void get_events(int x, int y, int width, std::vector<TV_Event *> &found) const; // all records under the point: every class on its timeline
     Trace_Info &get_trace_info()
     {
         return trace_info;
@@ -379,10 +351,7 @@ class Elements
     }
 
     // std::map<PEAT_Rank, std::map<PEAT_Clock, TV_Event*> > events;//map<rank, map<tscIn, Function> >
-    std::vector<PEAT_Thread> max_mpi_tid;
-    std::vector<PEAT_Thread> max_transport_tid;
-    std::vector<PEAT_Thread> max_omp_tid;
-    std::vector<PEAT_Thread> max_gpu_tid;
+    std::vector<std::array<PEAT_Thread, TV_CLASS_MAX>> max_class_tid; // rank -> TV_Class -> most threads
 
     // rank -> (post ids -> completion ids), from PEAT_RT_Bind_Completion/Initiation/Destroying lines, filled
     // while reading that rank's own bind file. A PEAT_RT_Bind_Peer line's receiver side names the post
@@ -424,6 +393,9 @@ class Elements
     std::vector<std::vector<Collective>> coll; // techically outer vector is not required. It's only to get rid of lock/unlock while doing push_back to coll
     std::vector<std::vector<TV_Event *>> eventsV;
     std::vector<std::vector<TV_Transport_Event *>> events_transportV;
+    // per rank: the longest top-level record of eventsV / events_transportV; the records covering a moment start
+    // no earlier than this before it (see events_at)
+    std::vector<PEAT_Clock> max_event_duration, max_transport_duration;
 #ifdef QTV_TR_VECTOR
     std::vector<std::vector<PEAT_UID>> events_tr;
     std::vector<std::vector<PEAT_UID>> events_transport_tr;
