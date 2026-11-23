@@ -802,7 +802,10 @@ my $funcname_t="t_$funcname";
 
 #print STDERR "----$c_prototype, $properties----\n";
 #die;
-$t_func_pointer="$funcretcode (*t_$funcname)($funcpars) = 0;"  if ($properties=~/PSM2|PSM3|UCX|OFI/);
+# static: two libraries with the same wrappers loaded at once (a shim loaded twice, the psm2 layer of a TARGET=mvapich2
+# library next to the psm2 shim) must not share the pointer - the first would store the second's wrapper in it, and the
+# second would call itself through it endlessly
+$t_func_pointer="static $funcretcode (*t_$funcname)($funcpars) = 0;"  if ($properties=~/PSM2|PSM3|UCX|OFI/);
 $t_func_pointer="$funcretcode $funcname_t($funcpars);" if ($properties=~/T_PREFIX/); 
 $rtdl="if(!$funcname_t) { $funcname_t = reinterpret_cast<$funcretcode (*)($funcpars)>(dlsym(RTLD_NEXT, \"$funcname\")); }\n" if ($properties=~/PSM2|PSM3|UCX|OFI/); 
 
@@ -1384,8 +1387,25 @@ while( <IN> ) {
     # the shim records nothing unless the preloaded core library fits it: its t_shared (t_shim_state.h); a weak
     # reference, NULL without a core library
     print "extern \"C\" struct t_shim_state t_shared __attribute__((weak));\n";
+  }
+  # the dlsym-interceptable layers register as a class: two copies of a layer (a shim loaded twice, the psm2 layer of
+  # a TARGET=mvapich2 library next to the psm2 shim) would record every call twice, the second copy stays inert. A core
+  # older than register_class: no check. verbs/smpi are called directly by the patched MPI, there is no second copy.
+  if ($transport_layer=~/^(psm2|psm3|ucx|ofi)$/) {
+    my $ok="t_transport_ok_$transport_layer";
+    my $check = $is_shim ? "t_transport_shim_check(&t_shared, \"$transport_layer\")" : "true";
+    print "static bool $ok = false; /* set by t_transport_register_$transport_layer, nothing is recorded before */\n";
+    print "__attribute__((constructor)) static void t_transport_register_$transport_layer(void)\n{\n";
+    print "    static const struct t_shim_class t_transport_class = {\"transport-$transport_layer\", NULL, NULL, NULL};\n";
+    print "    $ok = $check &&\n";
+    print "        (t_shared.size < T_SHIM_STATE_NEED(register_class) || t_shared.register_class(&t_transport_class));\n";
+    print "}\n";
+    print "#undef T_TRANSPORT_SHIM_OK\n#define T_TRANSPORT_SHIM_OK $ok\n";
+  } elsif ($is_shim) {
     print "static const bool t_transport_shim_ok = t_transport_shim_check(&t_shared, \"$transport_layer\");\n";
     print "#undef T_TRANSPORT_SHIM_OK\n#define T_TRANSPORT_SHIM_OK t_transport_shim_ok\n";
+  } else {
+    print "#undef T_TRANSPORT_SHIM_OK\n#define T_TRANSPORT_SHIM_OK true\n"; # the previous layer of the file may have redefined it
   }
   if (!$transport_reentrant_declared) {
     print "static thread_local bool t_transport_reentrant = false;\n";
