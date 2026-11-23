@@ -475,7 +475,7 @@ std::map<PEAT_Rank, std::string> get_file_names(const std::string &dir, const st
 #endif
 }
 
-PEAT_Bool just_drive(std::string &dir)
+PEAT_Bool just_drive(std::string &/*dir*/)
 {
 #if !defined(_WIN32) || defined(__MINGW32__)
     return false;

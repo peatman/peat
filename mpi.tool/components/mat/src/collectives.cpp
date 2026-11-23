@@ -353,7 +353,7 @@ PEAT_Bool Collectives::empty() const
     }
     return true;
 }
-void Collectives::process_collective(const PEAT_Rank rank, MAT_Collectives_Record* event, int pc_level, PEAT_Bool is_remote)
+void Collectives::process_collective(const PEAT_Rank rank, MAT_Collectives_Record* event, int pc_level, PEAT_Bool /*is_remote*/)
 {
     collective_key key(event->coll_event->comm, event->coll_event->ph.func_id);
     collective_list::iterator matched_record;
@@ -443,7 +443,7 @@ void Collectives::process_collective(const PEAT_Rank rank, MAT_Collectives_Recor
         std::map<PEAT_Rank, Collective_Event *> properties_list;
         Collective_Ranks expected_ranks = comm_store->get_ranks_set_from_comm(event->coll_event->comm);
         Collective_Ranks init_ranks = expected_ranks;
-        long ranks = (long)expected_ranks.size();
+        long ranks = static_cast<long>(expected_ranks.size());
         expected_ranks.erase(rank); // delete self from waiting ranks
         MAT_Collective collective_entry;
 #if defined PROCESS_WHOLE_EVENT
@@ -710,8 +710,6 @@ PEAT_Bool Collectives::update_request(const PEAT_Rank rank, const PEAT_MPI_Reque
             if(check_completion(coll)) {
                 print_collective_bind(coll_get_record(coll));
                 erase_collective(coll);
-            } else {
-                int id = 0;
             }
         }
     }
@@ -724,7 +722,8 @@ void Collectives::process_remote_collective(PEAT_Signed_Num size, PEAT_Rank src)
 #if defined(_WIN32) && !defined(__MINGW32__)
     char *buffer = (char *)_malloca(size);
 #else
-    char buffer[size];
+    std::vector<char> buffer_store(static_cast<size_t>(size));
+    char *buffer = buffer_store.data();
 #endif
     MPI_Status status;
     MPI_Recv(buffer, size, MPI_CHAR, src, TRACTOR_COLLECTIVE_EVENT_TAG, mat_compute_comm, &status);

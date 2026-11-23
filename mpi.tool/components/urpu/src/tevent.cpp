@@ -32,12 +32,12 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_trace, 
     uniq_id = hdr.ids.at(0);
     level = hdr.level;
     const int b = hdr.trace_payload + num_tscs; // addresses follow the tsc block
-    for (int i = 0; i < (int)num_addrs; i++) {
+    for (int i = 0; i < static_cast<int>(num_addrs); i++) {
         PEAT_UID addr_id;
         extract(addr_id, line_trace.at(b + i));
         addr_key.add(addr_id);
     }
-    for (int i = 0; i < (int)num_hwcs * 2; i++) {
+    for (int i = 0; i < static_cast<int>(num_hwcs) * 2; i++) {
         PEAT_HWC_Value hwc_value;
         extract(hwc_value, line_trace.at(b + num_addrs + i));
         hwc_values.push_back(hwc_value);

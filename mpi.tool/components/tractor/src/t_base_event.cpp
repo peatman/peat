@@ -48,7 +48,7 @@ extern "C" {
 t_base_event::t_base_event()
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
-    debug_printf("Base Event::t_base_event %llx.\n", this);
+    debug_printf("Base Event::t_base_event %p.\n", this);
     initialized = 0;
     calls_limit = (unsigned long long)(-1);
     num_allocated = 0;
@@ -93,7 +93,7 @@ t_base_event::t_base_event()
 t_base_event::~t_base_event()
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
-    debug_printf("Base Event::~t_base_event %llx %d.\n", this, t_max_threads);
+    debug_printf("Base Event::~t_base_event %p %d.\n", this, t_max_threads);
     t_base_event::end();
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
@@ -112,7 +112,7 @@ int t_base_event::get_tid(pid_t tid_in)
             PMPI_Abort(MPI_COMM_WORLD, 911);
         }
         if (tid < 0) {
-            fprintf(stderr, "Rank %d. Thread ID=%d. is negative.\n", t_mpi_rank, tid, t_max_tid_num);
+            fprintf(stderr, "Rank %d. Thread ID=%d. is negative.\n", t_mpi_rank, tid);
             PMPI_Abort(MPI_COMM_WORLD, 911);
         }
         t_tid = tid2t_tid[tid];
@@ -439,11 +439,11 @@ void t_base_event::init(int max_threads, int max_nesting_levels)
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
     int i, j, retval;
-    debug_printf("Base Event::init %llx.\n", this);
+    debug_printf("Base Event::init %p.\n", static_cast<void *>(this));
     t_max_threads = max_threads;
     t_max_nesting_levels = max_nesting_levels > 0 ? max_nesting_levels : 1;
     t_achieved_nesting_levels = 1;
-    debug_printf("Base Events:max_threads=%d nesting_levels=%d. %d %d \n", t_max_threads, t_max_nesting_levels, onetimealloc, num_addrs);
+    debug_printf("Base Events:max_threads=%d nesting_levels=%d. %ld %d \n", t_max_threads, t_max_nesting_levels, onetimealloc, num_addrs);
 
     nesting_level = (int *)t_malloc(t_max_threads * sizeof(int), 128);
     memset(nesting_level, 0, t_max_threads * sizeof(int));
@@ -491,7 +491,7 @@ void t_base_event::end()
     if (initialized < 1)
         return;
     initialized = 0;
-    debug_printf("Base Event::end %llx %d.\n", this, t_max_threads);
+    debug_printf("Base Event::end %p %d.\n", static_cast<void *>(this), t_max_threads);
     fflush(stderr);
     debug_printf("Base Event::destroying chains.\n");
     for (i = 0; i < t_tid_counter; i++) {

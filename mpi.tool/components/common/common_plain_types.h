@@ -175,7 +175,7 @@ typedef enum PEAT_Record_Type {
     PEAT_RT_End_Of_Definitions // must be the last item in the table - it is size() of the enum
 } PEAT_Record_Type;
 
-static const char *print_record_type(PEAT_Record_Type id)
+static inline const char *print_record_type(PEAT_Record_Type id)
 {
     switch (id) {
     /*case PEAT_RT_Non_Existent:
@@ -183,339 +183,129 @@ static const char *print_record_type(PEAT_Record_Type id)
         break;*/
     case PEAT_RT_Remark:
         return "PEAT_RT_Remark";
-        break;
     case PEAT_RT_Definitions:
         return "PEAT_RT_Definitions";
-        break;
     case PEAT_RT_MPI_Functions:
         return "PEAT_RT_MPI_Functions";
-        break;
     case PEAT_RT_MPI_Functions_Total:
         return "PEAT_RT_MPI_Functions_Total";
-        break;
     case PEAT_RT_Modules_Files_Definition:
         return "PEAT_RT_Modules_Files_Definition";
-        break;
     case PEAT_RT_User_Addresses:
         return "PEAT_RT_User_Addresses";
-        break;
     case PEAT_RT_User_Regions:
         return "PEAT_RT_User_Regions";
-        break;
     case PEAT_RT_User_Regions_Total:
         return "PEAT_RT_User_Regions_Total";
-        break;
     case PEAT_RT_Number_Of_Events:
         return "PEAT_RT_Number_Of_Events";
-        break;
     case PEAT_RT_Collector_Frame_Info:
         return "PEAT_RT_Collector_Frame_Info";
-        break;
     case PEAT_RT_Local_Communicators_Report:
         return "PEAT_RT_Local_Communicators_Report";
-        break;
     case PEAT_RT_Global_Communicators_Report:
         return "PEAT_RT_Global_Communicators_Report";
-        break;
     case PEAT_RT_Memory_Profile_Report:
         return "PEAT_RT_Memory_Profile_Report";
-        break;
     case PEAT_RT_User_Regions_Profile:
         return "PEAT_RT_User_Regions_Profile";
-        break;
     case PEAT_RT_Event_Stat:
         return "PEAT_RT_Event_Stat";
-        break;
     case PEAT_RT_Var_Block_Info:
         return "PEAT_RT_Var_Block_Info";
-        break;
     case PEAT_RT_Event_Stat_Total:
         return "PEAT_RT_Event_Stat_Total";
-        break;
     case PEAT_RT_MPI_Time:
         return "PEAT_RT_MPI_Time";
-        break;
     case PEAT_RT_MPI_Function_Name_ID:
         return "PEAT_RT_MPI_Function_Name_ID";
-        break;
     case PEAT_RT_App_Start_Stop_Info:
         return "PEAT_RT_App_Start_Stop_Info";
-        break;
-        //    case PEAT_RT_AppStartParallel:
-        //        return "PEAT_RT_AppStartParallel";
-        //        break;
-        //    case PEAT_RT_AppEndParallel:
-        //        return "PEAT_RT_AppEndParallel";
-        //        break;
     case PEAT_RT_Host_Name:
         return "PEAT_RT_Host_Name";
-        break;
     case PEAT_RT_CPU_Freq:
         return "PEAT_RT_CPU_Freq";
-        break;
     case PEAT_RT_MPI_Predefined:
         return "PEAT_RT_MPI_Predefined";
-        break;
-        //    case PEAT_RT_Communicator_Start:
-        //        return "PEAT_RT_Communicator_Start";
-        //        break;
-        //    case PEAT_RT_Communicator_Stop:
-        //        return "PEAT_RT_Communicator_Stop";
-        //        break;
     case PEAT_RT_MPM_Master_Ranks:
         return "PEAT_RT_MPM_Master_Ranks";
-        break;
     case PEAT_RT_MPM_Nodes_Freq:
         return "PEAT_RT_MPM_Nodes_Freq";
-        break;
     case PEAT_RT_MPM_Ranks_And_PPN:
         return "PEAT_RT_MPM_Ranks_And_PPN";
-        break;
     case PEAT_RT_MPM_All_Ranks_Exec_Time:
         return "PEAT_RT_MPM_All_Ranks_Exec_Time";
-        break;
     case PEAT_RT_MPM_Rank_Time_Stamp:
         return "PEAT_RT_MPM_Rank_Time_Stamp";
-        break;
     case PEAT_RT_PTP_Nodes_Freq:
         return "PEAT_RT_PTP_Nodes_Freq";
-        break;
     case PEAT_RT_PTP_Mode:
         return "PEAT_RT_PTP_Mode";
-        break;
     case PEAT_RT_PTP_Ranks:
         return "PEAT_RT_PTP_Ranks";
-        break;
     case PEAT_RT_PTP_Main_Record:
         return "PEAT_RT_PTP_Main_Record";
-        break;
     case PEAT_RT_Frame_Marker:
         return "PEAT_RT_Frame_Marker";
-        break;
     case PEAT_RT_Paths:
         return "PEAT_RT_Paths";
-        break;
     case PEAT_RT_PET_Final_Stat_Orig:
         return "PEAT_RT_PET_Final_Stat_Orig";
-        break;
     case PEAT_RT_PET_Final_Stat_Orig_Total:
         return "PEAT_RT_PET_Final_Stat_Orig_Total";
-        break;
     case PEAT_RT_PET_Final_Stat_Tractor:
         return "PEAT_RT_PET_Final_Stat_Tractor";
-        break;
     case PEAT_RT_PET_Final_Stat_Tractor_Total:
         return "PEAT_RT_PET_Final_Stat_Tractor_Total";
-        break;
     case PEAT_RT_PET_Final_Stat_Estim:
         return "PEAT_RT_PET_Final_Stat_Estim";
-        break;
     case PEAT_RT_PET_Final_Stat_Estim_Total:
         return "PEAT_RT_PET_Final_Stat_Estim_Total";
-        break;
     case PEAT_RT_PET_MPI_PControl_Stat_Orig:
         return "PEAT_RT_PET_MPI_PControl_Stat_Orig";
-        break;
     case PEAT_RT_PET_MPI_PControl_Stat_Tractor:
         return "PEAT_RT_PET_MPI_PControl_Stat_Tractor";
-        break;
     case PEAT_RT_PET_MPI_PControl_Stat_Estim:
         return "PEAT_RT_PET_MPI_PControl_Stat_Estim";
-        break;
     case PEAT_RT_VAPA_Translation:
         return "PEAT_RT_VAPA_Translation";
-        break;
     case PEAT_RT_Bind_Collective:
         return "PEAT_RT_Bind_Collective";
-        break;
     case PEAT_RT_Bind_Peer:
         return "PEAT_RT_Bind_Peer";
-        break;
     case PEAT_RT_Bind_Probe:
         return "PEAT_RT_Bind_Probe";
-        break;
     case PEAT_RT_Bind_Initiation:
         return "PEAT_RT_Bind_Initiation";
-        break;
     case PEAT_RT_Bind_Completion:
         return "PEAT_RT_Bind_Completion";
-        break;
     case PEAT_RT_Bind_Destroying:
         return "PEAT_RT_Bind_Destroying";
-        break;
     case PEAT_RT_Sync_Point:
         return "PEAT_RT_Sync_Point";
-        break;
     case PEAT_RT_HWLOC_Node_Record:
         return "PEAT_RT_HWLOC_Node_Record";
-        break;
     case PEAT_RT_HWLOC_Proc_Record:
         return "PEAT_RT_HWLOC_Proc_Record";
-        break;
     case PEAT_RT_TRANSPORT_Vars:
         return "PEAT_RT_TRANSPORT_Vars";
-        break;
     case PEAT_RT_TRANSPORT_Correction_Vars:
         return "PEAT_RT_TRANSPORT_Correction_Vars";
-        break;
     case PEAT_RT_Func_Dev:
         return "PEAT_RT_Func_Dev";
-        break;
     case PEAT_RT_Func_Split:
         return "PEAT_RT_Func_Split";
-        break;
     case PEAT_RT_MET_P2P_Record:
         return "PEAT_RT_MET_P2P_Record";
-        break;
     case PEAT_RT_MET_COLLECTIVE_Record:
         return "PEAT_RT_MET_COLLECTIVE_Record";
-        break;
     case PEAT_RT_End_Of_Definitions:
         return "PEAT_RT_End_Of_Definitions";
-        break;
     default:
         return 0;
-        break;
     }
-    return 0;
 }
 
-#if 0
-const char* printTCommonFileRecordType( PEAT_func_idNum id )
-{
-	switch ( id ) {
-		case PEAT_RT_Remark:
-			return "PEAT_RT_Remark";
-			break;
-		case PEAT_RT_MPI_Functions:
-			return "PEAT_RT_MPI_Functions";
-			break;
-		case PEAT_RT_MPI_Functions_Total:
-			return "PEAT_RT_MPI_Functions_Total";
-			break;
-		case PEAT_RT_ObjectFilesDefinition:
-			return "PEAT_RT_ObjectFilesDefinition";
-			break;
-		case PEAT_RT_User_Addresses:
-			return "PEAT_RT_User_Addresses";
-			break;
-		case PEAT_RT_User_Regions:
-			return "PEAT_RT_User_Regions";
-			break;
-		case PEAT_RT_User_Regions_Total:
-			return "PEAT_RT_User_Regions_Total";
-			break;
-		case PEAT_RT_Number_Of_Events:
-			return "PEAT_RT_Number_Of_Events";
-			break;
-		case PEAT_RT_Collector_Frame_Info:
-			return "PEAT_RT_Collector_Frame_Info";
-			break;
-		case PEAT_RT_CommunicatorsReport:
-			return "PEAT_RT_CommunicatorsReport";
-			break;
-		case PEAT_RT_Memory_Profile_Report:
-			return "PEAT_RT_Memory_Profile_Report";
-			break;
-		case PEAT_RT_User_Regions_Profile:
-			return "PEAT_RT_User_Regions_Profile";
-			break;
-		case PEAT_RT_PET_Event_Stat:
-			return "PEAT_RT_PET_Event_Stat";
-			break;
-		case PEAT_RT_PET_Event_StatTotal:
-			return "PEAT_RT_PET_Event_StatTotal";
-			break;
-		case PEAT_RT_MPI_Function_Name_ID:
-			return "PEAT_RT_MPI_Function_Name_ID";
-			break;
-		case PEAT_RT_App_Start_Stop_Info:
-			return "PEAT_RT_App_Start_Stop_Info";
-			break;
-	//    case PEAT_RT_AppStartParallel:
-	//        return "PEAT_RT_AppStartParallel";
-	//        break;
-	//    case PEAT_RT_AppEndParallel:
-	//        return "PEAT_RT_AppEndParallel";
-	//        break;
-		case PEAT_RT_Host_Name:
-			return "PEAT_RT_Host_Name";
-			break;
-		case PEAT_RT_CPU_Freq:
-			return "PEAT_RT_CPU_Freq";
-			break;
-		case PEAT_RT_MPI_Predefined:
-			return "PEAT_RT_MPI_Predefined";
-			break;
-	//    case PEAT_RT_Communicator_Start:
-	//        return "PEAT_RT_Communicator_Start";
-	//        break;
-	//    case PEAT_RT_Communicator_Stop:
-	//        return "PEAT_RT_Communicator_Stop";
-	//        break;
-		case PEAT_RT_MPM_Master_Ranks:
-			return "PEAT_RT_MPM_Master_Ranks";
-			break;
-		case PEAT_RT_MPM_Nodes_Freq:
-			return "PEAT_RT_MPM_Nodes_Freq";
-			break;
-		case PEAT_RT_MPM_Ranks_And_PPN:
-			return "PEAT_RT_MPM_Ranks_And_PPN";
-			break;
-		case PEAT_RT_MPM_AllRanksTimeStamp:
-			return "PEAT_RT_MPM_AllRanksTimeStamp";
-			break;
-		case PEAT_RT_PTP_Nodes_Freq:
-			return "PEAT_RT_PTP_Nodes_Freq";
-			break;
-		case PEAT_RT_PTP_Mode:
-			return "PEAT_RT_PTP_Mode";
-			break;
-		case PEAT_RT_PTP_Ranks:
-			return "PEAT_RT_PTP_Ranks";
-			break;
-		case PEAT_RT_PTP_Main_Record:
-			return "PEAT_RT_PTP_Main_Record";
-			break;
-		case PEAT_RT_Frame_Marker:
-			return "PEAT_RT_Frame_Marker";
-			break;
-		case PEAT_RT_Common_Info_Table:
-			return "PEAT_RT_Common_Info_Table";
-			break;
-		case PEAT_RT_PET_Final_Stat_Orig:
-			return "PEAT_RT_PET_Final_Stat_Orig";
-			break;
-		case PEAT_RT_PET_Final_Stat_OrigTotal:
-			return "PEAT_RT_PET_Final_Stat_OrigTotal";
-			break;
-		case PEAT_RT_PET_Final_Stat_Estim:
-			return "PEAT_RT_PET_Final_Stat_Estim";
-			break;
-		case PEAT_RT_PET_Final_Stat_EstimTotal:
-			return "PEAT_RT_PET_Final_Stat_EstimTotal";
-			break;
-		case PEAT_RT_PET_MPI_PControl_Stat_Orig:
-			return "PEAT_RT_PET_MPI_PControl_Stat_Orig";
-			break;
-		case PEAT_RT_PET_MPI_PControl_Stat_Estim:
-			return "PEAT_RT_PET_MPI_PControl_Stat_Estim";
-			break;
-		case PEAT_RT_VAPATranslation:
-			return "PEAT_RT_VAPATranslation";
-			break;
-		case PEAT_RT_End_Of_Definitions:
-			return "PEAT_RT_End_Of_Definitions";
-			break;
-		default:
-			return 0;
-			break;
-
-	}
-	return 0;
-}
-
-#endif
 
 enum PEAT_Property {
     PEAT_PROPERTY_NONE,
@@ -578,7 +368,7 @@ enum PEAT_Property {
     PEAT_PROP_MPI2,
     PEAT_PROP_MPI3,
     PEAT_PROP_MPI4,
-    PEAT_PROP_MPI41, // MPI-4.1 additions (need MPI_SUBVERSION>=1 on a 4.x library)
+    PEAT_PROP_MPI4_1, // MPI-4.1 additions (need MPI_SUBVERSION>=1 on a 4.x library)
     PEAT_PROP_MPI5,
     PEAT_PROP_BLOCK,
     PEAT_PROP_NON_BLOCK,
@@ -623,7 +413,7 @@ enum PEAT_Property {
     PEAT_PROP_SIZE,
     PEAT_POPERTY_SIZE
 };
-static const char *print_record_properties(PEAT_Property id)
+static inline const char *print_record_properties(PEAT_Property id)
 {
     switch (id) {
     case PEAT_PROP_CODE_TRACTOR_OVERHEAD:
@@ -683,6 +473,13 @@ static const char *print_record_properties(PEAT_Property id)
 #endif
 #endif
 
+/* an OpenMP pragma that compiles to nothing (instead of an -Wunknown-pragmas warning) when OpenMP is off */
+#ifdef _OPENMP
+#define PEAT_OMP_PRAGMA(x) _Pragma(#x)
+#else
+#define PEAT_OMP_PRAGMA(x)
+#endif
+
 #ifdef __cplusplus
 /* PEAT_OMP must be decided here, where PEAT_Mutex is defined: a translation unit that includes this header before
    common_types.h would otherwise see an empty mutex and a different layout of every object holding one.
@@ -705,7 +502,7 @@ struct PEAT_Mutex
 #endif
     {
     }
-    PEAT_Mutex(const PEAT_Mutex &s) {}
+    PEAT_Mutex(const PEAT_Mutex &) {}
 #ifdef PEAT_OMP
     void lock()
     {

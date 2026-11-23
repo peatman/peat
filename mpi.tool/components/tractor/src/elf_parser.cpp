@@ -213,7 +213,7 @@ void elf_symbols::process_sym_tab(const FILE *file, const void *symtab_header, c
                     sym_info.addr_begin = reinterpret_cast<PEAT_Addr>(symbol_address);
                     sym_info.addr_end = reinterpret_cast<PEAT_Addr>(reinterpret_cast<unsigned long>(symbol_address) + symbol_entry[j].st_size);
                     sym_info.symbol_name = obj_name;
-                    debug_printf("Obj=%s Base %llx st_value=%llx\n", obj_name.c_str(), obj_address_load_base, symbol_entry[j].st_value);
+                    debug_printf("Obj=%s Base %llx st_value=%llx\n", obj_name.c_str(), peat_addr_ull(obj_address_load_base), peat_addr_ull(symbol_entry[j].st_value));
                 }
             }
         }
@@ -416,7 +416,7 @@ void elf_symbols::process_DWARF_line_info(const FILE *fileptr, const void *secti
                 opcode -= opcode_base;
                 long oper = (opcode / line_range) * min_instr_len;
                 stm_regs.stm_address = reinterpret_cast<PEAT_Addr>(reinterpret_cast<unsigned long>(stm_regs.stm_address) + oper);
-                debug_printf("  Special opcode %d: advance Address by %ld to 0x%lx", opcode, oper, stm_regs.stm_address);
+                debug_printf("  Special opcode %d: advance Address by %ld to 0x%llx", opcode, oper, peat_addr_ull(stm_regs.stm_address));
                 oper = (opcode % line_range) + line_base;
                 stm_regs.stm_line += oper;
                 debug_printf(" and Line by %ld to %d\n", oper, stm_regs.stm_line);
@@ -490,7 +490,7 @@ void elf_symbols::process_DWARF_line_info(const FILE *fileptr, const void *secti
                     unsigned long operand = 0;
                     data_ptr += get_LEB_128(data_ptr, operand, 0);
                     stm_regs.stm_address = reinterpret_cast<PEAT_Addr>(reinterpret_cast<unsigned long>(stm_regs.stm_address) + min_instr_len * operand);
-                    debug_printf("  Advance PC by %ld to %lx\n", min_instr_len * operand, stm_regs.stm_address);
+                    debug_printf("  Advance PC by %ld to %llx\n", min_instr_len * operand, peat_addr_ull(stm_regs.stm_address));
                 } break;
                 case 3: // DW_LNS_advance_line
                 {
@@ -526,7 +526,7 @@ void elf_symbols::process_DWARF_line_info(const FILE *fileptr, const void *secti
                 case 8: // DW_LNS_const_add_pc
                 {
                     stm_regs.stm_address = reinterpret_cast<PEAT_Addr>(reinterpret_cast<unsigned long>(stm_regs.stm_address) + (((255 - opcode_base) / line_range) * min_instr_len));
-                    debug_printf("  Advance PC by constant %d to 0x%lx\n", ((255 - opcode_base) / line_range) * min_instr_len, stm_regs.stm_address);
+                    debug_printf("  Advance PC by constant %d to 0x%llx\n", ((255 - opcode_base) / line_range) * min_instr_len, peat_addr_ull(stm_regs.stm_address));
                 } break;
                 case 9: // DW_LNS_fixed_advance_pc
                 {
@@ -534,7 +534,7 @@ void elf_symbols::process_DWARF_line_info(const FILE *fileptr, const void *secti
                     const unsigned int *operand = &operand_value;
                     data_ptr += 2; // skip 2 bytes
                     stm_regs.stm_address = reinterpret_cast<PEAT_Addr>(reinterpret_cast<unsigned long>(stm_regs.stm_address) + *operand);
-                    debug_printf("  Advance PC by fixed size amount %d to 0x%lx\n", *operand, stm_regs.stm_address);
+                    debug_printf("  Advance PC by fixed size amount %d to 0x%llx\n", *operand, peat_addr_ull(stm_regs.stm_address));
                 } break;
                 case 10: // DW_LNS_set_prologue_end
                 {
@@ -726,10 +726,10 @@ void elf_symbols::dump_symbols(const std::string &path, const std::string &mask,
     FILE *file = fopen(file_name.str().c_str(), "w");
     for (std::map<int, object_info>::const_iterator obj_it = objects.begin(); obj_it != objects.end(); ++obj_it) {
         const object_info &obj_info = obj_it->second;
-        fprintf(file, "[%d]: Base: %lx Name: %s\n", obj_it->first, obj_info.obj_addr_base, obj_info.obj_path.c_str());
+        fprintf(file, "[%d]: Base: %llx Name: %s\n", obj_it->first, peat_addr_ull(obj_info.obj_addr_base), obj_info.obj_path.c_str());
         for (std::map<PEAT_Addr, symbol_info>::const_iterator it = obj_info.obj_symbols.begin(); it != obj_info.obj_symbols.end(); ++it) {
             const symbol_info &sym = it->second;
-            fprintf(file, "%lx %lx %s\n", sym.addr_begin, sym.addr_end, sym.symbol_name.c_str());
+            fprintf(file, "%llx %llx %s\n", peat_addr_ull(sym.addr_begin), peat_addr_ull(sym.addr_end), sym.symbol_name.c_str());
         }
     }
     fclose(file);

@@ -42,7 +42,7 @@ void Tractor_Event::write_trace_line(File_Storage_GZ *out) const
     out->printf(rank, "\n");
 }
 
-void Tractor_Event::get_extra_txrx(const String_Split &line, const Communicators *comm_store)
+void Tractor_Event::get_extra_txrx(const String_Split &/*line*/, const Communicators * /*comm_store*/)
 {
 
     /*
@@ -57,7 +57,7 @@ void Tractor_Event::get_extra_txrx(const String_Split &line, const Communicators
     extract(P2P.bytes, line.at(block_auxiliary_start+3), 16);
     */
 }
-Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, const String_Split &line_trace, const PEAT_Bool read_times, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file, const Communicators *comm_store, const Model_ID &model_id) : rank(r), num_children(0), level(0)
+Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, const String_Split &line_trace, const PEAT_Bool read_times, const PEAT_Num num_hwcs, const PEAT_Num num_addrs, Address_File_Storage *user_region_file, const Communicators * /*comm_store*/, const Model_ID &model_id) : rank(r), num_children(0), level(0)
 {
     // no need to check line.size() due line.at() throw an exception
     //  First read the record header (ids, thread, nesting)
@@ -77,7 +77,7 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
         extract(tsc_time.mpi.out, line_trace.at(h + 2), 10);
         extract(tsc_time.func.out, line_trace.at(h + 3), 10);
         tsc_time.mpi.out = tsc_time.func.out - tsc_time.mpi.out;
-        for (int i = 0; i < (int)num_addrs; i++) {
+        for (int i = 0; i < static_cast<int>(num_addrs); i++) {
             PEAT_UID addr;
             extract(addr, line_trace.at(h + 4 + i));
             addrs.push_back(addr);
@@ -85,7 +85,7 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
         }
         //  Hardware counters are following to addrs (num_hwcs)
         // memory info is 8 cells, since not widely used  skip for now
-        PEAT_Num trace_size = (PEAT_Num)line_trace.size();
+        PEAT_Num trace_size = static_cast<PEAT_Num>(line_trace.size());
         for (PEAT_Num i = h + 4 + num_hwcs + num_addrs; i < trace_size; i += 2) {
             PEAT_MPI_Memory_Buffer buf;
             if (strlen(line_trace.at(i)) > 0) { // bug in soe versions of tractor
@@ -184,21 +184,21 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
         extract(Requests.flag, line_mpi.at(b + 3));
         extract(Requests.buf, line_mpi.at(b + 4), 16);
         if (func_id == MPI_STARTALL_ID || func_id == MPI_START_ID || func_id == MPI_REQUEST_FREE_ID || func_id == MPI_CANCEL_ID) {
-            for (int i = 0; i < (int)Requests.input_request_num; i++) {
+            for (int i = 0; i < static_cast<int>(Requests.input_request_num); i++) {
                 PEAT_MPI_Request req;
                 extract(req, line_mpi.at(b + 5 + i), 16);
                 requests.push_back(req);
             }
 
         } else {
-            for (int i = 0; i < (int)Requests.input_request_num; i++) {
+            for (int i = 0; i < static_cast<int>(Requests.input_request_num); i++) {
                 PEAT_MPI_Request req;
                 extract(req, line_mpi.at(b + 5 + i), 16);
                 requests.push_back(req);
             }
 
             // 4 - tuples(index, tag, source, bytes)
-            for (int i = 0; i < (int)Requests.triggered_request_num; i++) {
+            for (int i = 0; i < static_cast<int>(Requests.triggered_request_num); i++) {
                 PEAT_MPI_R4Status status;
                 extract(status.index, line_mpi.at(b + 5 + Requests.input_request_num + i * 4 + 0));
                 extract(status.tag, line_mpi.at(b + 5 + Requests.input_request_num + i * 4 + 1));

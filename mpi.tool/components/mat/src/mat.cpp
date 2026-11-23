@@ -265,7 +265,7 @@ PEAT_Bool Mat::parse_single_event(const int rank)
     }
     if (!w.second_line && (t_event.ids.size()<2 || t_event.ids[1] < 0)) { //count only 'user' events
         rank_events_processed[rank]++;
-#pragma omp atomic
+PEAT_OMP_PRAGMA(omp atomic)
         events_processed++;
     }
     return true;
@@ -276,7 +276,8 @@ void Mat::print_remote_string(int size, int tag, int src)
 #if defined(_WIN32) && !defined(__MINGW32__)
     char *buffer = (char *)_malloca(size);
 #else
-    char buffer[size];
+    std::vector<char> buffer_store(static_cast<size_t>(size));
+    char *buffer = buffer_store.data();
 #endif
     MPI_Status status;
     MPI_Recv(buffer, size, MPI_CHAR, src, tag, globals.comm_compute, &status);
@@ -612,8 +613,6 @@ void Mat::process_omp_ranks()
 #define CYCLE_EVENT 100000
 void Mat::process()
 {
-    const double bytes_step = (double)input_MPI->get_all_files_size() * 0.01;
-    PEAT_Ratio time_since_last_active = Wtime();
     // timeline.clear();
     p2p_func_store->resize_queues(comm_store->get_comm_world_rank_count());
 #ifdef PEAT_OMP
@@ -650,8 +649,8 @@ void Mat::process()
 #endif
             if (events_processed > total_event_num * cur_percent / 100) {
                 PEAT_Ratio cur_step = Wtime();
-                PEAT_Ratio estimation_bw = ((PEAT_Ratio)(events_processed)) / (cur_step - start_estimation);
-                PEAT_Ratio instant_bw = ((PEAT_Ratio)(events_processed - prev_event_num)) / (cur_step - prev_step);
+                PEAT_Ratio estimation_bw = (static_cast<PEAT_Ratio>(events_processed)) / (cur_step - start_estimation);
+                PEAT_Ratio instant_bw = (static_cast<PEAT_Ratio>(events_processed - prev_event_num)) / (cur_step - prev_step);
                 prev_event_num = events_processed;
                 printf("%d:%d%% Speed is %.2lf (%.2lf) events per second. Step Time %.2lf. Total Time %.2lf\n", globals.comm_rank, cur_percent, instant_bw, estimation_bw, cur_step - prev_step, cur_step - start_estimation);
                 if (globals.verbose) {
@@ -705,7 +704,7 @@ void Mat::process()
                     PEAT_P2P_Record record = rIt->first;
                     PEAT_Single_Event_Clock clock = rIt->second;
                     char imb_buf[32];
-                    snprintf(imb_buf, sizeof(imb_buf), "%lld (%3.2lf)", clock.imb_c, (double)clock.imb_c * 100.0 / (double)clock.total_c);
+                    snprintf(imb_buf, sizeof(imb_buf), "%lld (%3.2lf)", clock.imb_c, static_cast<double>(clock.imb_c) * 100.0 / static_cast<double>(clock.total_c));
                     printf("%15s %10lld %10d<=>%10d %14lld %14lld %14lld %20s %14lld\n",
                            global_func_id.name_by_idx(record.func_id),
                            record.bytes,
@@ -722,7 +721,7 @@ void Mat::process()
             PEAT_P2P_Record record = rIt->first;
             PEAT_Single_Event_Clock clock = rIt->second;
             char imb_buf[32];
-            snprintf(imb_buf, sizeof(imb_buf), "%lld (%3.2lf)", clock.imb_c, (double) clock.imb_c * 100.0 / (double) clock.total_c);
+            snprintf(imb_buf, sizeof(imb_buf), "%lld (%3.2lf)", clock.imb_c, static_cast<double>(clock.imb_c) * 100.0 / static_cast<double>(clock.total_c));
             printf("%15s %10lld %10d<=>%10d %14lld %14lld %14lld %20s %14lld\n",
                    global_func_id.name_by_idx(record.func_id),
                    record.bytes,
@@ -745,7 +744,7 @@ void Mat::process()
                         PEAT_Rank o_rank = rIt->first;
                         MAT_Collective_Clock clock = clocks.clocks.at(o_rank);
                         char imb_buf[32];
-                        snprintf(imb_buf, sizeof(imb_buf), "%lld(%3.2lf)", clock.imb_c, (double)clock.imb_c * 100.0 / (double)clock.total_c);
+                        snprintf(imb_buf, sizeof(imb_buf), "%lld(%3.2lf)", clock.imb_c, static_cast<double>(clock.imb_c) * 100.0 / static_cast<double>(clock.total_c));
                         printf("%15s %10s %10s %10s %10d %14lld %14lld %14lld %20s %14lld %10s\n", record.comp_func.c_str(), " ", " ", " ",
                                o_rank, clock.min_c, clock.max_c, clock.total_c, imb_buf, clock.occ, " ");
                         if (!record.send_bytes.empty()) {
@@ -793,7 +792,7 @@ void Mat::process()
                 PEAT_Rank o_rank = rIt->first;
                 MAT_Collective_Clock clock = clocks.clocks.at(o_rank);
                 char imb_buf[32];
-                snprintf(imb_buf, sizeof(imb_buf), "%lld(%3.2lf)", clock.imb_c, (double) clock.imb_c * 100.0 / (double)clock.total_c);
+                snprintf(imb_buf, sizeof(imb_buf), "%lld(%3.2lf)", clock.imb_c, static_cast<double>(clock.imb_c) * 100.0 / static_cast<double>(clock.total_c));
                 printf("%15s %10s %10s %10s %10d %14lld %14lld %14lld %20s %14lld %10s\n", record.comp_func.c_str(), " ", " ", " ",
                        o_rank, clock.min_c, clock.max_c, clock.total_c, imb_buf, clock.occ, " ");
                 if (!record.send_bytes.empty()) {

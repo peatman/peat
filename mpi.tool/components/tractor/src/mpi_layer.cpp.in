@@ -17,6 +17,8 @@
  */
 
 #include "mpi.h"
+/* the layer wraps every MPI function of the implementation, including those the standard has deprecated (MPI_Attr_*, MPI_Keyval_*) */
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #include "stdlib.h"
 #include "string.h"
 #include <sys/syscall.h>

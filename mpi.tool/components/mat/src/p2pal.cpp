@@ -44,7 +44,7 @@ P2PAL::P2PAL(File_Storage_GZ *f, int s, int pos,
 #ifdef PEAT_MPI
              std::list<PEAT_Event_Delivery> *ad, const std::vector<PEAT_Rank> &wR, const std::vector<PEAT_Rank> &mRs, const MPI_Comm mat_cc, const PEAT_Rank m_r,
 #endif
-             int v, const std::string &bl, const char dl) :
+             int v, const std::string &/*bl*/, const char /*dl*/) :
                                                             skip_locals(s), print_on_send(pos), verbose(v)
 #ifdef PEAT_MPI
                                                             , active_deliveries(ad), mat_compute_comm(mat_cc), whole_ranks(wR), my_ranks(mRs), my_rank(m_r)
@@ -161,11 +161,11 @@ void P2PAL::print_P2PF(const MAT_P2P_Record &left, const MAT_P2P_Record &right)
         // request binds - counting here too would count every record twice in the .trace.info Bind_Peer totals
 #else
         output_bind->puts(left.rank, &tbuf[4]);
-        #pragma omp atomic
+        PEAT_OMP_PRAGMA(omp atomic)
         messages_bound[left.rank]++;
 #endif
     } else {
-        #pragma omp atomic
+        PEAT_OMP_PRAGMA(omp atomic)
         messages_bound[right.rank]++;
         output_bind->puts(right.rank, &tbuf[4]);
     }
@@ -829,7 +829,8 @@ void P2PAL::process_remote_event(PEAT_Signed_Num size, PEAT_Rank src)
 #if defined(_WIN32) && !defined(__MINGW32__)
     char *buffer = (char *)_malloca(size);
 #else
-    char buffer[size];
+    std::vector<char> buffer_store(static_cast<size_t>(size));
+    char *buffer = buffer_store.data();
 #endif
     MPI_Status status;
     MPI_Recv(buffer, size, MPI_CHAR, src, TRACTOR_P2P_EVENT_TAG, mat_compute_comm, &status);
@@ -840,7 +841,7 @@ void P2PAL::process_remote_event(PEAT_Signed_Num size, PEAT_Rank src)
 }
 #endif
 
-void P2PAL::process_unbound_events(PEAT_Rank my_rank)
+void P2PAL::process_unbound_events(PEAT_Rank /*my_rank*/)
 {
     release_all_receives();
     for (matching_event_type::iterator rank_it = matching_queues[qt_send].begin(); rank_it != matching_queues[qt_send].end(); ++rank_it) {
@@ -953,7 +954,6 @@ void P2PAL::print_sizes() const
                 printf(":r%d-%zd", rank, size);
         }
     }
-    PEAT_Rank rank = 0;
     printf("\n");
 }
 

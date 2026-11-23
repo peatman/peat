@@ -176,7 +176,7 @@ struct Tractor_Event : public Phase {
         int ctl = 0;
     } PControl;
     std::vector<PEAT_Message_Size> send_bytes, recv_bytes;
-    friend std::ostream &operator<<(std::ostream &dbg, const Tractor_Event &evt)
+    friend std::ostream &operator<<(std::ostream &dbg, const Tractor_Event &/*evt*/)
     {
         /*dbg << std::hex
             << "comm:" << evt.comm

@@ -314,7 +314,7 @@ PEAT_Bool File_Storage_GZ::read_record(String_Split &func_line, String_Split &tr
 
 std::ostream &operator<<(std::ostream &dbg, const File_Storage_GZ *me)
 {
-    long numberOfFiles = (long)me->fptr.size();
+    long numberOfFiles = static_cast<long>(me->fptr.size());
     dbg << "Rank\tName\tSize(bytes)" << std::endl;
     for (std::map<PEAT_Rank, File_Name_And_Ptr_GZ>::const_iterator it = me->fptr.begin(); it != me->fptr.end(); ++it) {
         dbg << it->first << "\t" << it->second.name << "\t" << it->second.sb.st_size << std::endl;

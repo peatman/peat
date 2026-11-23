@@ -166,7 +166,7 @@ struct Tractor_Event : public Phase {
         PEAT_MPIO_Request request = 0; /* actual request or "0" if no request */
     } MPIFIO;
 
-    friend std::ostream &operator<<(std::ostream &dbg, const Tractor_Event &evt)
+    friend std::ostream &operator<<(std::ostream &dbg, const Tractor_Event &/*evt*/)
     {
         /*dbg << std::hex
             << "comm:" << evt.comm

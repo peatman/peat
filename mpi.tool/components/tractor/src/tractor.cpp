@@ -307,11 +307,11 @@ tractor::tractor(void)
     num_hwcs = hwc.get_num_counters();
 #endif
     map_file_parse();
-    debug_printf("HIGHLOWBIN parsed values: %llx %llx %llx\n", binval, lowval, highval);
-    debug_printf("HIGHLOWBIN fortran parsed values: %llx %llx\n", lowfort, highfort);
-    debug_printf("HIGHLOWBIN Tractor parsed values: %llx %llx\n", lowtrac, hightrac);
-    debug_printf("HIGHLOWBIN HEAP parsed values: %llx %llx\n", lowheap, highheap);
-    debug_printf("HIGHLOWBIN STACK parsed values: %llx %llx\n", lowstack, highstack);
+    debug_printf("HIGHLOWBIN parsed values: %llx %llx %llx\n", peat_addr_ull(binval), peat_addr_ull(lowval), peat_addr_ull(highval));
+    debug_printf("HIGHLOWBIN fortran parsed values: %llx %llx\n", peat_addr_ull(lowfort), peat_addr_ull(highfort));
+    debug_printf("HIGHLOWBIN Tractor parsed values: %llx %llx\n", peat_addr_ull(lowtrac), peat_addr_ull(hightrac));
+    debug_printf("HIGHLOWBIN HEAP parsed values: %llx %llx\n", peat_addr_ull(lowheap), peat_addr_ull(highheap));
+    debug_printf("HIGHLOWBIN STACK parsed values: %llx %llx\n", peat_addr_ull(lowstack), peat_addr_ull(highstack));
 #ifdef _MEM_HOOKS_
     mprof.set_add_vars(lowheap, highheap, lowstack, highstack);
 #endif
@@ -513,7 +513,7 @@ struct func_stat {
         bounds = (long long *)t_malloc((bound_num) * sizeof(long long), 128);
         memcpy(bounds, new_bounds, (bound_num) * sizeof(long long));
         for (int i = 0; i < bound_num; i++)
-            debug_printf("Bound %d=%lld\n", bound_num, bounds);
+            debug_printf("Bound %d=%lld\n", i, bounds[i]);
         dynamic_alloc = 1;
         allocate();
     };
@@ -1279,7 +1279,7 @@ void tractor::init(void)
     counting_permit = !pcontrol;
 
     debug_printf("Rank %d: Tractor Constructor finished...\n", t_mpi_rank);
-    debug_printf("Event Masks:\n", t_mpi_rank);
+    debug_printf("Event Masks:\n");
     char *conoff[2] = {"OFF", "ON"};
     for (i = 0; i < MPI_MAX_FUNCID_THROUGH; i++) {
         debug_printf("%s = %s\n", mpi_function_names[i], conoff[counting_permission[i] != 0]);
@@ -2048,19 +2048,19 @@ PEAT_Rank tractor::get_real_rank(MPI_Comm comm, PEAT_Rank rank_in, PEAT_Clock ts
                         __DEBUG_EPILOG_TRACTOR_LAYER__
                         return event_comm_it->r_comm2world_ranks.at(rank_in);
                     } else {
-                        debug_printf("Destination rank %d is out of range for rank %d in intercomm %x, remote size %ld\n", rank_in, t_mpi_rank, comm, event_comm_it->r_comm2world_ranks.size());
+                        debug_printf("Destination rank %d is out of range for rank %d in intercomm %x, remote size %zu\n", rank_in, t_mpi_rank, peat_handle_id(comm), event_comm_it->r_comm2world_ranks.size());
                         __DEBUG_EPILOG_TRACTOR_LAYER__
                         return rank_in;
                     }
                 }
-                debug_printf("Something wrong happen: %d is not in local group in intercomm %x\n", t_mpi_rank, comm);
+                debug_printf("Something wrong happen: %d is not in local group in intercomm %x\n", t_mpi_rank, peat_handle_id(comm));
                 if (get_val(event_comm_it->r_comm2world_ranks, t_mpi_rank) >= 0) {
                     // I suppose this shouldn't happen
                     if (event_comm_it->l_comm2world_ranks.size() > rank_in) {
                         __DEBUG_EPILOG_TRACTOR_LAYER__
                         return event_comm_it->l_comm2world_ranks.at(rank_in);
                     } else {
-                        debug_printf("Destination rank %d is out of range for rank %d in intercomm %x local size %ld\n", rank_in, t_mpi_rank, comm, event_comm_it->l_comm2world_ranks.size());
+                        debug_printf("Destination rank %d is out of range for rank %d in intercomm %x local size %zu\n", rank_in, t_mpi_rank, peat_handle_id(comm), event_comm_it->l_comm2world_ranks.size());
                         __DEBUG_EPILOG_TRACTOR_LAYER__
                         return rank_in;
                     }
@@ -2071,13 +2071,13 @@ PEAT_Rank tractor::get_real_rank(MPI_Comm comm, PEAT_Rank rank_in, PEAT_Clock ts
                     __DEBUG_EPILOG_TRACTOR_LAYER__
                     return event_comm_it->l_comm2world_ranks.at(rank_in);
                 } else {
-                    debug_printf("Destination rank %d is out of range for rank %d in intracomm %x local size %ld\n", rank_in, t_mpi_rank, comm, event_comm_it->l_comm2world_ranks.size());
+                    debug_printf("Destination rank %d is out of range for rank %d in intracomm %x local size %zu\n", rank_in, t_mpi_rank, peat_handle_id(comm), event_comm_it->l_comm2world_ranks.size());
                     __DEBUG_EPILOG_TRACTOR_LAYER__
                     return rank_in;
                 }
             }
         }
-        debug_printf("No comm %x has been found in rank %d\n", comm, t_mpi_rank);
+        debug_printf("No comm %x has been found in rank %d\n", peat_handle_id(comm), t_mpi_rank);
         __DEBUG_EPILOG_TRACTOR_LAYER__
         return -rank_in; // to signalize error
     } else {
@@ -2129,7 +2129,7 @@ const std::string tractor::get_binary_by_addr(PEAT_Addr addr, PEAT_Addr &base, P
             if (shared_object_header::is_exec_and_load(elf_sec.p_flags, elf_sec.p_type)) { // take executable, loadable section
                 if (addr >= elf_sec.load_address && addr <= elf_sec.end_address) {
                     str = it->second.dlpi_name;
-                    debug_printf("Rank: %d, addr %lld hits to %s\n", t_mpi_rank, addr, str.c_str());
+                    debug_printf("Rank: %d, addr %llu hits to %s\n", t_mpi_rank, peat_addr_ull(addr), str.c_str());
                     base = elf_sec.base_address;
                     low = elf_sec.load_address;
                     high = elf_sec.end_address;
@@ -2138,7 +2138,7 @@ const std::string tractor::get_binary_by_addr(PEAT_Addr addr, PEAT_Addr &base, P
             }
         }
     }
-    debug_printf("Rank: %d, addr %lld doesn't hit anywhere\n", t_mpi_rank, addr);
+    debug_printf("Rank: %d, addr %llu doesn't hit anywhere\n", t_mpi_rank, peat_addr_ull(addr));
     return str;
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }
@@ -2156,7 +2156,7 @@ void tractor::update_extras_pointers(int tid, int level, long long *max_ext_coun
     FILE *fps_ext = fps_extras[fp_index(tid, level)];
     if (fps_ext) {
         *max_ext_count = fread(*cur_exts_array, sizeof(msl_extra_info), onetimealloc, fps_ext);
-        debug_printf("TID %d level %d, %ld extras read back.\n", tid, level, *max_ext_count);
+        debug_printf("TID %d level %d, %lld extras read back.\n", tid, level, *max_ext_count);
     } else {
         *max_ext_count = 0;
     }
@@ -2303,21 +2303,21 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
             }
             long tmp_mi = fread(current_array[idx], sizeof(msl_event), max_events[idx], fp);
             if (tmp_mi != max_events[idx])
-                debug_printf("TID %d level %d, %ld!=%ld events read count mismatch.\n", tid, level, max_events[idx], tmp_mi);
+                debug_printf("TID %d level %d, %lld!=%ld events read count mismatch.\n", tid, level, max_events[idx], tmp_mi);
             tmp_mi = fread(current_addrs_array[idx], sizeof(void *) * num_addrs, max_events[idx], fp);
             if (tmp_mi != max_events[idx])
-                debug_printf("TID %d level %d, %ld!=%ld events read count mismatch.\n", tid, level, max_events[idx], tmp_mi);
+                debug_printf("TID %d level %d, %lld!=%ld events read count mismatch.\n", tid, level, max_events[idx], tmp_mi);
 #ifdef _HWCOUNTERS_ENABLED_
             tmp_mi = fread(current_hwc_array[idx], sizeof(long long) * num_hwcs * 2, max_events[idx], fp);
             if (tmp_mi != max_events[idx])
-                debug_printf("TID %d level %d, %ld!=%ld events read count mismatch.\n", tid, level, max_events[idx], tmp_mi);
+                debug_printf("TID %d level %d, %lld!=%ld events read count mismatch.\n", tid, level, max_events[idx], tmp_mi);
 #endif
 #ifdef _MEMPROFILE_STORE_
             tmp_mi = fread(current_mems_array[idx], t_memory_event_size * 2, max_events[idx], fp);
             if (tmp_mi != max_events[idx])
-                debug_printf("TID %d level %d, %ld!=%ld events read count mismatch.\n", tid, level, max_events[idx], tmp_mi);
+                debug_printf("TID %d level %d, %lld!=%ld events read count mismatch.\n", tid, level, max_events[idx], tmp_mi);
 #endif
-            debug_printf("TID %d level %d, %ld events read back.\n", tid, level, max_events[idx]);
+            debug_printf("TID %d level %d, %lld events read back.\n", tid, level, max_events[idx]);
         } else {
             if (first) {
                 current_chain[idx] = events_start_chain[tid][level];
@@ -3578,7 +3578,7 @@ void tractor::dump_extras(pid_t tid, int level, msl_base_chain **chain)
     }
     if (*fps_ext) {
         fwrite((*chain)->events_array, (*chain)->events_size, (*chain)->num_events, *fps_ext);
-        debug_printf("Dumping %ld extras.\n", (*chain)->num_events);
+        debug_printf("Dumping %d extras.\n", (*chain)->num_events);
         destroy_shift_start(chain);
     }
     __DEBUG_EPILOG_TRACTOR_LAYER__
@@ -3605,7 +3605,7 @@ void tractor::dump_events(pid_t tid, int level, msl_adv_chain **chain)
 #ifdef _MEMPROFILE_STORE_
         fwrite((*chain)->mem_array, (*chain)->mem_size, (*chain)->num_events, *fp);
 #endif
-        debug_printf("Dumping %ld events.\n", (*chain)->num_events);
+        debug_printf("Dumping %d events.\n", (*chain)->num_events);
         destroy_shift_start((msl_base_chain **)chain);
     }
 

@@ -55,7 +55,6 @@ int main(int argc, char **argv)
     std::string final_string = "Error.";
     std::string tstring("User Regions Processing Utility (urpu). Built date: ");
     tstring += __DATE__;
-    time_t tbegin = time(0);
     int res = -1, option_index = 0;
     int func_id_print = 0;
     glob_param.user_region_file = ADDRFILE;

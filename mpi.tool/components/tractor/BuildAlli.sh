@@ -88,7 +88,7 @@ unset TRANSPORT
 #          1                                  2       3    4     5    6   7    8 
 #       mpi_type                           target    mem  diag  GPU  buf v2p  hwc  
 
-# orinary mvapich4 builds (no ct and transport) 
+# orinary mpich4 builds (no ct and transport) 
 
 ./Build.sh mpich:4.3.2x-mt-ofi             mpich4    off   off  off  off off  off &
 #./Build.sh mpich:4.3.2x-mt-ofi             mpich4    off   off  on   off off  off & # GPU=on: the same core as GPU=off with CLASS_SHIMS=on

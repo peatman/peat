@@ -55,7 +55,7 @@ void handler_explore(int i, siginfo_t *sinfo, void *context)
     printf("UID:%d\n", sinfo->si_uid);
     printf("Status:%d\n", sinfo->si_status);
     printf("Memory Addr:%p\n", sinfo->si_addr);
-    printf("Lower:%p,%Upper:%p\n", sinfo->si_lower, sinfo->si_upper);
+    printf("Lower:%p,Upper:%p\n", sinfo->si_lower, sinfo->si_upper);
     printf("Call Instruction Addr:%p\n", sinfo->si_call_addr);
 }
 

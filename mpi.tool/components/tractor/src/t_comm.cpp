@@ -190,7 +190,7 @@ size_t t_local_comms::pack_local(char *ptr, size_t total_size, int is_internal)
         }
     }
     if (ptr_it != total_size) {
-        debug_printf("Sizes mismatch: %d!=%d. Index=%d\n", ptr_it, total_size, user_index + internal_index);
+        debug_printf("Sizes mismatch: %zu!=%zu. Index=%d\n", ptr_it, total_size, user_index + internal_index);
     }
     assert(ptr_it == total_size);
     __DEBUG_EPILOG_COMM_LAYER__
@@ -204,7 +204,7 @@ size_t t_local_comms::unpack_global(char *ptr, size_t total_size)
     for (r_comm *r_comm_ptr = (r_comm *)ptr; (char *)r_comm_ptr < ptr + total_size; r_comm_ptr++) {
         // find suitable comm and isert gid into it;
         std::list<t_comm>::iterator result;
-        debug_printf("Unpacking global comm=%x(%d), (%ld,%ld),%d(%d) at rank %d\n",r_comm_ptr->comm,r_comm_ptr->gid,r_comm_ptr->begin_time,r_comm_ptr->end_time,total_size,(char *)r_comm_ptr-ptr,t_mpi_rank);
+        debug_printf("Unpacking global comm=%x(%d), (%lld,%lld),%zu(%td) at rank %d\n",peat_handle_id(r_comm_ptr->comm),r_comm_ptr->gid,r_comm_ptr->begin_time,r_comm_ptr->end_time,total_size,reinterpret_cast<char *>(r_comm_ptr)-ptr,t_mpi_rank);
 
         bool bFound = get_local_comm_id_in_store(r_comm_ptr->comm, r_comm_ptr->begin_time + 1, r_comm_ptr->is_internal, result);
         if (bFound) {
@@ -215,8 +215,8 @@ size_t t_local_comms::unpack_global(char *ptr, size_t total_size)
             } else {
                 debug_printf("unpack_global mismatch: wanted comm=%x(idx=%d) (%lld,%lld) is_internal=%d"
                              " but local store has comm=%x(idx=%d) (%lld,%lld) is_internal=%d at rank %d\n",
-                             r_comm_ptr->comm, r_comm_ptr->gid, r_comm_ptr->begin_time, r_comm_ptr->end_time, r_comm_ptr->is_internal,
-                             result->comm, result->idx, result->begin_time, result->end_time, result->is_internal, t_mpi_rank);
+                             peat_handle_id(r_comm_ptr->comm), r_comm_ptr->gid, r_comm_ptr->begin_time, r_comm_ptr->end_time, r_comm_ptr->is_internal,
+                             peat_handle_id(result->comm), result->idx, result->begin_time, result->end_time, result->is_internal, t_mpi_rank);
             }
         } else {
             assert(0);
@@ -270,7 +270,7 @@ bool t_local_comms::get_local_comm_id(const MPI_Comm comm, const PEAT_Clock cur_
 {
     __DEBUG_PROLOG_COMM_LAYER__
     debug_printf("Obtaining global communicator for %x after TSC time %lld at rank %d (commstore %p)\n", (int)(intptr_t)comm, cur_time, t_mpi_rank,(void *) &comm_store);
-    debug_printf("Obtaining global communicator for %x after TSC time %lld at rank %d (commstore size is %d)\n", (int)(intptr_t)comm, cur_time, t_mpi_rank,comm_store.size());
+    debug_printf("Obtaining global communicator for %x after TSC time %lld at rank %d (commstore size is %zu)\n", peat_handle_id(comm), cur_time, t_mpi_rank,comm_store.size());
     if (comm != 0 && comm != MPI_COMM_NULL && comm != MPI_COMM_SELF && comm != MPI_COMM_WORLD) {
         /* look in the requested store first, then in the other one: a user-level call can run on a
          * communicator the MPI library created internally (e.g. ROMIO's MPI_Isend_c on the file's
@@ -367,7 +367,7 @@ void t_local_comms::intra_comm_begin(const MPI_Comm newcomm, const MPI_Comm grou
             comm_store[newcomm].push_back(comm_elem);
         }
         newcomm_lock.unlock();
-        debug_printf("New communicator (%x) arrived:size=%d,index=%d at rank %d, starting from %lld, tid=%ld.\n", newcomm, newcomm_size, comm_elem.idx, t_mpi_rank, comm_elem.begin_time, (long) syscall(SYS_gettid));
+        debug_printf("New communicator (%x) arrived:size=%d,index=%d at rank %d, starting from %lld, tid=%ld.\n", peat_handle_id(newcomm), newcomm_size, comm_elem.idx, t_mpi_rank, comm_elem.begin_time, (long) syscall(SYS_gettid));
         PMPI_Group_free(&newcomm_group);
         user_index += 1-is_internal;
         internal_index += is_internal;
@@ -410,7 +410,7 @@ void t_local_comms::inter_comm_begin(const MPI_Comm newcomm, const MPI_Comm grou
             comm_store[newcomm].push_back(comm_elem);
         }
         newcomm_lock.unlock();
-        debug_printf("New Inter communicator (%x) arrived:size=%d,%d ,index=%d at rank %d, starting from %lld.\n", newcomm, newcomm_l_size, newcomm_r_size, comm_elem.idx, t_mpi_rank, comm_elem.begin_time);
+        debug_printf("New Inter communicator (%x) arrived:size=%d,%d ,index=%d at rank %d, starting from %lld.\n", peat_handle_id(newcomm), newcomm_l_size, newcomm_r_size, comm_elem.idx, t_mpi_rank, comm_elem.begin_time);
         PMPI_Group_free(&newcomm_l_group);
         PMPI_Group_free(&newcomm_r_group);
         user_index += 1-is_internal;
@@ -431,7 +431,7 @@ void t_local_comms::comm_end(const MPI_Comm comm, const PEAT_Clock end, int is_i
             std::cerr << "communicator_end: Wrong comminucator(" << std::hex << comm << std::dec << ") found for end time\n";
         }
         cur_comm.end_time = end;
-        debug_printf("Communicator (%x) ended: at rank %d, from %lld.\n", comm, t_mpi_rank, end);
+        debug_printf("Communicator (%x) ended: at rank %d, from %lld.\n", peat_handle_id(comm), t_mpi_rank, end);
     }
     __DEBUG_EPILOG_COMM_LAYER__
 }
@@ -590,7 +590,7 @@ int t_global_comms::bind_local_comm(int is_internal, int start_index)
         for (rank_it = 0; rank_it < comm_size; ++rank_it) {
             std::list<t_comm> &t_list = g_comm_store.at(rank_it);
             // if (t_list.empty()) continue;
-            debug_printf("Processing rank %d, global list size %d\n",rank_it, t_list.size());
+            debug_printf("Processing rank %d, global list size %lu\n",rank_it, t_list.size());
             for (std::list<t_comm>::iterator comm_it = t_list.begin(); !t_list.empty(); comm_it = t_list.begin()) {
                 if (comm_it->kind == T_MPI_INTRA_COMM) {
                     std::list<r_comm> r_list;
@@ -599,11 +599,11 @@ int t_global_comms::bind_local_comm(int is_internal, int start_index)
                         debug_printf("(intra local) getting rank %d...",comm_it->l_comm2world_ranks.at(i));
                         if (comm_it->l_comm2world_ranks.at(i) != rank_it) {
                             std::list<t_comm> &t_tmp_list = g_comm_store.at(comm_it->l_comm2world_ranks.at(i));
-                            debug_printf("(intra local) list size %d...",t_tmp_list.size());
+                            debug_printf("(intra local) list size %zu...",t_tmp_list.size());
 
                             std::list<t_comm>::iterator result;
                             if (find_local_comm(*comm_it, t_tmp_list, result)) {
-                                debug_printf("(intra local) inserting comm %x from rank %d...\n",result->comm, comm_it->l_comm2world_ranks.at(i));
+                                debug_printf("(intra local) inserting comm %x from rank %d...\n",peat_handle_id(result->comm), comm_it->l_comm2world_ranks.at(i));
                                 r_comm tr_comm(*result);
                                 tr_comm.gid = g_index;
                                 tr_comm.rank = comm_it->l_comm2world_ranks.at(i);
@@ -612,7 +612,7 @@ int t_global_comms::bind_local_comm(int is_internal, int start_index)
                                 gd_comms[comm_it->l_comm2world_ranks.at(i)].push_back(tr_comm);
                             }
                         } else {
-                            debug_printf("(intra local) inserting original comm...%x\n",comm_it->comm);
+                            debug_printf("(intra local) inserting original comm...%x\n",peat_handle_id(comm_it->comm));
                             r_comm tr_comm(*comm_it);
                             tr_comm.gid = g_index;
                             tr_comm.rank = rank_it;
@@ -620,7 +620,7 @@ int t_global_comms::bind_local_comm(int is_internal, int start_index)
                             gd_comms[rank_it].push_back(tr_comm);
                         }
                     }
-                    debug_printf("(intra) Finished matching comm %x at rank %d gid=%d\n",comm_it->comm,rank_it, g_index);
+                    debug_printf("(intra) Finished matching comm %x at rank %d gid=%d\n",peat_handle_id(comm_it->comm),rank_it, g_index);
                     t_list.erase(comm_it);
                     g_comms[g_index++] = r_list;
                     continue;
@@ -628,15 +628,15 @@ int t_global_comms::bind_local_comm(int is_internal, int start_index)
                 if (comm_it->kind == T_MPI_INTER_COMM) {
                     std::list<r_comm> r_list;
                     for (int i = 0; i < comm_it->l_comm2world_ranks.size(); i++) {
-                        debug_printf("(inter local) iteration %d, comm %x...",i,comm_it->comm);
+                        debug_printf("(inter local) iteration %d, comm %x...",i,peat_handle_id(comm_it->comm));
                         debug_printf("(inter local) getting rank %d...",comm_it->l_comm2world_ranks.at(i));
                         if (comm_it->l_comm2world_ranks.at(i) != rank_it) {
                             std::list<t_comm> &t_tmp_list = g_comm_store.at(comm_it->l_comm2world_ranks.at(i));
-                            debug_printf("(inter local) list size %d...",t_tmp_list.size());
+                            debug_printf("(inter local) list size %zu...",t_tmp_list.size());
 
                             std::list<t_comm>::iterator result;
                             if (find_local_comm(*comm_it, t_tmp_list, result)) {
-                                debug_printf("(inter local) inserting comm %x from rank %d...\n",result->comm, comm_it->l_comm2world_ranks.at(i));
+                                debug_printf("(inter local) inserting comm %x from rank %d...\n",peat_handle_id(result->comm), comm_it->l_comm2world_ranks.at(i));
                                 r_comm tr_comm(*result);
                                 tr_comm.gid = g_index;
                                 tr_comm.rank = comm_it->l_comm2world_ranks.at(i);
@@ -645,7 +645,7 @@ int t_global_comms::bind_local_comm(int is_internal, int start_index)
                                 gd_comms[comm_it->l_comm2world_ranks.at(i)].push_back(tr_comm);
                             }
                         } else {
-                            debug_printf("(inter local) inserting original comm...%x\n",comm_it->comm);
+                            debug_printf("(inter local) inserting original comm...%x\n",peat_handle_id(comm_it->comm));
                             r_comm tr_comm(*comm_it);
                             tr_comm.gid = g_index;
                             tr_comm.rank = rank_it;
@@ -654,15 +654,15 @@ int t_global_comms::bind_local_comm(int is_internal, int start_index)
                         }
                     }
                     for (size_t i = 0; i < comm_it->r_comm2world_ranks.size(); i++) {
-                        debug_printf("(inter remote) iteration %d, comm %x...",i,comm_it->comm);
+                        debug_printf("(inter remote) iteration %lu, comm %x...",i,peat_handle_id(comm_it->comm));
                         debug_printf("(inter remote) getting rank %d...",comm_it->r_comm2world_ranks.at(i));
                         if (comm_it->r_comm2world_ranks.at(i) != rank_it) {
                             std::list<t_comm> &t_tmp_list = g_comm_store.at(comm_it->r_comm2world_ranks.at(i));
-                            debug_printf("(local) list size %d...",t_tmp_list.size());
+                            debug_printf("(local) list size %lu...",t_tmp_list.size());
 
                             std::list<t_comm>::iterator result;
                             if (find_local_comm(*comm_it, t_tmp_list, result)) {
-                                debug_printf("(inter local) inserting comm %x from rank %d...\n",result->comm, comm_it->r_comm2world_ranks.at(i));
+                                debug_printf("(inter local) inserting comm %x from rank %d...\n",peat_handle_id(result->comm), comm_it->r_comm2world_ranks.at(i));
                                 r_comm tr_comm(*result);
                                 tr_comm.gid = g_index;
                                 tr_comm.rank = comm_it->r_comm2world_ranks.at(i);
@@ -671,7 +671,7 @@ int t_global_comms::bind_local_comm(int is_internal, int start_index)
                                 gd_comms[comm_it->r_comm2world_ranks.at(i)].push_back(tr_comm);
                             }
                         } else {
-                            debug_printf("(inter remote) inserting original comm...%x\n",comm_it->comm);
+                            debug_printf("(inter remote) inserting original comm...%x\n",peat_handle_id(comm_it->comm));
                             r_comm tr_comm(*comm_it);
                             tr_comm.gid = g_index;
                             tr_comm.rank = rank_it;
@@ -679,7 +679,7 @@ int t_global_comms::bind_local_comm(int is_internal, int start_index)
                             gd_comms[rank_it].push_back(tr_comm);
                         }
                     }
-                    debug_printf("(inter) Finished matching comm %x at rank %d gid=%d\n",comm_it->comm,rank_it, g_index);
+                    debug_printf("(inter) Finished matching comm %x at rank %d gid=%d\n",peat_handle_id(comm_it->comm),rank_it, g_index);
                     t_list.erase(comm_it);
                     g_comms[g_index++] = r_list;
                 }
@@ -707,7 +707,7 @@ int t_global_comms::bind_local_comm(int is_internal, int start_index)
         }
         assert(pack_size == local_size);
         if (pack_size != local_size)
-            debug_printf("Sizes mismatch %d!=%d\n", pack_size, local_size);
+            debug_printf("Sizes mismatch %lld!=%lld\n", static_cast<long long>(pack_size), static_cast<long long>(local_size));
     }
     // distribute comms back to ranks
 
@@ -729,7 +729,7 @@ int t_global_comms::bind_local_comm(int is_internal, int start_index)
 #endif
     local_size = gt_info(local_comms)->unpack_global(local_recv_buf, sizes[comm_rank]);
     if (sizes[comm_rank] != local_size)
-        debug_printf("Sizes mismatch %d!=%d\n", sizes[comm_rank], local_size);
+        debug_printf("Sizes mismatch %lld!=%lld\n", static_cast<long long>(sizes[comm_rank]), static_cast<long long>(local_size));
     assert(sizes[comm_rank] == local_size);
     int max_id = g_index - 1; // only meaningful on rank 0 until broadcast below
     PMPI_Bcast(&max_id, 1, MPI_INT, 0, gt_info(TRACTOR_COMM_WORLD));

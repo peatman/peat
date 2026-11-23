@@ -54,7 +54,7 @@ void Communicators::initialize(const std::map<PEAT_Rank, std::string> &commonfil
     }
     lines.clear();
 
-    PEAT_Rank app_num = (PEAT_Rank)app_files.get_number_of_files();
+    PEAT_Rank app_num = static_cast<PEAT_Rank>(app_files.get_number_of_files());
     for (PEAT_Rank i = 0; i < app_num; i++) {
         PEAT_Bool hasMoreLines = true;
         while (hasMoreLines) {
@@ -69,7 +69,7 @@ void Communicators::initialize(const std::map<PEAT_Rank, std::string> &commonfil
         errTxt << "Communicators::initialize() Trace is not usable. Can't open files " << commonfile_names << std::endl;
         throw std::runtime_error(errTxt.str());
     }
-    app_rank_num = (PEAT_Rank)com_ext.get_number_of_files();
+    app_rank_num = static_cast<PEAT_Rank>(com_ext.get_number_of_files());
     if (globals.rank_set.empty()) {
         for (PEAT_Rank i = 0; i < app_rank_num; i++) {
             PEAT_Bool hasMoreLines = true;
@@ -253,14 +253,14 @@ std::map<PEAT_Rank, PEAT_Rank> Communicators::get_ranks_map_from_comm(const PEAT
         return resultRanks;
     }
     if (2 == comm) { // MPI_COMM_WORLD
-        for (PEAT_Num i = 0; i < get_comm_world_rank_count(); ++i) {
-            resultRanks[(PEAT_Rank)i] = (PEAT_Rank)i;
+        for (PEAT_Num i = 0; i < static_cast<PEAT_Num>(get_comm_world_rank_count()); ++i) {
+            resultRanks[static_cast<PEAT_Rank>(i)] = static_cast<PEAT_Rank>(i);
         }
         return resultRanks;
     }
     const Communicator_Info &info = comms.at(comm);
     for (PEAT_Num i = 0; i < info.ranks.size(); ++i) {
-        resultRanks[info.ranks.at(i)] = (PEAT_Rank)i;
+        resultRanks[info.ranks.at(i)] = static_cast<PEAT_Rank>(i);
     }
     if (resultRanks.empty()) {
         std::ostringstream tErr;
@@ -284,8 +284,8 @@ std::set<PEAT_Rank> Communicators::get_ranks_set_from_comm(const PEAT_MPI_Comm c
         return resultRanks;
     }
     if (2 == comm) { // MPI_COMM_WORLD
-        for (PEAT_Num i = 0; i < get_comm_world_rank_count(); ++i) {
-            resultRanks.insert((PEAT_Rank)i);
+        for (PEAT_Num i = 0; i < static_cast<PEAT_Num>(get_comm_world_rank_count()); ++i) {
+            resultRanks.insert(static_cast<PEAT_Rank>(i));
         }
         return resultRanks;
     }

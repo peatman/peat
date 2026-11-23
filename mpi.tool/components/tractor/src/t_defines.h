@@ -85,6 +85,30 @@ extern FILE *debug_fp;
 static void debug_printf(const char *format, ...) {};
 #endif
 
+#if defined(__cplusplus)
+#include <stdint.h>
+#include <type_traits>
+// Portable printf helpers: MPI handles are ints (MPICH) or pointers (Open MPI), PEAT_Addr is a pointer.
+template <typename T>
+static inline typename std::enable_if<std::is_pointer<T>::value, int>::type peat_handle_id(T h)
+{
+    return static_cast<int>(reinterpret_cast<intptr_t>(h));
+}
+template <typename T>
+static inline typename std::enable_if<!std::is_pointer<T>::value, int>::type peat_handle_id(T h)
+{
+    return static_cast<int>(h);
+}
+static inline unsigned long long peat_addr_ull(const void *a)
+{
+    return static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(a));
+}
+static inline unsigned long long peat_addr_ull(unsigned long long a)
+{
+    return a;
+}
+#endif
+
 #ifdef _TRACTOR_DEBUG_TRACTOR_LAYER_ENTRY_EXIT_
 #define _TRACTOR_DEBUG_ENTRY_EXIT_
 #define __DEBUG_PROLOG_TRACTOR_LAYER__ __DEBUG_PROLOG__
@@ -222,12 +246,14 @@ int t_addr_in_fortran_lib(const void *addr); /* tractor.cpp: any of libmpi_mpifh
         }                                                                                                     \
     }
 
-#define stack_unwind(lev_num, store_addr, levels)  \
-    if (fullstack_permission[fidc]) {              \
-        stack_unwind_x(lev_num, store_addr, levels) \
-    } else {                                       \
-        stack_unwind0(lev_num, store_addr, levels) \
-    }
+#define stack_unwind(lev_num, store_addr, levels)      \
+    do {                                                \
+        if (fullstack_permission[fidc]) {               \
+            stack_unwind_x(lev_num, store_addr, levels) \
+        } else {                                        \
+            stack_unwind0(lev_num, store_addr, levels)  \
+        }                                               \
+    } while (0)
 
 /*
 #define stack_unwind(lev_num,store_addr,levels) {                                                                                    \

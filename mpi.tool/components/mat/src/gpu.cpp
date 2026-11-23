@@ -369,7 +369,7 @@ void GPU::parse_cuda(const PEAT_Rank rank, const Tractor_Event &event)
         Cuda_GPU_Record gpu;
         gpu.info = info;
         gpu.stream = event.params.size() > 1 ? event.params.at(1) : 0;
-        gpu.bytes = (cuda_is_transfer(event.func_id) && event.params.size() > 2) ? (PEAT_Message_Size)event.params.at(2) : 0;
+        gpu.bytes = (cuda_is_transfer(event.func_id) && event.params.size() > 2) ? static_cast<PEAT_Message_Size>(event.params.at(2)) : 0;
         gpu.pc_ctl = event.PControl.ctl;
         std::map<PEAT_ULNum, PEAT_Reduced_Event_Info> &calls = cuda_calls[rank];
         std::map<PEAT_ULNum, PEAT_Reduced_Event_Info>::const_iterator call = calls.find(correlation);
@@ -449,28 +449,28 @@ void GPU::parse_GPU(const PEAT_Rank rank, const Tractor_Event &event)
         break;
     case ZEMEMALLOCHOST_ID: {
         Memory_Region region;
-        create_memory_region(region, rank, WL_HOST, event.params.at(0), event.params.at(3), (PEAT_Addr)event.out_params.at(0));
+        create_memory_region(region, rank, WL_HOST, event.params.at(0), event.params.at(3), reinterpret_cast<PEAT_Addr>(event.out_params.at(0)));
         assert(GPU_contexts[rank][event.params.at(0)]);
     } break;
     case ZEMEMALLOCDEVICE_ID: {
         Memory_Region region;
-        create_memory_region(region, rank, WL_DEVICE, event.params.at(0), event.params.at(3), (PEAT_Addr)event.out_params.at(0));
+        create_memory_region(region, rank, WL_DEVICE, event.params.at(0), event.params.at(3), reinterpret_cast<PEAT_Addr>(event.out_params.at(0)));
         assert(GPU_contexts[rank][event.params.at(0)]);
     } break;
     case ZEMEMALLOCSHARED_ID: {
         Memory_Region region;
-        create_memory_region(region, rank, WL_SHARED, event.params.at(0), event.params.at(3), (PEAT_Addr)event.out_params.at(0));
+        create_memory_region(region, rank, WL_SHARED, event.params.at(0), event.params.at(3), reinterpret_cast<PEAT_Addr>(event.out_params.at(0)));
         assert(GPU_contexts[rank][event.params.at(0)]);
     } break;
     case ZEMEMFREE_ID:
-        memory_regions[rank].erase((PEAT_Addr)event.params.at(1));
+        memory_regions[rank].erase(reinterpret_cast<PEAT_Addr>(event.params.at(1)));
         break;
     case ZECOMMANDLISTAPPENDMEMORYCOPY_ID: {
-        PEAT_Handle handle = (PEAT_Handle)event.params.at(4);
-        PEAT_Addr dstptr = (PEAT_Addr)event.params.at(1);
-        PEAT_Addr srcptr = (PEAT_Addr)event.params.at(2);
+        PEAT_Handle handle = static_cast<PEAT_Handle>(event.params.at(4));
+        PEAT_Addr dstptr = reinterpret_cast<PEAT_Addr>(event.params.at(1));
+        PEAT_Addr srcptr = reinterpret_cast<PEAT_Addr>(event.params.at(2));
         PEAT_Message_Size size = event.params.at(3);
-        Memory_Transfer transfer;
+        Memory_Transfer transfer = Memory_Transfer(); // value-initialised: the completion half is filled in later
         if (memory_regions[rank].count(srcptr) < 1) {
             Memory_Region region;
             create_memory_region(region, rank, WL_HOST, handle, size, srcptr);
@@ -555,7 +555,7 @@ void GPU::parse_GPU(const PEAT_Rank rank, const Tractor_Event &event)
     case ZECOMMANDLISTAPPENDLAUNCHCOOPERATIVEKERNEL_ID:
         break;
     case ZECOMMANDLISTAPPENDLAUNCHKERNEL_ID: {
-        PEAT_Handle handle = (PEAT_Handle)event.params.at(3);
+        PEAT_Handle handle = static_cast<PEAT_Handle>(event.params.at(3));
         Region_Exec &exec = executions[rank][handle];
         exec.init.func_id = event.func_id;
         exec.init.time = event.tsc_time;
@@ -579,11 +579,11 @@ PEAT_Bool GPU::check_completion()
     return true;
 }
 
-PEAT_Bool GPU::find_handle(PEAT_Rank rank, PEAT_MPI_Request request)
+PEAT_Bool GPU::find_handle(PEAT_Rank /*rank*/, PEAT_MPI_Request /*request*/)
 {
     return false;
 }
-PEAT_Bool GPU::update_handle(PEAT_Rank rank, PEAT_MPI_Request request, const Phase &phase)
+PEAT_Bool GPU::update_handle(PEAT_Rank /*rank*/, PEAT_MPI_Request /*request*/, const Phase &/*phase*/)
 {
     return false;
 }

@@ -33,7 +33,7 @@ struct CTT_Event {
     std::vector<PEAT_UID> addrs;
     struct p2p_properties {
         PEAT_Message_Size size;
-        PEAT_Bool operator!=(const p2p_properties &s) const
+        PEAT_Bool operator!=(const p2p_properties &) const
         {
             return false;
         }

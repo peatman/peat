@@ -168,9 +168,9 @@ void Model_ID::initialize(const Global_Parameters &glob)
 }
 PEAT_Record_Type inc_frt(PEAT_Record_Type r)
 {
-    int i = (int)r;
+    int i = static_cast<int>(r);
     ++i;
-    return (PEAT_Record_Type)i;
+    return static_cast<PEAT_Record_Type>(i);
 }
 PEAT_Record_Type Model_ID::find_estimator_main_id(const char *modelNameId) const
 {
@@ -250,13 +250,13 @@ PEAT_MPI_Func_ID Model_ID::translate_function_id(const char *field) const
         return global_func_id.add_by_name(field, CUDA_KERNEL_ID);
     }
     // a number is the collector's own id: always translate it through the trace's name/ID table
-    std::map<PEAT_MPI_Func_ID, PEAT_MPI_Func_ID>::const_iterator it = model_function_tags.find((PEAT_MPI_Func_ID)trace_id);
+    std::map<PEAT_MPI_Func_ID, PEAT_MPI_Func_ID>::const_iterator it = model_function_tags.find(static_cast<PEAT_MPI_Func_ID>(trace_id));
     if (it != model_function_tags.end()) {
         return it->second;
     }
     static std::set<long long> reported; // warn once per unknown id
     bool first_time;
-#pragma omp critical(peat_translate_function_id_warning)
+PEAT_OMP_PRAGMA(omp critical(peat_translate_function_id_warning))
     first_time = reported.insert(trace_id).second;
     if (first_time) {
         std::ostringstream errTxt;

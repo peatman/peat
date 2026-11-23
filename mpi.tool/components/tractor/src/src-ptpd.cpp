@@ -81,12 +81,15 @@ void ptp_rank_timer_init(char *filename, char *mode)
     int local_ranks_num = 0;
     int *local_ranks;
     int *all_ranks;
-    int i, j;
+    int i;
+#ifndef USE_NANO_TIMER // only the /proc/cpuinfo frequency probe needs these
+    int j;
     FILE *tfp;
-    long long proc_freq[2] = {0, 0};
-    long long *all_proc_freqs;
     char tbuf[PROC_MAX_LINE];
     MPI_Status mpi_stat_tmp;
+#endif
+    long long proc_freq[2] = {0, 0};
+    long long *all_proc_freqs;
     gethostname(localhost, MAX_HOSTNAME);
     PMPI_Comm_rank(MPI_COMM_WORLD, &rank);
     PMPI_Comm_size(MPI_COMM_WORLD, &size);
@@ -312,7 +315,7 @@ void term_handler(int i)
 }
 int main(int argc, char *argv[])
 {
-    int i, rank, size;
+    int rank, size;
     char *filename, *mode;
     char *endptr = 0;
     struct sigaction sa;
@@ -332,7 +335,7 @@ int main(int argc, char *argv[])
         PMPI_Comm_get_parent(&parent_comm);
         ptp_rank_timer_init(filename, mode);
         debug_printf("Size of COMM_WORLD is  %d...", size);
-        debug_printf("Update interval is  %d...", update_interval);
+        debug_printf("Update interval is  %lu...", update_interval);
         debug_printf("Size of master_com is  %d...", size_master);
     } else {
         ptp_rank_timer_init(NULL, NULL);

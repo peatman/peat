@@ -105,7 +105,7 @@ PEAT_MPI_Func_ID Func_ID::add_by_name(const char *name, PEAT_MPI_Func_ID like)
     if (base == funcStore.end())
         return TMPI_FUNC_ID_NONE;
     const PEAT_Property *p = base->second->prop;
-    const PEAT_MPI_Func_ID id = (PEAT_MPI_Func_ID)next_id++;
+    const PEAT_MPI_Func_ID id = static_cast<PEAT_MPI_Func_ID>(next_id++);
     char *stored_name = new char[strlen(name) + 1]; // kept for the whole run, as the static names
     strcpy(stored_name, name);
     const MPIFuncs *entry = new MPIFuncs{id, base->second->prefix, stored_name, "", "", "",
@@ -145,7 +145,7 @@ PEAT_Bool Func_ID::check_property(const PEAT_MPI_Func_ID id, PEAT_Property prope
         try {
             const MPIFuncs *fStore = funcStore.at(id);
             assert(fStore);
-            for (int i = 0; i < sizeof(fStore->prop) / sizeof(fStore->prop[0]); i++) {
+            for (size_t i = 0; i < sizeof(fStore->prop) / sizeof(fStore->prop[0]); i++) {
                 if (fStore->prop[i] == property_id)
                     return true;
             }

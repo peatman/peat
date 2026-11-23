@@ -142,9 +142,9 @@ struct PEAT_Rank_Pair {
 
 inline PEAT_Transports t_inc(PEAT_Transports s)
 {
-    int s_inc = (int)s;
+    int s_inc = static_cast<int>(s);
     s_inc++;
-    return (PEAT_Transports)s_inc;
+    return static_cast<PEAT_Transports>(s_inc);
 }
 
 struct PEAT_Time_Event {
@@ -427,8 +427,8 @@ struct PEAT_Collective_Bytes {
     std::map<PEAT_Rank, PEAT_Message_Size> bytes; // is_vector==False map<0, sendBytesToAllRanks>. is_vector==True map<rankReceiver, sendBytesToRankReceiver>
     PEAT_Bool operator<(const PEAT_Collective_Bytes &right) const
     {
-        int size = (int)bytes.size();
-        int rsize = (int)right.bytes.size();
+        int size = static_cast<int>(bytes.size());
+        int rsize = static_cast<int>(right.bytes.size());
         if (size < rsize)
             return true;
         if (size > rsize)
@@ -597,6 +597,7 @@ struct User_Address_Key {
     {
         addrs = key.addrs;
     }
+    User_Address_Key &operator=(const User_Address_Key &) = default;
     void add(PEAT_UID addr_in)
     {
         addrs.push_back(addr_in);
@@ -1182,7 +1183,7 @@ struct PEAT_Event_Delivery {
 
 #define PRINT_PARAMETERS(width, string) int((width + strlen(string) + 1) / 2), string, int(width - strlen(string)) / 2, ""
 
-static PEAT_Bool is_mpi(PEAT_Property func_class)
+static inline PEAT_Bool is_mpi(PEAT_Property func_class)
 {
     switch (func_class) {
     case PEAT_PROP_CLASS_START:
@@ -1196,10 +1197,12 @@ static PEAT_Bool is_mpi(PEAT_Property func_class)
     case PEAT_PROP_CLASS_FIO:
     case PEAT_PROP_CLASS_COMM:
         return true;
+    default: // useless, just to eliminate warning on some compilers
+        return false;
     }
     return false;
 }
-static PEAT_Bool is_omp(PEAT_Property func_class)
+static inline PEAT_Bool is_omp(PEAT_Property func_class)
 {
     return func_class == PEAT_PROP_CLASS_OMPT;
 }

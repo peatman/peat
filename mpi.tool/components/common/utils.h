@@ -233,7 +233,7 @@ inline void extract(void *&val, const char *str, const int base = 10, const PEAT
 {
     errno = 0;
     char *endptr = 0;
-    val = (void *)strtoull(str, &endptr, base);
+    val = reinterpret_cast<void *>(strtoull(str, &endptr, base));
     CHECKERRNO;
     CHECKENDPTR;
     CHECKENDPTR2;
@@ -507,8 +507,8 @@ PEAT_Num unpack_pod(const char *ptr, std::map<K, T> &obj) // types K and T must 
     memcpy(&elemsSize, ptr + ptr_it, ssize);
     ptr_it += ssize; // get the number of elements of std::vector
     while (elemsSize) {
-        K key = (K)0;
-        T value = (T)0;
+        K key = K();
+        T value = T();
         std::pair<typename std::map<K, T>::iterator, PEAT_Bool> ret;
         memcpy(&key, ptr + ptr_it, sizeK);
         ptr_it += sizeK;

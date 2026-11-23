@@ -201,7 +201,7 @@ void CTT::process()
         funcs_out[rank->first] = temp_funcs_out;
         funcs_out[rank->first].clear();
     }
-    int rank_size = (int) ranks.size();
+    int rank_size = static_cast<int>(ranks.size());
 #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < rank_size; i++) {
         String_Split line_mpi;
@@ -215,8 +215,8 @@ void CTT::process()
 #endif
                 {
                     PEAT_Ratio cur_step = Wtime();
-                    PEAT_Ratio estimation_bw = ((PEAT_Ratio)(events_processed)) / (cur_step - start_estimation);
-                    PEAT_Ratio instant_bw = ((PEAT_Ratio)(events_processed - prev_event_num)) / (cur_step - prev_step);
+                    PEAT_Ratio estimation_bw = (static_cast<PEAT_Ratio>(events_processed)) / (cur_step - start_estimation);
+                    PEAT_Ratio instant_bw = (static_cast<PEAT_Ratio>(events_processed - prev_event_num)) / (cur_step - prev_step);
                     prev_event_num = events_processed;
                     if (globals.verbose) {
                         // print_elems_in_queue();
@@ -239,7 +239,7 @@ void CTT::process()
                 if (funcs_it->second.size() > globals.max_list_size)
                     funcs_it->second.resize(globals.max_list_size);
                 for (std::list<CTT_Event>::iterator func_it = funcs_it->second.begin(); func_it != funcs_it->second.end(); ++func_it) {
-                    double secs = (double)func_it->duration / (double)ptp->get_trace_freq(func_it->rank);
+                    double secs = static_cast<double>(func_it->duration) / static_cast<double>(ptp->get_trace_freq(func_it->rank));
                     printf("\t Rank:%d Calls %lld Time %lld(clk) %lf(sec) ", func_it->rank, func_it->occurences, func_it->duration, secs);
                     switch (func_it->func_class) {
                     case PEAT_PROP_CLASS_P2P:

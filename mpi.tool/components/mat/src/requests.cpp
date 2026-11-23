@@ -56,7 +56,7 @@ void Requests::initialize(PTP *p, Communicators *c, Request_Store *r, P2PAL *pp,
 	Outputs::initialize(MPI, bind);
 }
 
-PEAT_Bool Requests::discard_P2P_event(const PEAT_Rank rank, const PEAT_MPI_Request request, PEAT_Bool is_remote)
+PEAT_Bool Requests::discard_P2P_event(const PEAT_Rank rank, const PEAT_MPI_Request request, PEAT_Bool /*is_remote*/)
 {
     // cerr << "DBG1 " << event << "\n";
     // pull requests from all available queues: message_queues[SENDQ],message_queues[RECVQ]
@@ -72,7 +72,7 @@ PEAT_Bool Requests::discard_P2P_event(const PEAT_Rank rank, const PEAT_MPI_Reque
     return removed;
 }
 
-PEAT_Bool Requests::discard_collective_event(const PEAT_Rank rank, const PEAT_MPI_Request request, PEAT_Bool is_remote)
+PEAT_Bool Requests::discard_collective_event(const PEAT_Rank rank, const PEAT_MPI_Request request, PEAT_Bool /*is_remote*/)
 {
     if (request == comm_store->get_MPI_REQUEST_NULL()) {
         MAT_CERR("Null request detected. Rank: " << rank << ". Skipped." << std::endl);
@@ -82,7 +82,7 @@ PEAT_Bool Requests::discard_collective_event(const PEAT_Rank rank, const PEAT_MP
     MAT_Request_Store_Record dummy;
     return req_store->remove_request(rank, request, REQUEST_TYPE_USER_COLLECTIVE, &dummy);
 }
-Request_Store_Record_Type  Requests::select_event(PEAT_Rank rank, const PEAT_MPI_Request request, PEAT_Bool  is_internal, PEAT_Bool is_remote)
+Request_Store_Record_Type  Requests::select_event(PEAT_Rank rank, const PEAT_MPI_Request request, PEAT_Bool  is_internal, PEAT_Bool /*is_remote*/)
 {
     MAT_Request_Store_Record ret_it;
     if(req_store->find_request(rank, request, is_internal?REQUEST_TYPE_INTERNAL:REQUEST_TYPE_ANY_NOT_PERSISTENT, &ret_it, false)) {
@@ -97,7 +97,7 @@ PEAT_Bool Requests::parse_P2P_completion_phase(const PEAT_Rank rank, const Reque
                                          const PEAT_Rank source,
                                          const PEAT_Message_Size size,
                                          const Phase& phase,
-                                         const int pc_level,
+                                         const int /*pc_level*/,
                                          PEAT_Bool is_remote)
 {
     // cerr << "DBG1 " << event << "\n";
@@ -145,7 +145,7 @@ PEAT_Bool Requests::parse_osc_completion_phase(const PEAT_Rank rank, const PEAT_
     return false;
 }
 
-PEAT_Bool Requests::parse_collective_completion_phase(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase &phase, const int pc_level, PEAT_Bool is_fio, PEAT_Bool is_remote)
+PEAT_Bool Requests::parse_collective_completion_phase(const PEAT_Rank rank, const PEAT_MPI_Request request, const Phase &phase, const int /*pc_level*/, PEAT_Bool is_fio, PEAT_Bool is_remote)
 {
     if (request == comm_store->get_MPI_REQUEST_NULL()) {
         MAT_CERR("Null request detected. Rank: " << rank << ". Skipped." << std::endl);
@@ -156,7 +156,7 @@ PEAT_Bool Requests::parse_collective_completion_phase(const PEAT_Rank rank, cons
         if(is_fio){
             print_req_bind(rank, request, ret_it.record->get_ph(), phase, is_remote);
         } else {
-            MAT_Collectives_Record* coll = (MAT_Collectives_Record*)ret_it.record;
+            MAT_Collectives_Record* coll = static_cast<MAT_Collectives_Record*>(ret_it.record);
             MAT_STORE_GUARD; // the collective/comm/osc stores are shared by all threads
             coll_func_store->update_request(rank, request, phase, coll->coll_event,is_remote);
         }
@@ -352,7 +352,7 @@ void Requests::parse_cn(const PEAT_Rank rank, Tractor_Event &event, PEAT_Bool is
         return;
     }
     // special cases handled above. Now ordinal ones (wait/test)
-    for (PEAT_Num i = 0; i < event.Requests.triggered_request_num; ++i) {
+    for (PEAT_Signed_Num i = 0; i < event.Requests.triggered_request_num; ++i) {
         // pull requests from all available queues: message_queues[SENDQ],message_queues[RECVQ]
         PEAT_MPI_Request request = event.requests.at(event.statuses.at(i).index);
         const PEAT_MPI_Tag tag = event.statuses.at(i).tag;
@@ -482,7 +482,7 @@ static int req_bind_tag(const Phase &phase, const Phase &bind)
     return PEAT_RT_Bind_Completion;
 }
 
-void Requests::print_req_bind(PEAT_Rank rank, PEAT_MPI_Request req, const Phase &phase, const Phase &bind, PEAT_Bool is_remote)
+void Requests::print_req_bind(PEAT_Rank rank, PEAT_MPI_Request /*req*/, const Phase &phase, const Phase &bind, PEAT_Bool is_remote)
 {
     if (is_remote) {
 #ifdef PEAT_MPI // in case of serial is_remote is always false
@@ -513,7 +513,7 @@ void Requests::print_req_bind(PEAT_Rank rank, PEAT_MPI_Request req, const Phase 
                             peat_ids_string(phase.ids).c_str(),
                             global_func_id.name_by_idx(bind.func_id),
                             peat_ids_string(bind.ids).c_str());
-        #pragma omp atomic
+        PEAT_OMP_PRAGMA(omp atomic)
         p2p_func_store->messages_bound[rank]++;
     }
 }
@@ -545,7 +545,7 @@ void Requests::print_req_bind(PEAT_Rank rank, const Collective_Entry &coll, cons
                             peat_ids_string(coll.coll_events_list.at(rank)->ph.ids).c_str(),
                             global_func_id.name_by_idx(phase.func_id),
                             peat_ids_string(phase.ids).c_str());
-        #pragma omp atomic
+        PEAT_OMP_PRAGMA(omp atomic)
         p2p_func_store->messages_bound[rank]++;
     }
 }
@@ -564,7 +564,7 @@ void Requests::print_req_out(const Tractor_Event &event)
         output_MPI->printf(event.rank, ":%llx", event.requests[i]);
     }
     // 4 - tuples(index, tag, source, bytes)
-    for (int i = 0; i < (int)event.Requests.triggered_request_num; i++) {
+    for (int i = 0; i < static_cast<int>(event.Requests.triggered_request_num); i++) {
         output_MPI->printf(event.rank, ":%d:%d:%d:%lld", event.statuses[i].index, event.statuses[i].tag, event.statuses[i].src, event.statuses[i].bytes);
     }
     output_MPI->printf(event.rank, "\n");
@@ -607,7 +607,8 @@ void Requests::process_remote_request(PEAT_Signed_Num size, PEAT_Rank src)
 #if defined(_WIN32) && !defined(__MINGW32__)
     char *buffer = (char *)_malloca(size);
 #else
-    char buffer[size];
+    std::vector<char> buffer_store(static_cast<size_t>(size));
+    char *buffer = buffer_store.data();
 #endif
     MPI_Status status;
     Tractor_Event temp_req_event;

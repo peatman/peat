@@ -81,14 +81,12 @@ urpu::urpu(Global_Parameters &glob, Model_ID &model_id_storage) : globals(glob),
     std::map<PEAT_Rank, std::string> file_input_app_names;
     file_input_app_names[0] = file_name;
 
-    PEAT_Rank trace_comm_size = (PEAT_Rank)file_input_com_names.size();
-
     input_MPI = new File_Storage_GZ(globals.pe_MPI_files_in_rank, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, globals.verbose);
     user_region_file = new Address_File_Storage(globals, PEAT_FIO_FLAG_WRITE, &model_id_storage);
 
 #ifdef PEAT_MPI
     whole_ranks = globals.whole_ranks;
-    completed_ranks.resize(trace_comm_size);
+    completed_ranks.resize(file_input_com_names.size());
     my_ranks = globals.my_ranks;
 #endif
 }
@@ -101,11 +99,6 @@ urpu::~urpu()
 }
 void urpu::process()
 {
-    const double total_event_num = (double)(input_MPI->get_all_files_size());
-    const double bytes_step = total_event_num * 0.01;
-    long cur_percent = 1;
-    PEAT_Ratio start_estimation = Wtime();
-    PEAT_Ratio time_since_last_active = Wtime();
 
     PEAT_Num completions = 0;
     if (model_id.num_hwcs == 2) {

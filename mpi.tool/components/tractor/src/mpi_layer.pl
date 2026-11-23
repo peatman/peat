@@ -972,8 +972,10 @@ my $retcode=t_comm_func::purify_val($line[1]);
 my $funcname=$line[2];
 my $funcpars=t_comm_func::purify_val($line[3]);
 my $prototype="$retcode $funcname($funcpars)";
-my $t_func_pointer="static $retcode (*t_$funcname)($funcpars) = 0;";
-my $rtdl="if (!t_$funcname) { t_$funcname = reinterpret_cast<$retcode (*)($funcpars)>(dlsym(RTLD_NEXT, \"$funcname\")); }";
+# the export attribute (ZE_APIEXPORT) belongs on the wrapper definition only: GCC warns that it is ignored on a function pointer type
+(my $ptr_retcode=$retcode) =~ s/\bZE_APIEXPORT\s+//g;
+my $t_func_pointer="static $ptr_retcode (*t_$funcname)($funcpars) = 0;";
+my $rtdl="if (!t_$funcname) { t_$funcname = reinterpret_cast<$ptr_retcode (*)($funcpars)>(dlsym(RTLD_NEXT, \"$funcname\")); }";
 # call arguments: the last identifier of every parameter (this class has no function pointer or array parameters)
 my @args;
 foreach my $par (split(',',$funcpars)) {
@@ -1031,7 +1033,7 @@ return ($class>$mpilevel);
 sub mpi_version_guard {
 my $properties=shift;
 return "#if MPI_VERSION >= 5\n" if $properties =~/PEAT_PROP_MPI5\b/;
-return "#if (MPI_VERSION > 4) || (MPI_VERSION == 4 && MPI_SUBVERSION >= 1)\n" if $properties =~/PEAT_PROP_MPI41\b/;
+return "#if (MPI_VERSION > 4) || (MPI_VERSION == 4 && MPI_SUBVERSION >= 1)\n" if $properties =~/PEAT_PROP_MPI4_1\b/;
 return "#if MPI_VERSION >= 4\n" if $properties =~/PEAT_PROP_MPI4\b/;
 return "";
 }

@@ -37,10 +37,6 @@
 
 #include "tractor.h"
 
-#if defined(__CPLUSPLUS__) || defined(__cplusplus)
-extern "C" {
-#endif
-
 inline std::string get_self_path()
 {
     //__DEBUG_PROLOG_TRACTOR_LAYER__
@@ -54,6 +50,10 @@ inline std::string get_self_path()
     //__DEBUG_EPILOG_TRACTOR_LAYER__
     return "unknown";
 }
+
+#if defined(__CPLUSPLUS__) || defined(__cplusplus)
+extern "C" {
+#endif
 
 static int callback(dl_phdr_info *info, size_t size, PEAT_Addr data)
 {
@@ -100,7 +100,7 @@ void so_walker(std::map<PEAT_Num, shared_object_info> &shared_objects /*, PEAT_A
             for (std::list<shared_object_header>::iterator header_it = it->dlpi_phdr.begin(); header_it != it->dlpi_phdr.end(); ++header_it) {
                 shared_object_header &elf_sec = *header_it;
                 if (shared_object_header::is_exec_and_load(elf_sec.p_flags, elf_sec.p_type)) {
-                    debug_printf("base: %llx, low: %llx, high: %llx ", elf_sec.base_address, elf_sec.load_address, elf_sec.end_address);
+                    debug_printf("base: %p, low: %p, high: %p ", elf_sec.base_address, elf_sec.load_address, elf_sec.end_address);
                     break;
                 }
             }

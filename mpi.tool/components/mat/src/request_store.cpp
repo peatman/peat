@@ -23,7 +23,7 @@
 #include <assert.h>
 #include <sstream>
 
-Request_Store::Request_Store(PTP *p,int v) 
+Request_Store::Request_Store(PTP *p,int /*v*/) 
 {
     assert(p);
     ptp = p;

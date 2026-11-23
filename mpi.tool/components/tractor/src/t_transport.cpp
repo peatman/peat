@@ -123,7 +123,7 @@ void t_transport_profiler::dump_events(pid_t tid, int level, msl_adv_chain **cha
     }
     if (fps_events[tid]) {
         fwrite((*chain)->events_array, (*chain)->events_size, (*chain)->num_events, fps_events[tid]);
-        debug_printf("Dumping %ld events.\n", (*chain)->num_events);
+        debug_printf("Dumping %d events.\n", (*chain)->num_events);
         destroy_shift_start((msl_base_chain **)chain);
     }
 
@@ -160,7 +160,7 @@ long long t_transport_profiler::write_transport_file(bool print_names)
         sprintf(pid, ".%u", t_mpi_rank); // else sprintf(pid, ".%u.%d", upid, i);
     sprintf(filename, "%s.transport%s%s", tfilename, pid, gz_ext);
     gzFile fps = gzopen(filename, gz_mode);
-    debug_printf("TRANSPORT Events:max_threads=%d. %d %d \n", t_max_threads, onetimealloc, num_addrs);
+    debug_printf("TRANSPORT Events:max_threads=%d. %ld %d \n", t_max_threads, onetimealloc, num_addrs);
 
     if (fps) {
         int tsc_mpi_entry_ind = 1;
@@ -180,7 +180,7 @@ long long t_transport_profiler::write_transport_file(bool print_names)
                 rewind(fps_events[i]);
                 record_counter[i] = 0;
                 max_events[i] = fread(current_array[i], sizeof(msl_event), onetimealloc, fps_events[i]);
-                debug_printf("TID %d, %ld events read back.\n", i, max_events[i]);
+                debug_printf("TID %d, %lld events read back.\n", i, max_events[i]);
                 t_timeline t_tl(current_array[i][0].tscs[0], i);
                 if (max_events[i] > 0)
                     timeline[t_tl] = i;
@@ -193,7 +193,7 @@ long long t_transport_profiler::write_transport_file(bool print_names)
                 max_events[i] = (current_chain[i]->next == NULL) ? event_index[i][0] : onetimealloc;
 
                 current_array[i] = (msl_event *)current_chain[i]->events_array;
-                debug_printf("TRANSPORT Events:thread %d. %d %llx, %llx - %llx %llx \n", i, max_events[i], this, current_chain[i], events_start_chain[i], current_array[i]);
+                debug_printf("TRANSPORT Events:thread %d. %lld %p, %p - %p %p \n", i, max_events[i], static_cast<void *>(this), static_cast<void *>(current_chain[i]), static_cast<void *>(events_start_chain[i]), static_cast<void *>(current_array[i]));
                 t_timeline t_tl(current_array[i][0].tscs[0], i);
                 if (max_events[i] > 0)
                     timeline[t_tl] = i;
@@ -237,7 +237,7 @@ long long t_transport_profiler::write_transport_file(bool print_names)
                 if (use_realtime_dump) {
                     record_counter[tid] = 0;
                     max_events[tid] = fread(current_array[tid], sizeof(msl_event), onetimealloc, fps_events[tid]);
-                    debug_printf("TID %d, %ld events read back.\n", tid, max_events[tid]);
+                    debug_printf("TID %d, %lld events read back.\n", tid, max_events[tid]);
                 } else {
                     if (current_chain[tid]->next != NULL) {
                         current_chain[tid] = (msl_adv_chain *)current_chain[tid]->next;

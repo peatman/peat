@@ -44,7 +44,7 @@ void PTP::sync_points_to_PTPD_records()
     master_node = 0; // since we got here there is no PTP Daemon started
     if (!start_sync.empty()) {
         std::map<PEAT_Rank, PEAT_Clock> TSync;
-        PEAT_Rank ranks = (PEAT_Rank)start_sync.size();
+        PEAT_Rank ranks = static_cast<PEAT_Rank>(start_sync.size());
         for (PEAT_Rank i = 0; i < ranks; ++i) {
             PEAT_Clock tsc = start_sync.at(i);
             PEAT_Rank master_rank = i; // SMP_to_master_src.at(i);
@@ -65,7 +65,7 @@ void PTP::sync_points_to_PTPD_records()
     }
     if (!end_sync.empty()) {
         std::map<PEAT_Rank, PEAT_Clock> TSync;
-        PEAT_Rank ranks = (PEAT_Rank)end_sync.size();
+        PEAT_Rank ranks = static_cast<PEAT_Rank>(end_sync.size());
         for (PEAT_Rank i = 0; i < ranks; ++i) {
             PEAT_Clock tsc = end_sync.at(i);
             PEAT_Rank master_rank = i; // SMP_to_master_src.at(i);
@@ -101,7 +101,7 @@ void PTP::parse(const String_Split &line, PEAT_Rank rank)
         // PTPCERR << "Adding Master GRP record. Ranks in Group " << ranks << endl;
         for (PEAT_Num i = 2; i < line.size(); ++i) { // skip MSE,id,tid,ranks
             PEAT_Rank grpRank = 0;
-            extract(grpRank, line.at((int)i));
+            extract(grpRank, line.at(static_cast<int>(i)));
             MPMMasterGrp.push_back(grpRank);
         }
     } break;
@@ -123,7 +123,7 @@ void PTP::parse(const String_Split &line, PEAT_Rank rank)
                                        // old variant    PEAT_FREQ rankFreq = 0; extract(rankFreq, line.at(5)); //frequency
         MPM_host_names[rank] = line.at(6);
         MPM_proc_freq[rank] = rankFreq;
-        if (MPMMaster2CW.size() == masterRank) {
+        if (MPMMaster2CW.size() == static_cast<size_t>(masterRank)) {
             MPMMaster2CW.push_back(rank);
         } else {
             throw std::logic_error("Master Rank mismatch.");
@@ -168,7 +168,7 @@ void PTP::parse(const String_Split &line, PEAT_Rank rank)
         // PTPCERR << "Adding Master GRP record. Ranks in Group " << ranks << endl;
         for (PEAT_Num i = 3 - master_node; i < line.size(); ++i) { // skip MSE,id,tid,ranks and master node if present
             PEAT_Rank grpRank = 0;
-            extract(grpRank, line.at((int)i));
+            extract(grpRank, line.at(static_cast<int>(i)));
             PTPDMasterGrp.push_back(grpRank + master_node);
         }
     } break;
@@ -277,7 +277,7 @@ void PTP::initialize(const std::map<PEAT_Rank, std::string> &commonfile_names, c
 
         File_Storage_GZ app_files(appfile_names, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, globals.verbose);
         String_Split lines;
-        PEAT_Rank app_num = (PEAT_Rank)app_files.get_number_of_files();
+        PEAT_Rank app_num = static_cast<PEAT_Rank>(app_files.get_number_of_files());
         if (app_num != 1)
             peat_throw_error("Incorrect Numbers of .app File\n");
         PEAT_Bool hasMoreLines = true;
@@ -291,7 +291,7 @@ void PTP::initialize(const std::map<PEAT_Rank, std::string> &commonfile_names, c
             errTxt << "ptp::initialize() Trace is not usable. Can't open files " << commonfile_names << std::endl;
             throw std::runtime_error(errTxt.str());
         }
-        PEAT_Rank app_rank_num = (PEAT_Rank)com_ext.get_number_of_files();
+        PEAT_Rank app_rank_num = static_cast<PEAT_Rank>(com_ext.get_number_of_files());
 
         if (globals.rank_set.empty()) {
             for (PEAT_Rank i = 0; i < app_rank_num; i++) {
@@ -313,7 +313,7 @@ void PTP::initialize(const std::map<PEAT_Rank, std::string> &commonfile_names, c
 
         File_Storage_GZ ptpd_files(ptpfile_names, PEAT_FIO_FLAG_READ | PEAT_FIO_FLAG_LAZY | PEAT_FIO_FLAG_ICLOSE, NULL, globals.verbose);
 
-        PEAT_Rank ptpd_num = (PEAT_Rank)ptpd_files.get_number_of_files();
+        PEAT_Rank ptpd_num = static_cast<PEAT_Rank>(ptpd_files.get_number_of_files());
         if (ptpd_num > 0) {
             resetPTPDRecords();
         }
@@ -525,12 +525,12 @@ PEAT_Clock PTP::get_real_time(const PEAT_Clock tsc_in, const PEAT_Rank rank_in)
     PEAT_Clock l_r = local_durations.at(rank);
     PEAT_Clock l_0 = global_durations.at(rank);
     PEAT_Clock d_r = tsc - local_sync_point.at(rank);
-    PEAT_Clock d_0 = (PEAT_Clock)(((double)d_r / (double)l_r) * (double)l_0);
+    PEAT_Clock d_0 = static_cast<PEAT_Clock>((static_cast<double>(d_r) / static_cast<double>(l_r)) * static_cast<double>(l_0));
     tsc = global_sync_point.at(rank) + d_0 - global_start;
     // last thing is conversion to nanoseconds
     if (cvt_to_ns) {
         double tsc_d = tsc * 1000000000.0 / PTPD_proc_freq.at(rank); // (SMP_to_master_src.at(rank));
-        tsc = (PEAT_Clock)tsc_d;
+        tsc = static_cast<PEAT_Clock>(tsc_d);
     }
     return tsc;
 }
@@ -578,7 +578,7 @@ void PTP::consistency_check()
             average /= parsed_PTPD_records.at(it->first);
             PTPDBG(2) << "Rank:" << it->first << ". Average Delivery:" << average << " Clocks.\n";
             const double ratio = 1.1;
-            const PEAT_Clock upper_bound = (PEAT_Clock)(average * ratio);
+            const PEAT_Clock upper_bound = static_cast<PEAT_Clock>(average * ratio);
 #else
             const PEAT_Clock upper_bound = (PEAT_Clock)PTPD_DELIVERY_HARD_LIMIT;
 #endif

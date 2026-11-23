@@ -103,10 +103,7 @@ static __inline__ void peat_init_nano_sec()
 static __inline__ PEAT_Clock rdtsca(void)
 {
     unsigned long long high, low, tsc;
-    unsigned long c;
-    PEAT_Proc core_id;
-    __asm__ __volatile__("rdtscp" : "=a"(low), "=d"(high), "=c"(c));
-    core_id = c & 0xfff;
+    __asm__ __volatile__("rdtscp" : "=a"(low), "=d"(high) : : "rcx"); // rcx (core id) is not needed here
     tsc = (high << 32) + low;
     return tsc + t_tsc_init;
 }
@@ -125,10 +122,7 @@ static __inline__ PEAT_Clock rdtscta(pid_t *tid)
 {
     *tid = gettid();
     unsigned long long high, low, tsc;
-    unsigned long c;
-    PEAT_Proc core_id;
-    __asm__ __volatile__("rdtscp" : "=a"(low), "=d"(high), "=c"(c));
-    core_id = c & 0xfff;
+    __asm__ __volatile__("rdtscp" : "=a"(low), "=d"(high) : : "rcx"); // rcx (core id) is not needed here
     tsc = (high << 32) + low;
     return tsc - t_tsc_init;
 }
@@ -200,9 +194,8 @@ static __inline__ PEAT_Clock peat_get_time_tid_core(pid_t *tid, PEAT_Proc *core_
 
 static __inline__ PEAT_Proc get_core_id()
 {
-    unsigned long long a, d;
     unsigned long c;
-    __asm__ __volatile__("rdtscp" : "=a"(a), "=d"(d), "=c"(c));
+    __asm__ __volatile__("rdtscp" : "=c"(c) : : "rax", "rdx"); // the time stamp (rax:rdx) is not needed here
     return c & 0xfff;
 }
 

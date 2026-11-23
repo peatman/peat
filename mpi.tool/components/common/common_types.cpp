@@ -37,8 +37,6 @@
     std::cerr
 static const char *protocol[]{
     "Reliable", "Unreliable"};
-static const char *onoff[]{
-    "Off", "On"};
 static const char *engines[]{
     "MPI Blocked", "MPI All", "Full"};
 void Global_Parameters::check()
@@ -113,7 +111,7 @@ void Global_Parameters::print()
 void User_Region::add(const Elems &el)
 {
     Elems t_el = el;
-    t_el.cpi = (PEAT_Ratio)t_el.clocks / (PEAT_Ratio)t_el.instr;
+    t_el.cpi = static_cast<PEAT_Ratio>(t_el.clocks) / static_cast<PEAT_Ratio>(t_el.instr);
     elements.push_back(t_el);
 }
 
@@ -121,7 +119,7 @@ void User_Region::process(PEAT_Ratio window)
 {
     num = elements.size();
     std::sort(elements.begin(), elements.end());
-    PEAT_LNum first_idx = (PEAT_LNum)((PEAT_Ratio)num * window / 2);
+    PEAT_LNum first_idx = static_cast<PEAT_LNum>(static_cast<PEAT_Ratio>(num) * window / 2);
     PEAT_LNum last_idx = num - first_idx;
     PEAT_LNum num_q = last_idx - first_idx;
     PEAT_LNum idx = 0;
@@ -146,11 +144,11 @@ void User_Region::process(PEAT_Ratio window)
         }
     }
 
-    median_clock = (PEAT_Ratio)sum_clock / (PEAT_Ratio)num;
-    median_instr = (PEAT_Ratio)sum_instr / (PEAT_Ratio)num;
-    median_CPI = sum_CPI / (PEAT_Ratio)num;
-    median_m_CPI = sum_m_CPI / (PEAT_Ratio)num_q;
-    true_median_CPI = (PEAT_Ratio)sum_clock / (PEAT_Ratio)sum_instr;
+    median_clock = static_cast<PEAT_Ratio>(sum_clock) / static_cast<PEAT_Ratio>(num);
+    median_instr = static_cast<PEAT_Ratio>(sum_instr) / static_cast<PEAT_Ratio>(num);
+    median_CPI = sum_CPI / static_cast<PEAT_Ratio>(num);
+    median_m_CPI = sum_m_CPI / static_cast<PEAT_Ratio>(num_q);
+    true_median_CPI = static_cast<PEAT_Ratio>(sum_clock) / static_cast<PEAT_Ratio>(sum_instr);
     idx = 0;
     for (std::vector<Elems>::iterator el_it = elements.begin(); el_it != elements.end(); ++el_it, ++idx) {
         u_st_dev_clock += (el_it->clocks - median_clock) * (el_it->clocks - median_clock);
@@ -196,8 +194,8 @@ Address_File_Storage::Address_File_Storage(const Global_Parameters &globals, int
         for (PEAT_Num i = 0; i < app_rank_num; i++) {
             PEAT_Bool hasMoreLines = true;
             while (hasMoreLines) {
-                hasMoreLines = com_ext.read_lines(lines, (PEAT_Rank)i, ':');
-                parse(lines, (PEAT_Rank)i);
+                hasMoreLines = com_ext.read_lines(lines, static_cast<PEAT_Rank>(i), ':');
+                parse(lines, static_cast<PEAT_Rank>(i));
             }
         }
     } else {
@@ -391,15 +389,14 @@ void Address_File_Storage::put_records(const User_Region_Store &user_regions)
     for (std::map<PEAT_Rank, std::map<User_Address_Key, User_Region>>::const_iterator rank_it = user_regions.user_regions.cbegin(); rank_it != user_regions.user_regions.cend(); ++rank_it) {
         if (rank_it->second.empty())
             continue;
-        gzFile out = UR_File->get_file_ptr(rank_it->first);
         std::map<User_Address_Key, User_Region>::const_iterator ur_it = rank_it->second.cbegin();
         const User_Address_Key &addr = ur_it->first;
         const std::vector<PEAT_UID> &addrs = addr.addrs;
         // header
-        const int sep_length = (int)((USER_REGION_VALUE_WIDTH + 1) * 17 +
-                                     (ID_VALUE_WIDTH + 1) * (addrs.size() + 1) +
-                                     (ADDRESS_VALUE_WIDTH + 1) * addrs.size() * 2 +
-                                     (PERCENTAGE_WIDTH + 1) * 2);
+        const int sep_length = static_cast<int>((USER_REGION_VALUE_WIDTH + 1) * 17 +
+                                                  (ID_VALUE_WIDTH + 1) * (addrs.size() + 1) +
+                                                  (ADDRESS_VALUE_WIDTH + 1) * addrs.size() * 2 +
+                                                  (PERCENTAGE_WIDTH + 1) * 2);
         SEPARATORGZ(UR_File, rank_it->first, sep_length);
         UR_File->printf(0, "%d", PEAT_RT_Remark);
         UR_File->printf(0, ":%*s%*s", PRINT_PARAMETERS(ID_VALUE_WIDTH, " "));
@@ -492,9 +489,9 @@ void Address_File_Storage::put_records(const User_Region_Store &user_regions)
         }
         SEPARATORGZ(UR_File, rank_it->first, sep_length);
         // 0: ID:      Base:      Load:      End:    Virtual:    Physical: Offset:  File:  Mem: Align:      Type: Flags:Object path
-        const int sep_length2 = (int)((ID_VALUE_WIDTH + 1) +
-                                      (ADDRESS_VALUE_WIDTH + 1) * 3 +
-                                      (PATH_VALUE_WIDTH + 1));
+        const int sep_length2 = static_cast<int>((ID_VALUE_WIDTH + 1) +
+                                                   (ADDRESS_VALUE_WIDTH + 1) * 3 +
+                                                   (PATH_VALUE_WIDTH + 1));
         SEPARATORGZ(UR_File, rank_it->first, sep_length2);
         UR_File->printf(0, "%d", PEAT_RT_Remark);
         UR_File->printf(0, ":%*s%*s", PRINT_PARAMETERS(ID_VALUE_WIDTH, "ID"));
@@ -547,13 +544,13 @@ PEAT_UID Address_File_Storage::get_num_events(const std::vector<PEAT_Rank> &rank
 
     return num_events;
 }
-PEAT_Bool Address_File_Storage::get_length(const PEAT_Rank rank, const User_Address_Key &key, PEAT_Clock &retLength, PEAT_Ratio &retRatio, const PEAT_UID &idxStart, const PEAT_UID &idxStop, const int subDirStat)
+PEAT_Bool Address_File_Storage::get_length(const PEAT_Rank /*rank*/, const User_Address_Key &/*key*/, PEAT_Clock &/*retLength*/, PEAT_Ratio &/*retRatio*/, const PEAT_UID &/*idxStart*/, const PEAT_UID &/*idxStop*/, const int /*subDirStat*/)
 {
 
     return false;
 }
 
-void Address_File_Storage::put_value(const PEAT_Rank rank, const User_Address_Key &key, const PEAT_Clock &len, const PEAT_UID &altLIdx)
+void Address_File_Storage::put_value(const PEAT_Rank /*rank*/, const User_Address_Key &/*key*/, const PEAT_Clock &/*len*/, const PEAT_UID &/*altLIdx*/)
 {
 }
 
@@ -606,7 +603,7 @@ void Address_File_Storage::process_addresses_table(const String_Split &line, con
     extract(addrInfo.line, line.at(6));
     const Object_File_Definition *obj = get_object_by_name(rank, addrInfo.full_path);
     addrInfo.base_addr = obj->base_addr;
-    addrInfo.addr_offset = (PEAT_LNum)addrInfo.addr - (PEAT_LNum)obj->load_addr;
+    addrInfo.addr_offset = reinterpret_cast<PEAT_LNum>(addrInfo.addr) - reinterpret_cast<PEAT_LNum>(obj->load_addr);
     addrInfo.obj_id = obj->obj_id;
     // addrInfo.name = trim(line.at(6));
     // addrInfo.path = trim(line.at(7));
@@ -675,7 +672,7 @@ PEAT_UID Address_File_Storage::get_obj_id_by_name(const std::string &str, const 
             break;
         }
     }
-    if ((PEAT_UID)-1 == obj_id) {
+    if (static_cast<PEAT_UID>(-1) == obj_id) {
         std::cerr << "Address_File_Storage::get_addr_id_by_addr_value Can't find coresponded binary " << str << "\n";
     }
     return obj_id;
@@ -691,7 +688,7 @@ std::ostream &operator<<(std::ostream &dbg, const User_Address_Key &addr)
     return dbg;
 }
 
-std::ostream &operator<<(std::ostream &dbg, const User_Address_Info &addr)
+std::ostream &operator<<(std::ostream &dbg, const User_Address_Info &/*addr*/)
 {
     /*
     string delim("|");
@@ -704,9 +701,9 @@ std::ostream &operator<<(std::ostream &dbg, const User_Address_Info &addr)
 
 void peat_throw_error(const char *str)
 {
-    fprintf(stderr, str);
+    fprintf(stderr, "%s", str);
 }
 void peat_warning(const char *str)
 {
-    fprintf(stderr, str);
+    fprintf(stderr, "%s", str);
 }

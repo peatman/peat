@@ -220,7 +220,7 @@ int main(int argc, char **argv)
         trace_info_file = make_out_file_name(glob_param.output_path, glob_param.trace_files, ".trace.info", "");
         glob_param.whole_ranks.resize(glob_param.trace_comm_size);
         glob_param.my_ranks.reserve(glob_param.trace_comm_size);
-        for (PEAT_Rank rank = 0; rank < glob_param.trace_comm_size; rank++) {
+        for (PEAT_Rank rank = 0; rank < static_cast<PEAT_Rank>(glob_param.trace_comm_size); rank++) {
             glob_param.whole_ranks[rank] = rank % glob_param.comm_size;
 #ifdef PEAT_MPI
             if (rank % glob_param.comm_size == glob_param.comm_rank)

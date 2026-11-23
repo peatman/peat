@@ -69,9 +69,9 @@ class PTP
     PEAT_Proc get_src_package(PEAT_Rank rank);    // return proc ID by MPI rank number
     PEAT_Num get_numa_pp(PEAT_Node node, PEAT_Node numa_node);
 
-    PEAT_Rank get_rank_num() { return (PEAT_Rank)SMP_to_master_src.size(); }
-    PEAT_Rank get_tgt_node_num() { return (PEAT_Rank)master_to_node_tgt.size(); }
-    PEAT_Rank get_src_node_num() { return (PEAT_Rank)master_to_node_src.size(); }
+    PEAT_Rank get_rank_num() { return static_cast<PEAT_Rank>(SMP_to_master_src.size()); }
+    PEAT_Rank get_tgt_node_num() { return static_cast<PEAT_Rank>(master_to_node_tgt.size()); }
+    PEAT_Rank get_src_node_num() { return static_cast<PEAT_Rank>(master_to_node_src.size()); }
     std::string get_host_name(PEAT_Rank rank) const;
     PEAT_Clock get_real_time(const PEAT_Clock tsc_in, const PEAT_Rank rank);
     PEAT_FREQ get_trace_freq(const PEAT_Rank rank) const

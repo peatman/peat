@@ -64,12 +64,12 @@ extern "C" {
 
 static bool compare_ranks(const std::vector<int>& comm1_ranks, const std::vector<int>& comm2_ranks) {
     if (comm1_ranks.size() != comm2_ranks.size()) {
-        debug_printf("(local) sizes mismatch %d != %d.\n", comm1_ranks.size(), comm2_ranks.size());
+        debug_printf("(local) sizes mismatch %lu != %lu.\n", comm1_ranks.size(), comm2_ranks.size());
         return false;
     }
     for (size_t size = comm1_ranks.size(), it = 0; it < size; ++it) {
         if (comm1_ranks.at(it) != comm2_ranks.at(it)) {
-            debug_printf("(local) translation %d mismatch %d != %d.\n", it, comm1_ranks.at(it), comm2_ranks.at(it));
+            debug_printf("(local) translation %lu mismatch %d != %d.\n", it, comm1_ranks.at(it), comm2_ranks.at(it));
             return false;
         }
     }
@@ -94,7 +94,7 @@ struct t_comm {
 
     friend bool compare_comms(const t_comm &comm1, const t_comm &comm2)
     {
-        debug_printf("comparing comms %x and %x...",comm1.comm,comm2.comm);
+        debug_printf("comparing comms %x and %x...",peat_handle_id(comm1.comm),peat_handle_id(comm2.comm));
         if (comm1.kind != comm2.kind)
             return false;
         if (comm1.is_internal != comm2.is_internal)
@@ -227,7 +227,7 @@ struct t_global_comms {
         size_t num_comms = r_list.size();
         for (size_t i = 0; i < num_comms; i++) {
             memcpy(ptr + i * sizeof(r_comm), &r_list[i], sizeof(r_comm));
-            debug_printf("Packing global comm=%x(gid=%d),(%ld,%ld), at rank (%d)\n",r_list[i].comm,r_list[i].gid, r_list[i].begin_time,r_list[i].end_time,r_list[i].rank);
+            debug_printf("Packing global comm=%x(gid=%d),(%lld,%lld), at rank (%d)\n",peat_handle_id(r_list[i].comm),r_list[i].gid, r_list[i].begin_time,r_list[i].end_time,r_list[i].rank);
         }
         return sizeof(r_comm) * num_comms;
     }
@@ -239,7 +239,7 @@ struct t_global_comms {
         for (ptr_it = 0; ptr_it < total_size;) {
             t_comm tmp_comm;
             ptr_it += tmp_comm.unpack(ptr + ptr_it);
-            debug_printf("unpacking comm=%x(%d),(%ld,%ld),%d(%d)\n",tmp_comm.comm,tmp_comm.idx,tmp_comm.begin_time,tmp_comm.end_time,total_size,ptr_it);
+            debug_printf("unpacking comm=%x(%d),(%lld,%lld),%zu(%zu)\n",peat_handle_id(tmp_comm.comm),tmp_comm.idx,tmp_comm.begin_time,tmp_comm.end_time,total_size,ptr_it);
             t_list.push_back(tmp_comm);
         }
         return ptr_it;
