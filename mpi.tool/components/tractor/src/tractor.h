@@ -123,10 +123,13 @@ struct tractor : t_base_event {
     int t_write_main_files;
     int t_use_signals;
 #ifdef _TRANSPORT_PROFILE_
-    /* everything a transport shim touches goes here, ahead of every other #ifdef'd member, so one shim fits the
-     * GPU/OMPT/ACC/PTPD/VIRT2PHYS variants of the core alike (see t_transport_layout below) */
     int t_collect_transport;
+#ifndef _T_SHIM_STATE_
+    /* everything a transport shim touches goes here, ahead of every other #ifdef'd member, so one shim fits the
+     * GPU/OMPT/ACC/PTPD/VIRT2PHYS variants of the core alike (see t_transport_layout below); with _T_SHIM_STATE_ the
+     * shims use t_shared (t_shim_state.h) instead, which holds the permission */
     int t_permit_collect_transport;
+#endif
     t_transport_profiler t_transport_prof;
 #endif
     char mpi_filename[1024];
@@ -304,7 +307,19 @@ extern tractor_debug t_info_debug;
 extern tractor t_info;
 #endif
 
-#ifdef _TRANSPORT_PROFILE_
+#if defined(_T_SHIM_STATE_)
+/* shim side: the core is loaded, fits the shim (t_shim_state_check) and takes transport records (TRANSPORT=on) */
+static inline bool t_transport_shim_check(const struct t_shim_state *state, const char *shim)
+{
+    if (!t_shim_state_check(state, T_SHIM_STATE_NEED(transport_reuse_event), shim))
+        return false;
+    if (!state->transport_allocate_event || !state->transport_reuse_event || !state->get_tid) {
+        fprintf(stderr, "tractor: %s transport shim disabled - the preloaded tractor library was built without transport support (TRANSPORT=on)\n", shim);
+        return false;
+    }
+    return true;
+}
+#elif defined(_TRANSPORT_PROFILE_)
 /* A transport shim (libtractor_transport_<api>.so) is built once and preloaded next to any core library, but it
  * reaches into t_info with its own compiled view of struct tractor. Those members come first in struct tractor,
  * so only the switches that change the base class t_base_event (HWCOUNTERS, MEMPROFILE) or DIAG move them - and

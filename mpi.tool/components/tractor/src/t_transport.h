@@ -21,8 +21,9 @@
 
 /* transport wrappers record only while this holds: always in the core library, a standalone shim redefines it to
  * its struct tractor layout check (mpi_layer.pl, t_transport_check_layout() in tractor.h) */
-#ifndef T_TRANSPORT_LAYOUT_OK
-#define T_TRANSPORT_LAYOUT_OK true
+/* false in a shim that cannot work with the loaded core library (set by the shim prologue, mpi_layer.pl) */
+#ifndef T_TRANSPORT_SHIM_OK
+#define T_TRANSPORT_SHIM_OK true
 #endif
 
 #if 0

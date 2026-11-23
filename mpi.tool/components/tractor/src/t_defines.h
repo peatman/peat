@@ -25,6 +25,7 @@
 
 #include <mpi.h>
 #include <time.h>
+#include "t_shim_state.h"
 #ifdef _T_OMPT_
 #include <omp-tools.h>
 #endif
@@ -428,8 +429,18 @@ extern  ompt_finalize_tool_t ompt_finalize_tool;
 #define __msl_allocate_event(tid_in, level, skip_write, event, counters) gt_info(allocate_event(tid_in, level, skip_write, event, counters))
 #define __msl_reuse_event(tid_in, level, event, counters, funcid) gt_info(reuse_event(tid_in, level, event, counters, funcid))
 #define __msl_discard_event(tid_in, level, event, children_base) gt_info(discard_event(tid_in, level, event, children_base))
+/* transport records: through t_shared (t_shim_state.h), the same in the core and in the shims */
+#ifdef _T_SHIM_STATE_
+#define T_TRANSPORT_PERMIT (t_shared.t_permit_collect_transport)
+#define __msl_transport_get_tid(tid_in) t_shared.get_tid(tid_in)
+#define __msl_transport_allocate_event(tid_in, event, funcid) t_shared.transport_allocate_event(tid_in, event, funcid)
+#define __msl_transport_reuse_event(tid_in, event, funcid) t_shared.transport_reuse_event(tid_in, event, funcid)
+#else
+#define T_TRANSPORT_PERMIT gt_info(t_permit_collect_transport)
+#define __msl_transport_get_tid(tid_in) __msl_get_tid(tid_in)
 #define __msl_transport_allocate_event(tid_in, event, funcid) gt_info(t_transport_prof).allocate_event(tid_in, event, funcid)
 #define __msl_transport_reuse_event(tid_in, event, funcid) gt_info(t_transport_prof).reuse_event(tid_in, event, funcid)
+#endif
 
 #define __msl_get_tid(tid_in) gt_info(get_tid(tid_in))
 #define __msl_check_chain(tid, level) gt_info(t_check_chain(tid, level))

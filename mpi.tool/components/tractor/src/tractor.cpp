@@ -133,6 +133,12 @@ char counting_permission[MPI_MAX_FUNCID_THROUGH];
 char fullstack_permission[MPI_MAX_FUNCID_THROUGH];
 char counting_permission_pcontrol[MPI_MAX_FUNCID_THROUGH];
 bool tractor_finished = false;
+/* the permission for transport records: in t_shared, which the shims see, or (-D_T_NO_SHIM_STATE_) in struct tractor */
+#ifdef _T_SHIM_STATE_
+#define T_CORE_TRANSPORT_PERMIT t_shared.t_permit_collect_transport
+#else
+#define T_CORE_TRANSPORT_PERMIT t_permit_collect_transport
+#endif
 long onetimealloc;
 int t_mpi_rank = -1;
 long long bytes_allocated;
@@ -292,7 +298,7 @@ tractor::tractor(void)
     store_map = 0;
 
 #ifdef _TRANSPORT_PROFILE_
-    t_permit_collect_transport = 0;
+    T_CORE_TRANSPORT_PERMIT = 0;
 #endif
 
     onetimealloc = defonetimealloc;
@@ -1162,7 +1168,7 @@ void tractor::init(void)
 #if defined(_TRANSPORT_PROFILE_)
     if (t_collect_transport && t_mpi_rank >= 0) {
         t_transport_prof.init(t_max_threads, stat_dir, tmp_dir, stat_template, use_realtime_dump);
-        t_permit_collect_transport = 1;
+        T_CORE_TRANSPORT_PERMIT = 1;
     }
 #endif
     char tbuf[MAX_PATH];
@@ -1368,7 +1374,7 @@ void tractor::pre_finalize(int abort)
     if (tractor_initialized < 1)
         return;
 #ifdef _TRANSPORT_PROFILE_
-    t_permit_collect_transport = 0;
+    T_CORE_TRANSPORT_PERMIT = 0;
 #endif
     if (t_mpi_rank < 0)
         single_process_nodes_info();
@@ -3731,7 +3737,37 @@ tractor_debug t_info_debug;
 #else
 tractor t_info;
 #endif
+#ifdef _T_SHIM_STATE_
+/* What the shims use of the core (t_shim_state.h). A constant initialization: valid as soon as this library is loaded,
+   before the constructor of t_info has run. */
+static int t_shim_get_tid(pid_t tid_in)
+{
+    return gt_info(get_tid(tid_in));
+}
 #ifdef _TRANSPORT_PROFILE_
+static void t_shim_transport_allocate_event(int tid, msl_event **event, short func_id)
+{
+    gt_info(t_transport_prof).allocate_event(tid, event, func_id);
+}
+static int t_shim_transport_reuse_event(int tid, msl_event **event, short func_id)
+{
+    return gt_info(t_transport_prof).reuse_event(tid, event, func_id);
+}
+#endif
+struct t_shim_state t_shared = {
+    T_SHIM_STATE_VERSION,
+    (int)sizeof(t_shim_state),
+    0, /* t_permit_collect_transport: set once transport collection is set up (PEAT_TRACTOR_COLLECT_TRANSPORT) */
+    t_shim_get_tid,
+#ifdef _TRANSPORT_PROFILE_
+    t_shim_transport_allocate_event,
+    t_shim_transport_reuse_event,
+#else
+    NULL, /* a core without transport support: the shims stay inert */
+    NULL,
+#endif
+};
+#elif defined(_TRANSPORT_PROFILE_)
 /* checked by the transport shims before they touch t_info, see t_transport_check_layout() */
 extern "C" void tractor_transport_layout(long *v)
 {

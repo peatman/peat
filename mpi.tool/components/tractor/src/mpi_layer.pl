@@ -1269,10 +1269,16 @@ while( <IN> ) {
   print "#include \"t_transport.h\"\n";
   if ($is_shim) {
     $transport_reentrant_declared=0;
-    # the shim records nothing unless the preloaded core library has the same struct tractor layout (tractor.h)
+    # the shim records nothing unless the preloaded core library fits it: its t_shared (t_shim_state.h), or with
+    # -D_T_NO_SHIM_STATE_ the same struct tractor layout (tractor.h); a weak reference, NULL without a core library
+    print "#ifdef _T_SHIM_STATE_\n";
+    print "extern \"C\" struct t_shim_state t_shared __attribute__((weak));\n";
+    print "static const bool t_transport_shim_ok = t_transport_shim_check(&t_shared, \"$transport_layer\");\n";
+    print "#else\n";
     print "extern \"C\" void tractor_transport_layout(long *v) __attribute__((weak));\n";
-    print "static const bool t_transport_layout_ok = t_transport_check_layout(tractor_transport_layout, \"$transport_layer\");\n";
-    print "#undef T_TRANSPORT_LAYOUT_OK\n#define T_TRANSPORT_LAYOUT_OK t_transport_layout_ok\n";
+    print "static const bool t_transport_shim_ok = t_transport_check_layout(tractor_transport_layout, \"$transport_layer\");\n";
+    print "#endif\n";
+    print "#undef T_TRANSPORT_SHIM_OK\n#define T_TRANSPORT_SHIM_OK t_transport_shim_ok\n";
   }
   if (!$transport_reentrant_declared) {
     print "static thread_local bool t_transport_reentrant = false;\n";

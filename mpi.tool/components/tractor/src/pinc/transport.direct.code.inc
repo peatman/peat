@@ -28,12 +28,12 @@ $prototype {
     pid_t tid_in;
     int tid;
     msl_event *f_event;
-    bool l_skip_parse=tractor_finished || !T_TRANSPORT_LAYOUT_OK || (gt_info(t_permit_collect_transport)==0);
+    bool l_skip_parse=tractor_finished || !T_TRANSPORT_SHIM_OK || (T_TRANSPORT_PERMIT==0);
     $rtdl // if necessary initialize pointer
     // init_transport_hooks();
     if(__builtin_expect((!l_skip_parse && counting_permission[$funcid_through]>0),1)) {
         tsc_entry = peat_get_time_tid(&tid_in);
-        tid=__msl_get_tid(tid_in);
+        tid=__msl_transport_get_tid(tid_in);
         __msl_transport_allocate_event(tid,&f_event,$funcid_through);
         tsc_mpi_entry=peat_get_time();
     } // if(__builtin_expect((!l_skip_parse && counting_permission[$funcid_through]>0),1))
