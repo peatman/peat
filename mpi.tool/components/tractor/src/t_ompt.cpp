@@ -25,9 +25,12 @@
 #include <omp-tools.h>
 extern "C" {
 
+#include "t_class_shim.h" /* the core through t_shared: built into the core (OMPT=on) or as libtractor_ompt.so */
+static const bool t_ompt_core_ok = T_CLASS_CORE_CHECK("OpenMP (OMPT)", register_class);
+
 #define ompt_data_value(x) x == NULL ? -1 : x->value
 
-msl_event stored_section_events;
+T_CLASS_STATIC msl_event stored_section_events;
 static int begins = 0;
 static long long uniq_id = 0;
 static long long uniq_task_id = 0;
@@ -43,21 +46,21 @@ static msl_event *record_ompt_event(short func0, short func1, const void *pcode)
     int tid;
     const PEAT_MPI_Func_ID_Through fidc = (PEAT_MPI_Func_ID_Through)func1;
     PEAT_Proc core_id;
-    msl_extras_counters counters;
-    if (gt_info(tractor_initialized) < 1)
+    if (T_CORE(tractor_initialized) < 1)
         return NULL;
     tsc_entry = peat_get_time_tid_core(&tid_in, &core_id);
-    tid = __msl_get_tid(tid_in);
+    tid = T_CORE_GET_TID(tid_in);
     /* an OMPT record is a point in time: it takes the level of the call it happens in, without opening one; none inside
        a call at the deepest level (PEAT_TRACTOR_MAX_NESTING_LEVELS): there is no level below it */
-    const int level = __msl_current_level(tid);
-    if (level >= gt_info(t_max_nesting_levels))
+    const int level = T_CORE_LEVEL(tid);
+    if (level >= T_CORE(t_max_nesting_levels))
         return NULL;
-    __msl_allocate_event(tid, level, 0, &t_event, &counters);
-    if (gt_info(full_ompt_unwind)) {
-        stack_unwind(gt_info(max_ret_level), counters.addrs, gt_info(ret_levels));
+    PEAT_Addr *t_addrs;
+    T_CORE_ALLOCATE(tid, level, &t_event, &t_addrs);
+    if (T_CORE(full_ompt_unwind)) {
+        stack_unwind(T_CORE(max_ret_level), t_addrs, T_CORE(ret_levels));
     } else {
-        stack_unwind0(gt_info(max_ret_level), counters.addrs, gt_info(ret_levels));
+        stack_unwind0(T_CORE(max_ret_level), t_addrs, T_CORE(ret_levels));
     }
     t_event->func_id = func1;
     t_event->tscs[0] = tsc_entry;
@@ -286,8 +289,8 @@ static void t_ompt_callback_target_map(
 }
 
 #define MAX_SYNC_REGIONS 11
-msl_event **stored_sync_events[MAX_SYNC_REGIONS];
-msl_event **stored_sync_events_wait[MAX_SYNC_REGIONS];
+T_CLASS_STATIC msl_event **stored_sync_events[MAX_SYNC_REGIONS];
+T_CLASS_STATIC msl_event **stored_sync_events_wait[MAX_SYNC_REGIONS];
 
 static void store_event(msl_event **stored_events[MAX_SYNC_REGIONS], ompt_sync_region_t kind, ompt_scope_endpoint_t endpoint, msl_event *event)
 {
@@ -352,7 +355,7 @@ static void t_ompt_callback_sync_region(
         }
     }
     if (endpoint == ompt_scope_end) {
-        int tid = (int)__msl_get_tid(tid_in);
+        int tid = (int)T_CORE_GET_TID(tid_in);
         event = retrieve_event(stored_sync_events, kind, endpoint, tid);
         if (event) {
             event->ompt.task_data = ompt_data_value(task_data);
@@ -417,7 +420,7 @@ static void t_ompt_callback_sync_region_wait(
         }
     }
     if (endpoint == ompt_scope_end) {
-        int tid = (int)__msl_get_tid(tid_in);
+        int tid = (int)T_CORE_GET_TID(tid_in);
         event = retrieve_event(stored_sync_events_wait, kind, endpoint, tid);
         if (event) {
             event->ompt.task_data = ompt_data_value(task_data);
@@ -553,15 +556,23 @@ static void t_ompt_callback_implicit_task(
     __DEBUG_EPILOG_OMPT_LAYER__
 }
 
-ompt_initialize_t t_init;
-ompt_start_tool_result_t t_ompt_start;
-ompt_finalize_tool_t ompt_finalize_tool;
+T_CLASS_STATIC ompt_initialize_t t_init;
+T_CLASS_STATIC ompt_start_tool_result_t t_ompt_start;
+T_CLASS_STATIC ompt_finalize_tool_t ompt_finalize_tool;
+static void t_ompt_finalize_class(void) /* called by the core before it writes the trace */
+{
+    if (ompt_finalize_tool)
+        ompt_finalize_tool();
+}
 
-int t_ompt_init(ompt_function_lookup_t lookup, int initial_device_num, ompt_data_t *tool_data)
+T_CLASS_STATIC int t_ompt_init(ompt_function_lookup_t lookup, int initial_device_num, ompt_data_t *tool_data)
 {
     __DEBUG_PROLOG_OMPT_LAYER__
     int successes = 0;
     debug_printf("ompt_init started...\n");
+    static const struct t_shim_class t_ompt_class = {"OMPT", NULL, t_ompt_finalize_class, NULL};
+    if (!T_CORE_REGISTER_CLASS(&t_ompt_class)) /* another copy of OMPT is set up already */
+        return 0;
 
     ompt_set_callback_t ompt_set_callback = (ompt_set_callback_t)lookup("ompt_set_callback");
     ompt_finalize_tool = (ompt_finalize_tool_t)lookup("ompt_finalize_tool");
@@ -646,7 +657,7 @@ int t_ompt_init(ompt_function_lookup_t lookup, int initial_device_num, ompt_data
 #endif
 
     if (successes > 0) {
-        int max_threads = gt_info(t_max_threads);
+        int max_threads = T_CORE(t_max_threads);
         for (int i = 0; i < MAX_SYNC_REGIONS; i++) {
             stored_sync_events[i] = new msl_event *[max_threads];
             stored_sync_events_wait[i] = new msl_event *[max_threads];
@@ -659,7 +670,7 @@ int t_ompt_init(ompt_function_lookup_t lookup, int initial_device_num, ompt_data
     return successes;
 }
 
-void t_ompt_fini(ompt_data_t *tool_data)
+T_CLASS_STATIC void t_ompt_fini(ompt_data_t *tool_data)
 {
     __DEBUG_PROLOG_OMPT_LAYER__
     __DEBUG_EPILOG_OMPT_LAYER__
@@ -669,7 +680,7 @@ ompt_start_tool_result_t *ompt_start_tool(unsigned int omp_version, const char *
 {
     __DEBUG_PROLOG_OMPT_LAYER__
     debug_printf("ompt_start_tool started...\n");
-    if (!gt_info(parse_openmp))
+    if (!t_ompt_core_ok || !T_CORE(parse_openmp))
         return NULL;
     t_ompt_start.initialize = t_ompt_init;
     t_ompt_start.finalize = t_ompt_fini;

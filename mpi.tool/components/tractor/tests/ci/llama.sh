@@ -2,8 +2,12 @@
 # llama.cpp / CUDA smoke test for CI (or any box with a llama.cpp build):
 #   run llama-simple under tractor (LD_PRELOAD, no MPI: a one-process trace tractor_t_<pid>.*) -> mat and ctt on the trace.
 #
-#   ./llama.sh <libtractor.so> <llama.cpp bin dir (llama-simple)> <model.gguf> [tokens]
+#   ./llama.sh <libtractor.so>[:<shim.so>...] <llama.cpp bin dir (llama-simple)> <model.gguf> [tokens]
 #   e.g. ./llama.sh $PEAT/mpi.tool/lib/gnu/libtractor.openmpi.so ~/llama.cpp/build/bin stories15M-q4_0.gguf 16
+#        ./llama.sh $L/libtractor.mpich5.so:$L/libtractor_llama.so:$L/libtractor_cuda.so ~/llama.cpp/build/bin m.gguf 16
+# The first argument is what is preloaded: a core library with the classes built in, or a core and the shims of the
+# classes (TARGET=class_layers: libtractor_llama.so, libtractor_cuda.so). The checks for the llama.cpp and cuBLAS wrappers
+# look at all of them.
 #
 # Expects mat and ctt in <repo>/mpi.tool/bin (as installed by their Makefiles; SMOKE_BIN=<dir> to take them from
 # elsewhere), a llama.cpp built with shared libraries
@@ -26,20 +30,28 @@
 
 set -u
 
-lib=${1:?usage: llama.sh <libtractor.so> <llama.cpp bin dir> <model.gguf> [tokens]}
-llama_bin=${2:?usage: llama.sh <libtractor.so> <llama.cpp bin dir> <model.gguf> [tokens]}
-model=${3:?usage: llama.sh <libtractor.so> <llama.cpp bin dir> <model.gguf> [tokens]}
+usage="usage: llama.sh <libtractor.so>[:<shim.so>...] <llama.cpp bin dir> <model.gguf> [tokens]"
+lib=${1:?$usage}
+llama_bin=${2:?$usage}
+model=${3:?$usage}
 tokens=${4:-16}
 prompt="Once upon a time"
 
 here=$(cd "$(dirname "$0")" && pwd)
 bin=$(cd "${SMOKE_BIN:-$here/../../../../bin}" && pwd)
-lib=$(realpath "$lib")
+# the preload list: the core and the shims, each made absolute; lib is the list as LD_PRELOAD takes it
+IFS=: read -ra libs <<< "$lib"
+for i in "${!libs[@]}" ; do
+    [ -f "${libs[$i]}" ] || { echo "no tractor library: ${libs[$i]}"; exit 2; }
+    libs[$i]=$(realpath "${libs[$i]}")
+done
+lib=$(IFS=: ; echo "${libs[*]}")
+# lib_with <symbol>: the library of the list that exports it (empty: none does)
+lib_with() { local l; for l in "${libs[@]}" ; do nm -D --defined-only "$l" 2>/dev/null | grep -qw "$1" && { echo "$l"; return 0; }; done; return 1; }
 simple=$(realpath "$llama_bin/llama-simple")
 model=$(realpath "$model")
 work=${SMOKE_WORKDIR:-$(mktemp -d)}
 
-[ -f "$lib" ]     || { echo "no tractor library: $lib"; exit 2; }
 [ -x "$simple" ]  || { echo "no llama-simple in $llama_bin"; exit 2; }
 [ -f "$model" ]   || { echo "no model: $model"; exit 2; }
 [ -x "$bin/mat" ] || { echo "no mat in $bin"; exit 2; }
@@ -50,9 +62,10 @@ status=0
 fail() { echo "FAIL: $*"; [ -z "${GITHUB_ACTIONS:-}" ] || echo "::error title=llama smoke::$*"; status=1; }
 
 # the library must have the llama.cpp wrappers at all
-nm -D --defined-only "$lib" | grep -qw llama_process || { echo "$lib has no llama.cpp wrappers (built without llama.cpp headers?)"; exit 2; }
+lib_with llama_process > /dev/null || { echo "$lib has no llama.cpp wrappers (built without llama.cpp headers, or no libtractor_llama.so preloaded?)"; exit 2; }
 cublas_wrappers="cublasSgemm_v2 cublasGemmEx cublasGemmBatchedEx cublasGemmStridedBatchedEx cublasSgemmBatched cublasSgemmStridedBatched cublasStrsmBatched cublasLtMatmul"
-if nm -D --defined-only "$lib" | grep -qw cublasGemmEx ; then cuda_lib=1 ; else cuda_lib=0 ; fi
+cuda_file=$(lib_with cublasGemmEx) # the core with CUDA built in, or libtractor_cuda.so
+if [ -n "$cuda_file" ] ; then cuda_lib=1 ; else cuda_lib=0 ; fi
 case "${LLAMA_SMOKE_CUDA:-}" in
     1) [ $cuda_lib = 1 ] || { echo "LLAMA_SMOKE_CUDA=1 but $lib is not a CUDA build (no cuBLAS wrappers)"; exit 2; } ;;
     0) cuda_lib=0 ;;
@@ -164,9 +177,9 @@ fi
 
 if [ $cuda_lib = 1 ] ; then
     for w in $cublas_wrappers ; do
-        nm -D --defined-only "$lib" | grep -qw "$w" || fail "cuda: $lib does not export the $w wrapper"
+        nm -D --defined-only "$cuda_file" | grep -qw "$w" || fail "cuda: $cuda_file does not export the $w wrapper"
     done
-    ldd "$lib" | grep -q "libcupti.*=> /" || { ldd "$lib" | grep cupti ; fail "cuda: libcupti not resolved for $lib" ; }
+    ldd "$cuda_file" | grep -q "libcupti.*=> /" || { ldd "$cuda_file" | grep cupti ; fail "cuda: libcupti not resolved for $cuda_file" ; }
     if run_traced cuda PEAT_TRACTOR_PARSE_CUDA=1 ; then
         # "failed": CUPTI did not start (no driver, as on CI); "on" with a GPU driver
         check_trace cuda 'CUDA [0-9]+\.[0-9]+/CUPTI [0-9]+\(recording (on|failed)\)' && require cuda $stages

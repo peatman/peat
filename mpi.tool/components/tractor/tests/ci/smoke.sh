@@ -7,15 +7,16 @@
 #   can record, see ../../../common/mpi_func.inc) must show up in that test's trace. An engineering library (built for a
 #   patched MPI) must record MPI-internal functions in coll, a stock one none at all.
 #
-#   ./smoke.sh <libtractor.so> [ranks] [iterations] [tests]
+#   ./smoke.sh <libtractor.so>[:<shim.so>...] [ranks] [iterations] [tests]
 #   e.g. ./smoke.sh $PEAT/mpi.tool/lib/gnu/libtractor.mpich4.so 4 3 "p2p coll comm rma"
+# The first argument is what is preloaded: the core library, optionally followed by shims (transport, event classes).
 #
 # Expects mat and ctt in <repo>/mpi.tool/bin (as installed by their Makefiles).
 # Works with Open MPI (mpirun -x) and MPICH/MVAPICH hydra (mpiexec -genv).
 # Exits non-zero if any test, trace or tool step fails.
 #
 # SMOKE_ENGINEERING=1|0 says whether <libtractor.so> is an engineering build (CI sets it from the matrix); unset, it is
-# guessed: ".eng" in the library name (GNU make) or an exported MPIC_Send wrapper (MPICH family).
+# guessed: ".eng" in the name of the core (the first library; GNU make) or an exported MPIC_Send wrapper (MPICH family).
 #
 # mat runs in <test>.<names|ids>/serial, on its own copy of the raw trace, without switches (output in serial/out).
 # SMOKE_PMAT=<pmat binary> also runs parallel mat (pmat.<target>, built with the same MPI) once per rank count in
@@ -34,7 +35,7 @@
 
 set -u
 
-lib=${1:?usage: smoke.sh <libtractor.so> [ranks] [iterations] [tests]}
+lib=${1:?usage: smoke.sh <libtractor.so>[:<shim.so>...] [ranks] [iterations] [tests]}
 ranks=${2:-4}   # coll needs >2 ranks (neighbour collectives on a 2-rank ring give wrong values)
 iterations=${3:-3}
 # fio is left out by default: its split-collective/nonblocking collective I/O checks fail intermittently
@@ -45,10 +46,16 @@ tests=${4:-p2p coll comm rma}
 here=$(cd "$(dirname "$0")" && pwd)
 src=$here/../func-classes
 bin=$(cd "$here/../../../../bin" && pwd)
-lib=$(realpath "$lib")
+# the preload list: the core and the shims, each made absolute; lib is the list as LD_PRELOAD takes it, core the first
+IFS=: read -ra libs <<< "$lib"
+for i in "${!libs[@]}" ; do
+    [ -f "${libs[$i]}" ] || { echo "no tractor library: ${libs[$i]}"; exit 2; }
+    libs[$i]=$(realpath "${libs[$i]}")
+done
+lib=$(IFS=: ; echo "${libs[*]}")
+core=${libs[0]}
 work=${SMOKE_WORKDIR:-$(mktemp -d)}
 
-[ -f "$lib" ]     || { echo "no tractor library: $lib"; exit 2; }
 [ -x "$bin/mat" ] || { echo "no mat in $bin"; exit 2; }
 [ -x "$bin/ctt" ] || { echo "no ctt in $bin"; exit 2; }
 mat_alt=${SMOKE_MAT_ALT:-}
@@ -70,7 +77,7 @@ sed -nE 's/^\{ [A-Z0-9_]+_ID COMMA "[^"]*" COMMA "(MPI_[A-Za-z0-9_]+)".*/\1/p' "
 
 if [ -n "${SMOKE_ENGINEERING:-}" ]; then
     engineering=$SMOKE_ENGINEERING
-elif [[ $(basename "$lib") == *.eng.so* ]] || nm -D --defined-only "$lib" 2>/dev/null | grep -qw MPIC_Send; then
+elif [[ $(basename "$core") == *.eng.so* ]] || nm -D --defined-only "$core" 2>/dev/null | grep -qw MPIC_Send; then
     engineering=1
 else
     engineering=0
@@ -111,7 +118,7 @@ pmat_launch() {
 echo "== tractor: $lib (engineering=$engineering)"
 [ -z "$mat_alt" ] || echo "== alternative serial mat: $mat_alt"
 [ -z "$pmat" ] || echo "== pmat: $pmat (ranks: $pmat_ranks)"
-ldd "$lib" | grep -E "not found" && { echo "unresolved dependencies"; exit 1; }
+ldd "${libs[@]}" | grep -E "not found" && { echo "unresolved dependencies"; exit 1; }
 
 status=0
 fail() { echo "FAIL: $*"; status=1; }

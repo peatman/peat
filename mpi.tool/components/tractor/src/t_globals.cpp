@@ -21,9 +21,9 @@
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
 extern "C" {
 #endif
-#ifdef USE_NANO_TIMER
+/* defined with either timer: a shim built with the other one has to load, find the mismatch (t_shim_state_check) and
+   stay inert, instead of stopping the program with an undefined symbol */
 PEAT_Clock t_nano_init = 0;
-#endif
 PEAT_Clock t_tsc_init = 0;
 long long proc_freq[2] = {0, 0};
 clockid_t default_timer = CLOCK_MONOTONIC_RAW;

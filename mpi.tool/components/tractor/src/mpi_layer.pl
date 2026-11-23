@@ -51,6 +51,9 @@ my $parse_gpu_cl=0; # OpenCL wrappers (-c on|cl|cl,ze)
 my $parse_gpu_ze=0; # Level Zero wrappers (-c on|ze|cl,ze)
 my $parse_llama=0;  # llama.cpp/ggml pipeline wrappers (-g on)
 my $parse_cuda=0;   # cuBLAS wrappers of the CUDA (CUPTI) build (-u on)
+my $cuda_shim_out=""; # -U <file>: the source of the CUDA shim (cuBLAS wrappers only)
+my $llama_shim_out=""; # -G <file>: the source of the llama.cpp shim (llama.cpp/ggml wrappers only)
+my @gpu_shim_out;      # -C cl=<file> / -C ze=<file>: the sources of the OpenCL / Level Zero shims
 my $skip_core=0;
 sub make_dup;
 my @transport_layers; 
@@ -861,8 +864,10 @@ $retcode=t_comm_func::remove_retcode_extern($retcode);
 #print STDERR "Generating $funcname\n";
 my $c_prototype="$retcode $funcname($funcpars)";
 my $funcretcode=t_comm_func::remove_typenames_retcode($retcode);
-my $t_func_pointer="$retcode (*t_$funcname)($funcpars) = 0;";
-my $rtdl="if(!t_$funcname) { t_$funcname = reinterpret_cast<$retcode (*)($funcpars)>(dlsym(RTLD_NEXT, \"$funcname\")); }\n" ; 
+# static: a core with the API built in and its shim must not share the pointer (each finds the next one of its own)
+my $t_func_pointer="static $retcode (*t_$funcname)($funcpars) = 0;";
+my $rtdl="if(!t_$funcname) { t_$funcname = reinterpret_cast<$retcode (*)($funcpars)>(dlsym(RTLD_NEXT, \"$funcname\")); }\n" ;
+my $gpu_inert=($properties =~ /CLASS_CL/) ? "t_cl_inert" : "t_ze_inert"; # gpu_general.code.inc
 #print STDERR "Include written\n";
 
 #if ($funcname =~/clCreateContext/) {
@@ -1069,9 +1074,9 @@ if ($properties =~/CLASS_OSC/) { make_class_osc($lineref);return;}
 if ($properties =~/CLASS_FIO/) { make_class_fio($lineref);return;} 
 if ($properties =~/CLASS_CL/) { make_class_gpu($lineref) if $parse_gpu_cl;return;} 
 if ($properties =~/CLASS_ZE/) { make_class_gpu($lineref) if $parse_gpu_ze;return;}
-if ($properties =~/CLASS_LLAMA/) { make_class_llama($lineref,"llama_skip_parse") if $parse_llama;return;}
-if ($properties =~/CLASS_GGML_CPU/) { make_class_llama($lineref,"ggml_cpu_skip_parse") if $parse_llama;return;}
-if ($properties =~/CLASS_CUBLAS/) { make_class_llama($lineref,"cuda_skip_parse") if $parse_cuda;return;}
+if ($properties =~/CLASS_LLAMA/) { make_class_llama($lineref,"(llama_skip_parse || t_llama_inert)") if $parse_llama;return;}
+if ($properties =~/CLASS_GGML_CPU/) { make_class_llama($lineref,"(ggml_cpu_skip_parse || t_llama_inert)") if $parse_llama;return;}
+if ($properties =~/CLASS_CUBLAS/) { make_class_llama($lineref,"(cuda_skip_parse || t_cuda_inert)") if $parse_cuda;return;}
 if ($properties =~/CLASS_PSM2/) { make_class_transport($lineref,$transport_layer);return;} 
 if ($properties =~/CLASS_PSM3/) { make_class_transport($lineref,$transport_layer);return;} 
 if ($properties =~/CLASS_VERBS/) { make_class_transport($lineref,$transport_layer);return;} 
@@ -1124,95 +1129,37 @@ while( <IN> ) {
 }
 
 if ($parse_gpu == 1) {
-  while( <IN> ) {
-    chomp($_);
-    my $line=$_;
-    last if ($line =~/cl_layer_starts_here/);
-  }     
- 
-  print "#ifdef GPUPARSE\n";
-  print "#include \"CL/cl.h\"\n" if $parse_gpu_cl;
-  print "#include \"level_zero/ze_api.h\"\n" if $parse_gpu_ze;
-  # clCreateCommandQueueWithProperties takes a zero-terminated list of name/value pairs; record the queue properties bit field
-  print "static long long t_cl_queue_properties(const cl_queue_properties *p) { if (p) for (; p[0]; p += 2) if (p[0] == CL_QUEUE_PROPERTIES) return (long long)p[1]; return 0; }\n" if $parse_gpu_cl;
-#  print "void init_gpu_syms(void);\n";
-
-#  print "int clv30=CL_VERSION_3_0;\n";
-#  print "int clv22=CL_VERSION_2_2;\n";
-#  print "int clv20=CL_VERSION_2_0;\n";
-#  print "int clv12=CL_VERSION_1_2;\n";
-#  print "int clv11=CL_VERSION_1_1;\n";
-#  print "int clv10=CL_VERSION_1_0;\n";
-
-
-  while( <IN> ) {
-    chomp($_);
-    my $line=$_;
-    last if ($line =~/exit_parsing_here/);
-
-    $line=~s/\/\/*//g;
-    $line=~s/\"//g;
-    $line=~s/{//g;
-    $line=~s/}//g;
-    #$line=~s/ +/ /g;
-
-    @line = split(' COMMA ',$line);
-    $line[0]=~s/ //g;
-    $line[2]=~s/ //g;
-    if ($line[2] eq "") {next;}
-    $linecount++;
-    make_c_func(\@line);
-  }
-#  print "static int gpu_layer_initialized=0;\n";
-#  print "void init_gpu_syms(void) {\n";
-#  print "int local_init=0;\n";
-#  print "if (gpu_layer_initialized) return;\n";
-#  print "#include \"tgpu.h\"\n";
-#  print "gpu_layer_initialized=!local_init;\n";
-#  print "debug_printf(\"local_init=%d zeInit=%p\\n\",local_init,t_zeInit);\n";
-#  print "}\n";
-
-  print "#endif // GPUPARSE\n";
+  $linecount+=gpu_section();
 }
 
 # llama.cpp / ggml section: after the GPU one, so the input is either just past the core section (no GPU parsing)
 # or past the GPU section; in both cases the next llama_layer_starts_here is the start of it
 if ($parse_llama == 1) {
-  while( <IN> ) {
-    last if (/llama_layer_starts_here/);
-  }
-  print "#ifdef _T_LLAMA_\n";
-  print "#include <dlfcn.h>\n";
-  print "#include \"llama.h\" /* by-value parameters (llama_model_params, llama_context_params) need the real layouts */\n";
-  print "struct ggml_compute_params; /* ggml-cpu internals: the CLASS_GGML_CPU wrappers only pass the pointers on */\n";
-  print "struct ggml_threadpool;\n";
-  while( <IN> ) {
-    chomp($_);
-    my $line=$_;
-    last if ($line =~/exit_parsing_here/);
-
-    $line=~s/\/\/*//g;
-    $line=~s/\"//g;
-    $line=~s/{//g;
-    $line=~s/}//g;
-
-    @line = split(' COMMA ',$line);
-    $line[0]=~s/ //g;
-    $line[2]=~s/ //g;
-    if ($line[2] eq "") {next;}
-    $linecount++;
-    make_c_func(\@line);
-  }
-  print "#endif // _T_LLAMA_\n";
+  $linecount+=llama_section();
 }
 
 # CUDA section (cuBLAS wrappers; the CUPTI entries there are SKIP): after the llama.cpp one, same reading as above
 if ($parse_cuda == 1) {
+  $linecount+=cuda_section();
+}
+
+close (IN);
+
+return $linecount;
+}
+
+# The cuBLAS wrappers, from the input (IN) at any place before cuda_layer_starts_here up to its exit_parsing_here:
+# into the core's mpi_layer.cpp (-u on) or into the source of the CUDA shim (-U <file>, cuda_shim_file).
+sub cuda_section {
+  my $count=0;
+  my @line;
   while( <IN> ) {
     last if (/cuda_layer_starts_here/);
   }
   print "#ifdef _T_CUPTI_\n";
   print "#include <dlfcn.h>\n";
+  # each copy of the CUDA class has its own (t_cupti.cpp): the wrappers of a copy that is not the registered one pass through
+  print "extern bool t_cuda_inert __attribute__((visibility(\"hidden\")));\n";
   # the cuBLAS headers bring C++ (cuda_fp16.h operators): included outside the extern "C" block of mpi_layer.cpp.in
   print "#if defined(__CPLUSPLUS__) || defined(__cplusplus)\n}\n#endif\n";
   print "#include <cublas_v2.h>\n";
@@ -1232,15 +1179,178 @@ if ($parse_cuda == 1) {
     $line[0]=~s/ //g;
     $line[2]=~s/ //g;
     if ($line[2] eq "") {next;}
-    $linecount++;
+    $count++;
     make_c_func(\@line);
   }
   print "#endif // _T_CUPTI_\n";
+  return $count;
 }
 
-close (IN);
+# The OpenCL / Level Zero wrappers ($parse_gpu_cl, $parse_gpu_ze), from the input (IN) at any place before
+# cl_layer_starts_here up to its exit_parsing_here: into the core's mpi_layer.cpp (-c) or into the source of a shim
+# (-C cl=<file>, -C ze=<file>). The section registers its classes itself (OpenCL, LevelZero; t_shim_state.h): a second
+# copy of a class stays inert.
+sub gpu_section {
+  my $count=0;
+  my @line;
+  while( <IN> ) {
+    last if (/cl_layer_starts_here/);
+  }
+  print "#ifdef GPUPARSE\n";
+  print "#include \"CL/cl.h\"\n" if $parse_gpu_cl;
+  print "#include \"level_zero/ze_api.h\"\n" if $parse_gpu_ze;
+  # clCreateCommandQueueWithProperties takes a zero-terminated list of name/value pairs; record the queue properties bit field
+  print "static long long t_cl_queue_properties(const cl_queue_properties *p) { if (p) for (; p[0]; p += 2) if (p[0] == CL_QUEUE_PROPERTIES) return (long long)p[1]; return 0; }\n" if $parse_gpu_cl;
+  # each copy of a class has its own: the wrappers of a copy that is not the registered one pass the calls through
+  print "__attribute__((visibility(\"hidden\"))) bool t_cl_inert = false;\n" if $parse_gpu_cl;
+  print "__attribute__((visibility(\"hidden\"))) bool t_ze_inert = false;\n" if $parse_gpu_ze;
+  print "__attribute__((constructor)) static void t_gpu_register(void)\n{\n";
+  print "    const bool core_ok = t_shim_state_check(&t_shared, T_SHIM_STATE_NEED(write_record), \"OpenCL/LevelZero\");\n";
+  if ($parse_gpu_cl) {
+    print "    static const struct t_shim_class t_cl_class = {\"OpenCL\", NULL, NULL, NULL};\n";
+    print "    if (!core_ok || !t_shared.register_class(&t_cl_class))\n        t_cl_inert = true; /* no core, or another copy records */\n";
+  }
+  if ($parse_gpu_ze) {
+    print "    static const struct t_shim_class t_ze_class = {\"LevelZero\", NULL, NULL, NULL};\n";
+    print "    if (!core_ok || !t_shared.register_class(&t_ze_class))\n        t_ze_inert = true;\n";
+  }
+  print "}\n";
+  while( <IN> ) {
+    chomp($_);
+    my $line=$_;
+    last if ($line =~/exit_parsing_here/);
 
-return $linecount;
+    $line=~s/\/\/*//g;
+    $line=~s/\"//g;
+    $line=~s/{//g;
+    $line=~s/}//g;
+
+    @line = split(' COMMA ',$line);
+    $line[0]=~s/ //g;
+    $line[2]=~s/ //g;
+    if ($line[2] eq "") {next;}
+    $count++;
+    make_c_func(\@line);
+  }
+  print "#endif // GPUPARSE\n";
+  return $count;
+}
+
+# the source of an OpenCL or Level Zero shim (TARGET=class_layers): that API's wrappers alone, through t_shared
+sub gpu_shim_file {
+  my $file=shift;
+  my $api=shift; # cl or ze
+  my $outfile=shift;
+  open(IN,$file) or die "Can't open input file: $file !" ;
+  open(GPUOUT,">$outfile") or die ("Cannot open $outfile for writing");
+  my $old=select(GPUOUT);
+  ($parse_gpu_cl,$parse_gpu_ze)=($api eq "cl" ? 1 : 0, $api eq "ze" ? 1 : 0);
+  print "#include \"mpi.h\"\n#include \"mpi_func_ids.h\"\n#include \"tractor.h\"\n#include <dlfcn.h>\n";
+  print "#if defined(__CPLUSPLUS__) || defined(__cplusplus)\nextern \"C\" {\n#endif\n";
+  print "#include \"t_extradef.h\"\n";
+  print "#include \"t_class_shim.h\" /* -D_T_CLASS_SHIM_: gt_info and the __msl_ macros are t_shared */\n";
+  print "extern int counting_permit;\nextern int gpu_skip_parse;\nextern PEAT_Clock global_gpu_time;\nextern PEAT_Clock global_tool_overhead;\n";
+  my $count=gpu_section();
+  print "#if defined(__CPLUSPLUS__) || defined(__cplusplus)\n}\n#endif\n";
+  select($old);
+  close(GPUOUT);
+  close(IN);
+  return $count;
+}
+
+# The llama.cpp / ggml wrappers, from the input (IN) at any place before llama_layer_starts_here up to its
+# exit_parsing_here: into the core's mpi_layer.cpp (-g on) or into the source of the llama shim (-G <file>). The section
+# registers the class itself (built into the core or the shim, see t_shim_state.h): a second copy stays inert.
+sub llama_section {
+  my $count=0;
+  my @line;
+  while( <IN> ) {
+    last if (/llama_layer_starts_here/);
+  }
+  print "#ifdef _T_LLAMA_\n";
+  print "#include <dlfcn.h>\n";
+  print "#include \"llama.h\" /* by-value parameters (llama_model_params, llama_context_params) need the real layouts */\n";
+  print "struct ggml_compute_params; /* ggml-cpu internals: the CLASS_GGML_CPU wrappers only pass the pointers on */\n";
+  print "struct ggml_threadpool;\n";
+  print <<'EOC';
+/* this copy of the llama.cpp class is not the registered one (another library has it set up): its wrappers pass the
+   calls through. Hidden: each copy has its own. */
+__attribute__((visibility("hidden"))) bool t_llama_inert = false;
+/* the build information of the trace: the switches read by the core (PEAT_TRACTOR_PARSE_LLAMA, _GGML_CPU) */
+static const char *t_llama_info(void)
+{
+    static char info[96];
+    snprintf(info, sizeof(info), "llama.cpp(stages %s, ggml CPU kernels %s)", llama_skip_parse ? "off" : "on", ggml_cpu_skip_parse ? "off" : "on");
+    return info;
+}
+__attribute__((constructor)) static void t_llama_register(void)
+{
+    static const struct t_shim_class t_llama_class = {"llama.cpp", NULL, NULL, t_llama_info};
+    if (!t_shim_state_check(&t_shared, T_SHIM_STATE_NEED(register_class), "llama.cpp") || !t_shared.register_class(&t_llama_class))
+        t_llama_inert = true; /* no core, or another copy records */
+}
+EOC
+  while( <IN> ) {
+    chomp($_);
+    my $line=$_;
+    last if ($line =~/exit_parsing_here/);
+
+    $line=~s/\/\/*//g;
+    $line=~s/\"//g;
+    $line=~s/{//g;
+    $line=~s/}//g;
+
+    @line = split(' COMMA ',$line);
+    $line[0]=~s/ //g;
+    $line[2]=~s/ //g;
+    if ($line[2] eq "") {next;}
+    $count++;
+    make_c_func(\@line);
+  }
+  print "#endif // _T_LLAMA_\n";
+  return $count;
+}
+
+# the source of the llama.cpp shim (TARGET=class_layers): the llama.cpp / ggml wrappers alone, through t_shared
+sub llama_shim_file {
+  my $file=shift;
+  my $outfile=shift;
+  open(IN,$file) or die "Can't open input file: $file !" ;
+  open(LLAMAOUT,">$outfile") or die ("Cannot open $outfile for writing");
+  my $old=select(LLAMAOUT);
+  $parse_llama=1;
+  print "#include \"mpi.h\"\n#include \"mpi_func_ids.h\"\n#include \"tractor.h\"\n";
+  print "#if defined(__CPLUSPLUS__) || defined(__cplusplus)\nextern \"C\" {\n#endif\n";
+  print "#include \"t_extradef.h\"\n";
+  print "#include \"t_class_shim.h\" /* -D_T_CLASS_SHIM_: gt_info and the __msl_ macros are t_shared */\n";
+  print "extern int counting_permit;\nextern int llama_skip_parse;\nextern int ggml_cpu_skip_parse;\nextern PEAT_Clock global_llama_time;\nextern PEAT_Clock global_tool_overhead;\n";
+  my $count=llama_section();
+  print "#if defined(__CPLUSPLUS__) || defined(__cplusplus)\n}\n#endif\n";
+  select($old);
+  close(LLAMAOUT);
+  close(IN);
+  return $count;
+}
+
+# the source of the CUDA shim (TARGET=class_layers): the cuBLAS wrappers alone, reaching the core through t_shared
+sub cuda_shim_file {
+  my $file=shift;
+  my $outfile=shift;
+  open(IN,$file) or die "Can't open input file: $file !" ;
+  open(CUDAOUT,">$outfile") or die ("Cannot open $outfile for writing");
+  my $old=select(CUDAOUT);
+  $parse_cuda=1;
+  print "#include \"mpi.h\"\n#include \"mpi_func_ids.h\"\n#include \"tractor.h\"\n";
+  print "#if defined(__CPLUSPLUS__) || defined(__cplusplus)\nextern \"C\" {\n#endif\n";
+  print "#include \"t_extradef.h\"\n";
+  print "#include \"t_class_shim.h\" /* -D_T_CLASS_SHIM_: gt_info and the __msl_ macros are t_shared */\n";
+  print "extern int counting_permit;\nextern int cuda_skip_parse;\nextern PEAT_Clock global_llama_time;\nextern PEAT_Clock global_tool_overhead;\n";
+  my $count=cuda_section();
+  print "#if defined(__CPLUSPLUS__) || defined(__cplusplus)\n}\n#endif\n";
+  select($old);
+  close(CUDAOUT);
+  close(IN);
+  return $count;
 }
 
 ####################################################################################
@@ -1269,15 +1379,10 @@ while( <IN> ) {
   print "#include \"t_transport.h\"\n";
   if ($is_shim) {
     $transport_reentrant_declared=0;
-    # the shim records nothing unless the preloaded core library fits it: its t_shared (t_shim_state.h), or with
-    # -D_T_NO_SHIM_STATE_ the same struct tractor layout (tractor.h); a weak reference, NULL without a core library
-    print "#ifdef _T_SHIM_STATE_\n";
+    # the shim records nothing unless the preloaded core library fits it: its t_shared (t_shim_state.h); a weak
+    # reference, NULL without a core library
     print "extern \"C\" struct t_shim_state t_shared __attribute__((weak));\n";
     print "static const bool t_transport_shim_ok = t_transport_shim_check(&t_shared, \"$transport_layer\");\n";
-    print "#else\n";
-    print "extern \"C\" void tractor_transport_layout(long *v) __attribute__((weak));\n";
-    print "static const bool t_transport_shim_ok = t_transport_check_layout(tractor_transport_layout, \"$transport_layer\");\n";
-    print "#endif\n";
     print "#undef T_TRANSPORT_SHIM_OK\n#define T_TRANSPORT_SHIM_OK t_transport_shim_ok\n";
   }
   if (!$transport_reentrant_declared) {
@@ -1333,6 +1438,9 @@ sub parse_command_line {
            $i++}
          case "-g" {$parse_llama=1 if $ARGV[$i+1] eq "on"; $i++} # llama.cpp/ggml pipeline wrappers
          case "-u" {$parse_cuda=1 if $ARGV[$i+1] eq "on"; $i++} # cuBLAS wrappers (CUDA/CUPTI build)
+         case "-U" {$cuda_shim_out=$ARGV[$i+1]; $i++} # the cuBLAS wrappers into this file (CUDA shim), not into the core
+         case "-G" {$llama_shim_out=$ARGV[$i+1]; $i++} # the llama.cpp/ggml wrappers into this file (llama shim)
+         case "-C" {push(@gpu_shim_out,$ARGV[$i+1]); $i++} # cl=<file> or ze=<file>: that API's wrappers into the file (shim)
          case "-e" {$print_extended_stuff=1 if $ARGV[$i+1] eq "on"; $i++}
          case "-p" {$use_pragma_weak=1 if $ARGV[$i+1] eq "on";$i++}
          case "-l" {my $transport_layer = $ARGV[$i+1]; push (@transport_layers,$transport_layer); $i++} 
@@ -1386,6 +1494,13 @@ foreach my $transport_layer_spec(@transport_layers) {
 
 select(stdout);
 `cat $mpilayer.in.end >> $mpilayer` unless $skip_core;
+$linecount+=cuda_shim_file($mpifuncs,$cuda_shim_out) if $cuda_shim_out ne "";
+$linecount+=llama_shim_file($mpifuncs,$llama_shim_out) if $llama_shim_out ne "";
+foreach my $spec (@gpu_shim_out) {
+   my ($api,$out)=split('=',$spec,2);
+   die "-C takes cl=<file> or ze=<file>, not $spec" unless ($api eq "cl" || $api eq "ze") && $out ne "";
+   $linecount+=gpu_shim_file($mpifuncs,$api,$out);
+}
 
 print "Completed. Parsed: $linecount, Generated $funccount.\n"; 
 

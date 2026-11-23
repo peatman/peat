@@ -83,7 +83,9 @@ if(OFIPATH)
 else()
   find_library(TRACTOR_OFI_LIBRARY fabric)
 endif()
-if(TRACTOR_TARGET STREQUAL "transport_layers")
+if(TRACTOR_TARGET STREQUAL "class_layers")
+  message(STATUS "tractor: class_layers: the event-class shims, no MPI library or libfabric check")
+elseif(TRACTOR_TARGET STREQUAL "transport_layers")
   if(TRACTOR_NM_EXE AND TRACTOR_OFI_LIBRARY)
     execute_process(COMMAND ${TRACTOR_NM_EXE} -D --defined-only ${TRACTOR_OFI_LIBRARY}
                     OUTPUT_VARIABLE _ofi_syms ERROR_QUIET)
@@ -198,26 +200,26 @@ message(STATUS "tractor: COMPILER=${TRACTOR_COMPILER} (CXX compiler id: ${CMAKE_
 # 2. MPI vendor + version -> Makefile-style TARGET
 #    -DTRACTOR_TARGET=auto (default) probes CMAKE_CXX_COMPILER to detect the
 #    vendor/version; set it to impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|
-#    cray|transport_layers to skip probing and use that flavor directly ('cray' is
+#    cray|transport_layers|class_layers to skip probing and use that flavor directly ('cray' is
 #    just an alias that normalizes to mpich4 - same MPICH-family struct layout).
 # ---------------------------------------------------------------------------
 set(TRACTOR_TARGET "auto" CACHE STRING
-  "MPI flavor: auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers. \
+  "MPI flavor: auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers|class_layers. \
 'auto' detects the vendor/version from CMAKE_CXX_COMPILER; any other value is used \
 directly and skips probing.")
-set_property(CACHE TRACTOR_TARGET PROPERTY STRINGS auto impi mpich3 mpich4 mpich5 mvapich2 mvapich4 openmpi cray transport_layers)
+set_property(CACHE TRACTOR_TARGET PROPERTY STRINGS auto impi mpich3 mpich4 mpich5 mvapich2 mvapich4 openmpi cray transport_layers class_layers)
 string(TOLOWER "${TRACTOR_TARGET}" _tractor_target_lower)
 
 if(_tractor_target_lower STREQUAL "cray")
   set(_tractor_target_lower mpich4) # Cray MPICH builds like stock MPICH 4.x
-  set(TRACTOR_TARGET mpich4 CACHE STRING "MPI flavor: auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers" FORCE)
+  set(TRACTOR_TARGET mpich4 CACHE STRING "MPI flavor: auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers|class_layers" FORCE)
 endif()
 
-if(NOT _tractor_target_lower MATCHES "^(auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|transport_layers)$")
-  message(FATAL_ERROR "tractor: invalid TRACTOR_TARGET='${TRACTOR_TARGET}' (expected auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers)")
+if(NOT _tractor_target_lower MATCHES "^(auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|transport_layers|class_layers)$")
+  message(FATAL_ERROR "tractor: invalid TRACTOR_TARGET='${TRACTOR_TARGET}' (expected auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers|class_layers)")
 endif()
 
-if(NOT _tractor_target_lower STREQUAL "auto" AND NOT _tractor_target_lower STREQUAL "transport_layers")
+if(NOT _tractor_target_lower MATCHES "^(auto|transport_layers|class_layers)$")
   # derive an informational vendor name for the status message below - no probing needed
   if(_tractor_target_lower MATCHES "^mpich")
     set(TRACTOR_MPI_VENDOR mpich CACHE STRING "MPI vendor (from explicit TRACTOR_TARGET)" FORCE)
@@ -330,7 +332,7 @@ if(_tractor_target_lower STREQUAL "auto")
 
   set(TRACTOR_MPI_VENDOR  ${_mpi_vendor}  CACHE STRING "detected MPI vendor (mpich|mvapich|openmpi|impi|cray)" FORCE)
   set(TRACTOR_MPI_VERSION "${_mpi_version}" CACHE STRING "detected MPI version" FORCE)
-  set(TRACTOR_TARGET ${_tractor_target} CACHE STRING "MPI flavor: auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers" FORCE)
+  set(TRACTOR_TARGET ${_tractor_target} CACHE STRING "MPI flavor: auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers|class_layers" FORCE)
 endif()
 message(STATUS "tractor: MPI vendor=${TRACTOR_MPI_VENDOR} version=${TRACTOR_MPI_VERSION} -> TARGET=${TRACTOR_TARGET}")
 
@@ -392,10 +394,12 @@ set_property(CACHE TRANSPORT PROPERTY STRINGS off on PSM2 VERBS PSM3 UCX OFI)
 set(OMPT       ON  CACHE BOOL "OpenMP interception")
 set(PTPD_BUILD ON  CACHE BOOL "build the ptpd PTP-daemon binary")
 
-set(PEAT_TIMER "tsc" CACHE STRING
+set(PEAT_TIMER "nano" CACHE STRING
   "timer backend for entry/exit timestamps: tsc|nano. 'tsc' uses raw/calibrated TSC reads \
 (rdtsc family); 'nano' uses clock_gettime (via peat_get_time()) for a node-wide, core-invariant \
-timer, at the cost of slightly higher per-call overhead (USE_NANO_TIMER).")
+timer, at the cost of slightly higher per-call overhead (USE_NANO_TIMER). Default nano, as the Makefile \
+(which always builds nano): a core and the shims preloaded with it have to share the timer (they check it), \
+and CUPTI needs nano.")
 set_property(CACHE PEAT_TIMER PROPERTY STRINGS tsc nano)
 string(TOLOWER "${PEAT_TIMER}" _timer_lower)
 if(NOT _timer_lower MATCHES "^(tsc|nano)$")
@@ -407,8 +411,8 @@ set(BUILD_TRACTOR_ENGINEERING_VERSION "auto" CACHE STRING
 set_property(CACHE BUILD_TRACTOR_ENGINEERING_VERSION PROPERTY STRINGS auto off on)
 string(TOLOWER "${BUILD_TRACTOR_ENGINEERING_VERSION}" _eng_lower)
 if(_eng_lower STREQUAL "auto")
-  if(TRACTOR_TARGET STREQUAL "transport_layers")
-    message(STATUS "tractor: BUILD_TRACTOR_ENGINEERING_VERSION=auto -> 'off' (not applicable to TARGET=transport_layers)")
+  if(TRACTOR_TARGET MATCHES "^(transport|class)_layers$")
+    message(STATUS "tractor: BUILD_TRACTOR_ENGINEERING_VERSION=auto -> 'off' (not applicable to TARGET=${TRACTOR_TARGET})")
     set(_eng_lower off)
   else()
     # every hook patch under ../../patches (MPICH, MVAPICH, Open MPI) adds the same exported communicator
@@ -486,12 +490,25 @@ set(TRACTOR_LIBS ZLIB::ZLIB)
 set(TRACTOR_EXTRANAME "")
 set(_print_extended_stuff off)
 
+# TRACTOR_TARGET=class_layers: the event-class shims (see the Makefile's TARGET=class_layers): libtractor_ompt.so always,
+# libtractor_acc.so (acc_prof.h: not with the Intel compilers), libtractor_cuda.so (CUPTI found), libtractor_llama.so
+# (llama.cpp headers usable), libtractor_opencl.so / libtractor_levelzero.so (headers found). They reach the core only
+# through t_shared (t_shim_state.h), so one build fits every core variant - except the timer (PEAT_TIMER), which the
+# core and the shims have to share (the shims check it; the CUDA shim needs nano). No HWC/MEM/DIAG: core switches.
+set(_class_layers OFF)
+if(TRACTOR_TARGET STREQUAL "class_layers")
+  set(_class_layers ON)
+  if(DIAG OR NOT _hwc_lower STREQUAL "off" OR NOT _mem_lower STREQUAL "off")
+    message(FATAL_ERROR "tractor: TRACTOR_TARGET=class_layers is built without DIAG, HWC and MEM: those are switches of the core, the shims fit any of its variants")
+  endif()
+endif()
+
 # GPU API detection: sets _gpu_cl / _gpu_ze / _gpu_acc (ON/OFF) for what is built
 set(_gpu_cl OFF)
 set(_gpu_ze OFF)
 set(_gpu_acc OFF)
 set(TRACTOR_GPU_INCLUDE_DIRS "")
-if(GPU)
+if(GPU OR _class_layers) # class_layers: their shims, when found
   foreach(_opt OCL_PARSE LZE_PARSE ACC_PARSE)
     string(TOUPPER "${${_opt}}" ${_opt})
     if(NOT ${_opt} MATCHES "^(AUTO|ON|OFF)$")
@@ -578,7 +595,7 @@ endif()
 if(_gpu_apis)
   list(APPEND TRACTOR_CONTROLS GPUPARSE)
 endif()
-if(_gpu_apis OR _gpu_acc)
+if((_gpu_apis OR _gpu_acc) AND NOT _class_layers) # the shim names get no .gpu
   set(TRACTOR_EXTRANAME "${TRACTOR_EXTRANAME}.gpu")
 endif()
 
@@ -815,7 +832,7 @@ endif()
 set(_parse_cuda_flag off)
 string(TOUPPER "${CUPTI}" _cupti_mode)
 if(_cupti_mode STREQUAL "")
-  if(GPU)
+  if(GPU OR _class_layers)
     set(_cupti_mode AUTO)
   else()
     set(_cupti_mode OFF)
@@ -885,7 +902,7 @@ if(NOT _cupti_mode STREQUAL "OFF")
     list(APPEND TRACTOR_SOURCES t_cupti.cpp)
     list(APPEND TRACTOR_CONTROLS _T_CUPTI_)
     list(APPEND TRACTOR_LIBS ${_cupti_link})
-    if(NOT TRACTOR_EXTRANAME MATCHES "\\.gpu") # a GPU build: .gpu, first as for OpenCL/Level Zero/OpenACC
+    if(NOT TRACTOR_EXTRANAME MATCHES "\\.gpu" AND NOT _class_layers) # a GPU build: .gpu, first as for OpenCL/Level Zero/OpenACC
       set(TRACTOR_EXTRANAME ".gpu${TRACTOR_EXTRANAME}")
     endif()
     set(_parse_cuda_flag on)
@@ -898,7 +915,7 @@ if(NOT _cupti_mode STREQUAL "OFF")
   endif()
   message(STATUS "tractor: CUDA (CUPTI) parsing: ${_parse_cuda_flag} (CUPTI=${_cupti_mode}, CUDA_ROOT='${_cuda_root}')")
 endif()
-if(GPU AND NOT TRACTOR_EXTRANAME MATCHES "\\.gpu")
+if(GPU AND NOT _class_layers AND NOT TRACTOR_EXTRANAME MATCHES "\\.gpu")
   message(WARNING "tractor: GPU=ON but no GPU API (OpenCL, Level Zero, OpenACC, CUDA) was found, GPU parsing is off")
 endif()
 
@@ -1011,6 +1028,32 @@ if(_gpu_apis)
 else()
   set(_parse_gpu_flag off)
 endif()
+# class_layers: no core mpi_layer.cpp content (-s on), the wrappers of each found class into the source of its shim
+set(_class_shim_args)
+set(_class_shim_outputs)
+if(_class_layers)
+  set(_mpi_layer_skip_core on)
+  set(_parse_gpu_flag off)
+  foreach(_api cl ze)
+    if(_gpu_${_api})
+      list(APPEND _class_shim_args -C ${_api}=mpi_layer_${_api}.cpp)
+      list(APPEND _class_shim_outputs ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_${_api}.cpp)
+    endif()
+  endforeach()
+  if(_parse_cuda_flag STREQUAL "on")
+    list(APPEND _class_shim_args -U mpi_layer_cuda.cpp)
+    list(APPEND _class_shim_outputs ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_cuda.cpp)
+  endif()
+  if(_parse_llama_flag STREQUAL "on")
+    list(APPEND _class_shim_args -G mpi_layer_llama.cpp)
+    list(APPEND _class_shim_outputs ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_llama.cpp)
+  endif()
+  set(_core_llama_flag off)
+  set(_core_cuda_flag off)
+else()
+  set(_core_llama_flag ${_parse_llama_flag})
+  set(_core_cuda_flag ${_parse_cuda_flag})
+endif()
 
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/pinc
@@ -1054,31 +1097,127 @@ add_custom_command(
   VERBATIM)
 
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp ${_transport_shim_outputs}
-  COMMAND ${PERL_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer.pl -p on -e ${_print_extended_stuff} -m ${_maxmpi} -t ${_pct} -c ${_parse_gpu_flag} -g ${_parse_llama_flag} -u ${_parse_cuda_flag}
-          -s ${_mpi_layer_skip_core} -i mpi_func.inc -o mpi_layer.cpp ${_transport_func_layers}
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp ${_transport_shim_outputs} ${_class_shim_outputs}
+  COMMAND ${PERL_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer.pl -p on -e ${_print_extended_stuff} -m ${_maxmpi} -t ${_pct} -c ${_parse_gpu_flag} -g ${_core_llama_flag} -u ${_core_cuda_flag}
+          -s ${_mpi_layer_skip_core} -i mpi_func.inc -o mpi_layer.cpp ${_transport_func_layers} ${_class_shim_args}
   DEPENDS mpi_layer.cpp.in mpi_layer.cpp.in.end mpi_layer.pl
           ${CMAKE_CURRENT_BINARY_DIR}/mpi_func_ids_through.h
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
   COMMENT "tractor: generating mpi_layer.cpp (TARGET=${TRACTOR_TARGET}, TRANSPORT=${TRANSPORT})"
   VERBATIM)
 
-add_custom_target(tractor_codegen DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp ${_transport_shim_outputs})
+add_custom_target(tractor_codegen DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp ${_transport_shim_outputs} ${_class_shim_outputs})
 
 # ---------------------------------------------------------------------------
 # Targets
 # ---------------------------------------------------------------------------
-if(TRACTOR_TARGET STREQUAL "transport_layers")
-  # Standalone: only the 4 psm2/psm3/ucx/ofi shim .so's - no core lib/ptpd.
-  # Each shim dlsym()'s its real symbols at runtime and never calls real MPI,
-  # so (like the Makefile) it's compiled with the MPI compiler (for mpi.h)
-  # but *linked* with a plain, non-MPI-wrapped C++ compiler + -ldl, to avoid
-  # pulling in an unwanted libmpi dependency.
-  set(TRACTOR_PLAIN_CXX "$ENV{CXX}" CACHE STRING
-    "plain (non-MPI-wrapped) C++ compiler used only to LINK the transport_layers shim .so's; defaults to \$ENV{CXX} or CMAKE_CXX_COMPILER")
-  if(NOT TRACTOR_PLAIN_CXX)
-    set(TRACTOR_PLAIN_CXX ${CMAKE_CXX_COMPILER})
+# The shims (transport_layers, class_layers) dlsym() their real symbols at runtime and never call real MPI, so (like the
+# Makefile) they are compiled with the MPI compiler (for mpi.h) but *linked* with a plain, non-MPI-wrapped C++ compiler,
+# to avoid pulling in an unwanted libmpi dependency.
+set(TRACTOR_PLAIN_CXX "$ENV{CXX}" CACHE STRING
+  "plain (non-MPI-wrapped) C++ compiler used only to LINK the transport_layers / class_layers shim .so's; defaults to \$ENV{CXX} or CMAKE_CXX_COMPILER")
+if(NOT TRACTOR_PLAIN_CXX)
+  set(TRACTOR_PLAIN_CXX ${CMAKE_CXX_COMPILER})
+endif()
+
+# the version symlinks of an installed shim, as the Makefile's install: rule
+function(tractor_install_shim_links _dir _base)
+  install(CODE "
+    execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
+      lib${_base}.so.${TRACTOR_MAJOR}.${TRACTOR_MINOR} lib${_base}.so.${TRACTOR_MAJOR}
+      WORKING_DIRECTORY \"${_dir}\")
+    execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
+      lib${_base}.so.${TRACTOR_MAJOR} lib${_base}.so
+      WORKING_DIRECTORY \"${_dir}\")
+  ")
+endfunction()
+
+# tractor_class_shim(<name> SOURCES <files> [DEFS <-D...>] [FLAGS <compile flags>] [LINK <link args>]):
+# libtractor<suffix>_<name>.so of event-class code built with -D_T_CLASS_SHIM_ (t_class_shim.h); appends the library to
+# _class_shim_libs and its base name to _class_shim_bases of the caller
+function(tractor_class_shim _name)
+  cmake_parse_arguments(S "" "" "SOURCES;DEFS;FLAGS;LINK" ${ARGN})
+  set(_objs)
+  foreach(_src ${S_SOURCES})
+    get_filename_component(_b ${_src} NAME_WE)
+    set(_obj ${CMAKE_CURRENT_BINARY_DIR}/${_b}.${_name}_shim.o)
+    add_custom_command(
+      OUTPUT ${_obj}
+      COMMAND ${CMAKE_CXX_COMPILER} -o ${_obj} -c
+              -I${CMAKE_CURRENT_SOURCE_DIR} -I${_common_dir} -I${CMAKE_CURRENT_BINARY_DIR}
+              ${_tractor_defs} ${S_DEFS} -D_T_CLASS_SHIM_ ${TRACTOR_CXX_MISC} ${TRACTOR_OPT} ${S_FLAGS} -fPIC ${_src}
+      DEPENDS ${_src} ${CMAKE_CURRENT_BINARY_DIR}/mpi_func_ids_through.h
+              ${CMAKE_CURRENT_SOURCE_DIR}/t_class_shim.h ${CMAKE_CURRENT_SOURCE_DIR}/t_shim_state.h
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      COMMENT "tractor(class_layers): compiling ${_b} for the ${_name} shim"
+      VERBATIM)
+    list(APPEND _objs ${_obj})
+  endforeach()
+  set(_base tractor${TRANSPORTLIBSUFFIX}_${_name})
+  set(_so ${CMAKE_CURRENT_BINARY_DIR}/lib${_base}.so.${TRACTOR_MAJOR}.${TRACTOR_MINOR})
+  add_custom_command(
+    OUTPUT ${_so}
+    COMMAND ${TRACTOR_PLAIN_CXX} -o ${_so} ${TRACTOR_OPT} -shared -fPIC ${_objs} ${S_LINK} -ldl
+    DEPENDS ${_objs}
+    COMMENT "tractor(class_layers): linking lib${_base}.so"
+    VERBATIM)
+  set(_class_shim_libs ${_class_shim_libs} ${_so} PARENT_SCOPE)
+  set(_class_shim_bases ${_class_shim_bases} ${_base} PARENT_SCOPE)
+endfunction()
+
+if(_class_layers)
+  # Standalone: only the event-class shims, no core lib/ptpd. Each class is the code of the core build (t_ompt.cpp,
+  # t_acc.cpp, t_cupti.cpp, the generated wrappers), the shims link no runtime they wrap (dlsym RTLD_NEXT), except
+  # libcupti for the CUDA one.
+  set(_class_shim_libs)
+  set(_class_shim_bases)
+  if(TRACTOR_COMPILER STREQUAL "intel")
+    set(_class_omp_flag -qopenmp)
+  else()
+    set(_class_omp_flag -fopenmp)
   endif()
+  if(TRACTOR_COMPILER STREQUAL "nvc" OR TRACTOR_COMPILER STREQUAL "pgi")
+    message(STATUS "tractor: class_layers: no OMPT shim with ${TRACTOR_COMPILER} (it has no OpenMP tools interface)")
+  else()
+    tractor_class_shim(ompt SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/t_ompt.cpp DEFS -D_T_OMPT_ FLAGS ${_class_omp_flag})
+  endif()
+  if(_gpu_acc)
+    tractor_class_shim(acc SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/t_acc.cpp DEFS -D_T_ACC_)
+  elseif(TRACTOR_COMPILER STREQUAL "intel")
+    message(STATUS "tractor: class_layers: no OpenACC shim with the Intel compilers (no acc_prof.h), build it with gnu or nvc")
+  endif()
+  set(_gpu_inc_flags ${TRACTOR_GPU_INCLUDE_DIRS})
+  list(TRANSFORM _gpu_inc_flags PREPEND "-I")
+  if(_gpu_cl)
+    tractor_class_shim(opencl SOURCES ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_cl.cpp DEFS -DGPUPARSE -DGPUPARSE_CL FLAGS ${_gpu_inc_flags})
+  endif()
+  if(_gpu_ze)
+    tractor_class_shim(levelzero SOURCES ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_ze.cpp DEFS -DGPUPARSE -DGPUPARSE_ZE FLAGS ${_gpu_inc_flags})
+  endif()
+  set(_llama_cuda_inc_flags ${TRACTOR_LLAMA_INCLUDE_DIRS}) # the llama.cpp headers and, when found, the CUDA/CUPTI ones
+  list(TRANSFORM _llama_cuda_inc_flags PREPEND "-I")
+  if(_parse_cuda_flag STREQUAL "on")
+    # _cupti_link is for target_link_libraries (a bare "cupti"); the shim is linked by a plain command line
+    string(REGEX REPLACE "(^|;)cupti(;|$)" "\\1-lcupti\\2" _cupti_link_flags "${_cupti_link}")
+    tractor_class_shim(cuda SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/t_cupti.cpp ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_cuda.cpp
+                       DEFS -D_T_CUPTI_ FLAGS ${_llama_cuda_inc_flags} LINK ${_cupti_link_flags})
+  endif()
+  if(_parse_llama_flag STREQUAL "on")
+    tractor_class_shim(llama SOURCES ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_llama.cpp DEFS -D_T_LLAMA_ FLAGS ${_llama_cuda_inc_flags})
+  endif()
+  message(STATUS "tractor: class_layers: ${_class_shim_bases} (timer ${_timer_lower}: the cores they are preloaded with need the same PEAT_TIMER)")
+
+  add_custom_target(tractor_class_layers ALL DEPENDS ${_class_shim_libs})
+  add_dependencies(tractor_class_layers tractor_codegen)
+
+  set(_class_install_dir ${CMAKE_CURRENT_SOURCE_DIR}/../../../lib/${TRACTOR_COMPILER})
+  install(FILES ${_class_shim_libs} DESTINATION ${_class_install_dir}
+          PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+  foreach(_base ${_class_shim_bases})
+    tractor_install_shim_links(${_class_install_dir} ${_base})
+  endforeach()
+elseif(TRACTOR_TARGET STREQUAL "transport_layers")
+  # Standalone: only the 4 psm2/psm3/ucx/ofi shim .so's - no core lib/ptpd.
 
   set(_transport_shim_libs)
 

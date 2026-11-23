@@ -8,8 +8,8 @@
 # the CUDA toolkit it compiles with (and adds the WSL CUDA driver library). The default nvc:12.9 is CUDA 12.9 because CUDA 13
 # dropped Pascal (sm_61), so a GTX 10xx needs CUDA <= 12.9. Set NVC_COMPILER (e.g. nvc:26.9:12.9) to use another one.
 # Set ACC_GPU_FLAGS to change the GPU target (default -gpu=cc61), TRACTOR=0 to run it plain,
-# TRACTOR_LIB=<path> to preload a specific library (default lib/gnu/libtractor.mpich5.gpu.so, the OpenACC support
-# follows PARSE_GPU=on and is not built with COMPILER=intel).
+# TRACTOR_LIB=<lib>[:<lib>...] to preload other libraries (default lib/gnu/libtractor.mpich5.eng.so, the core, and
+# lib/gnu/libtractor_acc.so, the OpenACC shim of TARGET=class_layers: OpenACC is not built with COMPILER=intel).
 
 iterations=${1:-5}
 ranks=${2:-2}
@@ -30,7 +30,8 @@ gcc -O1 -g -rdynamic -I$mpi_root/include acc_sim_test.c -o acc_sim_test $mpi_lin
 
 preload=
 if [ "${TRACTOR:-1}" != "0" ] ; then
-    lib=${TRACTOR_LIB:-$(realpath ../../../../lib/gnu)/libtractor.mpich5.gpu.so}
+    libdir=$(realpath ../../../../lib/gnu)
+    lib=${TRACTOR_LIB:-$libdir/libtractor.mpich5.eng.so:$libdir/libtractor_acc.so} # the core and the OpenACC shim
     preload="-genv LD_PRELOAD $lib"
 fi
 
@@ -51,7 +52,7 @@ for t in acc_test acc_sim_test ; do
     # MPI_Init and recorded by the Level Zero wrapper, makes it two (4:-1:0:0:acc_...), without it there is one (4:0:0:acc_...)
     n=$(zcat $trace/tractor_t.mpi.0.gz | grep -c -E '^[-0-9:]+:acc_')
     echo "$t: rank 0 recorded $n OpenACC events (trace dir: $trace)"
-    [ "$n" -gt 0 ] || { echo "no OpenACC events in the trace (library built without PARSE_GPU=on ?)"; status=77; continue; }
+    [ "$n" -gt 0 ] || { echo "no OpenACC events in the trace (no libtractor_acc.so preloaded, or a core built without OpenACC?)"; status=77; continue; }
     zcat $trace/tractor_t.com.0.gz | grep -A8 "GPU Statistics"
     if [ $t == acc_test ] ; then
         # the host runtime raises no launch or transfer events, so these show that the kernels really ran on the GPU

@@ -124,12 +124,6 @@ struct tractor : t_base_event {
     int t_use_signals;
 #ifdef _TRANSPORT_PROFILE_
     int t_collect_transport;
-#ifndef _T_SHIM_STATE_
-    /* everything a transport shim touches goes here, ahead of every other #ifdef'd member, so one shim fits the
-     * GPU/OMPT/ACC/PTPD/VIRT2PHYS variants of the core alike (see t_transport_layout below); with _T_SHIM_STATE_ the
-     * shims use t_shared (t_shim_state.h) instead, which holds the permission */
-    int t_permit_collect_transport;
-#endif
     t_transport_profiler t_transport_prof;
 #endif
     char mpi_filename[1024];
@@ -162,6 +156,7 @@ struct tractor : t_base_event {
     std::map<short, std::map<T_LOC, std::map<PEAT_Message_Size, T_Stat_Record>>> gpu_fills;                      // func,from,to,size,time
     std::map<short, PEAT_Clock> gpu_executions;                                                                  // func,time
     std::map<short, PEAT_Clock> gpu_syncs;                                                                       // func,time
+    int gpu_records_written; /* a record in the GPU layout was written (print_gpu_stat without built-in GPU APIs) */
 #endif
 
     char *stat_template;
@@ -307,7 +302,6 @@ extern tractor_debug t_info_debug;
 extern tractor t_info;
 #endif
 
-#if defined(_T_SHIM_STATE_)
 /* shim side: the core is loaded, fits the shim (t_shim_state_check) and takes transport records (TRANSPORT=on) */
 static inline bool t_transport_shim_check(const struct t_shim_state *state, const char *shim)
 {
@@ -319,43 +313,6 @@ static inline bool t_transport_shim_check(const struct t_shim_state *state, cons
     }
     return true;
 }
-#elif defined(_TRANSPORT_PROFILE_)
-/* A transport shim (libtractor_transport_<api>.so) is built once and preloaded next to any core library, but it
- * reaches into t_info with its own compiled view of struct tractor. Those members come first in struct tractor,
- * so only the switches that change the base class t_base_event (HWCOUNTERS, MEMPROFILE) or DIAG move them - and
- * those get their own shims; a core without TRANSPORT=on lacks them, and its memory would be overwritten. The core exports where the members the shim uses are (tractor_transport_layout(), only in
- * TRANSPORT=on builds); the shim compares that with its own view once and records nothing on a mismatch.
- * Keep the list in step with the gt_info(...) members the pinc/transport*.inc templates use. */
-#include <cstddef>
-#define T_TRANSPORT_LAYOUT_SIZE 2
-static inline void t_transport_layout(long *v)
-{
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Winvalid-offsetof"
-    v[0] = (long)offsetof(tractor, t_permit_collect_transport);
-    v[1] = (long)offsetof(tractor, t_transport_prof);
-#pragma GCC diagnostic pop
-}
-extern "C" void tractor_transport_layout(long *v); /* defined by a TRANSPORT=on core library */
-/* shim side: core_layout is the core's tractor_transport_layout, NULL if the core does not export it */
-static inline bool t_transport_check_layout(void (*core_layout)(long *), const char *shim)
-{
-    long mine[T_TRANSPORT_LAYOUT_SIZE], core[T_TRANSPORT_LAYOUT_SIZE];
-    if (!core_layout) {
-        fprintf(stderr, "tractor: %s transport shim disabled - the preloaded tractor library was built without transport support (TRANSPORT=on) or is older than the shim\n", shim);
-        return false;
-    }
-    t_transport_layout(mine);
-    core_layout(core);
-    for (int i = 0; i < T_TRANSPORT_LAYOUT_SIZE; i++) {
-        if (mine[i] != core[i]) {
-            fprintf(stderr, "tractor: %s transport shim disabled - it was built for another tractor library variant (layout %ld != %ld), preload the shim built with the core's MEMPROFILE/HWCOUNTERS/DIAG switches, or rebuild both from the same sources\n", shim, mine[i], core[i]);
-            return false;
-        }
-    }
-    return true;
-}
-#endif
 #if 0
 long long bounds[] = {0,16,64,256,16384,262144,LLONG_MAX};
 const int bound_num=sizeof(bounds)/sizeof(bounds[0]);

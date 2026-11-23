@@ -387,6 +387,25 @@ jobs:
           ! grep -qE -- "-I/usr/include( |$)" build/tractor-gpu/build.ninja || { echo "::error::-I/usr/include in the build"; exit 1; }
           cmake --build build/tractor-gpu && cmake --install build/tractor-gpu
           ldd mpi.tool/lib/gnu/libtractor.mpich4.gpu.so | grep cupti
+      - name: Build tractor (CMake, GCC) - core and class shims
+        run: |
+          # a core without the event classes and the shims of TARGET=class_layers (llama.cpp and CUDA required), not
+          # installed: the llama smoke test preloads them together; the shims are linked without MPI (plain g++)
+          cmake -S $TRACTOR_SRC -B build/tractor-core -G Ninja -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
+            -DTRACTOR_TARGET=mpich4 -DOMPT=OFF -DLLAMA=OFF -DCUPTI=OFF
+          cmake --build build/tractor-core
+          ! nm -D --defined-only build/tractor-core/libtractor.mpich4.so | grep -qwE "llama_process|cublasGemmEx|ompt_start_tool" \
+            || { echo "::error::the core has event classes built in"; exit 1; }
+          cmake -S $TRACTOR_SRC -B build/tractor-shims -G Ninja -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
+            -DTRACTOR_TARGET=class_layers -DTRACTOR_PLAIN_CXX=g++ -DCUPTI=ON -DLLAMA=ON -DLLAMA_ROOT="$LLAMA_CPP_DIR" \
+            | tee build/tractor-shims.cfg
+          grep "tractor: class_layers:" build/tractor-shims.cfg
+          cmake --build build/tractor-shims
+          for s in llama cuda; do
+            f=$(ls build/tractor-shims/libtractor_$s.so.* | head -1)
+            [ -n "$f" ] || { echo "::error::no $s shim"; exit 1; }
+            ! ldd "$f" | grep -q libmpi || { echo "::error::$f links libmpi"; exit 1; }
+          done
       - name: Build tractor (CMake, clang, GPU)
         env:
           MPICH_CC: clang
@@ -430,11 +449,14 @@ jobs:
       - name: llama.cpp smoke test (llama-simple under tractor -> mat -> ctt)
         run: |
           status=0
-          for v in "cmake-gnu:mpi.tool/lib/gnu/libtractor.mpich4.so:0" \
-                   "cmake-gnu-gpu:mpi.tool/lib/gnu/libtractor.mpich4.gpu.so:1" \
-                   "cmake-clang-gpu:mpi.tool/lib/clang/libtractor.mpich4.gpu.so:1" \
-                   "make-gnu-gpu:$(ls "$RUNNER_TEMP"/make-lib/libtractor.mpich4.gpu.so.* | head -1):1" ; do
-            IFS=: read -r name lib cuda <<< "$v"
+          # name|preload list (a core with the classes built in, or the core and the class shims)|CUDA expected
+          shims="$(ls build/tractor-shims/libtractor_llama.so.* | head -1):$(ls build/tractor-shims/libtractor_cuda.so.* | head -1)"
+          for v in "cmake-gnu|mpi.tool/lib/gnu/libtractor.mpich4.so|0" \
+                   "cmake-gnu-gpu|mpi.tool/lib/gnu/libtractor.mpich4.gpu.so|1" \
+                   "cmake-clang-gpu|mpi.tool/lib/clang/libtractor.mpich4.gpu.so|1" \
+                   "make-gnu-gpu|$(ls "$RUNNER_TEMP"/make-lib/libtractor.mpich4.gpu.so.* | head -1)|1" \
+                   "cmake-gnu-shims|build/tractor-core/libtractor.mpich4.so:$shims|1" ; do
+            IFS='|' read -r name lib cuda <<< "$v"
             echo "::group::llama $name ($lib)"
             SMOKE_WORKDIR=$RUNNER_TEMP/llama-$name LLAMA_SMOKE_CUDA=$cuda \
               mpi.tool/components/tractor/tests/ci/llama.sh "$lib" "$LLAMA_CPP_BUILD/bin" "$MODEL" 16 \

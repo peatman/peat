@@ -91,7 +91,9 @@ HASH:=\#
 COMMA:=,
 EMPTY:=
 SPACE:=$(EMPTY) $(EMPTY)
-ifeq "$(PARSE_GPU)" "on"
+# TARGET=class_layers probes OpenCL and Level Zero too: it builds their shims (libtractor_opencl.so,
+# libtractor_levelzero.so) when found; OpenACC has its own probe there
+ifneq "$(filter on,$(PARSE_GPU))$(filter class_layers,$(TARGET))" ""
 ifeq "$(COMPILER)" "intel"
 GPU_PROBE_FLAGS=-I$(CMPLR_ROOT)/include -L$(CMPLR_ROOT)/lib
 endif
@@ -119,7 +121,9 @@ endif
 endif
 
 ifneq "$(ACC_PARSE)" "off"
-ifeq "$(COMPILER)" "intel"
+ifeq "$(TARGET)" "class_layers"
+# nothing: the OpenACC shim has its own probe (CLASS_SHIM_BASENAMES above)
+else ifeq "$(COMPILER)" "intel"
 ifeq "$(ACC_PARSE)" "on"
 $(warning ACC_PARSE=on ignored: the Intel compilers have no OpenACC profiling interface header)
 endif
@@ -131,6 +135,15 @@ endif
 endif
 
 $(info tractor: GPU parsing: OpenCL=$(GPU_CL) LevelZero=$(GPU_ZE) OpenACC=$(ACC))
+ifeq "$(TARGET)" "class_layers"
+# the shims: no link to libOpenCL / libze_loader (the wrappers find the functions with dlsym(RTLD_NEXT)), no .gpu
+ifeq "$(GPU_CL)" "on"
+CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX)_opencl
+endif
+ifeq "$(GPU_ZE)" "on"
+CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX)_levelzero
+endif
+else
 ifeq "$(GPU_CL)" "on"
 LIBS+=-lOpenCL
 CONTROLS+=-DGPUPARSE_CL
@@ -146,6 +159,7 @@ CONTROLS+=-DGPUPARSE
 endif
 ifneq "$(GPU_CL)$(GPU_ZE)$(ACC)" "offoffoff"
 EXTRANAMELIB:=$(EXTRANAMELIB).gpu
+endif
 endif
 endif
 
@@ -218,6 +232,35 @@ TRANSPORT_LAYER_OBJS=mpi_layer_transport_psm2.o mpi_layer_transport_psm3.o mpi_l
 # same lib<name>.so.MAJOR.MINOR + .so.MAJOR/.so symlink scheme as $(MTB)/$(MTBL)
 TRANSPORT_SHIM_BASENAMES=tractor$(TRANSPORTLIBSUFFIX)_transport_psm2 tractor$(TRANSPORTLIBSUFFIX)_transport_psm3 tractor$(TRANSPORTLIBSUFFIX)_transport_ucx tractor$(TRANSPORTLIBSUFFIX)_transport_ofi
 TRANSPORT_SHIM_LIBS=$(foreach b,$(TRANSPORT_SHIM_BASENAMES),lib$(b).so.$(MAJOR).$(MINOR))
+endif
+
+# TARGET=class_layers: standalone build of the event-class shims (OMPT, OpenACC, OpenCL, Level Zero, CUDA, llama.cpp, each when
+# it can be built: libtractor_<class>.so). Like the transport
+# shims they use the core only through t_shared (t_shim_state.h), so they do not depend on TARGET or on the core's
+# HWCOUNTERS/MEMPROFILE/DIAG/GPU switches; preload one next to a core built with OMPT=off (a core built with OMPT=on has
+# the same code built in, then the shim is not needed). The OpenMP flags only give the compiler's omp-tools.h, the shim
+# does not link the OpenMP runtime.
+# The OpenACC shim (libtractor_acc.so) needs acc_prof.h (GCC >= 9, NVHPC), so it is built with those compilers only;
+# it works with a core of any compiler, e.g. a GCC-built libtractor_acc.so next to an Intel-built core.
+ifeq "$(TARGET)" "class_layers"
+# += : the OpenCL/Level Zero probes above may have added theirs. No OMPT shim with nvc (no OpenMP tools interface).
+ifeq "$(COMPILER)" "nvc"
+$(info tractor: class_layers: no OMPT shim with nvc (it has no OpenMP tools interface))
+else
+CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX)_ompt
+endif
+ifeq "$(COMPILER)" "intel"
+CLASS_SHIM_OMP=-qopenmp
+$(info tractor: class_layers: no OpenACC shim with the Intel compilers (no acc_prof.h), build it with COMPILER=gnu or nvc)
+else
+CLASS_SHIM_OMP=-fopenmp
+ifeq "$(shell printf '$(HASH)include <acc_prof.h>\nint main(){return 0;}\n' | $(MPICXX) -x c++ - -o /dev/null >/dev/null 2>&1 && echo yes || echo no)" "yes"
+CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX)_acc
+else
+$(info tractor: class_layers: no OpenACC shim, acc_prof.h not found (compiler $(MPICXX)))
+endif
+endif
+CLASS_SHIM_LIBS=$(foreach b,$(CLASS_SHIM_BASENAMES),lib$(b).so.$(MAJOR).$(MINOR))
 endif
 
 # Intel MPI goes by _IMPI_ alone (no _MPICH_): its MPI-internal helpers differ from MPICH 3's
@@ -455,6 +498,10 @@ ifeq "$(if $(LLAMA_H_DIR),$(llama_probe),no)" "yes"
 LLAMA_ENABLED=on
 INCLUDE+=$(LLAMA_IFLAGS)
 CONTROLS+=-D_T_LLAMA_
+ifeq "$(TARGET)" "class_layers"
+# the llama.cpp shim: the llama.cpp / ggml wrappers (mpi_layer_llama.cpp)
+CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX)_llama
+endif
 ifeq "$(LLAMA_DEPRECATED)" "on"
 cpp_input+=-D_PARSE_LLAMA_DEPRECATED_
 endif
@@ -475,7 +522,8 @@ endif
 # (Debian/Ubuntu nvidia-cuda-dev + libcupti-dev, CUDA_ROOT=/usr: system directories are not added to -I/-rpath).
 # libcupti has to be the one of the CUDA version the application runs with (found through the rpath set here).
 # Recording is off unless PEAT_TRACTOR_PARSE_CUDA=1.
-CUPTI_PARSE?=$(if $(filter on,$(PARSE_GPU)),auto,off)
+# TARGET=class_layers looks for it too (auto): it builds the CUDA shim libtractor_cuda.so when found
+CUPTI_PARSE?=$(if $(filter on,$(PARSE_GPU))$(filter class_layers,$(TARGET)),auto,off)
 CUPTI_ENABLED=off
 $(if $(filter auto on off,$(CUPTI_PARSE)),,$(error CUPTI_PARSE=$(CUPTI_PARSE) is not one of auto|on|off))
 ifneq "$(CUPTI_PARSE)" "off"
@@ -492,12 +540,17 @@ cupti_probe=$(shell printf '$(HASH)include <cupti.h>\n$(HASH)include <cublas_v2.
 ifeq "$(if $(and $(CUDA_INC),$(CUPTI_INC),$(CUPTI_LIB)),$(cupti_probe),no)" "yes"
 CUPTI_ENABLED=on
 INCLUDE+=$(CUPTI_CFLAGS)
+ifeq "$(TARGET)" "class_layers"
+# the CUDA shim: t_cupti.cpp and the cuBLAS wrappers (mpi_layer_cuda.cpp); the shim names get no .gpu
+CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX)_cuda
+else
 CONTROLS+=-D_T_CUPTI_
 OBJECTS+=t_cupti.o
 LIBS+=$(CUPTI_LDFLAGS)
 # a GPU build: .gpu, first in the name as for OpenCL/Level Zero/OpenACC (nothing precedes it there)
 ifeq "$(findstring .gpu,$(EXTRANAMELIB))" ""
 EXTRANAMELIB:=.gpu$(EXTRANAMELIB)
+endif
 endif
 else ifeq "$(CUPTI_PARSE)" "on"
 $(error CUPTI_PARSE=on but CUPTI/cuBLAS are not usable with $(MPICXX) $(CXXMISC) (CUDA_ROOT='$(CUDA_ROOT)': cuda/cublas headers in '$(CUDA_INC)', cupti.h in '$(CUPTI_INC)', libcupti in '$(CUPTI_LIB)'))
@@ -587,6 +640,13 @@ all: $(TRANSPORT_SHIM_LIBS)
 install: $(TRANSPORT_SHIM_LIBS)
 	(mkdir -p ../../../lib/$(COMPILER); chmod o+rx $(TRANSPORT_SHIM_LIBS); cp -v $(TRANSPORT_SHIM_LIBS) ../../../lib/$(COMPILER); \
 	cd ../../../lib/$(COMPILER); for b in $(TRANSPORT_SHIM_BASENAMES); do ln -sf lib$$b.so.$(MAJOR).$(MINOR) lib$$b.so.$(MAJOR); ln -sf lib$$b.so.$(MAJOR) lib$$b.so; done )
+else ifeq "$(TARGET)" "class_layers"
+# standalone: only the event-class shims, no core lib/ptpd built here
+all: $(CLASS_SHIM_LIBS)
+
+install: $(CLASS_SHIM_LIBS)
+	(mkdir -p ../../../lib/$(COMPILER); chmod o+rx $(CLASS_SHIM_LIBS); cp -v $(CLASS_SHIM_LIBS) ../../../lib/$(COMPILER); \
+	cd ../../../lib/$(COMPILER); for b in $(CLASS_SHIM_BASENAMES); do ln -sf lib$$b.so.$(MAJOR).$(MINOR) lib$$b.so.$(MAJOR); ln -sf lib$$b.so.$(MAJOR) lib$$b.so; done )
 else
 all: $(MTB) $(PTPD)
 
@@ -606,6 +666,60 @@ $(MTB): $(CPSOURCES) $(OBJECTS)
 # against whatever core lib is loaded alongside them in the target process
 libtractor$(TRANSPORTLIBSUFFIX)_transport_%.so.$(MAJOR).$(MINOR): mpi_layer_transport_%.o
 	$(CXX) -o $@ $(DEBUG) $(OPT) $(SHARED) $< -ldl
+
+# event-class shims: linked with plain CXX like the transport shims (no MPI or OpenMP runtime dependency); t_shared
+# resolves at load time against the core library loaded alongside
+libtractor$(TRANSPORTLIBSUFFIX)_ompt.so.$(MAJOR).$(MINOR): t_ompt_shim.o
+	$(CXX) -o $@ $(DEBUG) $(OPT) $(SHARED) $< -ldl
+
+t_ompt_shim.o: t_ompt.cpp $(FUNCID)
+	$(MPICXX) -o $@ -c $(INCLUDE) $(CONTROLS) -D_T_OMPT_ -D_T_CLASS_SHIM_ $(CMISC) $(CXXMISC) $(DEBUG) $(OPT) $(CLASS_SHIM_OMP) $(FPIC) t_ompt.cpp
+
+libtractor$(TRANSPORTLIBSUFFIX)_acc.so.$(MAJOR).$(MINOR): t_acc_shim.o
+	$(CXX) -o $@ $(DEBUG) $(OPT) $(SHARED) $< -ldl
+
+t_acc_shim.o: t_acc.cpp $(FUNCID)
+	$(MPICXX) -o $@ -c $(INCLUDE) $(CONTROLS) -D_T_ACC_ -D_T_CLASS_SHIM_ $(CMISC) $(CXXMISC) $(DEBUG) $(OPT) $(FPIC) t_acc.cpp
+
+# CUDA shim: links libcupti (rpath to the toolkit's), the cuBLAS calls are found with dlsym(RTLD_NEXT)
+libtractor$(TRANSPORTLIBSUFFIX)_cuda.so.$(MAJOR).$(MINOR): t_cupti_shim.o mpi_layer_cuda.o
+	$(CXX) -o $@ $(DEBUG) $(OPT) $(SHARED) t_cupti_shim.o mpi_layer_cuda.o $(CUPTI_LDFLAGS) -ldl
+
+t_cupti_shim.o: t_cupti.cpp $(FUNCID)
+	$(MPICXX) -o $@ -c $(INCLUDE) $(CONTROLS) -D_T_CUPTI_ -D_T_CLASS_SHIM_ $(CMISC) $(CXXMISC) $(DEBUG) $(OPT) $(FPIC) t_cupti.cpp
+
+# the cuBLAS wrappers alone (-U); -s on: no core mpi_layer.cpp content (it goes to a scratch file, never mpi_layer.cpp)
+mpi_layer_cuda.cpp: mpi_layer.cpp.in $(FUNCID)
+	./mpi_layer.pl -p $(USE_PRAGMA_WEAK) -e $(PRINT_EXTENDED_STUFF) -m $(MAXMPI) -t $(PCT) -s on -U mpi_layer_cuda.cpp -i mpi_func.inc -o mpi_layer_cuda.unused
+
+# OpenCL / Level Zero shims: one API each, the wrappers find the functions with dlsym(RTLD_NEXT), no link to the runtimes
+libtractor$(TRANSPORTLIBSUFFIX)_opencl.so.$(MAJOR).$(MINOR): mpi_layer_cl.o
+	$(CXX) -o $@ $(DEBUG) $(OPT) $(SHARED) mpi_layer_cl.o -ldl
+
+libtractor$(TRANSPORTLIBSUFFIX)_levelzero.so.$(MAJOR).$(MINOR): mpi_layer_ze.o
+	$(CXX) -o $@ $(DEBUG) $(OPT) $(SHARED) mpi_layer_ze.o -ldl
+
+mpi_layer_cl.cpp mpi_layer_ze.cpp: mpi_layer.cpp.in $(FUNCID)
+	./mpi_layer.pl -p $(USE_PRAGMA_WEAK) -e $(PRINT_EXTENDED_STUFF) -m $(MAXMPI) -t $(PCT) -s on -C cl=mpi_layer_cl.cpp -C ze=mpi_layer_ze.cpp -i mpi_func.inc -o mpi_layer_gpu.unused
+
+mpi_layer_cl.o: mpi_layer_cl.cpp
+	$(MPICXX) -o $@ -c $(INCLUDE) $(CONTROLS) -DGPUPARSE -DGPUPARSE_CL -D_T_CLASS_SHIM_ $(GPU_PROBE_FLAGS) $(CMISC) $(CXXMISC) $(DEBUG) $(OPT) $(FPIC) mpi_layer_cl.cpp
+
+mpi_layer_ze.o: mpi_layer_ze.cpp
+	$(MPICXX) -o $@ -c $(INCLUDE) $(CONTROLS) -DGPUPARSE -DGPUPARSE_ZE -D_T_CLASS_SHIM_ $(GPU_PROBE_FLAGS) $(CMISC) $(CXXMISC) $(DEBUG) $(OPT) $(FPIC) mpi_layer_ze.cpp
+
+# llama.cpp shim: the wrappers find the llama.cpp/ggml functions with dlsym(RTLD_NEXT), no link to llama.cpp
+libtractor$(TRANSPORTLIBSUFFIX)_llama.so.$(MAJOR).$(MINOR): mpi_layer_llama.o
+	$(CXX) -o $@ $(DEBUG) $(OPT) $(SHARED) mpi_layer_llama.o -ldl
+
+mpi_layer_llama.cpp: mpi_layer.cpp.in $(FUNCID)
+	./mpi_layer.pl -p $(USE_PRAGMA_WEAK) -e $(PRINT_EXTENDED_STUFF) -m $(MAXMPI) -t $(PCT) -s on -G mpi_layer_llama.cpp -i mpi_func.inc -o mpi_layer_llama.unused
+
+mpi_layer_llama.o: mpi_layer_llama.cpp
+	$(MPICXX) -o $@ -c $(INCLUDE) $(CONTROLS) -D_T_LLAMA_ -D_T_CLASS_SHIM_ $(CMISC) $(CXXMISC) $(DEBUG) $(OPT) $(FPIC) mpi_layer_llama.cpp
+
+mpi_layer_cuda.o: mpi_layer_cuda.cpp
+	$(MPICXX) -o $@ -c $(INCLUDE) $(CONTROLS) -D_T_CUPTI_ -D_T_CLASS_SHIM_ $(CMISC) $(CXXMISC) $(DEBUG) $(OPT) $(FPIC) mpi_layer_cuda.cpp
 
 mpi_layer.o: mpi_layer.cpp
 
@@ -646,5 +760,6 @@ clean:
 	rm -f mpi_func_ids_through.h mpi_func_names.h mpi_func_ids_trans.h $(OBJECTS) lib$(MTBL).so lib$(MTBL).so.$(MAJOR) $(MTB) $(PTPD) $(PTPDL) mpi_layer.c  \
         mpi_func.inc mpi_layer.cpp \
         t_transport_layer.h t_transport_layer_const.h t_transport_layer_h.h \
-        $(TRANSPORT_LAYER_SRCS) $(TRANSPORT_LAYER_OBJS) $(TRANSPORT_SHIM_LIBS)
+        $(TRANSPORT_LAYER_SRCS) $(TRANSPORT_LAYER_OBJS) $(TRANSPORT_SHIM_LIBS) t_ompt_shim.o t_acc_shim.o t_cupti_shim.o mpi_layer_cuda.o mpi_layer_cuda.cpp mpi_layer_cuda.unused mpi_layer_llama.o mpi_layer_llama.cpp mpi_layer_llama.unused \
+        mpi_layer_cl.o mpi_layer_cl.cpp mpi_layer_ze.o mpi_layer_ze.cpp mpi_layer_gpu.unused $(CLASS_SHIM_LIBS)
 

@@ -64,20 +64,7 @@ extern "C" {
 #ifdef _TRACTOR_DIAG_
 FILE *debug_fp;
 #endif
-#ifdef _T_OMPT_
-extern ompt_finalize_tool_t ompt_finalize_tool;
-#endif
-#ifdef _T_ACC_
-extern "C" void t_acc_finalize();
-#endif
-#ifdef _T_CUPTI_
-extern "C" void t_cupti_init(void);
-extern "C" void t_cupti_finalize(void);
-extern "C" const char *t_cupti_kernel_name(int idx);
-extern "C" const char *t_cupti_build_info(void);
-extern "C" int t_cupti_recording(void);
-extern PEAT_Clock global_cuda_time;
-#endif
+extern PEAT_Clock global_cuda_time; /* CUDA records were taken (the CUDA class, built in or a shim) */
 
 int gettimeofday_counter = 0;
 int clock_gettime_counter = 0;
@@ -133,12 +120,12 @@ char counting_permission[MPI_MAX_FUNCID_THROUGH];
 char fullstack_permission[MPI_MAX_FUNCID_THROUGH];
 char counting_permission_pcontrol[MPI_MAX_FUNCID_THROUGH];
 bool tractor_finished = false;
-/* the permission for transport records: in t_shared, which the shims see, or (-D_T_NO_SHIM_STATE_) in struct tractor */
-#ifdef _T_SHIM_STATE_
+/* the permission for transport records: in t_shared, which the shims see */
 #define T_CORE_TRANSPORT_PERMIT t_shared.t_permit_collect_transport
-#else
-#define T_CORE_TRANSPORT_PERMIT t_permit_collect_transport
-#endif
+static void t_shim_sync(const tractor *t); /* copies what the shims read of the core into t_shared */
+static void t_shim_finalize_classes(void); /* the finalize hooks of the registered classes */
+static void t_shim_init_classes(void);     /* the core is set up: the init hooks of the registered classes */
+static void t_shim_class_names(std::ostringstream &m);
 long onetimealloc;
 int t_mpi_rank = -1;
 long long bytes_allocated;
@@ -220,6 +207,7 @@ tractor::tractor(void)
     __DEBUG_PROLOG_TRACTOR_LAYER__
     debug_printf("Tractor is started\n");
     tractor_initialized = 0;
+    t_shared.tractor_initialized = 0; /* the shims record nothing from here on */
     stat_template = "tractor_t";
     stat_dir = ".";
     tmp_dir = ".";
@@ -256,6 +244,9 @@ tractor::tractor(void)
 #endif
 #ifdef _T_ACC_
     parse_openacc = 1;
+#endif
+#ifdef _T_GPU_STAT_
+    gpu_records_written = 0;
 #endif
     user_region_quality_range = 0.75;
     fps_mpi = fps_com = NULL;
@@ -374,25 +365,7 @@ static std::string t_build_modules()
 #ifdef _PARSE_MPI_INTERNAL_
     m << " MPI-internal";
 #endif
-#ifdef _T_OMPT_
-    m << " OMPT";
-#endif
-#ifdef GPUPARSE_CL
-    m << " OpenCL";
-#endif
-#ifdef GPUPARSE_ZE
-    m << " LevelZero";
-#endif
-#ifdef _T_ACC_
-    m << " OpenACC";
-#endif
-#ifdef _T_CUPTI_
-    // failed: PEAT_TRACTOR_PARSE_CUDA=1 but CUPTI did not start (reported on stderr), e.g. no driver
-    m << " " << t_cupti_build_info() << "(recording " << (cuda_skip_parse ? "off" : t_cupti_recording() ? "on" : "failed") << ")";
-#endif
-#ifdef _T_LLAMA_
-    m << " llama.cpp(stages " << (llama_skip_parse ? "off" : "on") << ", ggml CPU kernels " << (ggml_cpu_skip_parse ? "off" : "on") << ")";
-#endif
+    t_shim_class_names(m); /* the classes that were set up, built in or from a shim (OMPT, OpenCL, LevelZero, OpenACC, CUDA, llama.cpp) */
 #ifdef _TRANSPORT_PROFILE_
     m << " transport";
 #endif
@@ -863,13 +836,9 @@ void tractor::parse_env_vars(void)
         calls_limit = 0;
     }
 
-#ifdef _T_OMPT_
-    parse_openmp = is_true(__msl_getenv("PEAT_TRACTOR_PARSE_OPENMP"), parse_openmp);
-#endif
-#ifdef _T_ACC_
-    parse_openacc = is_true(__msl_getenv("PEAT_TRACTOR_PARSE_OPENACC"), parse_openacc);
-#endif
-#ifdef _T_LLAMA_
+    t_shared.parse_openmp = is_true(__msl_getenv("PEAT_TRACTOR_PARSE_OPENMP"), t_shared.parse_openmp);
+    t_shared.parse_openacc = is_true(__msl_getenv("PEAT_TRACTOR_PARSE_OPENACC"), t_shared.parse_openacc);
+/* the llama.cpp class (built in or the shim) */
     llama_skip_parse = !is_true(__msl_getenv("PEAT_TRACTOR_PARSE_LLAMA"), 1);
     ggml_cpu_skip_parse = !is_true(__msl_getenv("PEAT_TRACTOR_PARSE_GGML_CPU"), 0);
     if (!ggml_cpu_skip_parse) {
@@ -881,8 +850,7 @@ void tractor::parse_env_vars(void)
         if (__msl_getenv("PEAT_TRACTOR_MAX_NESTING_LEVELS") == NULL)
             t_max_nesting_levels = t_max(t_max_nesting_levels, 8);
     }
-#endif /* _T_LLAMA_ */
-#ifdef _T_CUPTI_
+/* the CUDA class (built in or the shim) records only with PEAT_TRACTOR_PARSE_CUDA=1 */
     cuda_skip_parse = !is_true(__msl_getenv("PEAT_TRACTOR_PARSE_CUDA"), 0);
     if (!cuda_skip_parse) {
         /* every CUDA stream's GPU records take a thread of their own (t_cupti.cpp lanes), and the CUDA calls nest one level
@@ -893,7 +861,6 @@ void tractor::parse_env_vars(void)
         if (__msl_getenv("PEAT_TRACTOR_MAX_NESTING_LEVELS") == NULL)
             t_max_nesting_levels = t_max(t_max_nesting_levels, 8);
     }
-#endif /* _T_CUPTI_ */
     write_on_finalize = is_true(__msl_getenv("PEAT_TRACTOR_WRITE_ON_FINALIZE"), write_on_finalize);
 
     temp = __msl_getenv("PEAT_TRACTOR_COMPRESS_EVENTS");
@@ -1308,6 +1275,7 @@ void tractor::init(void)
 #endif
     debug_printf("Rank %d: Prolog finished...\n", t_mpi_rank);
     tractor_initialized = 1;
+    t_shim_sync(this);
     counting_permit = !pcontrol;
 
     debug_printf("Rank %d: Tractor Constructor finished...\n", t_mpi_rank);
@@ -1316,10 +1284,7 @@ void tractor::init(void)
     for (i = 0; i < MPI_MAX_FUNCID_THROUGH; i++) {
         debug_printf("%s = %s\n", mpi_function_names[i], conoff[counting_permission[i] != 0]);
     }
-#ifdef _T_CUPTI_
-    if (!cuda_skip_parse)
-        t_cupti_init(); /* before the application initializes CUDA */
-#endif
+    t_shim_init_classes(); /* CUDA: CUPTI, before the application initializes CUDA */
     if (t_mpi_rank < 0) {
         single_process_init();
         post_mpi_init();
@@ -1572,6 +1537,7 @@ void tractor::finalize(void)
     so_walker(g_shared_objects);
 #ifdef _MEM_HOOKS_
     map_file_parse(); // parse it once again since heap and stack might be changed
+    t_shim_sync(this);
     mprof.set_add_vars(lowheap, highheap, lowstack, highstack);
     mprof.initialize_object_addresses(g_shared_objects);
 #endif
@@ -1615,6 +1581,7 @@ void tractor::abort(void)
     so_walker(g_shared_objects);
 #ifdef _MEM_HOOKS_
     map_file_parse(); // parse it once again since heap and stack might be changed
+    t_shim_sync(this);
     mprof.set_add_vars(lowheap, highheap, lowstack, highstack);
     mprof.initialize_object_addresses(g_shared_objects);
 #endif
@@ -1643,16 +1610,7 @@ void tractor::end(void)
         pre_finalize(0);
         finalize();
     }
-#ifdef _T_OMPT_
-    if (ompt_finalize_tool)
-        ompt_finalize_tool();
-#endif
-#ifdef _T_ACC_
-    t_acc_finalize();
-#endif
-#ifdef _T_CUPTI_
-    t_cupti_finalize(); /* the GPU records CUPTI still holds; a no-op when the exit handler already got them */
-#endif
+    t_shim_finalize_classes(); /* OMPT: ompt_finalize_tool, OpenACC: unregister, CUDA: the records CUPTI still holds */
 
 #ifdef _MEMPROFILE_
     PEAT_LNum max_memory_application_rss = mprof.get_max_memory_RSS_in_KB(); // in kibibytes
@@ -1660,12 +1618,10 @@ void tractor::end(void)
     PEAT_LNum max_memory_application_rs_scorrected = max_memory_application_rss - ((tractor_allocated /* + (mprof.get_total_events() * sizeof(memory_profiler_event))*/) / 1024); // in kibibytes
 #endif
     tractor_initialized = 0;
+    t_shared.tractor_initialized = 0; /* the shims record nothing from here on */
     /* in case LD_PRELOAD was used with 'wrong' app (like mpiexec.hydra etc); a non-MPI llama.cpp process
        has no MPI time but its pipeline stages */
-    bool non_mpi_records = global_llama_time > 0;
-#ifdef _T_CUPTI_
-    non_mpi_records = non_mpi_records || global_cuda_time > 0;
-#endif
+    bool non_mpi_records = global_llama_time > 0 || global_cuda_time > 0;
     if (global_mpi_time > 0 || non_mpi_records)
         write_trace();
     if (gt_ninfo)
@@ -2441,11 +2397,10 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
         /* A record is two lines: the function-specific one (the function name, or its id, then its parameters) and,
            after it, the trace-specific one (the id path, thread, number of children, timestamps, addresses, counters).
            A sendrecv has a second function-specific line (its receive part) after the trace-specific one. */
-#ifdef _T_CUPTI_
         if (rec.func_id == CUDA_KERNEL_ID_THROUGH) { /* a GPU kernel is written with its own name, never as cuda_kernel's id */
-            t_gzprintf(fps_mpi, "%s", t_cupti_kernel_name(rec.cuda.name_index));
+            const char *(*kernel_name)(int) = t_shared.cuda_kernel_name; /* set by the CUDA class */
+            t_gzprintf(fps_mpi, "%s", kernel_name ? kernel_name(rec.cuda.name_index) : "cuda_kernel");
         } else
-#endif
         if (print_names) {
             t_gzprintf(fps_mpi, "%s", mpi_function_names[rec.func_id]);
         } else {
@@ -2511,7 +2466,6 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
             }
 
     /***********************************************************************************************************************************************************************************************/
-    #ifdef _T_OMPT_
             if (func_base >= OMPT_START_GROUP && func_base < OMPT_END_GROUP) {
                 t_gzprintf(fps_mpi, ":%d:%d:%lld:%lld",
                            rec.ompt.kind,         // 4
@@ -2537,13 +2491,13 @@ num_processed_events tractor::write_main_files(/*user_region_store &user_region_
                     addr_map[addr] = t_addr;
                 }
             }
-    #endif
     /***********************************************************************************************************************************************************************************************/
     #ifdef _T_GPU_STAT_
             if (func_base >= CL_START_GROUP && func_base < CL_END_GROUP ||
                 func_base >= ZE_START_GROUP && func_base < ZE_END_GROUP ||
                 func_base >= ACC_START_GROUP && func_base < ACC_END_GROUP ||
                 peat_is_cuda_func_id(func_base)) {
+                gpu_records_written = 1;
                 t_gzprintf(fps_mpi, ":%d:%d:%d",
                            rec.gpu.num_arguments,      //
                            rec.gpu.num_out_arguments,  //
@@ -3390,7 +3344,12 @@ void tractor::write_stat_com_file(void)
     }
     SEPARATOR(38 * (gt_func_stat.bound_num - 1) + 35);
 #ifdef _T_GPU_STAT_
+#if defined(GPUPARSE) || defined(_T_ACC_) || defined(_T_CUPTI_)
     print_gpu_stat();
+#else
+    if (gpu_records_written) /* GPU records from a shim (OpenACC): a core without them writes no GPU section */
+        print_gpu_stat();
+#endif
 #endif
     __DEBUG_EPILOG_TRACTOR_LAYER__
 
@@ -3737,7 +3696,6 @@ tractor_debug t_info_debug;
 #else
 tractor t_info;
 #endif
-#ifdef _T_SHIM_STATE_
 /* What the shims use of the core (t_shim_state.h). A constant initialization: valid as soon as this library is loaded,
    before the constructor of t_info has run. */
 static int t_shim_get_tid(pid_t tid_in)
@@ -3754,6 +3712,124 @@ static int t_shim_transport_reuse_event(int tid, msl_event **event, short func_i
     return gt_info(t_transport_prof).reuse_event(tid, event, func_id);
 }
 #endif
+static int t_shim_current_level(int tid)
+{
+    return gt_info(current_level(tid));
+}
+static int t_shim_write_record(int tid, int level, long long value)
+{
+    return gt_info(write_record(tid, level, value));
+}
+static int t_shim_write_records(int tid, int level, const long long *values, int num)
+{
+    return gt_info(write_records(tid, level, values, num));
+}
+static void t_shim_allocate_event(int tid, int level, msl_event **event, void ***addrs)
+{
+    msl_extras_counters counters;
+    gt_info(allocate_event(tid, level, 0, event, &counters));
+    *addrs = counters.addrs;
+}
+
+/* the event classes set up so far (t_shim_state::register_class) */
+#define T_SHIM_MAX_CLASSES 16
+static const struct t_shim_class *t_shim_classes[T_SHIM_MAX_CLASSES];
+static int t_shim_num_classes = 0;
+static int t_shim_classes_ready = 0; /* t_shim_init_classes() ran: a class registered later is initialized at once */
+static int t_shim_classes_lock = 0;  /* a spin lock: usable before any constructor has run */
+static void t_shim_lock(void)
+{
+    while (__atomic_exchange_n(&t_shim_classes_lock, 1, __ATOMIC_ACQUIRE))
+        ;
+}
+static void t_shim_unlock(void)
+{
+    __atomic_store_n(&t_shim_classes_lock, 0, __ATOMIC_RELEASE);
+}
+static int t_shim_register_class(const struct t_shim_class *cls)
+{
+    t_shim_lock();
+    int ok = 1;
+    const int n = t_shim_num_classes;
+    for (int i = 0; i < n && ok; i++)
+        if (strcmp(t_shim_classes[i]->name, cls->name) == 0)
+            ok = 0; /* the same class from another library (built into the core and a shim, or two shims) */
+    if (ok && n >= T_SHIM_MAX_CLASSES) {
+        fprintf(stderr, "tractor: too many event classes, %s is not registered\n", cls->name);
+        ok = 0;
+    }
+    if (ok) {
+        t_shim_classes[n] = cls;
+        __atomic_store_n(&t_shim_num_classes, n + 1, __ATOMIC_RELEASE); /* readers see complete entries only */
+    }
+    const int init_now = ok && t_shim_classes_ready;
+    t_shim_unlock();
+    if (!ok)
+        fprintf(stderr, "tractor: %s is set up by another library already (built into the core and preloaded as a shim?), this copy stays inert\n", cls->name);
+    if (init_now && cls->init) /* the core was set up before this library was loaded or registered */
+        cls->init();
+    return ok;
+}
+static void t_shim_init_classes(void)
+{
+    t_shim_lock();
+    t_shim_classes_ready = 1;
+    const int n = t_shim_num_classes;
+    t_shim_unlock();
+    for (int i = 0; i < n; i++) /* the entries do not change once registered */
+        if (t_shim_classes[i]->init)
+            t_shim_classes[i]->init();
+}
+static void t_shim_finalize_classes(void)
+{
+    const int n = __atomic_load_n(&t_shim_num_classes, __ATOMIC_ACQUIRE);
+    for (int i = 0; i < n; i++)
+        if (t_shim_classes[i]->finalize)
+            t_shim_classes[i]->finalize();
+}
+static void t_shim_class_names(std::ostringstream &m)
+{
+    const int n = __atomic_load_n(&t_shim_num_classes, __ATOMIC_ACQUIRE);
+    for (int i = 0; i < n; i++)
+        m << " " << (t_shim_classes[i]->info ? t_shim_classes[i]->info() : t_shim_classes[i]->name);
+}
+
+static int t_shim_enter_call(int tid)
+{
+    return gt_info(enter_call(tid));
+}
+static void t_shim_leave_call(int tid)
+{
+    gt_info(leave_call(tid));
+}
+static long long t_shim_child_base(int tid, int level)
+{
+    return gt_info(child_base(tid, level));
+}
+static void t_shim_check_chain(int tid, int level)
+{
+    gt_info(t_check_chain(tid, level));
+}
+
+/* copies what the shims read of the core; called with the object itself, t_info may not be reachable yet (DIAG) */
+static void t_shim_sync(const tractor *t)
+{
+    t_shared.t_max_threads = t->t_max_threads;
+    t_shared.t_max_nesting_levels = t->t_max_nesting_levels;
+    t_shared.max_ret_level = t->max_ret_level;
+    t_shared.ret_levels = t->ret_levels;
+    t_shared.num_addrs = t->num_addrs;
+    t_shared.full_ompt_unwind = t->full_ompt_unwind;
+    t_shared.lowval = t->lowval;
+    t_shared.highval = t->highval;
+    t_shared.binval = t->binval;
+    t_shared.lowfort = t->lowfort;
+    t_shared.highfort = t->highfort;
+    t_shared.t_pid = t->t_pid;
+    t_shared.t_max_tid_num = t->t_max_tid_num;
+    __atomic_store_n(&t_shared.tractor_initialized, t->tractor_initialized, __ATOMIC_RELEASE); /* last */
+}
+
 struct t_shim_state t_shared = {
     T_SHIM_STATE_VERSION,
     (int)sizeof(t_shim_state),
@@ -3766,14 +3842,34 @@ struct t_shim_state t_shared = {
     NULL, /* a core without transport support: the shims stay inert */
     NULL,
 #endif
+    0,    /* tractor_initialized ... highfort: set by t_shim_sync */
+    0,
+    0,
+    0,
+    NULL,
+    0,
+    0,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    1, /* parse_openmp, until PEAT_TRACTOR_PARSE_OPENMP is read */
+    t_shim_current_level,
+    t_shim_allocate_event,
+    t_shim_register_class,
+    t_shim_write_records,
+    1, /* parse_openacc, until PEAT_TRACTOR_PARSE_OPENACC is read */
+    t_shim_enter_call,
+    t_shim_leave_call,
+    t_shim_child_base,
+    t_shim_check_chain,
+    0, /* t_pid, t_max_tid_num: set by t_shim_sync */
+    0,
+    NULL, /* cuda_kernel_name: set by the CUDA class */
+    t_shim_write_record,
+    T_SHIM_TIMER,
 };
-#elif defined(_TRANSPORT_PROFILE_)
-/* checked by the transport shims before they touch t_info, see t_transport_check_layout() */
-extern "C" void tractor_transport_layout(long *v)
-{
-    t_transport_layout(v);
-}
-#endif
 #ifndef _TRACTOR_DIAG_
 
 #ifdef _OPENMPI_

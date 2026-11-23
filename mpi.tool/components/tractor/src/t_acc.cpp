@@ -31,6 +31,14 @@
 
 extern "C" {
 
+#include "t_class_shim.h" /* the core through t_shared: built into the core (ACC on) or as libtractor_acc.so */
+/* on first use: t_acc_autoload is a constructor, its order to the static initializers of this file is not fixed */
+static bool t_acc_core_ok()
+{
+    static const bool ok = T_CLASS_CORE_CHECK("OpenACC", parse_openacc);
+    return ok;
+}
+
 struct t_acc_event_desc {
     acc_event_t event;
     short id;
@@ -80,6 +88,7 @@ static const int t_acc_events_num = sizeof(t_acc_events) / sizeof(t_acc_events[0
 // the *_start record waiting for its *_end, one per function and thread
 static msl_event **volatile stored_acc_events[ACC_SLOTS];
 static acc_prof_reg t_acc_unreg = NULL;
+T_CLASS_STATIC void t_acc_finalize();
 
 #define ACC_HAS_FIELD(info, type, field) ((info)->valid_bytes >= (int)(offsetof(type, field) + sizeof(((type *)0)->field)))
 
@@ -96,7 +105,7 @@ static msl_event **acc_slots(int id)
 {
     const int idx = id - ACC_START_GROUP - 1;
     if (stored_acc_events[idx] == NULL) {
-        const int max_threads = gt_info(t_max_threads);
+        const int max_threads = T_CORE(t_max_threads);
         msl_event **fresh = new msl_event *[max_threads];
         memset(fresh, 0, max_threads * sizeof(msl_event *));
         if (!__sync_bool_compare_and_swap(&stored_acc_events[idx], (msl_event **)NULL, fresh))
@@ -152,23 +161,23 @@ static msl_event *record_acc_event(short func1, const long long *params)
     int tid;
     const PEAT_MPI_Func_ID_Through fidc = (PEAT_MPI_Func_ID_Through)func1; // used by stack_unwind()
     PEAT_Proc core_id;
-    msl_extras_counters counters;
-    if (gt_info(tractor_initialized) < 1)
+    PEAT_Addr *t_addrs;
+    if (T_CORE(tractor_initialized) < 1)
         return NULL;
     tsc_entry = peat_get_time_tid_core(&tid_in, &core_id);
-    tid = __msl_get_tid(tid_in);
-    const int level = __msl_current_level(tid);
-    if (level >= gt_info(t_max_nesting_levels)) /* inside a call at the deepest level: no level below it */
+    tid = T_CORE_GET_TID(tid_in);
+    const int level = T_CORE_LEVEL(tid);
+    if (level >= T_CORE(t_max_nesting_levels)) /* inside a call at the deepest level: no level below it */
         return NULL;
-    __msl_allocate_event(tid, level, 0, &t_event, &counters);
+    T_CORE_ALLOCATE(tid, level, &t_event, &t_addrs);
     t_event->gpu.num_arguments = ACC_PARAMS_NUM;
     t_event->gpu.num_out_arguments = 0;
     t_event->gpu.num_extra_arguments = 0;
-    __msl_write_records(tid, level, params, ACC_PARAMS_NUM);
-    if (gt_info(full_ompt_unwind)) {
-        stack_unwind(gt_info(max_ret_level), counters.addrs, gt_info(ret_levels));
+    T_CORE_WRITE_RECORDS(tid, level, params, ACC_PARAMS_NUM);
+    if (T_CORE(full_ompt_unwind)) {
+        stack_unwind(T_CORE(max_ret_level), t_addrs, T_CORE(ret_levels));
     } else {
-        stack_unwind0(gt_info(max_ret_level), counters.addrs, gt_info(ret_levels));
+        stack_unwind0(T_CORE(max_ret_level), t_addrs, T_CORE(ret_levels));
     }
     t_event->func_id = func1;
     t_event->tscs[0] = tsc_entry;
@@ -207,8 +216,12 @@ static void t_acc_callback(acc_prof_info *prof, acc_event_info *info, acc_api_in
         pid_t tid_in;
         PEAT_Proc core_id;
         const long long tsc_entry = peat_get_time_tid_core(&tid_in, &core_id);
-        const int tid = (int)__msl_get_tid(tid_in);
-        if (gt_info(tractor_initialized) < 1 || tid >= gt_info(t_max_threads)) {
+        if (T_CORE(tractor_initialized) < 1) { /* before get_tid: the core may not be set up */
+            __DEBUG_EPILOG_ACC_LAYER__
+            return;
+        }
+        const int tid = (int)T_CORE_GET_TID(tid_in);
+        if (tid >= T_CORE(t_max_threads)) {
             __DEBUG_EPILOG_ACC_LAYER__
             return;
         }
@@ -229,7 +242,7 @@ static void t_acc_callback(acc_prof_info *prof, acc_event_info *info, acc_api_in
         if (event) {
             if (desc->is_start) {
                 const int tid = (int)event->tscs[2];
-                if (tid < gt_info(t_max_threads))
+                if (tid < T_CORE(t_max_threads))
                     acc_slots(desc->id)[tid] = event;
             } else {
                 event->tscs[2] = event->tscs[3] = event->tscs[1];
@@ -244,6 +257,9 @@ static void t_acc_register_all(acc_prof_reg reg, acc_prof_reg unreg)
 {
     if (t_acc_unreg != NULL) // already registered, the runtime must not get the callbacks twice
         return;
+    static const struct t_shim_class t_acc_class = {"OpenACC", NULL, t_acc_finalize, NULL};
+    if (!T_CORE_REGISTER_CLASS(&t_acc_class)) // another copy (core or shim) has registered its callbacks
+        return;
     t_acc_unreg = unreg;
     for (int i = 0; i < t_acc_events_num; i++) {
         reg(t_acc_events[i].event, t_acc_callback, acc_reg);
@@ -257,6 +273,8 @@ static void t_acc_register_all(acc_prof_reg reg, acc_prof_reg unreg)
 //  - the runtime is loaded: its acc_prof_register() is used directly.
 __attribute__((constructor)) static void t_acc_autoload()
 {
+    if (!t_acc_core_ok()) /* no core library (shim build): nothing to record into */
+        return;
     const char *off = getenv("PEAT_TRACTOR_PARSE_OPENACC");
     if (off && strcmp(off, "1") != 0 && strcmp(off, "yes") != 0 && strcmp(off, "on") != 0) // same test as is_true() in tractor.cpp
         return;
@@ -283,7 +301,7 @@ void acc_register_library(acc_prof_reg reg, acc_prof_reg unreg, acc_prof_lookup_
 {
     __DEBUG_PROLOG_ACC_LAYER__
     debug_printf("acc_register_library started...\n");
-    if (!gt_info(parse_openacc))
+    if (!t_acc_core_ok() || !T_CORE(parse_openacc))
         return;
     t_acc_register_all(reg, unreg);
     debug_printf("acc_register_library finished...\n");
@@ -291,7 +309,7 @@ void acc_register_library(acc_prof_reg reg, acc_prof_reg unreg, acc_prof_lookup_
 }
 
 // Called from the tractor destructor: the runtime may still raise shutdown events after the trace is written.
-void t_acc_finalize()
+T_CLASS_STATIC void t_acc_finalize()
 {
     if (t_acc_unreg == NULL)
         return;

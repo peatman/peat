@@ -32,11 +32,9 @@
 #ifdef _T_ACC_
 #include <acc_prof.h>
 #endif
-/* GPU-style records (parameter lists in the extras) and their transfer/execution statistics:
-   written for OpenCL/Level Zero (GPUPARSE) and for OpenACC */
-#if defined(GPUPARSE) || defined(_T_ACC_) || defined(_T_CUPTI_)
+/* GPU-style records (parameter lists in the extras) and their transfer/execution statistics: written for OpenCL/Level
+   Zero (GPUPARSE), OpenACC and CUDA; always compiled, the records may come from a shim (print_gpu_stat) */
 #define _T_GPU_STAT_
-#endif
 
 #ifndef MAX_PATH
 #define MAX_PATH 2048
@@ -172,6 +170,10 @@ static void debug_printf(const char *format, ...) {};
 #include "t_time.h"
 
 #if 1
+/* where the unwinding finds the address bounds: the core's own members, a shim redefines it to t_shared.x */
+#ifndef T_UNWIND_INFO
+#define T_UNWIND_INFO(x) gt_info(x)
+#endif
 /* Frames inside the MPI Fortran wrapper library(ies) are skipped so the recorded call site is the user's Fortran code */
 #ifdef _OPENMPI_
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
@@ -183,7 +185,7 @@ int t_addr_in_fortran_lib(const void *addr); /* tractor.cpp: any of libmpi_mpifh
 #endif
 #define T_IN_FORTRAN_LIB(a) t_addr_in_fortran_lib(a)
 #else
-#define T_IN_FORTRAN_LIB(a) ((a) > gt_info(lowfort) && (a) < gt_info(highfort)) /* libmpifort */
+#define T_IN_FORTRAN_LIB(a) ((a) > T_UNWIND_INFO(lowfort) && (a) < T_UNWIND_INFO(highfort)) /* libmpifort */
 #endif
 
 #define stack_unwind_x(lev_num, store_addr, levels)                                                            \
@@ -199,7 +201,7 @@ int t_addr_in_fortran_lib(const void *addr); /* tractor.cpp: any of libmpi_mpifh
             ret_addr = t_frame[1];                                                                            \
             if (levels[j] == i)                                                                               \
                 store_addr[j++] = reinterpret_cast<void *>(reinterpret_cast<unsigned long>(ret_addr) /*-5*/); \
-            if ((ret_addr > gt_info(lowval) && ret_addr < gt_info(highval)) || ret_addr < gt_info(binval))    \
+            if ((ret_addr > T_UNWIND_INFO(lowval) && ret_addr < T_UNWIND_INFO(highval)) || ret_addr < T_UNWIND_INFO(binval)) \
                 t_frame = (void **)t_frame[0];                                                                \
         }                                                                                                     \
     }
@@ -380,7 +382,6 @@ struct msl_event {
             int num_out_arguments;
             int num_extra_arguments;
         } __attribute__((packed)) __attribute__((aligned(4))) gpu;
-#ifdef _T_OMPT_
         struct {
             long long parallel_data;
             long long task_data;
@@ -388,15 +389,12 @@ struct msl_event {
             short kind;
             short endpoint;
         } __attribute__((packed)) __attribute__((aligned(4))) ompt;
-#endif
-#ifdef _T_CUPTI_
-        struct { /* the GPU layout (same first members as gpu) and the name of a kernel */
+        struct { /* the GPU layout (same first members as gpu) and the name of a kernel (written by the CUDA class) */
             int num_arguments;
             int num_out_arguments;
             int num_extra_arguments;
-            int name_index; /* cuda_kernel records: index of the kernel name (t_cupti_kernel_name()) */
+            int name_index; /* cuda_kernel records: index of the kernel name (t_shim_state::cuda_kernel_name) */
         } __attribute__((packed)) __attribute__((aligned(4))) cuda;
-#endif
     };
 };
 
@@ -430,17 +428,10 @@ extern  ompt_finalize_tool_t ompt_finalize_tool;
 #define __msl_reuse_event(tid_in, level, event, counters, funcid) gt_info(reuse_event(tid_in, level, event, counters, funcid))
 #define __msl_discard_event(tid_in, level, event, children_base) gt_info(discard_event(tid_in, level, event, children_base))
 /* transport records: through t_shared (t_shim_state.h), the same in the core and in the shims */
-#ifdef _T_SHIM_STATE_
 #define T_TRANSPORT_PERMIT (t_shared.t_permit_collect_transport)
 #define __msl_transport_get_tid(tid_in) t_shared.get_tid(tid_in)
 #define __msl_transport_allocate_event(tid_in, event, funcid) t_shared.transport_allocate_event(tid_in, event, funcid)
 #define __msl_transport_reuse_event(tid_in, event, funcid) t_shared.transport_reuse_event(tid_in, event, funcid)
-#else
-#define T_TRANSPORT_PERMIT gt_info(t_permit_collect_transport)
-#define __msl_transport_get_tid(tid_in) __msl_get_tid(tid_in)
-#define __msl_transport_allocate_event(tid_in, event, funcid) gt_info(t_transport_prof).allocate_event(tid_in, event, funcid)
-#define __msl_transport_reuse_event(tid_in, event, funcid) gt_info(t_transport_prof).reuse_event(tid_in, event, funcid)
-#endif
 
 #define __msl_get_tid(tid_in) gt_info(get_tid(tid_in))
 #define __msl_check_chain(tid, level) gt_info(t_check_chain(tid, level))

@@ -37,6 +37,7 @@ PEAT_Clock global_tool_overhead = 0;
 PEAT_Clock global_mpi_time = 0;
 PEAT_Clock global_gpu_time = 0;
 PEAT_Clock global_llama_time = 0; /* llama.cpp/ggml stages (_T_LLAMA_); nested stages are counted at every level */
+PEAT_Clock global_cuda_time = 0;  /* CUDA records were taken (the CUDA class): tractor::end() writes the trace of a non-MPI process */
 PEAT_Clock global_parallel_app_time = 0;
 PEAT_Clock global_parallel_start = 0;
 PEAT_Clock global_parallel_stop = 0;

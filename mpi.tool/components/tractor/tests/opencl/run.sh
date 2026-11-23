@@ -1,9 +1,11 @@
 #!/bin/bash
-# Build and run the OpenCL classification test under tractor (library built with PARSE_GPU=on).
+# Build and run the OpenCL classification test under tractor: the core library and the OpenCL shim (libtractor_opencl.so,
+# TARGET=class_layers), or a core with OpenCL built in (PARSE_GPU=on).
 #   ./run.sh [iterations] [ranks]
 # cl_sim_test calls OpenCL enqueue functions that are implemented by cl_fake.c (they only sleep), so the
 # transfer / fill / execution / sync classification in the tractor GPU statistics is checked without a device.
-# Set TRACTOR_LIB=<path> to preload a specific library, default is lib/intel/libtractor.mpich5.gpu.so.
+# Set TRACTOR_LIB=<lib>[:<lib>...] to preload other libraries, default lib/intel/libtractor.mpich5.eng.so (the core of the
+# engineering MPICH, eng: event handles) and lib/intel/libtractor_opencl.so.
 
 iterations=${1:-5}
 ranks=${2:-2}
@@ -20,7 +22,8 @@ gcc -shared -fPIC $cl_flags cl_fake.c -o libclfake.so || exit 1
 gcc -O1 -g $cl_flags -I$mpi_root/include cl_sim_test.c -o cl_sim_test -L. -Wl,-rpath,$PWD -lclfake \
     -L$mpi_root/lib -Wl,-rpath,$mpi_root/lib -Wl,--allow-shlib-undefined -lmpi || exit 1
 
-lib=${TRACTOR_LIB:-$(realpath ../../../../lib/intel)/libtractor.mpich5.gpu.so}
+libdir=$(realpath ../../../../lib/intel)
+lib=${TRACTOR_LIB:-$libdir/libtractor.mpich5.eng.so:$libdir/libtractor_opencl.so}
 export FI_PROVIDER=shm
 export PEAT_TRACTOR_PRINT_FUNC_NAMES=1
 export PEAT_TRACTOR_WRITE_TRACE=1

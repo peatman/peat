@@ -45,11 +45,17 @@
 #include <unordered_map>
 #include <vector>
 
+extern "C" {
+#include "t_class_shim.h" /* the core through t_shared: built into the core (CUPTI_PARSE) or as libtractor_cuda.so */
 extern int counting_permit;
 extern int cuda_skip_parse;
 extern PEAT_Clock global_gpu_time;
 extern PEAT_Clock global_tool_overhead;
-PEAT_Clock global_cuda_time = 0; /* CUDA records were taken: tractor::end() writes the trace of a non-MPI process */
+extern PEAT_Clock global_cuda_time; /* the core's: CUDA records were taken, the trace of a non-MPI process is written */
+/* this copy of the CUDA class is not the registered one (another library has it set up): it records nothing, its cuBLAS
+   wrappers (generated, mpi_layer.pl) pass the calls through. Hidden: each copy has its own. */
+__attribute__((visibility("hidden"))) bool t_cuda_inert = false;
+}
 
 #define T_CUPTI_CHECK(call)                                                                    \
     do {                                                                                       \
@@ -127,7 +133,7 @@ static int t_kernel_name_id(const char *mangled)
     return idx;
 }
 
-extern "C" const char *t_cupti_kernel_name(int idx)
+static const char *t_cupti_kernel_name(int idx)
 {
     std::lock_guard<std::mutex> lock(t_kernel_names_mutex());
     if (idx < 0 || idx >= (int)t_kernel_names().size())
@@ -241,7 +247,7 @@ static void t_cupti_flush_at_exit(void);
 
 static void CUPTIAPI t_cupti_callback(void *userdata, CUpti_CallbackDomain domain, CUpti_CallbackId cbid, const void *data)
 {
-    if (domain != CUPTI_CB_DOMAIN_RUNTIME_API || cuda_skip_parse || tractor_finished || gt_info(tractor_initialized) < 1)
+    if (domain != CUPTI_CB_DOMAIN_RUNTIME_API || cuda_skip_parse || t_cuda_inert || tractor_finished || gt_info(tractor_initialized) < 1)
         return;
     static bool atexit_registered = false;
     if (!atexit_registered) { /* after the CUDA runtime's own exit handlers: ours runs first, while CUDA is still there */
@@ -434,12 +440,14 @@ static void t_cupti_flush_at_exit(void)
     t_cupti_flush();
 }
 
-/* Called from tractor::init() when PEAT_TRACTOR_PARSE_CUDA=1, before the application initializes CUDA. */
-extern "C" void t_cupti_init(void)
+/* The init of the CUDA class: when the core is set up (tractor::init(), before the application initializes CUDA), or
+   when this shim is loaded after that. Records only with PEAT_TRACTOR_PARSE_CUDA=1 (cuda_skip_parse, read by the core). */
+static void t_cupti_init(void)
 {
-    if (t_cupti_tried)
+    if (t_cupti_tried || cuda_skip_parse)
         return;
     t_cupti_tried = true;
+    t_shared.cuda_kernel_name = t_cupti_kernel_name; /* the writer of the core names the kernel records with it */
     for (int i = CUDA_START_GROUP_THROUGH + 1; i < CUDA_END_GROUP_THROUGH; i++) {
         if (mpi_function_names[i] && strncmp(mpi_function_names[i], "cuda", 4) == 0 && strncmp(mpi_function_names[i], "cuda_", 5) != 0)
             t_runtime_ids()[mpi_function_names[i]] = (short)i;
@@ -459,22 +467,28 @@ extern "C" void t_cupti_init(void)
     t_cupti_active = true;
 }
 
-/* Called from the tractor destructor before the trace is written: the GPU records still buffered by CUPTI. */
-extern "C" void t_cupti_finalize(void)
+/* The finalize of the CUDA class, before the trace is written: the GPU records still buffered by CUPTI. */
+static void t_cupti_finalize(void)
 {
     t_cupti_flush();
 }
 
-/* For the modules remark of the com file: whether CUPTI started (no: not asked for, or failed, e.g. without a driver). */
-extern "C" int t_cupti_recording(void)
+/* For the modules remark of the com file: the CUDA toolkit the class was built with and whether CUPTI records (off: not
+   asked for, failed: PEAT_TRACTOR_PARSE_CUDA=1 but CUPTI did not start, reported on stderr, e.g. no driver), e.g.
+   "CUDA 12.9/CUPTI 28(recording on)". */
+static const char *t_cupti_info(void)
 {
-    return t_cupti_active;
+    static char info[96];
+    snprintf(info, sizeof(info), "CUDA %d.%d/CUPTI %d(recording %s)", CUDA_VERSION / 1000, (CUDA_VERSION % 1000) / 10, (int)CUPTI_API_VERSION,
+             cuda_skip_parse ? "off" : t_cupti_active ? "on" : "failed");
+    return info;
 }
 
-/* For the modules remark of the com file: the CUDA toolkit the library was built with, e.g. "CUDA 12.9/CUPTI 28". */
-extern "C" const char *t_cupti_build_info(void)
+/* CUDA is registered as soon as this library is loaded (built into the core, or the shim): the core calls t_cupti_init
+   when it is set up, at once if it is already. A second copy (core and shim, two shims) stays inert. */
+__attribute__((constructor)) static void t_cupti_register(void)
 {
-    static char info[64];
-    snprintf(info, sizeof(info), "CUDA %d.%d/CUPTI %d", CUDA_VERSION / 1000, (CUDA_VERSION % 1000) / 10, (int)CUPTI_API_VERSION);
-    return info;
+    static const struct t_shim_class t_cuda_class = {"CUDA", t_cupti_init, t_cupti_finalize, t_cupti_info};
+    if (!T_CLASS_CORE_CHECK("CUDA (CUPTI, cuBLAS)", cuda_kernel_name) || !T_CORE_REGISTER_CLASS(&t_cuda_class))
+        t_cuda_inert = true; /* no core, or the other copy records (CUPTI and cuBLAS) */
 }
