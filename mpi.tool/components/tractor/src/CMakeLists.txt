@@ -525,9 +525,9 @@ set(TRACTOR_LIBS ZLIB::ZLIB)
 set(TRACTOR_EXTRANAME "")
 set(_print_extended_stuff off)
 
-# TRACTOR_TARGET=class_layers: the event-class shims (see the Makefile's TARGET=class_layers): libtractor_ompt.so always,
-# libtractor_acc.so (acc_prof.h: not with the Intel compilers), libtractor_cuda.so (CUPTI found), libtractor_llama.so
-# (llama.cpp headers usable), libtractor_opencl.so / libtractor_levelzero.so (headers found). They reach the core only
+# TRACTOR_TARGET=class_layers: the event-class shims (see the Makefile's TARGET=class_layers): libtractor.ompt.so always,
+# libtractor.acc.so (acc_prof.h: not with the Intel compilers), libtractor.cuda.so (CUPTI found), libtractor.llama.so
+# (llama.cpp headers usable), libtractor.opencl.so / libtractor.levelzero.so (headers found). They reach the core only
 # through t_shared (t_shim_state.h), so one build fits every core variant - except the timer (PEAT_TIMER), which the
 # core and the shims have to share (the shims check it; the CUDA shim needs nano). No HWC/MEM/DIAG: core switches.
 set(_class_layers OFF)
@@ -1163,7 +1163,7 @@ function(tractor_install_shim_links _dir _base)
 endfunction()
 
 # tractor_class_shim(<name> SOURCES <files> [DEFS <-D...>] [FLAGS <compile flags>] [LINK <link args>]):
-# libtractor<suffix>_<name>.so of event-class code built with -D_T_CLASS_SHIM_ (t_class_shim.h); appends the library to
+# libtractor<suffix>.<name>.so of event-class code built with -D_T_CLASS_SHIM_ (t_class_shim.h); appends the library to
 # _class_shim_libs and its base name to _class_shim_bases of the caller
 function(tractor_class_shim _name)
   cmake_parse_arguments(S "" "" "SOURCES;DEFS;FLAGS;LINK" ${ARGN})
@@ -1183,7 +1183,7 @@ function(tractor_class_shim _name)
       VERBATIM)
     list(APPEND _objs ${_obj})
   endforeach()
-  set(_base tractor${TRANSPORTLIBSUFFIX}_${_name})
+  set(_base tractor${TRANSPORTLIBSUFFIX}.${_name})
   set(_so ${CMAKE_CURRENT_BINARY_DIR}/lib${_base}.so.${TRACTOR_MAJOR}.${TRACTOR_MINOR})
   add_custom_command(
     OUTPUT ${_so}
@@ -1254,7 +1254,7 @@ elseif(TRACTOR_TARGET STREQUAL "transport_layers")
   foreach(_layer psm2 psm3 ucx ofi)
     set(_src ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_transport_${_layer}.cpp)
     set(_obj ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer_transport_${_layer}.o)
-    set(_soname libtractor${TRANSPORTLIBSUFFIX}_transport_${_layer}.so.${TRACTOR_MAJOR}.${TRACTOR_MINOR})
+    set(_soname libtractor${TRANSPORTLIBSUFFIX}.transport.${_layer}.so.${TRACTOR_MAJOR}.${TRACTOR_MINOR})
     set(_so ${CMAKE_CURRENT_BINARY_DIR}/${_soname})
 
     add_custom_command(
@@ -1287,7 +1287,7 @@ elseif(TRACTOR_TARGET STREQUAL "transport_layers")
   install(FILES ${_transport_shim_libs} DESTINATION ${_transport_install_dir}
           PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
   foreach(_layer psm2 psm3 ucx ofi)
-    set(_base tractor${TRANSPORTLIBSUFFIX}_transport_${_layer})
+    set(_base tractor${TRANSPORTLIBSUFFIX}.transport.${_layer})
     install(CODE "
       execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
         lib${_base}.so.${TRACTOR_MAJOR}.${TRACTOR_MINOR} lib${_base}.so.${TRACTOR_MAJOR}

@@ -31,7 +31,7 @@
 
 extern "C" {
 
-#include "t_class_shim.h" /* the core through t_shared: built into the core (ACC on) or as libtractor_acc.so */
+#include "t_class_shim.h" /* the core through t_shared: built into the core (ACC on) or as libtractor.acc.so */
 /* on first use: t_acc_autoload is a constructor, its order to the static initializers of this file is not fixed */
 static bool t_acc_core_ok()
 {

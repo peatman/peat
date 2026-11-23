@@ -13,12 +13,12 @@
   It reaches the core through `t_shared` only and needs it: `DT_NEEDED libtractor.core.so.0`, found next to it (RUNPATH
   `$ORIGIN`), so preloading the MPI layer alone loads the core; a core variant (e.g. `libtractor_dbg.core.so`) preloaded
   before it is taken instead.
-- `libtractor_transport_{psm2,psm3,ucx,ofi}.so` shims (`TARGET=transport_layers`)
-- `libtractor_{ompt,acc,opencl,levelzero,cuda,llama}.so` event-class shims (`TARGET=class_layers`), each one when it can be built
+- `libtractor.transport.{psm2,psm3,ucx,ofi}.so` shims (`TARGET=transport_layers`)
+- `libtractor.{ompt,acc,opencl,levelzero,cuda,llama}.so` event-class shims (`TARGET=class_layers`), each one when it can be built
 
 A traced MPI program preloads the MPI layer and the shims it wants, e.g.
-`LD_PRELOAD=libtractor.mpich5.eng.so:libtractor_transport_ofi.so:libtractor_ompt.so`; a program without MPI (a llama.cpp
-application, ...) preloads the core and the shims: `LD_PRELOAD=libtractor.core.so:libtractor_llama.so`.
+`LD_PRELOAD=libtractor.mpich5.eng.so:libtractor.transport.ofi.so:libtractor.ompt.so`; a program without MPI (a llama.cpp
+application, ...) preloads the core and the shims: `LD_PRELOAD=libtractor.core.so:libtractor.llama.so`.
 
 ## 2. Platform & toolchain prerequisites
 
@@ -240,7 +240,7 @@ The `com` file written by the library starts with `PEAT TRACTOR V<major>.<minor>
   ...) vary with timing.
 - `tests/openacc/run.sh` - OpenACC under tractor with `gcc -fopenacc` (runs on the host), plus `acc_sim_test`, which raises the
   OpenACC device events itself. `tests/openacc/run_nvc.sh` builds `acc_test` with nvc (`NVC_COMPILER` selects the `compiler=` value, see the script for the default) and runs
-  it on the GPU. Both default to `lib/gnu/libtractor.mpich5.eng.so` and the OpenACC shim `lib/gnu/libtractor_acc.so`
+  it on the GPU. Both default to `lib/gnu/libtractor.mpich5.eng.so` and the OpenACC shim `lib/gnu/libtractor.acc.so`
   (`TRACTOR_LIB=<lib>[:<lib>...]` selects other libraries).
 
 See [README.md](README.md) sections 1-3 for the full runtime env-var reference.

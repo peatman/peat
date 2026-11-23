@@ -8,11 +8,11 @@ A low-intrusion, `LD_PRELOAD`-based shared library that intercepts MPI (and opti
 
 It comes as a few libraries (see [BUILD.md](BUILD.md)): the core `libtractor.core.so` (records, nesting, counters, the trace
 writer; no MPI, one for every MPI), the MPI layer of each MPI `libtractor.<mpi>[.eng].so` (the MPI wrappers and communicator
-tracking; it loads the core next to it), and the shims of the transport APIs (`libtractor_transport_<api>.so`) and of the event
-classes (`libtractor_<class>.so`: OMPT, OpenACC, OpenCL, Level Zero, CUDA, llama.cpp). The MPI layer and the shims reach the core
+tracking; it loads the core next to it), and the shims of the transport APIs (`libtractor.transport.<api>.so`) and of the event
+classes (`libtractor.<class>.so`: OMPT, OpenACC, OpenCL, Level Zero, CUDA, llama.cpp). The MPI layer and the shims reach the core
 through one plain C structure only (`t_shared`, `src/t_shim_state.h`), the core reaches the MPI layer through `t_mpi_layer`
 (`src/t_mpi_iface.h`), so a shim or an MPI layer fits every variant of the core. An MPI program preloads its MPI layer and
-the shims it wants, e.g. `LD_PRELOAD=libtractor.mpich5.eng.so:libtractor_transport_ofi.so`; a program without MPI preloads the
+the shims it wants, e.g. `LD_PRELOAD=libtractor.mpich5.eng.so:libtractor.transport.ofi.so`; a program without MPI preloads the
 core and the shims.
 
 See [doc/README.md](doc/README.md) for older build/usage/trace-format documentation (note: marked outdated there, kept for reference).
@@ -52,7 +52,7 @@ Besides MPI/OpenMP/GPU calls, tractor can record events for the transport layer 
 - Hot polling loops (`psm2_mq_ipeek*`, `ibv_poll_cq`, `fi_cq_read`) coalesce consecutive no-op polls into a single event (`num_calls`/`total_clocks_bitween_calls`) instead of one event per call, keeping intrusiveness low.
 
 The core always supports transport records; the wrappers come from:
-- `TARGET=transport_layers` - standalone per-layer shim libraries `libtractor_transport_{psm2,psm3,ucx,ofi}.so` (installed under `../../lib/<compiler>/`), added to `LD_PRELOAD` next to the MPI layer. Each shim only ever contains one layer's functions; several can be loaded at once, a layer loaded twice records once (it registers as the class `transport-<layer>`, the second copy stays inert).
+- `TARGET=transport_layers` - standalone per-layer shim libraries `libtractor.transport.{psm2,psm3,ucx,ofi}.so` (installed under `../../lib/<compiler>/`), added to `LD_PRELOAD` next to the MPI layer. Each shim only ever contains one layer's functions; several can be loaded at once, a layer loaded twice records once (it registers as the class `transport-<layer>`, the second copy stays inert).
 - `TARGET=mvapich2` - its MPI layer has verbs (patched `mv2_proxy_ibv_*`/`smpi_*` calls) and psm2 (`dlsym`-intercepted) built in (`src/Makefile`, `TARGET=mvapich2` block: `transport_func_layers+=-l verbs -l smpi -l psm2`), for a mvapich2 build that could in principle run over either its ib-verbs or its opa-psm2 channel.
 
 Runtime switch:

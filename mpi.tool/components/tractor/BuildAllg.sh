@@ -7,11 +7,11 @@ export COMPILER=gnu # for make
 #   libtractor.core.so (libtractor_dbg.core.so: DIAG)  the core, no MPI: one for every MPI
 #   libtractor.<mpi>[.eng].so                          the MPI layer of an MPI; it loads the core next to it (or a core
 #                                                      variant preloaded before it), so preloading it alone is enough
-#   libtractor_transport_<api>.so                      the transport shims (psm2, psm3, ucx, ofi)
-#   libtractor_<class>.so                              the event-class shims: ompt, acc (gcc/nvc only), opencl, levelzero,
+#   libtractor.transport.<api>.so                      the transport shims (psm2, psm3, ucx, ofi)
+#   libtractor.<class>.so                              the event-class shims: ompt, acc (gcc/nvc only), opencl, levelzero,
 #                                                      cuda, llama, each one built when its headers are found
 #                                                      (LLAMA_ROOT=<llama.cpp>, CUDA_ROOT=<CUDA toolkit>)
-# e.g. LD_PRELOAD=libtractor.mpich5.eng.so:libtractor_transport_ofi.so:libtractor_ompt.so
+# e.g. LD_PRELOAD=libtractor.mpich5.eng.so:libtractor.transport.ofi.so:libtractor.ompt.so
 # DIAG is a switch of the core: the MPI layers are release builds (DIAG MPI layers by hand, with a DIAG core).
 
 rm -f Build.${COMPILER}.log

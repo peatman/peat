@@ -46,7 +46,7 @@
 #include <vector>
 
 extern "C" {
-#include "t_class_shim.h" /* the core through t_shared: built into the core (CUPTI_PARSE) or as libtractor_cuda.so */
+#include "t_class_shim.h" /* the core through t_shared: built into the core (CUPTI_PARSE) or as libtractor.cuda.so */
 extern int counting_permit;
 extern int cuda_skip_parse;
 extern PEAT_Clock global_gpu_time;

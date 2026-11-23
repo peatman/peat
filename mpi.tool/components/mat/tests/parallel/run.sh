@@ -26,7 +26,7 @@ set +x
 libdir=${TRACTOR_LIBDIR:-$(realpath "$here/../../../../lib/$libsubdir")}
 preload=
 if [ "${TRACTOR:-1}" != "0" ] ; then
-    preload="-genv LD_PRELOAD $libdir/${TRACTOR_LIB:-$tlib}:$libdir/libtractor_transport_ofi.so"
+    preload="-genv LD_PRELOAD $libdir/${TRACTOR_LIB:-$tlib}:$libdir/libtractor.transport.ofi.so"
 fi
 
 export PEAT_TRACTOR_PRINT_FUNC_NAMES=1

@@ -3,10 +3,10 @@
 #   run llama-simple under tractor (LD_PRELOAD, no MPI: a one-process trace tractor_t_<pid>.*) -> mat and ctt on the trace.
 #
 #   ./llama.sh <libtractor.core.so>[:<shim.so>...] <llama.cpp bin dir (llama-simple)> <model.gguf> [tokens]
-#   e.g. ./llama.sh $L/libtractor.core.so:$L/libtractor_llama.so ~/llama.cpp/build/bin stories15M-q4_0.gguf 16
-#        ./llama.sh $L/libtractor.core.so:$L/libtractor_llama.so:$L/libtractor_cuda.so ~/llama.cpp/build/bin m.gguf 16
+#   e.g. ./llama.sh $L/libtractor.core.so:$L/libtractor.llama.so ~/llama.cpp/build/bin stories15M-q4_0.gguf 16
+#        ./llama.sh $L/libtractor.core.so:$L/libtractor.llama.so:$L/libtractor.cuda.so ~/llama.cpp/build/bin m.gguf 16
 # The first argument is what is preloaded: the core and the shims of the classes (TARGET=class_layers:
-# libtractor_llama.so, libtractor_cuda.so); llama-simple is no MPI program, it needs no MPI layer. The checks for the llama.cpp and cuBLAS wrappers
+# libtractor.llama.so, libtractor.cuda.so); llama-simple is no MPI program, it needs no MPI layer. The checks for the llama.cpp and cuBLAS wrappers
 # look at all of them.
 #
 # Expects mat and ctt in <repo>/mpi.tool/bin (as installed by their Makefiles; SMOKE_BIN=<dir> to take them from
@@ -62,9 +62,9 @@ status=0
 fail() { echo "FAIL: $*"; [ -z "${GITHUB_ACTIONS:-}" ] || echo "::error title=llama smoke::$*"; status=1; }
 
 # the library must have the llama.cpp wrappers at all
-lib_with llama_process > /dev/null || { echo "$lib has no llama.cpp wrappers (built without llama.cpp headers, or no libtractor_llama.so preloaded?)"; exit 2; }
+lib_with llama_process > /dev/null || { echo "$lib has no llama.cpp wrappers (built without llama.cpp headers, or no libtractor.llama.so preloaded?)"; exit 2; }
 cublas_wrappers="cublasSgemm_v2 cublasGemmEx cublasGemmBatchedEx cublasGemmStridedBatchedEx cublasSgemmBatched cublasSgemmStridedBatched cublasStrsmBatched cublasLtMatmul"
-cuda_file=$(lib_with cublasGemmEx) # the core with CUDA built in, or libtractor_cuda.so
+cuda_file=$(lib_with cublasGemmEx) # the core with CUDA built in, or libtractor.cuda.so
 if [ -n "$cuda_file" ] ; then cuda_lib=1 ; else cuda_lib=0 ; fi
 case "${LLAMA_SMOKE_CUDA:-}" in
     1) [ $cuda_lib = 1 ] || { echo "LLAMA_SMOKE_CUDA=1 but $lib is not a CUDA build (no cuBLAS wrappers)"; exit 2; } ;;

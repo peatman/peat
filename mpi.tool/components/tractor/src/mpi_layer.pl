@@ -1495,7 +1495,7 @@ select(OUT);
 foreach my $transport_layer_spec(@transport_layers) {
    # "-l layer" appends into the main $mpilayer (legacy single-layer build);
    # "-l layer=outfile" writes a standalone shim source for that one layer,
-   # so it can be built into its own libtractor_transport_<layer>.so and dlopen'd
+   # so it can be built into its own libtractor.transport.<layer>.so and dlopen'd
    # at runtime depending on T_TRANSPORT_LAYER, instead of being baked into the core lib.
    my ($transport_layer,$transport_outfile) = split('=',$transport_layer_spec,2);
    if (defined $transport_outfile) {

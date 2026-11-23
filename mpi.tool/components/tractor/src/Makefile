@@ -117,8 +117,8 @@ HASH:=\#
 COMMA:=,
 EMPTY:=
 SPACE:=$(EMPTY) $(EMPTY)
-# TARGET=class_layers probes OpenCL and Level Zero too: it builds their shims (libtractor_opencl.so,
-# libtractor_levelzero.so) when found; OpenACC has its own probe there
+# TARGET=class_layers probes OpenCL and Level Zero too: it builds their shims (libtractor.opencl.so,
+# libtractor.levelzero.so) when found; OpenACC has its own probe there
 ifneq "$(filter on,$(PARSE_GPU))$(filter class_layers,$(TARGET))" ""
 ifeq "$(COMPILER)" "intel"
 GPU_PROBE_FLAGS=-I$(CMPLR_ROOT)/include -L$(CMPLR_ROOT)/lib
@@ -164,10 +164,10 @@ $(info tractor: GPU parsing: OpenCL=$(GPU_CL) LevelZero=$(GPU_ZE) OpenACC=$(ACC)
 ifeq "$(TARGET)" "class_layers"
 # the shims: no link to libOpenCL / libze_loader (the wrappers find the functions with dlsym(RTLD_NEXT)), no .gpu
 ifeq "$(GPU_CL)" "on"
-CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX)_opencl
+CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX).opencl
 endif
 ifeq "$(GPU_ZE)" "on"
-CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX)_levelzero
+CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX).levelzero
 endif
 else
 ifeq "$(GPU_CL)" "on"
@@ -234,7 +234,7 @@ endif
 
 # TARGET=transport_layers: standalone build of just the transport .so's.
 # psm2/psm3/ucx/ofi (genuine dlsym/RTLD_NEXT interception) each get generated into
-# their own mpi_layer_transport_<layer>.cpp -> libtractor_transport_<layer>.so; 
+# their own mpi_layer_transport_<layer>.cpp -> libtractor.transport.<layer>.so; 
 # verbs/smpi are NOT here: ibv_* fast-path calls (ibv_post_send, ibv_poll_cq, ...)
 # are static inline in real <infiniband/verbs.h> - there's no dynamic symbol to
 # dlsym/LD_PRELOAD-intercept at all, so verbs profiling only works when patched
@@ -256,24 +256,24 @@ mpi_layer_skip_core=on
 TRANSPORT_LAYER_SRCS=mpi_layer_transport_psm2.cpp mpi_layer_transport_psm3.cpp mpi_layer_transport_ucx.cpp mpi_layer_transport_ofi.cpp
 TRANSPORT_LAYER_OBJS=mpi_layer_transport_psm2.o mpi_layer_transport_psm3.o mpi_layer_transport_ucx.o mpi_layer_transport_ofi.o
 # same lib<name>.so.MAJOR.MINOR + .so.MAJOR/.so symlink scheme as $(MTB)/$(MTBL)
-TRANSPORT_SHIM_BASENAMES=tractor$(TRANSPORTLIBSUFFIX)_transport_psm2 tractor$(TRANSPORTLIBSUFFIX)_transport_psm3 tractor$(TRANSPORTLIBSUFFIX)_transport_ucx tractor$(TRANSPORTLIBSUFFIX)_transport_ofi
+TRANSPORT_SHIM_BASENAMES=tractor$(TRANSPORTLIBSUFFIX).transport.psm2 tractor$(TRANSPORTLIBSUFFIX).transport.psm3 tractor$(TRANSPORTLIBSUFFIX).transport.ucx tractor$(TRANSPORTLIBSUFFIX).transport.ofi
 TRANSPORT_SHIM_LIBS=$(foreach b,$(TRANSPORT_SHIM_BASENAMES),lib$(b).so.$(MAJOR).$(MINOR))
 endif
 
 # TARGET=class_layers: standalone build of the event-class shims (OMPT, OpenACC, OpenCL, Level Zero, CUDA, llama.cpp, each when
-# it can be built: libtractor_<class>.so). Like the transport
+# it can be built: libtractor.<class>.so). Like the transport
 # shims they use the core only through t_shared (t_shim_state.h), so they do not depend on TARGET or on the core's
 # HWCOUNTERS/MEMPROFILE/DIAG/GPU switches; preload one next to a core built with OMPT=off (a core built with OMPT=on has
 # the same code built in, then the shim is not needed). The OpenMP flags only give the compiler's omp-tools.h, the shim
 # does not link the OpenMP runtime.
-# The OpenACC shim (libtractor_acc.so) needs acc_prof.h (GCC >= 9, NVHPC), so it is built with those compilers only;
-# it works with a core of any compiler, e.g. a GCC-built libtractor_acc.so next to an Intel-built core.
+# The OpenACC shim (libtractor.acc.so) needs acc_prof.h (GCC >= 9, NVHPC), so it is built with those compilers only;
+# it works with a core of any compiler, e.g. a GCC-built libtractor.acc.so next to an Intel-built core.
 ifeq "$(TARGET)" "class_layers"
 # += : the OpenCL/Level Zero probes above may have added theirs. No OMPT shim with nvc (no OpenMP tools interface).
 ifeq "$(COMPILER)" "nvc"
 $(info tractor: class_layers: no OMPT shim with nvc (it has no OpenMP tools interface))
 else
-CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX)_ompt
+CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX).ompt
 endif
 ifeq "$(COMPILER)" "intel"
 CLASS_SHIM_OMP=-qopenmp
@@ -281,7 +281,7 @@ $(info tractor: class_layers: no OpenACC shim with the Intel compilers (no acc_p
 else
 CLASS_SHIM_OMP=-fopenmp
 ifeq "$(shell printf '$(HASH)include <acc_prof.h>\nint main(){return 0;}\n' | $(MPICXX) -x c++ - -o /dev/null >/dev/null 2>&1 && echo yes || echo no)" "yes"
-CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX)_acc
+CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX).acc
 else
 $(info tractor: class_layers: no OpenACC shim, acc_prof.h not found (compiler $(MPICXX)))
 endif
@@ -475,7 +475,7 @@ INCLUDE+=$(LLAMA_IFLAGS)
 CONTROLS+=-D_T_LLAMA_
 ifeq "$(TARGET)" "class_layers"
 # the llama.cpp shim: the llama.cpp / ggml wrappers (mpi_layer_llama.cpp)
-CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX)_llama
+CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX).llama
 endif
 ifeq "$(LLAMA_DEPRECATED)" "on"
 cpp_input+=-D_PARSE_LLAMA_DEPRECATED_
@@ -497,7 +497,7 @@ endif
 # (Debian/Ubuntu nvidia-cuda-dev + libcupti-dev, CUDA_ROOT=/usr: system directories are not added to -I/-rpath).
 # libcupti has to be the one of the CUDA version the application runs with (found through the rpath set here).
 # Recording is off unless PEAT_TRACTOR_PARSE_CUDA=1.
-# TARGET=class_layers looks for it too (auto): it builds the CUDA shim libtractor_cuda.so when found
+# TARGET=class_layers looks for it too (auto): it builds the CUDA shim libtractor.cuda.so when found
 CUPTI_PARSE?=$(if $(filter on,$(PARSE_GPU))$(filter class_layers,$(TARGET)),auto,off)
 CUPTI_ENABLED=off
 $(if $(filter auto on off,$(CUPTI_PARSE)),,$(error CUPTI_PARSE=$(CUPTI_PARSE) is not one of auto|on|off))
@@ -517,7 +517,7 @@ CUPTI_ENABLED=on
 INCLUDE+=$(CUPTI_CFLAGS)
 ifeq "$(TARGET)" "class_layers"
 # the CUDA shim: t_cupti.cpp and the cuBLAS wrappers (mpi_layer_cuda.cpp); the shim names get no .gpu
-CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX)_cuda
+CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX).cuda
 else
 CONTROLS+=-D_T_CUPTI_
 CORE_OBJECTS+=t_cupti.o
@@ -686,25 +686,25 @@ endif
 # linked with plain CXX (CXX comes from env.sh; no MPI runtime dependency) and don't
 # link against any specific core .so - gt_info(...)/t_info resolve at load time
 # against whatever core lib is loaded alongside them in the target process
-libtractor$(TRANSPORTLIBSUFFIX)_transport_%.so.$(MAJOR).$(MINOR): mpi_layer_transport_%.o
+libtractor$(TRANSPORTLIBSUFFIX).transport.%.so.$(MAJOR).$(MINOR): mpi_layer_transport_%.o
 	$(CXX) -o $@ $(DEBUG) $(OPT) $(SHARED) $< -ldl
 
 # event-class shims: linked with plain CXX like the transport shims (no MPI or OpenMP runtime dependency); t_shared
 # resolves at load time against the core library loaded alongside
-libtractor$(TRANSPORTLIBSUFFIX)_ompt.so.$(MAJOR).$(MINOR): t_ompt_shim.o
+libtractor$(TRANSPORTLIBSUFFIX).ompt.so.$(MAJOR).$(MINOR): t_ompt_shim.o
 	$(CXX) -o $@ $(DEBUG) $(OPT) $(SHARED) $< -ldl
 
 t_ompt_shim.o: t_ompt.cpp $(FUNCID)
 	$(MPICXX) -o $@ -c $(INCLUDE) $(CONTROLS) -D_T_OMPT_ -D_T_CLASS_SHIM_ $(CMISC) $(CXXMISC) $(DEBUG) $(OPT) $(CLASS_SHIM_OMP) $(FPIC) t_ompt.cpp
 
-libtractor$(TRANSPORTLIBSUFFIX)_acc.so.$(MAJOR).$(MINOR): t_acc_shim.o
+libtractor$(TRANSPORTLIBSUFFIX).acc.so.$(MAJOR).$(MINOR): t_acc_shim.o
 	$(CXX) -o $@ $(DEBUG) $(OPT) $(SHARED) $< -ldl
 
 t_acc_shim.o: t_acc.cpp $(FUNCID)
 	$(MPICXX) -o $@ -c $(INCLUDE) $(CONTROLS) -D_T_ACC_ -D_T_CLASS_SHIM_ $(CMISC) $(CXXMISC) $(DEBUG) $(OPT) $(FPIC) t_acc.cpp
 
 # CUDA shim: links libcupti (rpath to the toolkit's), the cuBLAS calls are found with dlsym(RTLD_NEXT)
-libtractor$(TRANSPORTLIBSUFFIX)_cuda.so.$(MAJOR).$(MINOR): t_cupti_shim.o mpi_layer_cuda.o
+libtractor$(TRANSPORTLIBSUFFIX).cuda.so.$(MAJOR).$(MINOR): t_cupti_shim.o mpi_layer_cuda.o
 	$(CXX) -o $@ $(DEBUG) $(OPT) $(SHARED) t_cupti_shim.o mpi_layer_cuda.o $(CUPTI_LDFLAGS) -ldl
 
 t_cupti_shim.o: t_cupti.cpp $(FUNCID)
@@ -715,10 +715,10 @@ mpi_layer_cuda.cpp: mpi_layer.cpp.in $(FUNCID)
 	./mpi_layer.pl -p $(USE_PRAGMA_WEAK) -e $(PRINT_EXTENDED_STUFF) -m $(MAXMPI) -t $(PCT) -s on -U mpi_layer_cuda.cpp -i mpi_func.inc -o mpi_layer_cuda.unused
 
 # OpenCL / Level Zero shims: one API each, the wrappers find the functions with dlsym(RTLD_NEXT), no link to the runtimes
-libtractor$(TRANSPORTLIBSUFFIX)_opencl.so.$(MAJOR).$(MINOR): mpi_layer_cl.o
+libtractor$(TRANSPORTLIBSUFFIX).opencl.so.$(MAJOR).$(MINOR): mpi_layer_cl.o
 	$(CXX) -o $@ $(DEBUG) $(OPT) $(SHARED) mpi_layer_cl.o -ldl
 
-libtractor$(TRANSPORTLIBSUFFIX)_levelzero.so.$(MAJOR).$(MINOR): mpi_layer_ze.o
+libtractor$(TRANSPORTLIBSUFFIX).levelzero.so.$(MAJOR).$(MINOR): mpi_layer_ze.o
 	$(CXX) -o $@ $(DEBUG) $(OPT) $(SHARED) mpi_layer_ze.o -ldl
 
 mpi_layer_cl.cpp mpi_layer_ze.cpp: mpi_layer.cpp.in $(FUNCID)
@@ -731,7 +731,7 @@ mpi_layer_ze.o: mpi_layer_ze.cpp
 	$(MPICXX) -o $@ -c $(INCLUDE) $(CONTROLS) -DGPUPARSE -DGPUPARSE_ZE -D_T_CLASS_SHIM_ $(GPU_PROBE_FLAGS) $(CMISC) $(CXXMISC) $(DEBUG) $(OPT) $(FPIC) mpi_layer_ze.cpp
 
 # llama.cpp shim: the wrappers find the llama.cpp/ggml functions with dlsym(RTLD_NEXT), no link to llama.cpp
-libtractor$(TRANSPORTLIBSUFFIX)_llama.so.$(MAJOR).$(MINOR): mpi_layer_llama.o
+libtractor$(TRANSPORTLIBSUFFIX).llama.so.$(MAJOR).$(MINOR): mpi_layer_llama.o
 	$(CXX) -o $@ $(DEBUG) $(OPT) $(SHARED) mpi_layer_llama.o -ldl
 
 mpi_layer_llama.cpp: mpi_layer.cpp.in $(FUNCID)

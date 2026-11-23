@@ -9,7 +9,7 @@ set -x
 libdir=$(realpath ../../../../lib/intel)
 if [ "${TRACTOR:-1}" != "0" ] ; then
 LD_PRELOAD=$libdir/libtractor.mpich5.eng.so
-LD_PRELOAD="$LD_PRELOAD:$libdir/libtractor_transport_ofi.so"
+LD_PRELOAD="$LD_PRELOAD:$libdir/libtractor.transport.ofi.so"
 fi
 
 

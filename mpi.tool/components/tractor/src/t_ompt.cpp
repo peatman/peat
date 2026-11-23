@@ -25,7 +25,7 @@
 #include <omp-tools.h>
 extern "C" {
 
-#include "t_class_shim.h" /* the core through t_shared: built into the core (OMPT=on) or as libtractor_ompt.so */
+#include "t_class_shim.h" /* the core through t_shared: built into the core (OMPT=on) or as libtractor.ompt.so */
 static const bool t_ompt_core_ok = T_CLASS_CORE_CHECK("OpenMP (OMPT)", register_class);
 
 #define ompt_data_value(x) x == NULL ? -1 : x->value

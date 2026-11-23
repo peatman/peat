@@ -16,7 +16,7 @@
  * along with PEAT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-/* What a shim library (libtractor_transport_<api>.so, built once and preloaded next to any core library) may use of the
+/* What a shim library (libtractor.transport.<api>.so, built once and preloaded next to any core library) may use of the
  * core: one plain C structure, t_shared, defined and exported by every core library. The shims never see struct tractor,
  * whose layout depends on the build switches of the core (TRANSPORT, HWCOUNTERS, MEMPROFILE, DIAG, GPU, ...); the core
  * reaches its own objects behind the function pointers.

@@ -401,11 +401,11 @@ jobs:
           ! grep -qE -- "-I/usr/include( |$)" build/tractor-shims/build.ninja || { echo "::error::-I/usr/include in the build"; exit 1; }
           cmake --build build/tractor-shims
           for s in llama cuda; do
-            f=$(ls build/tractor-shims/libtractor_$s.so.* | head -1)
+            f=$(ls build/tractor-shims/libtractor.$s.so.* | head -1)
             [ -n "$f" ] || { echo "::error::no $s shim"; exit 1; }
             ! ldd "$f" | grep -q libmpi || { echo "::error::$f links libmpi"; exit 1; }
           done
-          ldd build/tractor-shims/libtractor_cuda.so.* | grep cupti
+          ldd build/tractor-shims/libtractor.cuda.so.* | grep cupti
       - name: Build tractor (CMake, clang) - the core with OMPT and the class shims
         env:
           MPICH_CC: clang
@@ -452,19 +452,19 @@ jobs:
           [ "${PIPESTATUS[0]}" = 0 ] || exit 1
           grep -q "tractor: CUDA (CUPTI) parsing: on (CUPTI_PARSE=on, CUDA_ROOT='/usr')" "$RUNNER_TEMP/make.log" \
             || { echo "::error::make: CUDA not found in the Debian layout (/usr)"; exit 1; }
-          cp -v libtractor_llama.so.[0-9]*.[0-9]* libtractor_cuda.so.[0-9]*.[0-9]* "$RUNNER_TEMP/make-lib/"
+          cp -v libtractor.llama.so.[0-9]*.[0-9]* libtractor.cuda.so.[0-9]*.[0-9]* "$RUNNER_TEMP/make-lib/"
       - name: llama.cpp smoke test (llama-simple under tractor -> mat -> ctt)
         run: |
           status=0
           # name|preload list (the core and the class shims: llama-simple is no MPI program, no MPI layer)|CUDA expected
           one() { ls $1 | head -1; }
           gnu_core=build/tractor-core/libtractor.core.so.0.1
-          gnu_llama=$(one "build/tractor-shims/libtractor_llama.so.*.*")
-          gnu_cuda=$(one "build/tractor-shims/libtractor_cuda.so.*.*")
+          gnu_llama=$(one "build/tractor-shims/libtractor.llama.so.*.*")
+          gnu_cuda=$(one "build/tractor-shims/libtractor.cuda.so.*.*")
           for v in "cmake-gnu|$gnu_core:$gnu_llama|0" \
                    "cmake-gnu-cuda|$gnu_core:$gnu_llama:$gnu_cuda|1" \
-                   "cmake-clang-cuda|mpi.tool/lib/clang/libtractor.core.so.0.1:$(one "mpi.tool/lib/clang/libtractor_llama.so.*.*"):$(one "mpi.tool/lib/clang/libtractor_cuda.so.*.*")|1" \
-                   "make-gnu-cuda|$RUNNER_TEMP/make-lib/libtractor.core.so.0.1:$(one "$RUNNER_TEMP/make-lib/libtractor_llama.so.*.*"):$(one "$RUNNER_TEMP/make-lib/libtractor_cuda.so.*.*")|1" ; do
+                   "cmake-clang-cuda|mpi.tool/lib/clang/libtractor.core.so.0.1:$(one "mpi.tool/lib/clang/libtractor.llama.so.*.*"):$(one "mpi.tool/lib/clang/libtractor.cuda.so.*.*")|1" \
+                   "make-gnu-cuda|$RUNNER_TEMP/make-lib/libtractor.core.so.0.1:$(one "$RUNNER_TEMP/make-lib/libtractor.llama.so.*.*"):$(one "$RUNNER_TEMP/make-lib/libtractor.cuda.so.*.*")|1" ; do
             IFS='|' read -r name lib cuda <<< "$v"
             echo "::group::llama $name ($lib)"
             SMOKE_WORKDIR=$RUNNER_TEMP/llama-$name LLAMA_SMOKE_CUDA=$cuda \

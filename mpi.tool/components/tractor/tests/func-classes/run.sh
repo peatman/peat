@@ -55,7 +55,7 @@ if [ "${TRACTOR:-1}" != "0" ] ; then
 LD_PRELOAD=$libdir/libtractor.$tractor_target.so # the MPI layer: it loads the core next to it
 # the transport shims need an engineering tractor (TRANSPORT=on) and the engineering libfabric
 case $mpi_version in
-    *-eng ) LD_PRELOAD="$LD_PRELOAD:$libdir/libtractor_transport_ofi.so" ;;
+    *-eng ) LD_PRELOAD="$LD_PRELOAD:$libdir/libtractor.transport.ofi.so" ;;
 esac
 fi
 
