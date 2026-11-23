@@ -36,7 +36,7 @@ esac
 set -x
 #TRACTOR=0
 libdir=${TRACTOR_LIBDIR:-$(realpath ../../../../lib/$libsubdir)}
-# the tractor library follows the MPI in use, e.g. mpich:5.0.2x-mt-ofi-eng -> libtractor.mpich5.eng.so
+# the MPI layer follows the MPI in use, e.g. mpich:5.0.2x-mt-ofi-eng -> libtractor.mpich5.eng.so
 # (env.sh has split it into mpi_type=mpich and mpi_version=5.0.2x-mt-ofi-eng)
 case $mpi_type:$mpi_version in
     mpich:3.* )   tractor_target=mpich3 ;;
@@ -52,7 +52,7 @@ case $mpi_version in
     *-eng ) tractor_target=$tractor_target.eng ;;
 esac
 if [ "${TRACTOR:-1}" != "0" ] ; then
-LD_PRELOAD=$libdir/libtractor.$tractor_target.so
+LD_PRELOAD=$libdir/libtractor.$tractor_target.so # the MPI layer: it loads the core next to it
 # the transport shims need an engineering tractor (TRANSPORT=on) and the engineering libfabric
 case $mpi_version in
     *-eng ) LD_PRELOAD="$LD_PRELOAD:$libdir/libtractor_transport_ofi.so" ;;

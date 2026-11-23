@@ -18,12 +18,13 @@
 
 #ifndef __TRACTOR_H__
 #define __TRACTOR_H__
-#include "mpi.h"
 #include <assert.h>
 
+#include <list>
+#include <map>
 #include "elf_parser.h"
-#include "t_comm.h"
 #include "t_stat.h"
+#include "t_mpi_iface.h"
 #include "zlib.h"
 #ifdef _HWCOUNTERS_ENABLED_
 #include "hwcounter.h"
@@ -173,13 +174,12 @@ struct tractor : t_base_event {
     void *lowval;
     void *highfort;
     void *lowfort;
-#ifdef _OPENMPI_
-    /* Open MPI has several Fortran wrapper libraries; all of their executable ranges are skipped by stack_unwind* */
+    /* the MPI Fortran wrapper libraries (t_mpi_layer.fortran_libs; Open MPI has several): their executable ranges are
+       skipped by stack_unwind*, lowfort/highfort is the first one */
     enum { T_MAX_FORT_RANGES = 8 };
     int num_fort_ranges;
     void *lowfort_r[T_MAX_FORT_RANGES];
     void *highfort_r[T_MAX_FORT_RANGES];
-#endif
     void *hightrac;
     void *lowtrac;
     void *highheap;
@@ -200,6 +200,7 @@ struct tractor : t_base_event {
 #ifdef _TRACTOR_VIRT2PHYS_
     int pmfile;
     int pffile;
+    void translate_virt2phys(msl_event *event); /* the physical pages of the buffers of an MPI record */
 #endif
 
     int rank_smp, size_smp;
@@ -222,10 +223,7 @@ struct tractor : t_base_event {
     FILE **fps_events; /* realtime dump: one temporary file per (thread, level), index tid * levels + level */
     FILE **fps_extras;
 
-    MPI_Group grp_world, grp_smp, grp_master;
-    MPI_Comm comm_smp, comm_master, TRACTOR_COMM_WORLD;
-    t_local_comms *local_comms;
-    t_global_comms global_comms;
+    bool node_groups; /* nodes_info created the T_MPI_SMP and T_MPI_MASTER groups */
     std::map<PEAT_Addr, t_address> addr_map;
     std::map<std::string, t_bin> binaries_map;
     std::map<PEAT_Num, shared_object_info> g_shared_objects;
@@ -246,8 +244,6 @@ struct tractor : t_base_event {
     void parse_env_vars(void);
     void begin(void);
     void end(void);
-    void begin_comm(const int tid, const MPI_Comm comm, const int local_ranks, const int remote_ranks, const int *ranks);
-    void end_comm(const int tid, const MPI_Comm comm);
     void pc_change_state(int ctl);
     void parse_pc_levels(char *levels);
     void ptpd_init(void);
@@ -264,8 +260,9 @@ struct tractor : t_base_event {
     int t_check_chain(pid_t tid, int level);
 
     void write_trace(void);
-    PEAT_Rank get_real_rank(MPI_Comm comm, PEAT_Rank rank_in, PEAT_Clock tsc, int is_internal);
-    PEAT_MPI_Comm get_global_comm_id(MPI_Comm comm, PEAT_Clock tsc, int is_internal);
+    /* the MPI layer's translation of a recorded communicator / rank (t_mpi_layer), as recorded without one */
+    PEAT_Rank get_real_rank(long long comm, PEAT_Rank rank_in, PEAT_Clock tsc, int is_internal);
+    PEAT_MPI_Comm get_global_comm_id(long long comm, PEAT_Clock tsc, int is_internal);
     num_processed_events write_main_files(/*,user_region_store &user_region_store*/);
 
     //    void calculate_us_sd_dev(user_region_store &user_region_store);
@@ -279,17 +276,11 @@ struct tractor : t_base_event {
     const std::string get_binary_by_addr(PEAT_Addr addr, PEAT_Addr &base, PEAT_Addr &low, PEAT_Addr &high);
     PEAT_Clock find_ELF_symbols(void);
     void get_topo(void);
-#ifdef _TRACTOR_EXTRA_FIELDS_
-    void print_address(std::string &out, addr_entry *entry);
-#endif
 
 #ifdef _T_GPU_STAT_
     void print_gpu_stat(void);
 #endif
 
-#ifdef _TRACTOR_VIRT2PHYS_
-    void translate_virt2phys(msl_event *event);
-#endif
 };
 struct tractor_debug {
     tractor_debug(void);

@@ -55,17 +55,12 @@ export LD_LIBRARY_PATH=$HOME/libfabric${libfabric_eng}/lib:$LD_LIBRARY_PATH # ne
 TARGET=$2
 MEMPROFILE=$3 #on/off
 
-# CLASS_SHIMS=on: the event classes (OMPT, OpenACC, OpenCL, Level Zero, CUDA, llama.cpp) come from the shims of
-# TARGET=class_layers, preloaded next to the core; the cores are built without them (no .gpu variants: the GPU
-# column of the BuildAll scripts makes no difference then). TARGET=class_layers finds its classes itself.
+# TARGET: core (the core library, no MPI), an MPI (impi, mpich3/4/5, mvapich2/4, openmpi5: its MPI layer and PTPD),
+# class_layers or transport_layers (the shims). The Makefile decides what belongs where (the MPI layers and the core have
+# no GPU/llama/CUDA classes, those are the shims; HWCOUNTERS/MEMPROFILE are core switches).
 class_args=""
-if [ "$CLASS_SHIMS" = "on" -a "$TARGET" != "class_layers" -a "$TARGET" != "transport_layers" ] ; then
-OMPT=off
-PARSE_GPU=off
-class_args="LLAMA_PARSE=off CUPTI_PARSE=off"
-fi
 
-src_tmp="src-TARGET=${TARGET}-ENG_MPI_BUILD=${ENG_MPI_BUILD}-MEMPROFILE=${MEMPROFILE}-HWCOUNTERS=${HWCOUNTERS}-MPIBUFFERS=${MPIBUFFERS}-DIAG=${DIAG}-VIRT2PHYS=${VIRT2PHYS}-TRANSPORT=${TRANSPORT}-PARSE_GPU=${PARSE_GPU}"
+src_tmp="src-TARGET=${TARGET}-ENG_MPI_BUILD=${ENG_MPI_BUILD}-MEMPROFILE=${MEMPROFILE}-HWCOUNTERS=${HWCOUNTERS}-MPIBUFFERS=${MPIBUFFERS}-DIAG=${DIAG}-VIRT2PHYS=${VIRT2PHYS}-PARSE_GPU=${PARSE_GPU}"
 
 echo $src_tmp >>Build.${COMPILER}.dir
 
@@ -96,9 +91,9 @@ export LD_LIBRARY_PATH=$OFI_PATH/lib64:$PSM3PATH/lib64:$UCXPATH/lib64:$LD_LIBRAR
 
 set -x
 
-make COMPILER=$COMPILER clean $mpi_internal OMPT=$OMPT PARSE_GPU=$PARSE_GPU TARGET=$TARGET MEMPROFILE=$MEMPROFILE HWCOUNTERS=$HWCOUNTERS MPIBUFFERS=$MPIBUFFERS DIAG=$DIAG VIRT2PHYS=$VIRT2PHYS $class_args TRANSPORT=$TRANSPORT 2>&1 
-make -j 4 COMPILER=$COMPILER $mpi_internal OMPT=$OMPT PARSE_GPU=$PARSE_GPU TARGET=$TARGET MEMPROFILE=$MEMPROFILE HWCOUNTERS=$HWCOUNTERS MPIBUFFERS=$MPIBUFFERS DIAG=$DIAG VIRT2PHYS=$VIRT2PHYS $class_args TRANSPORT=$TRANSPORT 2>&1 | tee ./Build.log
-make COMPILER=$COMPILER install $mpi_internal OMPT=$OMPT PARSE_GPU=$PARSE_GPU TARGET=$TARGET MEMPROFILE=$MEMPROFILE HWCOUNTERS=$HWCOUNTERS MPIBUFFERS=$MPIBUFFERS DIAG=$DIAG VIRT2PHYS=$VIRT2PHYS $class_args TRANSPORT=$TRANSPORT 2>&1 | tee -a ./Build.log
+make COMPILER=$COMPILER clean $mpi_internal OMPT=$OMPT PARSE_GPU=$PARSE_GPU TARGET=$TARGET MEMPROFILE=$MEMPROFILE HWCOUNTERS=$HWCOUNTERS MPIBUFFERS=$MPIBUFFERS DIAG=$DIAG VIRT2PHYS=$VIRT2PHYS $class_args 2>&1 
+make -j 4 COMPILER=$COMPILER $mpi_internal OMPT=$OMPT PARSE_GPU=$PARSE_GPU TARGET=$TARGET MEMPROFILE=$MEMPROFILE HWCOUNTERS=$HWCOUNTERS MPIBUFFERS=$MPIBUFFERS DIAG=$DIAG VIRT2PHYS=$VIRT2PHYS $class_args 2>&1 | tee ./Build.log
+make COMPILER=$COMPILER install $mpi_internal OMPT=$OMPT PARSE_GPU=$PARSE_GPU TARGET=$TARGET MEMPROFILE=$MEMPROFILE HWCOUNTERS=$HWCOUNTERS MPIBUFFERS=$MPIBUFFERS DIAG=$DIAG VIRT2PHYS=$VIRT2PHYS $class_args 2>&1 | tee -a ./Build.log
 echo "Log From $src_tmp" >>../Build.${COMPILER}.log
 cat Build.log >>../Build.${COMPILER}.log
 cd -

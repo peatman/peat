@@ -32,16 +32,10 @@ $prototype {
     pid_t tid_in;
     int tid;
     msl_extras_counters counters[2];
-    msl_event* event[2];
+    msl_mpi_event* event[2];
     bool l_skip_parse=mpi_skip_parse;
 
-#ifdef _HWCOUNTERS_ENABLED_
-    int num_hwcs=gt_info(num_hwcs);
-    long long l_hwcs[num_hwcs];
-#endif
-#ifdef _MEMPROFILE_STORE_
-    t_memory_event l_mem;
-#endif
+T_COUNTERS_DECL
 
     $declare_status
     if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1)) {
@@ -54,12 +48,7 @@ $prototype {
         children_base=__msl_child_base(tid,level);
         __msl_allocate_event(tid,level,1,&event[0],&counters[0]);
         __msl_allocate_event(tid,level,1,&event[1],&counters[1]);
-#ifdef _HWCOUNTERS_ENABLED_
-        gt_info(hwc).get_all_counters(l_hwcs);
-#endif
-#ifdef _MEMPROFILE_STORE_
-        gt_info(mprof).get_mem_status(&l_mem);
-#endif
+T_COUNTERS_ENTRY
         tsc_mpi_entry=peat_get_time();
     } //if(__builtin_expect((counting_permission[$funcid_through]>0 && !l_skip_parse),1))
 #else
@@ -82,7 +71,7 @@ $prototype {
         event[0]->p2p_pr_pb.transfer_bytes=(s_count*s_data_size);
         __msl_uncount_event(tid,level); /* the pair is one call: one child of the enclosing record */
         memcpy(counters[1].addrs,counters[0].addrs,gt_info(num_addrs)*sizeof(void *));
-        memcpy((void *)event[1],(const void *) event[0],sizeof(msl_event));
+        memcpy((void *)event[1],(const void *) event[0],sizeof(msl_mpi_event));
         event[1]->num_children=0; /* the children belong to the first record */
         event[1]->p2p_pr_pb.tag=$recv_tag;
         event[1]->p2p_pr_pb.peer=$recv_peer;
@@ -95,16 +84,7 @@ $prototype {
         event[0]->tscs[0] = tsc_entry;
         event[0]->tscs[1] = tsc_mpi_entry;
 
-#ifdef _HWCOUNTERS_ENABLED_
-        memcpy(counters[0].hwcs,l_hwcs,num_hwcs*sizeof(l_hwcs[0]));
-        gt_info(hwc).get_all_counters(&counters[0].hwcs[num_hwcs]);
-        memcpy(counters[1].hwcs,counters[0].hwcs,gt_info(num_hwcs)*sizeof(long long)*2);
-#endif
-#ifdef _MEMPROFILE_STORE_
-        counters[0].mems[0]=l_mem;
-        gt_info(mprof).get_mem_status(&counters[0].mems[1]);
-        memcpy(counters[1].mems,counters[0].mems,sizeof(t_memory_event)*2);
-#endif
+T_COUNTERS_EXIT(counters[0]) T_COUNTERS_COPY(counters[1], counters[0])
         // counting_permit-=4*counting_permission_pcontrol[$funcid_through];
         tsc_exit = peat_get_time();
         event[0]->tscs[2] = tsc_mpi_exit;
@@ -114,6 +94,8 @@ $prototype {
         event[1]->tscs[2] = event[0]->tscs[2];
         event[1]->tscs[3] = event[0]->tscs[3];
         // event[1]->tscs[1] = event[1]->tscs[2] = event[1]->tscs[3]  = 0;
+        T_VIRT2PHYS(event[0]);
+        T_VIRT2PHYS(event[1]);
         __msl_check_chain(tid,level);
         local_tool_overhead=tsc_mpi_entry-tsc_entry+tsc_exit-tsc_mpi_exit;
         $global_mpi_time

@@ -20,7 +20,6 @@
 #define __T_STAT_H__
 #include "addr_entry.h"
 #include "common_plain_types.h"
-#include "mpi.h"
 #include "mpi_func_ids.h"
 #include "mpi_func_ids_through.h"
 #include "t_alloc.h"
@@ -106,14 +105,6 @@ struct shared_object_info {
 // #endif
 
 void so_walker(std::map<PEAT_Num, shared_object_info> &shared_objects /*, PEAT_Addr &low_addr, PEAT_Addr &high_addr,const bool get_main_executable_addresses_only=false*/);
-
-#ifdef _TRACTOR_VIRT2PHYS_
-#define tv2p(event) translate_virt2phys(event)
-#else
-#define tv2p(event)
-#endif
-
-#define __TRACTOR_record_event(event) tv2p(event);
 
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
 }

@@ -26,6 +26,7 @@
 
 #include "t_comm.h"
 #include "tractor.h"
+#include "t_mpi_event.h"
 #include "t_debug.h"
 
 size_t t_comm::pack_size() const
@@ -540,12 +541,12 @@ int t_global_comms::bind_local_comm(int is_internal, int start_index)
     int comm_size, comm_rank;
     PMPI_Comm_size(MPI_COMM_WORLD, &comm_size);
     PMPI_Comm_rank(MPI_COMM_WORLD, &comm_rank);
-    MPI_Count local_size = (MPI_Count)gt_info(local_comms)->pack_size(is_internal);
+    MPI_Count local_size = (MPI_Count)t_local_comms_p->pack_size(is_internal);
     // debug_printf("(bind_local_comm) size %d \n",local_size);
     MPI_Count sizes[comm_size];
     MPI_Aint displs[comm_size];
     char send_buf[local_size];
-    PMPI_Allgather(&local_size, 1, MPI_COUNT, sizes, 1, MPI_COUNT, gt_info(TRACTOR_COMM_WORLD)); // get all sizes
+    PMPI_Allgather(&local_size, 1, MPI_COUNT, sizes, 1, MPI_COUNT, t_mpi_comm_world); // get all sizes
     size_t total_size = sizes[0];
     int rank_it;
     for (rank_it = 1, displs[0] = 0; rank_it < comm_size; ++rank_it) {
@@ -555,23 +556,23 @@ int t_global_comms::bind_local_comm(int is_internal, int start_index)
     // debug_printf("(bind_local_comm) total_size %ld \n",total_size);
     char global_recv_buf[total_size];
     // debug_printf("(bind_local_comm) packing local...");
-    MPI_Count pack_size = (MPI_Count)gt_info(local_comms)->pack_local(send_buf, local_size, is_internal);
+    MPI_Count pack_size = (MPI_Count)t_local_comms_p->pack_local(send_buf, local_size, is_internal);
     // debug_printf("finished\n");
     assert(pack_size == local_size);
     // debug_printf("(bind_local_comm) gathering locals...");
 #ifndef _NO_C_VR
-    PMPI_Gatherv_c(send_buf, pack_size, MPI_BYTE, global_recv_buf, sizes, displs, MPI_BYTE, 0, gt_info(TRACTOR_COMM_WORLD)); // get comms
+    PMPI_Gatherv_c(send_buf, pack_size, MPI_BYTE, global_recv_buf, sizes, displs, MPI_BYTE, 0, t_mpi_comm_world); // get comms
 #else
     // hand written dumb gatherv
     if (comm_rank == 0) {
         MPI_Request reqs[comm_size];
         for (rank_it = 1; rank_it < comm_size; ++rank_it) {
-            PMPI_Irecv(&global_recv_buf[displs[rank_it]], sizes[rank_it], MPI_BYTE, rank_it, 42, gt_info(TRACTOR_COMM_WORLD), &reqs[rank_it]);
+            PMPI_Irecv(&global_recv_buf[displs[rank_it]], sizes[rank_it], MPI_BYTE, rank_it, 42, t_mpi_comm_world, &reqs[rank_it]);
         }
         memcpy(global_recv_buf, send_buf, sizes[0]);
         PMPI_Waitall(comm_size - 1, &reqs[1], MPI_STATUSES_IGNORE);
     } else {
-        PMPI_Send(send_buf, pack_size, MPI_BYTE, 0, 42, gt_info(TRACTOR_COMM_WORLD));
+        PMPI_Send(send_buf, pack_size, MPI_BYTE, 0, 42, t_mpi_comm_world);
     }
 #endif
     // debug_printf("finished\n");
@@ -696,9 +697,9 @@ int t_global_comms::bind_local_comm(int is_internal, int start_index)
             local_size += sizes[rank_it];
         }
     }
-    PMPI_Bcast(&local_size, 1, MPI_COUNT, 0, gt_info(TRACTOR_COMM_WORLD));
-    PMPI_Bcast(sizes, comm_size, MPI_COUNT, 0, gt_info(TRACTOR_COMM_WORLD));
-    PMPI_Bcast(displs, comm_size, MPI_AINT, 0, gt_info(TRACTOR_COMM_WORLD));
+    PMPI_Bcast(&local_size, 1, MPI_COUNT, 0, t_mpi_comm_world);
+    PMPI_Bcast(sizes, comm_size, MPI_COUNT, 0, t_mpi_comm_world);
+    PMPI_Bcast(displs, comm_size, MPI_AINT, 0, t_mpi_comm_world);
     char global_send_buf[local_size];
     if (comm_rank == 0) {
         for (rank_it = 0, pack_size = 0; rank_it < comm_size; ++rank_it) {
@@ -713,26 +714,26 @@ int t_global_comms::bind_local_comm(int is_internal, int start_index)
 
     char local_recv_buf[sizes[comm_rank]];
 #ifndef _NO_C_VR
-    PMPI_Scatterv_c(global_send_buf, sizes, displs, MPI_BYTE, local_recv_buf, sizes[comm_rank], MPI_BYTE, 0, gt_info(TRACTOR_COMM_WORLD));
+    PMPI_Scatterv_c(global_send_buf, sizes, displs, MPI_BYTE, local_recv_buf, sizes[comm_rank], MPI_BYTE, 0, t_mpi_comm_world);
 #else
     // hand written dumb scatterv
     if (comm_rank == 0) {
         MPI_Request reqs[comm_size];
         for (rank_it = 1; rank_it < comm_size; ++rank_it) {
-            PMPI_Isend(&global_send_buf[displs[rank_it]], sizes[rank_it], MPI_BYTE, rank_it, 42, gt_info(TRACTOR_COMM_WORLD), &reqs[rank_it]);
+            PMPI_Isend(&global_send_buf[displs[rank_it]], sizes[rank_it], MPI_BYTE, rank_it, 42, t_mpi_comm_world, &reqs[rank_it]);
         }
         memcpy(local_recv_buf, global_send_buf, sizes[0]);
         PMPI_Waitall(comm_size - 1, &reqs[1], MPI_STATUSES_IGNORE);
     } else {
-        PMPI_Recv(local_recv_buf, sizes[comm_rank], MPI_BYTE, 0, 42, gt_info(TRACTOR_COMM_WORLD), MPI_STATUS_IGNORE);
+        PMPI_Recv(local_recv_buf, sizes[comm_rank], MPI_BYTE, 0, 42, t_mpi_comm_world, MPI_STATUS_IGNORE);
     }
 #endif
-    local_size = gt_info(local_comms)->unpack_global(local_recv_buf, sizes[comm_rank]);
+    local_size = t_local_comms_p->unpack_global(local_recv_buf, sizes[comm_rank]);
     if (sizes[comm_rank] != local_size)
         debug_printf("Sizes mismatch %lld!=%lld\n", static_cast<long long>(sizes[comm_rank]), static_cast<long long>(local_size));
     assert(sizes[comm_rank] == local_size);
     int max_id = g_index - 1; // only meaningful on rank 0 until broadcast below
-    PMPI_Bcast(&max_id, 1, MPI_INT, 0, gt_info(TRACTOR_COMM_WORLD));
+    PMPI_Bcast(&max_id, 1, MPI_INT, 0, t_mpi_comm_world);
     __DEBUG_EPILOG_COMM_LAYER__
     return max_id;
 }
@@ -740,7 +741,7 @@ int t_global_comms::bind_local_comm(int is_internal, int start_index)
 bool t_global_comms::bind_local_comms()
 {
     __DEBUG_PROLOG_COMM_LAYER__
-    gt_info(local_comms)->close_stale_internal_entries();
+    t_local_comms_p->close_stale_internal_entries();
     g_comms.clear();
     // user comms and mpi-internal comms are bound separately, in two independent rounds,
     // with internal ids continuing right after the highest id assigned to a user comm

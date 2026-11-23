@@ -30,11 +30,11 @@
 
 // using namespace std;
 #ifdef _MEM_HOOKS_
-__thread void *(*t_memory_profiler::malloc_orig)(size_t) = 0;           // original function handler. Initialized in Ctor
-__thread void *(*t_memory_profiler::calloc_orig)(size_t, size_t) = 0;   // original function handler. Initialized in Ctor
-__thread void *(*t_memory_profiler::realloc_orig)(void *, size_t) = 0;  // original function handler. Initialized in Ctor
-__thread void *(*t_memory_profiler::memalign_orig)(size_t, size_t) = 0; // original function handler. Initialized in Ctor
-__thread void (*t_memory_profiler::free_orig)(void *) = 0;              // original function handler. Initialized in Ctor
+void *(*t_memory_profiler::malloc_orig)(size_t) = 0;           // original function handler. Initialized in Ctor
+void *(*t_memory_profiler::calloc_orig)(size_t, size_t) = 0;   // original function handler. Initialized in Ctor
+void *(*t_memory_profiler::realloc_orig)(void *, size_t) = 0;  // original function handler. Initialized in Ctor
+void *(*t_memory_profiler::memalign_orig)(size_t, size_t) = 0; // original function handler. Initialized in Ctor
+void (*t_memory_profiler::free_orig)(void *) = 0;              // original function handler. Initialized in Ctor
 #if 1
 __thread bool t_memory_profiler::can_collect = false;
 //__thread PEAT_Clock t_memory_profiler::total_events = 0;
@@ -45,6 +45,7 @@ bool t_memory_profiler::can_collect = false;
 PEAT_Clock t_memory_profiler::total_events = 0;
 
 t_memory_profiler_accumulator t_memory_profiler::acc_before_ctor;
+extern "C" void t_mem_resolve_originals(void);
 #endif
 
 t_memory_profiler::t_memory_profiler() : statm_file(0)
@@ -57,21 +58,7 @@ t_memory_profiler::t_memory_profiler() : statm_file(0)
     lowstack = (void *)0x7FFFFFFFFFFFFFFF;
     max_water_level = 0;
 
-    if (!malloc_orig) {
-        malloc_orig = reinterpret_cast<void *(*)(size_t)>(dlsym(RTLD_NEXT, MEMPROF_MALLOC_NAME));
-    }
-    if (!calloc_orig) {
-        calloc_orig = reinterpret_cast<void *(*)(size_t, size_t)>(dlsym(RTLD_NEXT, MEMPROF_CALLOC_NAME));
-    }
-    if (!realloc_orig) {
-        realloc_orig = reinterpret_cast<void *(*)(void *, size_t)>(dlsym(RTLD_NEXT, MEMPROF_REALLOC_NAME));
-    }
-    if (!memalign_orig) {
-        memalign_orig = reinterpret_cast<void *(*)(size_t, size_t)>(dlsym(RTLD_NEXT, MEMPROF_MEMALIGN_NAME));
-    }
-    if (!free_orig) {
-        free_orig = reinterpret_cast<void (*)(void *)>(dlsym(RTLD_NEXT, MEMPROF_FREE_NAME));
-    }
+    t_mem_resolve_originals(); // all five originals, once per process (see t_alloc.cpp)
 #endif
     // can_collect = true;  controlled by Collector class
 #ifdef _MEMPROFILE_STORE_
@@ -86,12 +73,7 @@ t_memory_profiler::t_memory_profiler() : statm_file(0)
 t_memory_profiler::~t_memory_profiler()
 {
 #ifdef _MEM_HOOKS_
-    can_collect = false; // disable collection first
-    malloc_orig = 0;
-    calloc_orig = 0;
-    realloc_orig = 0;
-    memalign_orig = 0;
-    free_orig = 0;
+    can_collect = false; // disable collection first; the originals stay: allocations go on after this
 #endif //_MEM_HOOKS_
 #ifdef _MEMPROFILE_STORE_
     close(statm_file);

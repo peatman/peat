@@ -58,7 +58,7 @@ struct t_memory_profiler_event {
 
 struct t_memory_profiler_accumulator { // used to accumulate memory allocation calls before class instance initialized
     t_memory_profiler_accumulator() {} //: size(0), count(0) {}
-    PEAT_MPI_Message_Size size;
+    PEAT_Message_Size size;
     PEAT_Num count;
 };
 
@@ -121,11 +121,11 @@ struct t_memory_profiler {
 
     static t_memory_profiler_accumulator acc_before_ctor; // accumulate information before Ctor called
 
-    static __thread void *(*malloc_orig)(size_t);           // original function handler. Initialized in Ctor
-    static __thread void *(*calloc_orig)(size_t, size_t);   // original function handler. Initialized in Ctor
-    static __thread void *(*realloc_orig)(void *, size_t);  // original function handler. Initialized in Ctor
-    static __thread void *(*memalign_orig)(size_t, size_t); // original function handler. Initialized in Ctor
-    static __thread void (*free_orig)(void *);              // original function handler. Initialized in Ctor
+    static void *(*malloc_orig)(size_t);           // original function handler. Initialized in Ctor
+    static void *(*calloc_orig)(size_t, size_t);   // original function handler. Initialized in Ctor
+    static void *(*realloc_orig)(void *, size_t);  // original function handler. Initialized in Ctor
+    static void *(*memalign_orig)(size_t, size_t); // original function handler. Initialized in Ctor
+    static void (*free_orig)(void *);              // original function handler. Initialized in Ctor
 
     // Addresses storage to translate into shared object ID
 #ifdef _USE_T_ALLOCATOR_

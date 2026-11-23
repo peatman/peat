@@ -26,36 +26,7 @@
 #define T_TRANSPORT_SHIM_OK true
 #endif
 
-#if 0
-#ifdef _VERBS_PROFILE_
-#ifdef __cplusplus
-#define __t_cplusplus __cplusplus
-#undef __cplusplus
-#endif
-
-#include <infiniband/verbs.h>
-
-#ifdef __t_cplusplus
-#define __cplusplus __t_cplusplus
-#undef __t_cplusplus
-#endif
-
-#endif
-#endif
-
-#ifdef _TRANSPORT_PROFILE_
-#include <psm2.h>
-#include <psm2_am.h>
-#include <psm2_mq.h>
-#include <psm3.h>
-#include <ucp/api/ucp.h>
-#include <rdma/fabric.h>
-#include <rdma/fi_domain.h>
-#include <rdma/fi_endpoint.h>
-#include <rdma/fi_eq.h>
-#include <rdma/fi_cm.h>
-#endif
-
+/* the transport APIs themselves (psm2, psm3, ucx, libfabric, verbs): t_transport_api.h, for the wrappers only */
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -93,6 +64,5 @@ struct t_transport_profiler : t_base_event {
     virtual void dump_extras(pid_t tid, int level, msl_base_chain **chain);
     virtual void dump_events(pid_t tid, int level, msl_adv_chain **chain);
 };
-#include <infiniband/verbs.h>
 
 #endif //__T_TRANSPORT_H__

@@ -16,7 +16,6 @@
  * along with PEAT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "mpi.h"
 #include <assert.h>
 #include <dlfcn.h>
 #include <libgen.h>
@@ -40,10 +39,20 @@
 
 #include "mpi_func_ids_through.h"
 #include "t_base_event.h"
+#include "t_mpi_iface.h"
 
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
 extern "C" {
 #endif
+
+int t_record_size = sizeof(msl_event); /* raised to the MPI layer's record size by t_base_event::init */
+
+void t_core_abort(int code)
+{
+    if (&t_mpi_layer != NULL && t_mpi_layer.abort)
+        t_mpi_layer.abort(code);
+    abort();
+}
 
 t_base_event::t_base_event()
 {
@@ -87,6 +96,7 @@ t_base_event::t_base_event()
     addrs_array = NULL;
     uniq_index = NULL;
     last_returned_event = NULL;
+    fake_event = NULL;
     __DEBUG_EPILOG_TRACTOR_LAYER__
 };
 
@@ -109,16 +119,16 @@ int t_base_event::get_tid(pid_t tid_in)
     if (counting_permit) {
         if (tid >= t_max_tid_num) {
             fprintf(stderr, "Rank %d. Thread ID=%d. is out of range (0..%d).\n", t_mpi_rank, tid, t_max_tid_num);
-            PMPI_Abort(MPI_COMM_WORLD, 911);
+            t_core_abort(911);
         }
         if (tid < 0) {
             fprintf(stderr, "Rank %d. Thread ID=%d. is negative.\n", t_mpi_rank, tid);
-            PMPI_Abort(MPI_COMM_WORLD, 911);
+            t_core_abort(911);
         }
         t_tid = tid2t_tid[tid];
         if (t_tid >= t_max_threads) {
             fprintf(stderr, "Rank %d. Thread ID=%d. Tractor Thread ID=%d is out of range (0..%d).\n", t_mpi_rank, (int)(tid), t_tid, t_max_threads);
-            PMPI_Abort(MPI_COMM_WORLD, 911);
+            t_core_abort(911);
         }
         if (t_tid < 0) {
             thread_mutex.lock();
@@ -127,7 +137,7 @@ int t_base_event::get_tid(pid_t tid_in)
             thread_mutex.unlock();
             if (t_tid >= t_max_threads) {
                 fprintf(stderr, "Rank %d. Thread ID=%d. Tractor Thread ID=%d is out of range (0..%d).\n", t_mpi_rank, (int)(tid), t_tid, t_max_threads);
-                PMPI_Abort(MPI_COMM_WORLD, 911);
+                t_core_abort(911);
             }
             init_events_storage(t_tid);
             debug_printf("Base Event::get_tid. New TID received. Chain initialized %d %d %d %p.\n", tid_in, tid, t_tid, tid2t_tid);
@@ -159,7 +169,7 @@ int t_base_event::enter_call(int tid)
     int level = nesting_level[tid];
     if (level >= t_max_nesting_levels) {
         fprintf(stderr, "Rank %d. Thread %d: nesting level %d exceeds the maximum %d (PEAT_TRACTOR_MAX_NESTING_LEVELS).\n", t_mpi_rank, tid, level, t_max_nesting_levels);
-        PMPI_Abort(MPI_COMM_WORLD, 912);
+        t_core_abort(912);
     }
     nesting_level[tid] = level + 1;
     t_raise_achieved_levels(&t_achieved_nesting_levels, level + 1);
@@ -183,7 +193,7 @@ long long t_base_event::child_base(int tid, int level)
 
 static inline msl_adv_chain *t_new_adv_chain(t_base_event *b, msl_adv_chain *prev, long long start_index)
 {
-    return new msl_adv_chain(prev, sizeof(msl_event), b->num_addrs,
+    return new msl_adv_chain(prev, t_record_size, b->num_addrs,
 #ifdef _HWCOUNTERS_ENABLED_
                              b->num_hwcs * 2,
 #endif
@@ -209,7 +219,7 @@ void t_base_event::init_level_storage(int t_tid, int level)
 #ifdef _MEMPROFILE_STORE_
         mems_array[t_tid][level] = (t_memory_event *)events_chain[t_tid][level]->mem_array;
 #endif
-        memset(&events_array[t_tid][level][0], 0, sizeof(msl_event));
+        memset(T_RECORD(events_array[t_tid][level], 0), 0, t_record_size);
         event_index[t_tid][level] = 0;
     }
     if (extras && extras_chain[t_tid][level] == NULL) {
@@ -235,21 +245,15 @@ int t_base_event::reuse_event(int tid, int level, msl_event **event, msl_extras_
     if (counting_permit && num_allocated <= calls_limit) {
         msl_event *last = last_returned_event[tid][level];
         if (last && last->func_id == func_id) {
-            if (func_id >= MPI_TEST_START_THROUGH && func_id <= MPI_TEST_END_THROUGH) {
-                if (last->requests.flag != 0) {
-                    __DEBUG_EPILOG_TRACTOR_LAYER__
-                    return 0; // previous test was not empty
-                }
-            }
-            if (func_id >= MPI_IPROBE_ID_THROUGH && func_id <= MPI_IMPROBE_ID_THROUGH) {
-                if (last->p2p_pr_pb.flag != 0) {
-                    __DEBUG_EPILOG_TRACTOR_LAYER__
-                    return 0; // previous probe was not empty
-                }
+            if (&t_mpi_layer != NULL && !t_mpi_layer.reusable(last)) {
+                __DEBUG_EPILOG_TRACTOR_LAYER__
+                return 0; // the previous test/probe was not empty
             }
             *event = last;
             int idx = event_index[tid][level] - 1;
             counters->addrs = &addrs_array[tid][level][idx * num_addrs];
+            counters->hwcs = NULL;
+            counters->mems = NULL;
 #ifdef _HWCOUNTERS_ENABLED_
             counters->hwcs = &hwc_array[tid][level][idx * num_hwcs * 2];
 #endif
@@ -289,8 +293,10 @@ void t_base_event::allocate_event(int tid, int level, int skip_dump, msl_event *
         }
 
         int idx = event_index[tid][level];
-        msl_event *store_event = &events_array[tid][level][idx];
+        msl_event *store_event = T_RECORD(events_array[tid][level], idx);
         counters->addrs = &addrs_array[tid][level][idx * num_addrs];
+        counters->hwcs = NULL;
+        counters->mems = NULL;
 #ifdef _HWCOUNTERS_ENABLED_
         counters->hwcs = &hwc_array[tid][level][idx * num_hwcs * 2];
 #endif
@@ -298,7 +304,7 @@ void t_base_event::allocate_event(int tid, int level, int skip_dump, msl_event *
         counters->mems = &mems_array[tid][level][idx * 2];
 #endif
 #ifndef _TRACTOR_ZERO_ON_ALLOCATE_
-        memset(store_event, 0, sizeof(msl_event));
+        memset(store_event, 0, t_record_size);
 #endif
         event_index[tid][level]++;
 
@@ -310,8 +316,10 @@ void t_base_event::allocate_event(int tid, int level, int skip_dump, msl_event *
         if (counting_permit > 1)
             counting_permit -= 2;
     } else {
-        *event = &fake_event;
+        *event = fake_event;
         counters->addrs = (PEAT_Addr *)fake_addrs;
+        counters->hwcs = NULL;
+        counters->mems = NULL;
 #ifdef _HWCOUNTERS_ENABLED_
         counters->hwcs = (long long *)fake_addrs;
 #endif
@@ -333,7 +341,7 @@ int t_base_event::discard_event(int tid, int level, msl_event **event, long long
         }
         --uniq_index[tid][level];
         --event_index[tid][level];
-        last_returned_event[tid][level] = event_index[tid][level] > 0 ? &events_array[tid][level][event_index[tid][level] - 1] : NULL;
+        last_returned_event[tid][level] = event_index[tid][level] > 0 ? T_RECORD(events_array[tid][level], event_index[tid][level] - 1) : NULL;
         *event = NULL;
         __DEBUG_EPILOG_TRACTOR_LAYER__
         return 1;
@@ -365,7 +373,7 @@ int t_base_event::reuse_event(int tid, msl_event **event, short func_id)
             }
         }
     } else {
-        *event = &fake_event;
+        *event = fake_event;
     }
     __DEBUG_EPILOG_TRACTOR_LAYER__
     return reused;
@@ -391,9 +399,9 @@ void t_base_event::allocate_event(int tid, msl_event **event, short func_id)
                 dump_events(tid, 0, &events_start_chain[tid][0]);
         }
 
-        msl_event *store_event = &events_array[tid][0][event_index[tid][0]];
+        msl_event *store_event = T_RECORD(events_array[tid][0], event_index[tid][0]);
 #ifndef _TRACTOR_ZERO_ON_ALLOCATE_
-        memset(store_event, 0, sizeof(msl_event));
+        memset(store_event, 0, t_record_size);
 #endif
         event_index[tid][0]++;
 
@@ -406,7 +414,7 @@ void t_base_event::allocate_event(int tid, msl_event **event, short func_id)
             counting_permit -= 2;
         last_returned_event[tid][0] = store_event;
     } else {
-        *event = &fake_event;
+        *event = fake_event;
     }
     __DEBUG_EPILOG_TRACTOR_LAYER__
     return;
@@ -473,7 +481,12 @@ void t_base_event::init(int max_threads, int max_nesting_levels)
         for (i = 0; i < t_max_tid_num; i++)
             tid2t_tid[i] = -1;
     }
-    memset(&fake_event, 0, sizeof(msl_event));
+    /* the record size: the larger of the core's and the MPI layer's records, fixed from here on */
+    if (&t_mpi_layer != NULL && t_mpi_layer.record_size > t_record_size)
+        t_record_size = t_mpi_layer.record_size;
+    if (fake_event == NULL)
+        fake_event = (msl_event *)t_malloc(t_record_size, 128);
+    memset(fake_event, 0, t_record_size);
     initialized = 1;
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }

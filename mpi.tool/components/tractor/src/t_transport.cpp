@@ -16,10 +16,6 @@
  * along with PEAT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifdef _VERBS_PROFILE_
-#include <infiniband/verbs.h>
-#endif
-
 #include "t_extradef.h"
 #include "t_transport.h"
 #include "tractor.h"
@@ -176,12 +172,12 @@ long long t_transport_profiler::write_transport_file(bool print_names)
             for (int i = 0; i < t_tid_counter; i++) {
                 events_chain[i][0]->num_events = event_index[i][0];
                 dump_events(i, 0, &events_start_chain[i][0]);
-                current_array[i] = (msl_event *)t_malloc((onetimealloc + 1) * sizeof(msl_event), 128);
+                current_array[i] = (msl_event *)t_malloc((onetimealloc + 1) * t_record_size, 128);
                 rewind(fps_events[i]);
                 record_counter[i] = 0;
-                max_events[i] = fread(current_array[i], sizeof(msl_event), onetimealloc, fps_events[i]);
+                max_events[i] = fread(current_array[i], t_record_size, onetimealloc, fps_events[i]);
                 debug_printf("TID %d, %lld events read back.\n", i, max_events[i]);
-                t_timeline t_tl(current_array[i][0].tscs[0], i);
+                t_timeline t_tl(T_RECORD(current_array[i], 0)->tscs[0], i);
                 if (max_events[i] > 0)
                     timeline[t_tl] = i;
             }
@@ -194,7 +190,7 @@ long long t_transport_profiler::write_transport_file(bool print_names)
 
                 current_array[i] = (msl_event *)current_chain[i]->events_array;
                 debug_printf("TRANSPORT Events:thread %d. %lld %p, %p - %p %p \n", i, max_events[i], static_cast<void *>(this), static_cast<void *>(current_chain[i]), static_cast<void *>(events_start_chain[i]), static_cast<void *>(current_array[i]));
-                t_timeline t_tl(current_array[i][0].tscs[0], i);
+                t_timeline t_tl(T_RECORD(current_array[i], 0)->tscs[0], i);
                 if (max_events[i] > 0)
                     timeline[t_tl] = i;
             }
@@ -213,30 +209,30 @@ long long t_transport_profiler::write_transport_file(bool print_names)
             if (print_names) {
                 gzprintf(fps, "%lld:%d:%s",
                          uniq_index, tid,                                                       // 0,1
-                         mpi_function_names[current_array[tid][record_counter[tid]].func_id] // 2
+                         mpi_function_names[T_RECORD(current_array[tid], record_counter[tid])->func_id] // 2
                 );
             } else {
                 gzprintf(fps, "%lld:%d:%d",
                          uniq_index, tid,                                   // 0,1
-                         mpi_func_ids_trans[current_array[tid][record_counter[tid]].func_id] // 2
+                         mpi_func_ids_trans[T_RECORD(current_array[tid], record_counter[tid])->func_id] // 2
                 );
             }
 
             long long l_tscs[4];
-            l_tscs[0] = current_array[tid][record_counter[tid]].tscs[0];
-            l_tscs[1] = current_array[tid][record_counter[tid]].tscs[1];
-            l_tscs[2] = current_array[tid][record_counter[tid]].tscs[2];
-            l_tscs[3] = current_array[tid][record_counter[tid]].tscs[3];
+            l_tscs[0] = T_RECORD(current_array[tid], record_counter[tid])->tscs[0];
+            l_tscs[1] = T_RECORD(current_array[tid], record_counter[tid])->tscs[1];
+            l_tscs[2] = T_RECORD(current_array[tid], record_counter[tid])->tscs[2];
+            l_tscs[3] = T_RECORD(current_array[tid], record_counter[tid])->tscs[3];
             l_tscs[0] -= tsc_counter;
-            tsc_counter = current_array[tid][record_counter[tid]].tscs[0];
-            int l_num_calls = current_array[tid][record_counter[tid]].transport.num_calls;
-            long long total_clocks_bitween_calls = current_array[tid][record_counter[tid]].transport.total_clocks_bitween_calls;
+            tsc_counter = T_RECORD(current_array[tid], record_counter[tid])->tscs[0];
+            int l_num_calls = T_RECORD(current_array[tid], record_counter[tid])->transport.num_calls;
+            long long total_clocks_bitween_calls = T_RECORD(current_array[tid], record_counter[tid])->transport.total_clocks_bitween_calls;
             gzprintf(fps, ":%lld:%lld:%lld:%lld:%lld:%d\n", l_tscs[0], l_tscs[1], l_tscs[2], l_tscs[3], total_clocks_bitween_calls, l_num_calls);
             record_counter[tid]++;
             if (record_counter[tid] >= max_events[tid]) {
                 if (use_realtime_dump) {
                     record_counter[tid] = 0;
-                    max_events[tid] = fread(current_array[tid], sizeof(msl_event), onetimealloc, fps_events[tid]);
+                    max_events[tid] = fread(current_array[tid], t_record_size, onetimealloc, fps_events[tid]);
                     debug_printf("TID %d, %lld events read back.\n", tid, max_events[tid]);
                 } else {
                     if (current_chain[tid]->next != NULL) {
@@ -250,13 +246,13 @@ long long t_transport_profiler::write_transport_file(bool print_names)
                 }
             }
             if (max_events[tid] > 0) {
-                t_timeline t_tl(current_array[tid][record_counter[tid]].tscs[0], tid);
+                t_timeline t_tl(T_RECORD(current_array[tid], record_counter[tid])->tscs[0], tid);
                 timeline[t_tl] = tid;
             }
         }
         if (use_realtime_dump) {
             for (int i = 0; i < t_tid_counter; i++) {
-                t_free(current_array[i], (onetimealloc + 1) * sizeof(msl_event));
+                t_free(current_array[i], (onetimealloc + 1) * t_record_size);
             }
         }
         gzclose(fps);

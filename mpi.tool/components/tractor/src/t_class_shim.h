@@ -38,6 +38,19 @@ extern struct t_shim_state t_shared __attribute__((weak)); /* NULL without a cor
 #undef __msl_allocate_event
 #define __msl_allocate_event(tid_in, level, skip_write, event, counters) \
     t_shared.allocate_event(tid_in, level, event, (void ***)&(counters)->addrs)
+/* no counter samples in the records of a shim (t_shared may be NULL here) */
+#undef T_COUNTERS_DECL
+#undef T_COUNTERS_ENTRY
+#undef T_COUNTERS_EXIT
+#undef T_COUNTERS_ENTRY_TO
+#undef T_COUNTERS_EXIT_TO
+#undef T_COUNTERS_COPY
+#define T_COUNTERS_DECL
+#define T_COUNTERS_ENTRY
+#define T_COUNTERS_EXIT(c)
+#define T_COUNTERS_ENTRY_TO(c)
+#define T_COUNTERS_EXIT_TO(c)
+#define T_COUNTERS_COPY(d, s)
 #endif
 
 #define T_CORE(x) t_shared.x

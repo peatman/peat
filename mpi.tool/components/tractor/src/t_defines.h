@@ -23,7 +23,6 @@
 // #include <linux/unistd.h>
 #include <unistd.h>
 
-#include <mpi.h>
 #include <time.h>
 #include "t_shim_state.h"
 #ifdef _T_OMPT_
@@ -198,18 +197,19 @@ static inline unsigned long long peat_addr_ull(unsigned long long a)
 #ifndef T_UNWIND_INFO
 #define T_UNWIND_INFO(x) gt_info(x)
 #endif
-/* Frames inside the MPI Fortran wrapper library(ies) are skipped so the recorded call site is the user's Fortran code */
-#ifdef _OPENMPI_
+/* Frames inside the MPI Fortran wrapper library(ies) are skipped so the recorded call site is the user's Fortran code.
+   The libraries are named by the MPI layer (t_mpi_layer.fortran_libs); lowfort/highfort is the first one. */
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
 extern "C" {
 #endif
-int t_addr_in_fortran_lib(const void *addr); /* tractor.cpp: any of libmpi_mpifh, libmpi_usempif08, libmpi_usempi* */
+int t_addr_in_fortran_lib(const void *addr); /* tractor.cpp: in any of the MPI Fortran wrapper libraries */
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
 }
 #endif
-#define T_IN_FORTRAN_LIB(a) t_addr_in_fortran_lib(a)
+#if defined(_OPENMPI_) && !defined(_T_CLASS_SHIM_)
+#define T_IN_FORTRAN_LIB(a) t_addr_in_fortran_lib(a) /* Open MPI has several Fortran wrapper libraries */
 #else
-#define T_IN_FORTRAN_LIB(a) ((a) > T_UNWIND_INFO(lowfort) && (a) < T_UNWIND_INFO(highfort)) /* libmpifort */
+#define T_IN_FORTRAN_LIB(a) ((a) > T_UNWIND_INFO(lowfort) && (a) < T_UNWIND_INFO(highfort))
 #endif
 
 #define stack_unwind_x(lev_num, store_addr, levels)                                                            \
@@ -287,117 +287,53 @@ struct t_memory_event {
     PEAT_LNum mem_used_by_tractor;
 };
 
+/* where the record's return addresses and counter samples go (entry and exit each); hwcs/mems are NULL when the core
+   takes no such samples. The same layout everywhere: the MPI layer and the shims fill it through t_shared. */
 struct msl_extras_counters {
     PEAT_Addr *addrs;
-#ifdef _HWCOUNTERS_ENABLED_
     long long *hwcs;
-#endif
-#ifdef _MEMPROFILE_STORE_
     t_memory_event *mems;
-#endif
 };
 
+/* counter samples around a call (t_shim_state.h counters_*): DECL a sample buffer, ENTRY before the call, EXIT(c) into
+   the record after it; ENTRY_TO(c) / EXIT_TO(c) when the record exists before the call already; COPY(d, s) for the
+   second record of a pair. The event-class shims take no counters (t_class_shim.h). */
+#define T_COUNTERS_DECL long long t_csample[t_shared.counters_size > 0 ? (t_shared.counters_size + 7) / 8 : 1];
+#define T_COUNTERS_ENTRY \
+    if (t_shared.counters_size) \
+        t_shared.counters_read(t_csample);
+#define T_COUNTERS_EXIT(c) \
+    if (t_shared.counters_size) \
+        t_shared.counters_store(&(c), t_csample);
+#define T_COUNTERS_ENTRY_TO(c) \
+    if (t_shared.counters_size) \
+        t_shared.counters_entry(&(c));
+#define T_COUNTERS_EXIT_TO(c) \
+    if (t_shared.counters_size) \
+        t_shared.counters_store(&(c), NULL);
+#define T_COUNTERS_COPY(d, s) \
+    if (t_shared.counters_size) \
+        t_shared.counters_copy(&(d), &(s));
+
 #include "addr_entry.h"
-struct msl_event {
-    PEAT_Clock tscs[4];
-    short func_id;      /* through id; the base id comes from mpi_func_ids_trans[] when writing */
-    short num_children; /* records of the next nesting level created while this call was open */
+/* A record: the header, the same for every kind of record, then the parameters of the call. The core knows the
+   parameters of its own classes (transport, GPU, OMPT, CUDA) only; the MPI layer's are msl_mpi_event (t_mpi_event.h, the
+   same header), which the core reads through t_mpi_layer.get_view. The records are t_record_size bytes apart
+   (t_base_event.cpp): the larger of the two. */
 #ifdef _TRACTOR_STORE_UNIQ_INDEX_
-    long long uniq_index;
-#endif
-    union { /* this union should divide p2p,collective,osc,local etc function group */
-        /*          P2P Transfer messages, Persistant Request INIT functions and probe  */
-        struct {
-            PEAT_Message_Size transfer_bytes;
-            int tag;
-            int peer;
-            union {
-                int flag;
-                MPI_Request request; /* actual request or "0" if no request */
-            };
-            MPI_Comm comm;
-#ifdef _MPI_MESSAGE_DEFINED_
-            MPI_Message message; /* actual message handle or "0" if missing */
+#define T_MSL_EVENT_UNIQ_INDEX long long uniq_index;
 #else
-            int message; /* fake value */
+#define T_MSL_EVENT_UNIQ_INDEX
 #endif
-#ifdef _TRACTOR_EXTRA_FIELDS_
-            addr_entry buf;
-#endif
-        } __attribute__((packed)) __attribute__((aligned(4))) p2p_pr_pb;
+#define T_MSL_EVENT_HEADER                                                                                  \
+    PEAT_Clock tscs[4];                                                                                     \
+    short func_id;      /* through id; the base id comes from mpi_func_ids_trans[] when writing */          \
+    short num_children; /* records of the next nesting level created while this call was open */           \
+    T_MSL_EVENT_UNIQ_INDEX
 
-        /*          Completion (WAIT/TEST) and persistent request start (START) */
-        struct {
-            PEAT_Addr request_addr;
-            int input_request_num;
-            int triggered_request_num;
-            int flag;
-#ifdef _TRACTOR_EXTRA_FIELDS_
-            addr_entry requests;
-            addr_entry statuses;
-#endif
-        } __attribute__((packed)) __attribute__((aligned(4))) requests;
-
-        /*          Collective functions     */
-        struct {             // 8 + 8 + 4 + 4 + 4
-            int sr_bytes[2]; // send/recv counts for collectives
-            int root;
-            MPI_Comm comm;
-            MPI_Request request; /* actual request or "0" if no request */
-#ifdef _TRACTOR_EXTRA_FIELDS_
-            addr_entry buf[2];
-#endif
-        } __attribute__((packed)) __attribute__((aligned(4))) collective;
-        /*          Communicators functions     */
-        struct {
-            MPI_Comm comm;
-            MPI_Comm newcomm;
-            MPI_Comm remotecomm;
-            MPI_Request request;
-        } __attribute__((packed)) __attribute__((aligned(4))) comms;
-
-        /*          Buffered Local functions     */
-        struct {
-            long long count, size;
-#ifdef _TRACTOR_EXTRA_FIELDS_
-            addr_entry buf[2];
-#endif
-        } __attribute__((packed)) __attribute__((aligned(4))) buf_local;
-        /*          One sided communication     */
-        struct { // 8 + 4 + 4 + 4 + 4 + 4
-            union {
-                long long transfer_bytes;
-                long long size;
-            };
-            int peer;
-            MPI_Comm comm;
-            MPI_Win window;
-            MPI_Request request; /* actual request or "0" if no request */
-#ifdef _TRACTOR_EXTRA_FIELDS_
-            addr_entry buf;
-            addr_entry rbuf;
-            addr_entry cbuf;
-#endif
-        } __attribute__((packed)) __attribute__((aligned(4))) one_sided_comm;
-        /*          File IO     */
-        struct { // 8 + 8 + 4 + 4
-            PEAT_Message_Size transfer_bytes;
-            MPI_Offset offset;
-            MPI_Comm comm;
-            MPI_File fh;
-            MPI_Request request; /* actual request or "0" if no request */
-#ifdef _TRACTOR_EXTRA_FIELDS_
-            addr_entry buf;
-#endif
-        } __attribute__((packed)) __attribute__((aligned(4))) mpi_fio;
-
-        /*          Other local      */
-        struct {
-            MPI_Comm comm;
-        } __attribute__((packed)) __attribute__((aligned(4))) local;
-        struct {
-            int ctl;
-        } __attribute__((packed)) __attribute__((aligned(4))) pcontrol;
+struct msl_event {
+    T_MSL_EVENT_HEADER
+    union {
         struct { /* 8 + 4 */
             PEAT_Clock total_clocks_bitween_calls;
             PEAT_Clock first_call;
@@ -423,6 +359,16 @@ struct msl_event {
         } __attribute__((packed)) __attribute__((aligned(4))) cuda;
     };
 };
+
+#if defined(__CPLUSPLUS__) || defined(__cplusplus)
+extern "C" {
+#endif
+extern int t_record_size; /* bytes from one record to the next: max(sizeof(msl_event), t_mpi_layer.record_size) */
+#if defined(__CPLUSPLUS__) || defined(__cplusplus)
+}
+#endif
+/* record i of an array of records */
+#define T_RECORD(array, i) ((msl_event *)((char *)(array) + (size_t)(i) * (size_t)t_record_size))
 
 struct t_timeline {
     PEAT_Clock tsc;
@@ -450,9 +396,10 @@ struct t_timeline {
 extern  ompt_finalize_tool_t ompt_finalize_tool;
 #endif*/
 
-#define __msl_allocate_event(tid_in, level, skip_write, event, counters) gt_info(allocate_event(tid_in, level, skip_write, event, counters))
-#define __msl_reuse_event(tid_in, level, event, counters, funcid) gt_info(reuse_event(tid_in, level, event, counters, funcid))
-#define __msl_discard_event(tid_in, level, event, children_base) gt_info(discard_event(tid_in, level, event, children_base))
+/* event: the address of a msl_event * or, in the MPI layer, of a msl_mpi_event * (the same header) */
+#define __msl_allocate_event(tid_in, level, skip_write, event, counters) gt_info(allocate_event(tid_in, level, skip_write, (msl_event **)(event), counters))
+#define __msl_reuse_event(tid_in, level, event, counters, funcid) gt_info(reuse_event(tid_in, level, (msl_event **)(event), counters, funcid))
+#define __msl_discard_event(tid_in, level, event, children_base) gt_info(discard_event(tid_in, level, (msl_event **)(event), children_base))
 /* transport records: through t_shared (t_shim_state.h), the same in the core and in the shims */
 #define T_TRANSPORT_PERMIT (t_shared.t_permit_collect_transport)
 #define __msl_transport_get_tid(tid_in) t_shared.get_tid(tid_in)

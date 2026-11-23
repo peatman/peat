@@ -121,7 +121,7 @@ jobs:
       # inside the workspace: actions/cache rejects paths with a '..' segment (and then silently saves nothing)
       MPI_PREFIX: ${{ github.workspace }}/.ci-mpi/${{ matrix.src }}-${{ matrix.ver }}${{ matrix.patch && '-eng' || '' }}
       PSM2_PREFIX: ${{ github.workspace }}/.ci-mpi/psm2-${{ matrix.psm2 }}
-      # engineering tractor: lib name suffix of the GNU make build (CMake keeps the plain name)
+      # engineering tractor: the suffix of the MPI layer's name (libtractor.<mpi>.eng.so, CMake and GNU make)
       ENG_SUFFIX: ${{ matrix.patch && '.eng' || '' }}
     steps:
       - uses: actions/checkout@v7
@@ -186,19 +186,26 @@ jobs:
           echo "using $hdr"
           mkdir -p "$RUNNER_TEMP/ompt" && cp "$hdr" "$RUNNER_TEMP/ompt/"
           echo "CPATH=$RUNNER_TEMP/ompt" >> "$GITHUB_ENV"
-      - name: Build tractor (DIAG = ${{ matrix.diags }})
-        # every DIAG variant in this one job: they share the deps install and the MPI build/cache
+      - name: Build tractor (the core, DIAG = ${{ matrix.diags }}, and the MPI layer)
+        # the core (no MPI: the plain compilers) in every DIAG variant, the MPI layer of this job's MPI (release); they
+        # share the deps install and the MPI build/cache
         run: |
           for d in ${{ matrix.diags }}; do
-            b=build/tractor-$d
+            b=build/tractor-core-$d
             cmake -S mpi.tool/components/tractor/src -B $b -G Ninja \
-              -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
-              -DTRACTOR_TARGET=${{ matrix.target }} -DDIAG=$d \
-              -DBUILD_TRACTOR_ENGINEERING_VERSION=${{ matrix.patch && 'on' || 'auto' }}
+              -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DTRACTOR_TARGET=core -DDIAG=$d
             cmake --build $b
             cmake --install $b
           done
-          ldd mpi.tool/lib/gnu/libtractor*.so
+          cmake -S mpi.tool/components/tractor/src -B build/tractor-mpi -G Ninja \
+            -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx -DTRACTOR_TARGET=${{ matrix.target }} \
+            -DBUILD_TRACTOR_ENGINEERING_VERSION=${{ matrix.patch && 'on' || 'auto' }}
+          cmake --build build/tractor-mpi
+          cmake --install build/tractor-mpi
+          ls -l mpi.tool/lib/gnu/
+          ! ldd mpi.tool/lib/gnu/libtractor*.core*.so.*.* | grep -q libmpi || { echo "::error::the core links libmpi"; exit 1; }
+          readelf -d mpi.tool/lib/gnu/libtractor.${{ matrix.target }}$ENG_SUFFIX.so.*.* | grep -E "NEEDED.*libtractor.core.so|RUNPATH.*ORIGIN"
+          ldd mpi.tool/lib/gnu/libtractor.${{ matrix.target }}$ENG_SUFFIX.so.*.*
       - name: Build tractor with GNU make (DIAG = ${{ matrix.diags }})
         # the Makefile builds in the source tree and installs to the same mpi.tool/lib/gnu names as CMake,
         # so its libraries are only copied aside (make clean between the variants would delete them)
@@ -214,10 +221,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/make-lib"
           for d in ${{ matrix.diags }}; do
             d=${d,,}
-            make clean COMPILER=gnu TARGET=$t DIAG=$d $eng > /dev/null
-            make -j"$(nproc)" all COMPILER=gnu TARGET=$t DIAG=$d $eng
-            cp -v libtractor*.$t$ENG_SUFFIX.so.[0-9]*.[0-9]* "$RUNNER_TEMP/make-lib/"
+            make clean COMPILER=gnu TARGET=core DIAG=$d > /dev/null
+            make -j"$(nproc)" all COMPILER=gnu TARGET=core DIAG=$d
+            cp -v libtractor*.core*.so.[0-9]*.[0-9]* "$RUNNER_TEMP/make-lib/"
           done
+          make clean COMPILER=gnu TARGET=$t $eng > /dev/null
+          make -j"$(nproc)" all COMPILER=gnu TARGET=$t $eng
+          cp -v libtractor.$t$ENG_SUFFIX.so.[0-9]*.[0-9]* "$RUNNER_TEMP/make-lib/"
           ldd "$RUNNER_TEMP"/make-lib/libtractor*.so.*
       - name: Build mat + ctt (for smoke test)
         if: matrix.smoke
@@ -265,8 +275,10 @@ jobs:
           for b in cmake make; do
             for d in ${{ matrix.diags }}; do
               case $d in [Oo][Nn]) dbg=_dbg ;; *) dbg= ;; esac
-              if [ $b = cmake ]; then lib=mpi.tool/lib/gnu/libtractor$dbg.${{ matrix.target }}.so
-              else lib=$(ls "$RUNNER_TEMP"/make-lib/libtractor$dbg.${{ matrix.make_target || matrix.target }}$ENG_SUFFIX.so.* | head -1); fi
+              # the core variant preloaded before the MPI layer (it satisfies the MPI layer's libtractor.core.so.0)
+              if [ $b = cmake ]; then dir=mpi.tool/lib/gnu ; t=${{ matrix.target }}
+              else dir=$RUNNER_TEMP/make-lib ; t=${{ matrix.make_target || matrix.target }} ; fi
+              lib=$(ls $dir/libtractor${dbg}.core.so.*.* | head -1):$(ls $dir/libtractor.$t$ENG_SUFFIX.so.*.* | head -1)
               echo "::group::smoke $b DIAG=$d ($lib)"
               SMOKE_WORKDIR=$RUNNER_TEMP/smoke-$b-diag-$d \
                 mpi.tool/components/tractor/tests/ci/smoke.sh "$lib" 4 3 "${{ matrix.smoke_tests }}" || { status=1; echo "::error::smoke $b DIAG=$d failed"; }
@@ -289,15 +301,16 @@ jobs:
             mpi.tool/bin/gnu/
 
   # llama.cpp and CUDA tracing (tests/ci/llama.sh): tractor's llama.cpp wrappers (pipeline stages, ggml CPU kernels) and
-  # its CUDA module (CUPTI activity records + runtime callbacks, cuBLAS wrappers), built by CMake (GCC and clang) and GNU
-  # make, against a pinned llama.cpp (shared CPU build with GCC: the CPU kernels are interposed only where ggml-cpu calls
+  # its CUDA module (CUPTI activity records + runtime callbacks, cuBLAS wrappers): the llama and cuda shims, built by
+  # CMake (GCC and clang) and GNU make, against a pinned llama.cpp (shared CPU build with GCC: the CPU kernels are interposed only where ggml-cpu calls
   # them through the PLT) and Ubuntu's CUDA packages (nvidia-cuda-dev + libcupti-dev: CUDA 12.0 with CUPTI API 18, the
   # oldest the module reads, in the Debian layout that CUDA_ROOT detection has to find as /usr). llama-simple runs a 15M
   # parameter model under each library: output unchanged, trace through mat and ctt, Modules remark. The runners have
   # no GPU: CUPTI cannot start, which tractor must report and survive ("recording failed"); GPU records (kernels, copies,
   # their binds) are checked by the same script on a box with a GPU and a CUDA llama.cpp.
-  # The clang build has OMPT on libomp, which also serves ggml's OpenMP: OMPT records nested in the ggml calls.
-  # The default build (no GPU) must include llama.cpp tracing when its headers are found, like OMPT, under the plain name.
+  # The classes are the shims of TARGET=class_layers, preloaded with the core (llama-simple is no MPI program: no MPI
+  # layer). The clang core has OMPT built in, on libomp, which also serves ggml's OpenMP: OMPT records nested in the ggml
+  # calls.
   llama:
     name: llama.cpp + CUDA tracing
     runs-on: ubuntu-24.04
@@ -367,46 +380,33 @@ jobs:
           cmake -S mpi.tool/components/mat/src -B build/mat -G Ninja -DCMAKE_BUILD_TYPE=Release -DMAT_TARGET=serial \
             -DCMAKE_CXX_COMPILER=g++
           cmake --build build/mat && cmake --install build/mat
-      - name: Build tractor (CMake, GCC) - default and GPU
+      - name: Build tractor (CMake, GCC) - the core and the class shims
         run: |
-          # default: llama.cpp found -> built in (AUTO), no GPU -> no CUDA, plain name
-          cmake -S $TRACTOR_SRC -B build/tractor -G Ninja -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
-            -DTRACTOR_TARGET=mpich4 -DLLAMA_ROOT="$LLAMA_CPP_DIR" | tee build/tractor.cfg
-          grep -q "tractor: llama.cpp parsing: on (LLAMA=AUTO" build/tractor.cfg \
-            || { echo "::error::default build without llama.cpp tracing"; exit 1; }
-          ! grep -q "CUDA (CUPTI) parsing: on" build/tractor.cfg || { echo "::error::default build with CUDA"; exit 1; }
-          cmake --build build/tractor && cmake --install build/tractor
-          lib=mpi.tool/lib/gnu/libtractor.mpich4.so
-          ! ldd $lib | grep -q cupti || { echo "::error::$lib links libcupti"; exit 1; }
-          nm -D --defined-only $lib | grep -qw llama_process || { echo "::error::$lib has no llama.cpp wrappers"; exit 1; }
-          # GPU: CUDA (required) from the Debian packages: CUDA_ROOT detected as /usr, no -I/usr/include
-          cmake -S $TRACTOR_SRC -B build/tractor-gpu -G Ninja -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
-            -DTRACTOR_TARGET=mpich4 -DGPU=ON -DCUPTI=ON -DLLAMA=ON -DLLAMA_ROOT="$LLAMA_CPP_DIR" | tee build/tractor-gpu.cfg
-          grep -q "tractor: CUDA (CUPTI) parsing: on (CUPTI=ON, CUDA_ROOT='/usr')" build/tractor-gpu.cfg \
-            || { echo "::error::CUDA not found in the Debian layout (/usr)"; exit 1; }
-          ! grep -qE -- "-I/usr/include( |$)" build/tractor-gpu/build.ninja || { echo "::error::-I/usr/include in the build"; exit 1; }
-          cmake --build build/tractor-gpu && cmake --install build/tractor-gpu
-          ldd mpi.tool/lib/gnu/libtractor.mpich4.gpu.so | grep cupti
-      - name: Build tractor (CMake, GCC) - core and class shims
-        run: |
-          # a core without the event classes and the shims of TARGET=class_layers (llama.cpp and CUDA required), not
-          # installed: the llama smoke test preloads them together; the shims are linked without MPI (plain g++)
-          cmake -S $TRACTOR_SRC -B build/tractor-core -G Ninja -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
-            -DTRACTOR_TARGET=mpich4 -DOMPT=OFF -DLLAMA=OFF -DCUPTI=OFF
+          # the core (no MPI, no event classes but OMPT: off here) and the shims of TARGET=class_layers (llama.cpp and
+          # CUDA required, CUDA_ROOT detected as /usr in the Debian layout), not installed: the smoke test preloads them
+          # together; the shims are linked without MPI (plain g++)
+          cmake -S $TRACTOR_SRC -B build/tractor-core -G Ninja -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
+            -DTRACTOR_TARGET=core -DOMPT=OFF
           cmake --build build/tractor-core
-          ! nm -D --defined-only build/tractor-core/libtractor.mpich4.so | grep -qwE "llama_process|cublasGemmEx|ompt_start_tool" \
+          core=build/tractor-core/libtractor.core.so.0.1
+          ! nm -D --defined-only $core | grep -qwE "llama_process|cublasGemmEx|ompt_start_tool" \
             || { echo "::error::the core has event classes built in"; exit 1; }
+          ! ldd $core | grep -qE "libmpi|cupti" || { echo "::error::$core links libmpi or libcupti"; exit 1; }
           cmake -S $TRACTOR_SRC -B build/tractor-shims -G Ninja -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
             -DTRACTOR_TARGET=class_layers -DTRACTOR_PLAIN_CXX=g++ -DCUPTI=ON -DLLAMA=ON -DLLAMA_ROOT="$LLAMA_CPP_DIR" \
             | tee build/tractor-shims.cfg
           grep "tractor: class_layers:" build/tractor-shims.cfg
+          grep -q "tractor: CUDA (CUPTI) parsing: on (CUPTI=ON, CUDA_ROOT='/usr')" build/tractor-shims.cfg \
+            || { echo "::error::CUDA not found in the Debian layout (/usr)"; exit 1; }
+          ! grep -qE -- "-I/usr/include( |$)" build/tractor-shims/build.ninja || { echo "::error::-I/usr/include in the build"; exit 1; }
           cmake --build build/tractor-shims
           for s in llama cuda; do
             f=$(ls build/tractor-shims/libtractor_$s.so.* | head -1)
             [ -n "$f" ] || { echo "::error::no $s shim"; exit 1; }
             ! ldd "$f" | grep -q libmpi || { echo "::error::$f links libmpi"; exit 1; }
           done
-      - name: Build tractor (CMake, clang, GPU)
+          ldd build/tractor-shims/libtractor_cuda.so.* | grep cupti
+      - name: Build tractor (CMake, clang) - the core with OMPT and the class shims
         env:
           MPICH_CC: clang
           MPICH_CXX: clang++
@@ -414,23 +414,27 @@ jobs:
           # the configure check does not link (no implicit link directories from CMake): CMakeLists.txt takes the library
           # directories from the compiler (-print-search-dirs); /usr/lib/x86_64-linux-gnu (libz etc.) must be among them
           clang++ -v -x c++ -E /dev/null -o /dev/null 2>&1 | grep -E "clang version|Selected GCC"
-          mpicxx -show
-          printf '#include <mpi.h>\n#include <string>\nint main(){std::string s("x"); return (int)s.size() - 1;}\n' > "$RUNNER_TEMP/t.cpp"
-          mpicxx "$RUNNER_TEMP/t.cpp" -o "$RUNNER_TEMP/t" || { echo "::error::clang through mpicxx cannot build a C++ program"; exit 1; }
-          cmake -S $TRACTOR_SRC -B build/tractor-clang -G Ninja -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
-            -DTRACTOR_TARGET=mpich4 -DGPU=ON -DCUPTI=ON -DLLAMA=ON -DLLAMA_ROOT="$LLAMA_CPP_DIR" | tee build/tractor-clang.cfg \
-            || { grep -B2 -A20 -iE "error|failed" build/tractor-clang/CMakeFiles/CMakeConfigureLog.yaml | head -80; exit 1; }
-          grep -q "CXX compiler identification is Clang" build/tractor-clang.cfg || { echo "::error::not built with clang"; exit 1; }
-          grep -E "tractor: library directories of the compiler: .*/usr/lib/x86_64-linux-gnu( |$)" build/tractor-clang.cfg \
+          # the core with OMPT on libomp, which also serves ggml's OpenMP: OMPT records nested in the ggml calls
+          cmake -S $TRACTOR_SRC -B build/tractor-clang-core -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DTRACTOR_TARGET=core | tee build/tractor-clang-core.cfg \
+            || { grep -B2 -A20 -iE "error|failed" build/tractor-clang-core/CMakeFiles/CMakeConfigureLog.yaml | head -80; exit 1; }
+          grep -q "CXX compiler identification is Clang" build/tractor-clang-core.cfg || { echo "::error::not built with clang"; exit 1; }
+          grep -E "tractor: library directories of the compiler: .*/usr/lib/x86_64-linux-gnu( |$)" build/tractor-clang-core.cfg \
             || { echo "::error::clang's library directories lack /usr/lib/x86_64-linux-gnu"; exit 1; }
-          # installed to mpi.tool/lib/<TRACTOR_COMPILER>: clang here (the GCC builds go to lib/gnu)
-          grep "^TRACTOR_COMPILER:" build/tractor-clang/CMakeCache.txt
-          grep -q "^TRACTOR_COMPILER:STRING=clang$" build/tractor-clang/CMakeCache.txt \
+          # installed to mpi.tool/lib/<TRACTOR_COMPILER>: clang here
+          grep -q "^TRACTOR_COMPILER:STRING=clang$" build/tractor-clang-core/CMakeCache.txt \
             || { echo "::error::clang build not detected as TRACTOR_COMPILER=clang"; exit 1; }
-          cmake --build build/tractor-clang
-          cmake --install build/tractor-clang
-          ls -l mpi.tool/lib/clang/libtractor.mpich4.gpu.so
-      - name: Build tractor with GNU make (GPU)
+          cmake --build build/tractor-clang-core
+          cmake --install build/tractor-clang-core
+          nm -D --defined-only mpi.tool/lib/clang/libtractor.core.so.0.1 | grep -qw ompt_start_tool \
+            || { echo "::error::the clang core has no OMPT"; exit 1; }
+          mpicxx -show
+          cmake -S $TRACTOR_SRC -B build/tractor-clang-shims -G Ninja -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
+            -DTRACTOR_TARGET=class_layers -DTRACTOR_PLAIN_CXX=clang++ -DCUPTI=ON -DLLAMA=ON -DLLAMA_ROOT="$LLAMA_CPP_DIR"
+          cmake --build build/tractor-clang-shims
+          cmake --install build/tractor-clang-shims
+          ls -l mpi.tool/lib/clang/
+      - name: Build tractor with GNU make - the core and the class shims
         working-directory: mpi.tool/components/tractor/src
         env:
           MPICC: mpicc
@@ -438,24 +442,29 @@ jobs:
           MPIFC: mpif90
           HWLOC_PATH: /usr
         run: |
-          make clean COMPILER=gnu TARGET=mpich4 > /dev/null
-          make -j"$(nproc)" all COMPILER=gnu TARGET=mpich4 PARSE_GPU=on CUPTI_PARSE=on LLAMA_PARSE=on \
+          mkdir -p "$RUNNER_TEMP/make-lib"
+          make clean COMPILER=gnu TARGET=core > /dev/null
+          make -j"$(nproc)" all COMPILER=gnu TARGET=core OMPT=off
+          cp -v libtractor.core.so.[0-9]*.[0-9]* "$RUNNER_TEMP/make-lib/"
+          make clean COMPILER=gnu TARGET=class_layers > /dev/null
+          make -j"$(nproc)" all COMPILER=gnu TARGET=class_layers CUPTI_PARSE=on LLAMA_PARSE=on \
             LLAMA_ROOT="$LLAMA_CPP_DIR" 2>&1 | tee "$RUNNER_TEMP/make.log"
           [ "${PIPESTATUS[0]}" = 0 ] || exit 1
           grep -q "tractor: CUDA (CUPTI) parsing: on (CUPTI_PARSE=on, CUDA_ROOT='/usr')" "$RUNNER_TEMP/make.log" \
             || { echo "::error::make: CUDA not found in the Debian layout (/usr)"; exit 1; }
-          mkdir -p "$RUNNER_TEMP/make-lib"
-          cp -v libtractor.mpich4.gpu.so.[0-9]*.[0-9]* "$RUNNER_TEMP/make-lib/"
+          cp -v libtractor_llama.so.[0-9]*.[0-9]* libtractor_cuda.so.[0-9]*.[0-9]* "$RUNNER_TEMP/make-lib/"
       - name: llama.cpp smoke test (llama-simple under tractor -> mat -> ctt)
         run: |
           status=0
-          # name|preload list (a core with the classes built in, or the core and the class shims)|CUDA expected
-          shims="$(ls build/tractor-shims/libtractor_llama.so.* | head -1):$(ls build/tractor-shims/libtractor_cuda.so.* | head -1)"
-          for v in "cmake-gnu|mpi.tool/lib/gnu/libtractor.mpich4.so|0" \
-                   "cmake-gnu-gpu|mpi.tool/lib/gnu/libtractor.mpich4.gpu.so|1" \
-                   "cmake-clang-gpu|mpi.tool/lib/clang/libtractor.mpich4.gpu.so|1" \
-                   "make-gnu-gpu|$(ls "$RUNNER_TEMP"/make-lib/libtractor.mpich4.gpu.so.* | head -1)|1" \
-                   "cmake-gnu-shims|build/tractor-core/libtractor.mpich4.so:$shims|1" ; do
+          # name|preload list (the core and the class shims: llama-simple is no MPI program, no MPI layer)|CUDA expected
+          one() { ls $1 | head -1; }
+          gnu_core=build/tractor-core/libtractor.core.so.0.1
+          gnu_llama=$(one "build/tractor-shims/libtractor_llama.so.*.*")
+          gnu_cuda=$(one "build/tractor-shims/libtractor_cuda.so.*.*")
+          for v in "cmake-gnu|$gnu_core:$gnu_llama|0" \
+                   "cmake-gnu-cuda|$gnu_core:$gnu_llama:$gnu_cuda|1" \
+                   "cmake-clang-cuda|mpi.tool/lib/clang/libtractor.core.so.0.1:$(one "mpi.tool/lib/clang/libtractor_llama.so.*.*"):$(one "mpi.tool/lib/clang/libtractor_cuda.so.*.*")|1" \
+                   "make-gnu-cuda|$RUNNER_TEMP/make-lib/libtractor.core.so.0.1:$(one "$RUNNER_TEMP/make-lib/libtractor_llama.so.*.*"):$(one "$RUNNER_TEMP/make-lib/libtractor_cuda.so.*.*")|1" ; do
             IFS='|' read -r name lib cuda <<< "$v"
             echo "::group::llama $name ($lib)"
             SMOKE_WORKDIR=$RUNNER_TEMP/llama-$name LLAMA_SMOKE_CUDA=$cuda \

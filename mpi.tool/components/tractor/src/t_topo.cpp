@@ -52,7 +52,10 @@ static void concatenate_children(hwloc_topology_t topo, hwloc_obj_t obj, int dep
 void tractor::get_topo()
 {
     __DEBUG_PROLOG_TRACTOR_LAYER__
-#ifndef I_MPI_BUILD
+    if (&t_mpi_layer != NULL && t_mpi_layer.skip_topology) { /* Intel MPI ships its own hwloc */
+        __DEBUG_EPILOG_TRACTOR_LAYER__
+        return;
+    }
     try {
         hwloc_topology_t topo;
         hwloc_topology_init(&topo);
@@ -65,6 +68,5 @@ void tractor::get_topo()
     } catch (...) {
         fprintf(stderr, "Acquiring Topology Failed\n");
     }
-#endif
     __DEBUG_EPILOG_TRACTOR_LAYER__
 }

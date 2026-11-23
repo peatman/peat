@@ -16,17 +16,19 @@
 # along with PEAT.  If not, see <https://www.gnu.org/licenses/>.
 #
 #
-# CMake build for tractor (mirrors src/Makefile), including the
-# TARGET=transport_layers standalone shim build and the legacy single-layer
-# TRANSPORT=PSM2/VERBS/PSM3/UCX/OFI modes. BUILD_TRACTOR_ENGINEERING_VERSION=auto
+# CMake build for tractor (mirrors src/Makefile): TRACTOR_TARGET=core (the core library, configured with the plain
+# compilers), an MPI (its MPI layer libtractor.<mpi>[.eng].so, with the MPI wrappers), transport_layers and class_layers
+# (the shims). BUILD_TRACTOR_ENGINEERING_VERSION=auto
 # detects a patched MPI by trying to link against mpi_internal_comm_create
 # (the exported communicator hook every ../../patches/* hook patch adds) - see its
 # definition below for the reasoning and caveats.
 #
 # CMAKE_CXX_COMPILER/CMAKE_C_COMPILER are expected to already be the MPI
 # wrappers (mpicxx/mpicc, mpiicpc/mpiicc, Cray CC/cc, ...) - same convention
-# as MPICXX/MPICC in env.sh. Point cmake at them the usual way, e.g.:
-#   cmake -DCMAKE_CXX_COMPILER=mpicxx -DCMAKE_C_COMPILER=mpicc ..
+# as MPICXX/MPICC in env.sh - except for TRACTOR_TARGET=core, which has no MPI and
+# takes the plain compilers (CXX/CC in env.sh). E.g.:
+#   cmake -DCMAKE_CXX_COMPILER=mpicxx -DCMAKE_C_COMPILER=mpicc -DTRACTOR_TARGET=mpich5 ..
+#   cmake -DCMAKE_CXX_COMPILER=icpx -DCMAKE_C_COMPILER=icx -DTRACTOR_TARGET=core ..
 #
 cmake_minimum_required(VERSION 3.16...4.4)
 # The compiler test must not link: with an MPI wrapper as compiler the link fails when libmpi and libfabric do not match
@@ -85,6 +87,8 @@ else()
 endif()
 if(TRACTOR_TARGET STREQUAL "class_layers")
   message(STATUS "tractor: class_layers: the event-class shims, no MPI library or libfabric check")
+elseif(TRACTOR_TARGET STREQUAL "core")
+  message(STATUS "tractor: core: no MPI, no MPI library or libfabric check")
 elseif(TRACTOR_TARGET STREQUAL "transport_layers")
   if(TRACTOR_NM_EXE AND TRACTOR_OFI_LIBRARY)
     execute_process(COMMAND ${TRACTOR_NM_EXE} -D --defined-only ${TRACTOR_OFI_LIBRARY}
@@ -171,7 +175,16 @@ string(TIMESTAMP TRACTOR_BUILD_DATE "%Y-%m-%d %H:%M:%S")
 #    headers can't be produced at all.
 # ---------------------------------------------------------------------------
 find_package(Perl REQUIRED)
-find_package(MPI REQUIRED)
+if(TRACTOR_TARGET STREQUAL "core")
+  # the core has no MPI: the plain compilers (an MPI wrapper would link libmpi into it, one core serves every MPI)
+  get_filename_component(_cxx_name "${CMAKE_CXX_COMPILER}" NAME)
+  if(_cxx_name MATCHES "^mpi")
+    message(FATAL_ERROR "tractor: TRACTOR_TARGET=core is configured with the plain compilers (e.g. -DCMAKE_CXX_COMPILER=icpx "
+      "-DCMAKE_C_COMPILER=icx), not the MPI wrapper ${CMAKE_CXX_COMPILER}")
+  endif()
+else()
+  find_package(MPI REQUIRED)
+endif()
 message(STATUS "tractor: using Perl ${PERL_VERSION_STRING} (${PERL_EXECUTABLE})")
 
 # ---------------------------------------------------------------------------
@@ -204,22 +217,22 @@ message(STATUS "tractor: COMPILER=${TRACTOR_COMPILER} (CXX compiler id: ${CMAKE_
 #    just an alias that normalizes to mpich4 - same MPICH-family struct layout).
 # ---------------------------------------------------------------------------
 set(TRACTOR_TARGET "auto" CACHE STRING
-  "MPI flavor: auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers|class_layers. \
+  "MPI flavor: auto|core|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers|class_layers. \
 'auto' detects the vendor/version from CMAKE_CXX_COMPILER; any other value is used \
 directly and skips probing.")
-set_property(CACHE TRACTOR_TARGET PROPERTY STRINGS auto impi mpich3 mpich4 mpich5 mvapich2 mvapich4 openmpi cray transport_layers class_layers)
+set_property(CACHE TRACTOR_TARGET PROPERTY STRINGS auto core impi mpich3 mpich4 mpich5 mvapich2 mvapich4 openmpi cray transport_layers class_layers)
 string(TOLOWER "${TRACTOR_TARGET}" _tractor_target_lower)
 
 if(_tractor_target_lower STREQUAL "cray")
   set(_tractor_target_lower mpich4) # Cray MPICH builds like stock MPICH 4.x
-  set(TRACTOR_TARGET mpich4 CACHE STRING "MPI flavor: auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers|class_layers" FORCE)
+  set(TRACTOR_TARGET mpich4 CACHE STRING "MPI flavor: auto|core|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers|class_layers" FORCE)
 endif()
 
-if(NOT _tractor_target_lower MATCHES "^(auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|transport_layers|class_layers)$")
-  message(FATAL_ERROR "tractor: invalid TRACTOR_TARGET='${TRACTOR_TARGET}' (expected auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers|class_layers)")
+if(NOT _tractor_target_lower MATCHES "^(auto|core|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|transport_layers|class_layers)$")
+  message(FATAL_ERROR "tractor: invalid TRACTOR_TARGET='${TRACTOR_TARGET}' (expected auto|core|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers|class_layers)")
 endif()
 
-if(NOT _tractor_target_lower MATCHES "^(auto|transport_layers|class_layers)$")
+if(NOT _tractor_target_lower MATCHES "^(auto|core|transport_layers|class_layers)$")
   # derive an informational vendor name for the status message below - no probing needed
   if(_tractor_target_lower MATCHES "^mpich")
     set(TRACTOR_MPI_VENDOR mpich CACHE STRING "MPI vendor (from explicit TRACTOR_TARGET)" FORCE)
@@ -332,7 +345,7 @@ if(_tractor_target_lower STREQUAL "auto")
 
   set(TRACTOR_MPI_VENDOR  ${_mpi_vendor}  CACHE STRING "detected MPI vendor (mpich|mvapich|openmpi|impi|cray)" FORCE)
   set(TRACTOR_MPI_VERSION "${_mpi_version}" CACHE STRING "detected MPI version" FORCE)
-  set(TRACTOR_TARGET ${_tractor_target} CACHE STRING "MPI flavor: auto|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers|class_layers" FORCE)
+  set(TRACTOR_TARGET ${_tractor_target} CACHE STRING "MPI flavor: auto|core|impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi|cray|transport_layers|class_layers" FORCE)
 endif()
 message(STATUS "tractor: MPI vendor=${TRACTOR_MPI_VENDOR} version=${TRACTOR_MPI_VERSION} -> TARGET=${TRACTOR_TARGET}")
 
@@ -385,11 +398,8 @@ set(BUF  OFF   CACHE BOOL   "extra MPI buffer fields (MPIBUFFERS)")
 set(V2P  OFF   CACHE BOOL   "virtual->physical address resolution (VIRT2PHYS)")
 set(HWC  "off" CACHE STRING "hardware counters tag: off|RDPMC")
 
-set(TRANSPORT "off" CACHE STRING
-  "transport-API interception: off|on|PSM2|VERBS|PSM3|UCX|OFI. 'on' and the legacy PSM2/VERBS/PSM3/UCX/OFI \
-values embed one layer's interception into the core lib; for the standalone psm2+psm3+ucx+ofi shim \
-.so build use -DTRACTOR_TARGET=transport_layers instead")
-set_property(CACHE TRANSPORT PROPERTY STRINGS off on PSM2 VERBS PSM3 UCX OFI)
+# (the former TRANSPORT switch is gone: transport records are always supported by the core, the wrappers are the
+# transport shims, TRACTOR_TARGET=transport_layers; TARGET=mvapich2's MPI layer has its verbs/smpi/psm2 layers)
 
 set(OMPT       ON  CACHE BOOL "OpenMP interception")
 set(PTPD_BUILD ON  CACHE BOOL "build the ptpd PTP-daemon binary")
@@ -411,7 +421,7 @@ set(BUILD_TRACTOR_ENGINEERING_VERSION "auto" CACHE STRING
 set_property(CACHE BUILD_TRACTOR_ENGINEERING_VERSION PROPERTY STRINGS auto off on)
 string(TOLOWER "${BUILD_TRACTOR_ENGINEERING_VERSION}" _eng_lower)
 if(_eng_lower STREQUAL "auto")
-  if(TRACTOR_TARGET MATCHES "^(transport|class)_layers$")
+  if(TRACTOR_TARGET MATCHES "^(transport_layers|class_layers|core)$")
     message(STATUS "tractor: BUILD_TRACTOR_ENGINEERING_VERSION=auto -> 'off' (not applicable to TARGET=${TRACTOR_TARGET})")
     set(_eng_lower off)
   else()
@@ -435,7 +445,6 @@ endif()
 
 string(TOLOWER "${MEM}" _mem_lower)
 string(TOLOWER "${HWC}" _hwc_lower)
-string(TOUPPER "${TRANSPORT}" _transport_upper)
 
 # ---------------------------------------------------------------------------
 # Third-party dependencies
@@ -482,10 +491,36 @@ set(TRACTOR_CONTROLS
   _USE_SIGNALS_
   _MPI_MESSAGE_DEFINED_ _NO_C_VR
 )
+# TRACTOR_TARGET=core: the core library (no MPI); an MPI target: its MPI layer (reaches the core through t_shared only)
 set(TRACTOR_SOURCES
-  t_base_event.cpp tractor.cpp t_stat.cpp t_comm.cpp elf_parser.cpp t_topo.cpp t_globals.cpp t_signals.cpp
-  ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp
+  t_base_event.cpp tractor.cpp t_stat.cpp elf_parser.cpp t_topo.cpp t_globals.cpp t_signals.cpp t_transport.cpp
 )
+set(TRACTOR_MPI_SOURCES ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp t_comm.cpp t_mpi.cpp)
+set(_is_core OFF)
+set(_is_mpi OFF)
+if(TRACTOR_TARGET STREQUAL "core")
+  set(_is_core ON)
+elseif(NOT TRACTOR_TARGET MATCHES "^(transport_layers|class_layers)$")
+  set(_is_mpi ON)
+endif()
+if(_is_core OR _is_mpi)
+  # the event classes other than OMPT come from TRACTOR_TARGET=class_layers; the core may have OMPT built in
+  set(GPU OFF)
+  set(LLAMA OFF)
+  set(CUPTI OFF)
+  list(APPEND TRACTOR_CONTROLS _TRANSPORT_PROFILE_)
+endif()
+if(_is_mpi)
+  set(OMPT OFF)
+  list(APPEND TRACTOR_CONTROLS _T_MPI_LAYER_)
+  if(NOT _hwc_lower STREQUAL "off" OR NOT _mem_lower STREQUAL "off")
+    message(STATUS "tractor: HWC/MEM are switches of TRACTOR_TARGET=core, ignored for TRACTOR_TARGET=${TRACTOR_TARGET}")
+    set(_hwc_lower off)
+    set(_mem_lower off)
+    set(HWC off)
+    set(MEM off)
+  endif()
+endif()
 set(TRACTOR_LIBS ZLIB::ZLIB)
 set(TRACTOR_EXTRANAME "")
 set(_print_extended_stuff off)
@@ -620,39 +655,6 @@ else()
     list(APPEND _transport_func_layers -l verbs -l smpi -l psm2)
   endif()
 
-  # TRANSPORT: 'on' is generic multi-layer core support; PSM2/VERBS/PSM3/UCX/OFI
-  # are the legacy single-layer-only core-embedded builds
-  if(_transport_upper STREQUAL "ON")
-    list(APPEND TRACTOR_CONTROLS _TRANSPORT_PROFILE_)
-    list(APPEND TRACTOR_SOURCES t_transport.cpp)
-  elseif(_transport_upper STREQUAL "PSM2")
-    list(APPEND TRACTOR_CONTROLS _PSM2_PROFILE_)
-    list(APPEND TRACTOR_SOURCES t_transport.cpp)
-    list(APPEND _transport_func_layers -l psm2)
-    set(TRACTOR_EXTRANAME "${TRACTOR_EXTRANAME}.psm2")
-  elseif(_transport_upper STREQUAL "VERBS")
-    list(APPEND TRACTOR_CONTROLS _VERBS_PROFILE_)
-    list(APPEND TRACTOR_SOURCES t_transport.cpp)
-    list(APPEND _transport_func_layers -l verbs -l smpi)
-    set(TRACTOR_EXTRANAME "${TRACTOR_EXTRANAME}.verbs")
-  elseif(_transport_upper STREQUAL "PSM3")
-    list(APPEND TRACTOR_CONTROLS _PSM3_PROFILE_)
-    list(APPEND TRACTOR_SOURCES t_transport.cpp)
-    list(APPEND _transport_func_layers -l psm3)
-    set(TRACTOR_EXTRANAME "${TRACTOR_EXTRANAME}.psm3")
-  elseif(_transport_upper STREQUAL "UCX")
-    list(APPEND TRACTOR_CONTROLS _UCX_PROFILE_)
-    list(APPEND TRACTOR_SOURCES t_transport.cpp)
-    list(APPEND _transport_func_layers -l ucx)
-    set(TRACTOR_EXTRANAME "${TRACTOR_EXTRANAME}.ucx")
-  elseif(_transport_upper STREQUAL "OFI")
-    list(APPEND TRACTOR_CONTROLS _OFI_PROFILE_)
-    list(APPEND TRACTOR_SOURCES t_transport.cpp)
-    list(APPEND _transport_func_layers -l ofi)
-    set(TRACTOR_EXTRANAME "${TRACTOR_EXTRANAME}.ofi")
-  elseif(NOT _transport_upper STREQUAL "OFF")
-    message(FATAL_ERROR "tractor: invalid TRANSPORT='${TRANSPORT}' (expected off|on|PSM2|VERBS|PSM3|UCX|OFI)")
-  endif()
 endif()
 
 # cpp_input / TARGET-specific CONTROLS
@@ -678,7 +680,7 @@ elseif(TRACTOR_TARGET STREQUAL "mpich5")
   set(_maxmpi 5)
 elseif(TRACTOR_TARGET STREQUAL "mvapich2")
   list(APPEND _cpp_input -D_MPICH_=3 -D_MVAPICH_)
-  list(APPEND TRACTOR_CONTROLS _MPICH_=3 _MVAPICH_ _VERBS_PROFILE_)
+  list(APPEND TRACTOR_CONTROLS _MPICH_=3 _MVAPICH_)
 elseif(TRACTOR_TARGET STREQUAL "mvapich4")
   list(APPEND _cpp_input -D_MPICH_=4 -D_MVAPICH_)
   list(APPEND TRACTOR_CONTROLS _MPICH_=4 _MVAPICH_)
@@ -695,12 +697,15 @@ endif()
 # matching entries. Compile-only: C++ rejects the pointer assignment when the prototype differs or is missing.
 # Each entry: <cache var>|<cpp define when the snippet compiles (or, with !, when it does not)>|<snippet>
 include(CheckCXXSourceCompiles)
-set(_tractor_proto_probes
+set(_tractor_proto_probes)
+if(NOT _is_core) # mpi.h only
+list(APPEND _tractor_proto_probes
   "TRACTOR_MPI41_REQUEST_NONCONST|_MPI41_REQUEST_NONCONST_|int (*p)(int, MPI_Request*, int*, MPI_Status*) = MPI_Request_get_status_all"
   "TRACTOR_MPI41_STATUS_NONCONST|_MPI41_STATUS_NONCONST_|int (*p)(MPI_Status*, int*) = MPI_Status_get_tag"
   "TRACTOR_MPI4_PSEND_INIT_NONCONST|_MPI4_PSEND_INIT_NONCONST_|int (*p)(void*, int, MPI_Count, MPI_Datatype, int, int, MPI_Comm, MPI_Info, MPI_Request*) = MPI_Psend_init"
   "TRACTOR_MPI4_PREADY_LIST_NONCONST|_MPI4_PREADY_LIST_NONCONST_|int (*p)(int, int*, MPI_Request) = MPI_Pready_list"
   "TRACTOR_MPI4_HAVE_STATUS_SET_ELEMENTS_C|!_MPI4_NO_STATUS_SET_ELEMENTS_C_|int (*p)(MPI_Status*, MPI_Datatype, MPI_Count) = MPI_Status_set_elements_c")
+endif()
 set(CMAKE_REQUIRED_QUIET ON)
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 set(_tractor_proto_defs)
@@ -1007,7 +1012,28 @@ else()
   set(TRACTOR_OPT -O3)
 endif()
 
-set(TRACTOR_LIB_SUFFIX "${TRACTOR_DBG_SUFFIX}.${TRACTOR_TARGET}${TRACTOR_EXTRANAME}")
+# MPIBUFFERS/VIRT2PHYS name the MPI layer (VIRT2PHYS the core too), HWC/MEM the core
+set(TRACTOR_MPI_EXTRANAME "")
+set(TRACTOR_CORE_EXTRANAME "")
+if(BUF)
+  set(TRACTOR_MPI_EXTRANAME "${TRACTOR_MPI_EXTRANAME}.mbs")
+endif()
+if(V2P)
+  set(TRACTOR_MPI_EXTRANAME "${TRACTOR_MPI_EXTRANAME}.v2p")
+  set(TRACTOR_CORE_EXTRANAME "${TRACTOR_CORE_EXTRANAME}.v2p")
+endif()
+if(NOT _mem_lower STREQUAL "off")
+  set(TRACTOR_CORE_EXTRANAME "${TRACTOR_CORE_EXTRANAME}.mem${MEM}")
+endif()
+if(NOT _hwc_lower STREQUAL "off")
+  set(TRACTOR_CORE_EXTRANAME "${TRACTOR_CORE_EXTRANAME}.${HWC}")
+endif()
+set(_eng_suffix "")
+if(_eng_lower STREQUAL "on")
+  set(_eng_suffix ".eng")
+endif()
+# the MPI layer as the trace's "Modules" remark names it (t_mpi.cpp): .<mpi>[.mbs][.v2p][.eng]
+set(TRACTOR_LIB_SUFFIX "${TRACTOR_DBG_SUFFIX}.${TRACTOR_TARGET}${TRACTOR_MPI_EXTRANAME}${_eng_suffix}")
 set(TRACTOR_BIN_SUFFIX "${TRACTOR_DBG_SUFFIX}.${TRACTOR_TARGET}")
 # transport shims are TARGET-independent (one build works for every MPI, see Makefile) - no TARGET in the suffix
 set(TRANSPORTLIBSUFFIX "${TRACTOR_DBG_SUFFIX}${TRACTOR_EXTRANAME}")
@@ -1103,10 +1129,14 @@ add_custom_command(
   DEPENDS mpi_layer.cpp.in mpi_layer.cpp.in.end mpi_layer.pl
           ${CMAKE_CURRENT_BINARY_DIR}/mpi_func_ids_through.h
   WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-  COMMENT "tractor: generating mpi_layer.cpp (TARGET=${TRACTOR_TARGET}, TRANSPORT=${TRANSPORT})"
+  COMMENT "tractor: generating mpi_layer.cpp (TARGET=${TRACTOR_TARGET})"
   VERBATIM)
 
-add_custom_target(tractor_codegen DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp ${_transport_shim_outputs} ${_class_shim_outputs})
+if(_is_core) # the function id tables only
+  add_custom_target(tractor_codegen DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/mpi_func_ids_through.h)
+else()
+  add_custom_target(tractor_codegen DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp ${_transport_shim_outputs} ${_class_shim_outputs})
+endif()
 
 # ---------------------------------------------------------------------------
 # Targets
@@ -1267,34 +1297,69 @@ elseif(TRACTOR_TARGET STREQUAL "transport_layers")
         WORKING_DIRECTORY \"${_transport_install_dir}\")
     ")
   endforeach()
-else()
+elseif(_is_core)
+  # libtractor[_dbg].core[.mem<x>][.<hwc>].so: SONAME libtractor.core.so.<major> for every variant, so that an MPI layer
+  # (DT_NEEDED) takes whichever variant is preloaded before it
   list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../cmake)
   find_package(hwloc REQUIRED)
-  add_library(tractor SHARED ${TRACTOR_SOURCES})
-  add_dependencies(tractor tractor_codegen)
+  add_library(tractor_core SHARED ${TRACTOR_SOURCES})
+  add_dependencies(tractor_core tractor_codegen)
+  # the file lib<name>.so.<major>.<minor> and its links .so.<major>, .so (with NO_SONAME CMake makes only lib<name>.so)
+  set(_core_name "tractor${TRACTOR_DBG_SUFFIX}.core${TRACTOR_CORE_EXTRANAME}")
+  set(_core_file "lib${_core_name}.so.${TRACTOR_MAJOR}.${TRACTOR_MINOR}")
+  set_target_properties(tractor_core PROPERTIES
+    OUTPUT_NAME "${_core_name}"
+    SUFFIX ".so.${TRACTOR_MAJOR}.${TRACTOR_MINOR}"
+    NO_SONAME ON
+    POSITION_INDEPENDENT_CODE ON)
+  add_custom_command(TARGET tractor_core POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E create_symlink ${_core_file} lib${_core_name}.so.${TRACTOR_MAJOR}
+    COMMAND ${CMAKE_COMMAND} -E create_symlink lib${_core_name}.so.${TRACTOR_MAJOR} lib${_core_name}.so
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    VERBATIM)
+  target_compile_definitions(tractor_core PRIVATE ${TRACTOR_CONTROLS})
+  target_compile_options(tractor_core PRIVATE ${TRACTOR_OPT} ${TRACTOR_CXX_MISC} ${TRACTOR_OMP_FLAG})
+  target_link_options(tractor_core PRIVATE ${TRACTOR_OMP_FLAG} -Wl,-soname,libtractor.core.so.${TRACTOR_MAJOR})
+  target_include_directories(tractor_core PRIVATE . ${_common_dir} ${hwloc_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(tractor_core PRIVATE ${TRACTOR_LIBS} hwloc::hwloc)
+  set(_core_install_dir ${CMAKE_CURRENT_SOURCE_DIR}/../../../lib/${TRACTOR_COMPILER})
+  install(TARGETS tractor_core LIBRARY DESTINATION ${_core_install_dir})
+  tractor_install_shim_links(${_core_install_dir} ${_core_name})
+else()
+  # libtractor[_dbg].<mpi>[.mbs][.v2p][.eng].so: needs the core, linked against a stub with the core's SONAME
+  # (DT_NEEDED libtractor.core.so.<major>; the core's symbols are resolved at load time), found next to it ($ORIGIN)
+  # or preloaded before it
+  set(_core_soname libtractor.core.so.${TRACTOR_MAJOR})
+  set(_core_stub_dir ${CMAKE_CURRENT_BINARY_DIR}/core_stub)
+  file(WRITE ${_core_stub_dir}/t_core_stub.cpp "extern \"C\" void t_core_stub(void) {}\n")
+  add_custom_command(
+    OUTPUT ${_core_stub_dir}/${_core_soname}
+    COMMAND ${TRACTOR_PLAIN_CXX} -shared -fPIC -Wl,-soname,${_core_soname} -o ${_core_stub_dir}/${_core_soname} ${_core_stub_dir}/t_core_stub.cpp
+    COMMENT "tractor: the core stub (${_core_soname}) the MPI layer is linked against"
+    VERBATIM)
+  add_custom_target(tractor_core_stub DEPENDS ${_core_stub_dir}/${_core_soname})
+  add_library(tractor SHARED ${TRACTOR_MPI_SOURCES})
+  add_dependencies(tractor tractor_codegen tractor_core_stub)
   set_target_properties(tractor PROPERTIES
-    OUTPUT_NAME "tractor${TRACTOR_LIB_SUFFIX}"
+    OUTPUT_NAME "tractor${TRACTOR_DBG_SUFFIX}.${TRACTOR_TARGET}${TRACTOR_MPI_EXTRANAME}${_eng_suffix}"
     VERSION ${TRACTOR_MAJOR}.${TRACTOR_MINOR}
     SOVERSION ${TRACTOR_MAJOR}
+    SKIP_BUILD_RPATH ON
     POSITION_INDEPENDENT_CODE ON)
   target_compile_definitions(tractor PRIVATE ${TRACTOR_CONTROLS})
-  target_compile_options(tractor PRIVATE ${TRACTOR_OPT} ${TRACTOR_CXX_MISC} ${TRACTOR_OMP_FLAG})
-  target_link_options(tractor PRIVATE ${TRACTOR_OMP_FLAG})
-  target_include_directories(tractor PRIVATE . ${_common_dir} ${hwloc_INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR} ${TRACTOR_GPU_INCLUDE_DIRS} ${TRACTOR_LLAMA_INCLUDE_DIRS})
-  target_link_libraries(tractor PRIVATE ${TRACTOR_LIBS} hwloc::hwloc)
-  if(NOT _transport_upper STREQUAL "OFF")
-    target_include_directories(tractor PRIVATE
-      ${VERBSPATH}/include ${TRACTOR_PSM2_INCLUDE_DIR}
-      ${CMAKE_CURRENT_SOURCE_DIR}/../../contrib/psm3/include ${TRACTOR_UCX_INCLUDE_DIR} ${TRACTOR_OFI_INCLUDE_DIR})
-  endif()
+  target_compile_options(tractor PRIVATE ${TRACTOR_OPT} ${TRACTOR_CXX_MISC})
+  target_include_directories(tractor PRIVATE . ${_common_dir} ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}
+    ${VERBSPATH}/include ${TRACTOR_PSM2_INCLUDE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../contrib/psm3/include ${TRACTOR_UCX_INCLUDE_DIR} ${TRACTOR_OFI_INCLUDE_DIR})
+  target_link_options(tractor PRIVATE -Wl,--no-as-needed -L${_core_stub_dir} -l:${_core_soname} "-Wl,-rpath,\$ORIGIN")
+  target_link_libraries(tractor PRIVATE ZLIB::ZLIB)
 
   if(PTPD_BUILD)
     add_executable(ptpd src-ptpd.cpp t_globals.cpp)
     add_dependencies(ptpd tractor_codegen)
     set_target_properties(ptpd PROPERTIES OUTPUT_NAME "ptpd${TRACTOR_BIN_SUFFIX}")
     target_compile_definitions(ptpd PRIVATE ${TRACTOR_CONTROLS})
-    target_compile_options(ptpd PRIVATE ${TRACTOR_OPT} ${TRACTOR_CXX_MISC} ${TRACTOR_OMP_FLAG})
-    target_link_options(ptpd PRIVATE ${TRACTOR_OMP_FLAG})
+    target_compile_options(ptpd PRIVATE ${TRACTOR_OPT} ${TRACTOR_CXX_MISC})
     target_include_directories(ptpd PRIVATE . ${_common_dir})
     target_link_libraries(ptpd PRIVATE ZLIB::ZLIB)
   endif()

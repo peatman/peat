@@ -7,8 +7,9 @@
 #   can record, see ../../../common/mpi_func.inc) must show up in that test's trace. An engineering library (built for a
 #   patched MPI) must record MPI-internal functions in coll, a stock one none at all.
 #
-#   ./smoke.sh <libtractor.so>[:<shim.so>...] [ranks] [iterations] [tests]
+#   ./smoke.sh [<libtractor.core.so>:]<libtractor.<mpi>.so>[:<shim.so>...] [ranks] [iterations] [tests]
 #   e.g. ./smoke.sh $PEAT/mpi.tool/lib/gnu/libtractor.mpich4.so 4 3 "p2p coll comm rma"
+#   (the MPI layer loads the core next to it; a core variant, e.g. libtractor_dbg.core.so, goes before it)
 # The first argument is what is preloaded: the core library, optionally followed by shims (transport, event classes).
 #
 # Expects mat and ctt in <repo>/mpi.tool/bin (as installed by their Makefiles).
@@ -35,7 +36,7 @@
 
 set -u
 
-lib=${1:?usage: smoke.sh <libtractor.so>[:<shim.so>...] [ranks] [iterations] [tests]}
+lib=${1:?usage: smoke.sh [<libtractor.core.so>:]<libtractor.<mpi>.so>[:<shim.so>...] [ranks] [iterations] [tests]}
 ranks=${2:-4}   # coll needs >2 ranks (neighbour collectives on a 2-rank ring give wrong values)
 iterations=${3:-3}
 # fio is left out by default: its split-collective/nonblocking collective I/O checks fail intermittently
@@ -75,10 +76,20 @@ mkdir -p "$work"
 sed -nE 's/^\{ [A-Z0-9_]+_ID COMMA "[^"]*" COMMA "(MPI_[A-Za-z0-9_]+)".*/\1/p' "$here/../../../common/mpi_func.inc" | sort -u > "$traceable"
 [ -s "$traceable" ] || { echo "no function names from mpi_func.inc"; exit 2; }
 
+# true if any library of the preload list is an engineering one (by name, or by an exported MPIC_Send wrapper)
+is_engineering() {
+    local l
+    for l in "${libs[@]}" ; do
+        [[ $(basename "$l") == *.eng.so* ]] && return 0
+        nm -D --defined-only "$l" 2>/dev/null | grep -qw MPIC_Send && return 0
+    done
+    return 1
+}
+
 if [ -n "${SMOKE_ENGINEERING:-}" ]; then
     engineering=$SMOKE_ENGINEERING
-elif [[ $(basename "$core") == *.eng.so* ]] || nm -D --defined-only "$core" 2>/dev/null | grep -qw MPIC_Send; then
-    engineering=1
+elif is_engineering ; then
+    engineering=1 # any library of the list: the MPI layer libtractor.<mpi>.eng.so, or a core preloaded before it
 else
     engineering=0
 fi

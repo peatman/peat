@@ -4,10 +4,21 @@
 
 ## 1. What gets built
 
-`src/Makefile` produces:
-- `libtractor<suffix>.so` - the interception library, installed to `mpi.tool/lib/<COMPILER>/` (`gnu`, `intel`, `nvc` or `clang`)
-- `ptpd<suffix>` - the PTP daemon binary, installed to `mpi.tool/bin/<COMPILER>/`
-- optionally `libtractor_transport_{psm2,psm3,ucx,ofi}<suffix>.so` shims (`TARGET=transport_layers`)
+`src/Makefile` (and CMake) produce, installed to `mpi.tool/lib/<COMPILER>/` (`gnu`, `intel`, `nvc` or `clang`):
+- `libtractor[_dbg].core[.mem<x>][.<hwc>].so` (`TARGET=core`) - the core: records, nesting, counters, the trace writer. It has
+  no MPI and is built with the plain compilers: one core serves every MPI. All its variants have the SONAME
+  `libtractor.core.so.0`.
+- `libtractor.<mpi>[.mbs][.v2p][.eng].so` (`TARGET=impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi5`) - the MPI layer of
+  that MPI (the MPI wrappers, communicator tracking), and `ptpd.<mpi>`, the PTP daemon, installed to `mpi.tool/bin/<COMPILER>/`.
+  It reaches the core through `t_shared` only and needs it: `DT_NEEDED libtractor.core.so.0`, found next to it (RUNPATH
+  `$ORIGIN`), so preloading the MPI layer alone loads the core; a core variant (e.g. `libtractor_dbg.core.so`) preloaded
+  before it is taken instead.
+- `libtractor_transport_{psm2,psm3,ucx,ofi}.so` shims (`TARGET=transport_layers`)
+- `libtractor_{ompt,acc,opencl,levelzero,cuda,llama}.so` event-class shims (`TARGET=class_layers`), each one when it can be built
+
+A traced MPI program preloads the MPI layer and the shims it wants, e.g.
+`LD_PRELOAD=libtractor.mpich5.eng.so:libtractor_transport_ofi.so:libtractor_ompt.so`; a program without MPI (a llama.cpp
+application, ...) preloads the core and the shims: `LD_PRELOAD=libtractor.core.so:libtractor_llama.so`.
 
 ## 2. Platform & toolchain prerequisites
 
@@ -35,7 +46,7 @@
 |---|---|---|
 | **zlib** (`-lz`, `zlib.h`) | trace compression | system `zlib1g-dev`/`zlib-devel`, or build [../contrib/zlib](../contrib/zlib) yourself |
 | **hwloc** (headers + `libhwloc`) | node/CPU topology capture | `Makefile` references `$(HWLOC_PATH)/include` and `$(HWLOC_PATH)/lib` 
-| **An MPI implementation** | tractor links against `MPICC`/`MPICXX`/`MPIFC` | see section 5 below |
+| **An MPI implementation** | the MPI layers are built with `MPICC`/`MPICXX`/`MPIFC` (the core with `CC`/`CXX`) | see section 5 below |
 
 `../contrib/libfabric` and `../contrib/psm3` in this repo are vendored **sources for building those libraries yourself**, not prebuilt - see section 4.
 
@@ -43,15 +54,16 @@
 
 | Feature flag | Extra dependency | Notes |
 |---|---|---|
-| `PARSE_GPU=on` | OpenCL (`CL/cl.h`, `-lOpenCL`), Level Zero (`level_zero/ze_api.h`, `-lze_loader`), OpenACC (`acc_prof.h`) | GPU call interception; each API is only built when it is found, see section 8 |
-| `HWCOUNTERS=RDPMC` | Linux kernel headers (`linux/perf_event.h`) | no PAPI needed - uses `perf_event_open` directly |
-| `TRANSPORT=on` / `TARGET=transport_layers` | libfabric, PSM2, PSM3, UCX headers (+libs for the standalone shims) | PSM2/PSM3/UCX/OFI calls are `dlsym(RTLD_NEXT,...)`-intercepted, so only headers are strictly needed to build; the real `.so` must be on `LD_LIBRARY_PATH` at run time. Build [../contrib/libfabric](../contrib/libfabric) yourself (or use system libfabric); headers for [../contrib/psm3](../contrib/psm3) are bundled but the actual PSM3/UCX/PSM2 runtime libs are not - install separately. |
+| `TARGET=class_layers` | OpenCL (`CL/cl.h`, `-lOpenCL`), Level Zero (`level_zero/ze_api.h`, `-lze_loader`), OpenACC (`acc_prof.h`), CUDA/CUPTI, llama.cpp headers | the event-class shims; each one is only built when its API is found, see section 8 |
+| `HWCOUNTERS=RDPMC` (core) | Linux kernel headers (`linux/perf_event.h`) | no PAPI needed - uses `perf_event_open` directly |
+| `TARGET=transport_layers` | libfabric, PSM2, PSM3, UCX headers | PSM2/PSM3/UCX/OFI calls are `dlsym(RTLD_NEXT,...)`-intercepted, so only headers are strictly needed to build; the real `.so` must be on `LD_LIBRARY_PATH` at run time. Build [../contrib/libfabric](../contrib/libfabric) yourself (or use system libfabric); headers for [../contrib/psm3](../contrib/psm3) are bundled but the actual PSM3/UCX/PSM2 runtime libs are not - install separately. |
 | `TARGET=mvapich2` (verbs/smpi) | `libibverbs`-dev | `VERBSPATH` defaults to `/usr` in `Build.sh`; install e.g. `libibverbs-dev`/`rdma-core-devel` |
 
 ## 5. MPI implementation - build first
 
-`tractor` is built *against* one MPI at a time
-(`TARGET=impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi`). Build/install the MPI(s) you need before building tractor:
+Each MPI layer is built *against* one MPI
+(`TARGET=impi|mpich3|mpich4|mpich5|mvapich2|mvapich4|openmpi5`; CMake calls the Open MPI one `openmpi`); the core needs none.
+Build/install the MPI(s) you need before building their MPI layers:
 
 | MPI | Build script | Notes |
 |---|---|---|
@@ -140,10 +152,11 @@ export HWLOC_PATH=/usr                         # or your hwloc prefix
 compiler=gcc COMPILER=gnu ./Build.sh mpich:4.3.2g-mt-ofi mpich4 off off off off off off
 ```
 
-Output: `mpi.tool/lib/<COMPILER>/libtractor<suffix>.so` and `mpi.tool/bin/<COMPILER>/ptpd<suffix>`.
+Output: `mpi.tool/lib/<COMPILER>/libtractor*.core*.so`, `libtractor.<mpi>*.so`, the shims, and `mpi.tool/bin/<COMPILER>/ptpd.<mpi>`.
 
-The `BuildAll*.sh` scripts are the same list of builds for each toolchain (GNU `g` MPIs; the Intel one uses the `x` MPIs);
-a `.gpu` in the file name means `PARSE_GPU=on`, `.eng` the engineering MPI, `_dbg` a `DIAG=on` build.
+The `BuildAll*.sh` scripts are the same list of builds for each toolchain (GNU `g` MPIs; the Intel one uses the `x` MPIs): the
+core (also `DIAG=on`: `libtractor_dbg.core.so`), the shims, and one MPI layer per MPI; `.eng` in a name means the engineering
+MPI. `DIAG` is a switch of the core: the MPI layers are release builds (a DIAG MPI layer needs a DIAG core).
 `Build.sh` runs several `make` invocations that all fail the same way when something is wrong, check `Build.<COMPILER>.log`.
 
 ## 8. Key Makefile switches
@@ -152,19 +165,18 @@ Pass as `make` vars, or positional args to `Build.sh`.
 
 | Switch | Values | Meaning |
 |---|---|---|
-| `TARGET` | `impi*, mpich3, mpich4, mpich5, mvapich2, mvapich4, openmpi, transport_layers` | MPI flavor |
+| `TARGET` | `core, impi*, mpich3, mpich4, mpich5, mvapich2, mvapich4, openmpi5, transport_layers, class_layers` | what is built, see section 1 |
 | `COMPILER` | `gnu*, intel, nvc, clang` | toolchain (the directory name under `lib/` and `bin/`). `nvc` and `clang` take the GCC options; with `nvc` the `.c` sources are built with `nvc++` (done by the Makefile) |
-| `TRANSPORT` | `on, off*` (mvapich2 also: `PSM2/PSM3/VERBS/UCX/OFI`, legacy) | transport-API interception |
 | `PTPD` | `on*, off` | build PTP daemon support |
-| `OMPT` | `on*, off` | OpenMP interception |
+| `OMPT` | `on*, off` | OpenMP interception built into the core (`TARGET=core`; else the OMPT shim) |
 | `DIAG` | `off*, on` | debug build (`-O0`, `_dbg` suffix) |
-| `PARSE_GPU` | `off*, on` | GPU call interception: OpenCL, Level Zero and OpenACC (profiling interface), each only when found - see "GPU APIs" below |
+| `PARSE_GPU` | `off*, on` | GPU call interception: OpenCL, Level Zero and OpenACC (profiling interface), each only when found - see "GPU APIs" below; the shims of `TARGET=class_layers` (the core and the MPI layers have no GPU classes) |
 | `OCL_PARSE`, `LZE_PARSE`, `ACC_PARSE` | `auto*, on, off` | with `PARSE_GPU=on`: build OpenCL / Level Zero / OpenACC interception (`auto` when found, `on` = missing is an error) |
 | `LLAMA_PARSE`, `LLAMA_ROOT`, `LLAMA_DEPRECATED` | `auto*, on, off`; path (default: `contrib/llama.cpp` if checked out, else installed headers); `off*, on` | llama.cpp pipeline stage and ggml CPU kernel interception, part of the base build like OMPT: `auto` when llama.cpp's headers are found and have the wrappers' API (`t_llama_probe.cpp`), any compiler, no change of the library name - see README "llama.cpp pipeline profiling" |
 | `CUPTI_PARSE`, `CUDA_ROOT` | `auto` with `PARSE_GPU=on`, `off` otherwise; `on, off, auto`; path (default: searched) | CUDA (CUPTI) and cuBLAS interception, one of the GPU APIs (`.gpu` in the name): `auto` when the toolkit is found and its host headers compile with this compiler (all four compilers can), `on` = missing is an error - see README "CUDA profiling" |
 | `PARSE_COLT` | `off*, on` | collective-timeline engine ("engineering" build, needs patched MPI) |
-| `HWCOUNTERS` | `off*, RDPMC` | hardware counters via `perf_event_open` |
-| `MEMPROFILE` | `off*, ...` | allocation profiling |
+| `HWCOUNTERS` | `off*, RDPMC` | hardware counters via `perf_event_open` (`TARGET=core`) |
+| `MEMPROFILE` | `off*, ...` | allocation profiling (`TARGET=core`) |
 | `VIRT2PHYS` | `off*, on` | virtual->physical address resolution |
 
 Run `make install TARGET=... DIAG=on ...` directly from `src/` if you don't
@@ -175,7 +187,9 @@ want to go through `Build.sh`'s temp-directory copy dance.
 CMake detects the compiler family from `CMAKE_CXX_COMPILER_ID` (`GNU` - gnu, `Intel`/`IntelLLVM` - intel, `NVHPC`/`PGI` - nvc,
 `Clang` - clang) and installs to `lib/<family>`; `-DTRACTOR_COMPILER=gnu|intel|nvc|clang` overrides it. Select the toolchain with
 `compiler=<name>` before sourcing `env.sh` (e.g. `compiler=nvc:<CUDA version>`, `compiler=clang`) and pass the MPI wrappers
-(`-DCMAKE_C_COMPILER=$MPICC -DCMAKE_CXX_COMPILER=$MPICXX`); `env.sh` points the wrappers to the selected compiler.
+(`-DCMAKE_C_COMPILER=$MPICC -DCMAKE_CXX_COMPILER=$MPICXX`); `env.sh` points the wrappers to the selected compiler. The core
+(`-DTRACTOR_TARGET=core`) is configured with the plain compilers instead (`-DCMAKE_C_COMPILER=$CC -DCMAKE_CXX_COMPILER=$CXX`):
+an MPI wrapper would link `libmpi` into it, which the configuration refuses.
 
 ### GPU APIs
 
@@ -201,17 +215,17 @@ The engineering libfabric exports functions (`fi_close`, ...) that the stock one
 and an engineering `libmpi` references them as undefined symbols. Both `Makefile` and CMake read the editions with `nm` and
 stop with a "version mismatch" error when the MPI and `$OFIPATH` (system libfabric if unset) do not match. An MPI also counts as
 engineering when it defines the patched `mpi_internal_comm_create`. The check is skipped for an MPI that does not link
-libfabric (stock Open MPI, MVAPICH 2 verbs). `TARGET=transport_layers` needs the engineering libfabric (the shims redefine those
+libfabric (stock Open MPI, MVAPICH 2 verbs), and for the core (no MPI). `TARGET=transport_layers` needs the engineering libfabric (the shims redefine those
 functions). The CMake check runs before `find_package(MPI)`, which is why the CMake call has to use the MPI compiler wrappers
 (`-DCMAKE_C_COMPILER=$MPICC -DCMAKE_CXX_COMPILER=$MPICXX`, `Build-cmake.sh` does that).
 
 ## 9. Sanity check
 
-After building, verify with `ldd` that `libtractor*.so` resolves
-`libhwloc`/`libz`/MPI runtime, then smoke-test:
+After building, verify with `ldd` that `libtractor.core.so` resolves `libhwloc`/`libz` (and no MPI) and that
+`libtractor.<mpi>.so` resolves the MPI runtime and `libtractor.core.so.0`, then smoke-test:
 
 ```sh
-LD_PRELOAD=$PEAT_ROOT/mpi.tool/lib/<COMPILER>/libtractor<suffix>.so mpirun -n 2 ./your_mpi_app
+LD_PRELOAD=$PEAT_ROOT/mpi.tool/lib/<COMPILER>/libtractor.<mpi>[.eng].so mpirun -n 2 ./your_mpi_app
 ```
 
 The `com` file written by the library starts with `PEAT TRACTOR V<major>.<minor>. Build Date <date>(<compile date>) by <compiler>`
@@ -226,7 +240,7 @@ The `com` file written by the library starts with `PEAT TRACTOR V<major>.<minor>
   ...) vary with timing.
 - `tests/openacc/run.sh` - OpenACC under tractor with `gcc -fopenacc` (runs on the host), plus `acc_sim_test`, which raises the
   OpenACC device events itself. `tests/openacc/run_nvc.sh` builds `acc_test` with nvc (`NVC_COMPILER` selects the `compiler=` value, see the script for the default) and runs
-  it on the GPU. Both default to `lib/gnu/libtractor.mpich5.gpu.so` (`TRACTOR_LIB=<path>` selects another library; the OpenACC
-  support needs a `PARSE_GPU=on` build, `.gpu` in the name).
+  it on the GPU. Both default to `lib/gnu/libtractor.mpich5.eng.so` and the OpenACC shim `lib/gnu/libtractor_acc.so`
+  (`TRACTOR_LIB=<lib>[:<lib>...]` selects other libraries).
 
 See [README.md](README.md) sections 1-3 for the full runtime env-var reference.

@@ -1381,7 +1381,7 @@ while( <IN> ) {
   last if ($line =~/${transport_layer}_layer_starts_here/);
  }
   print "#if defined(_TRANSPORT_PROFILE_)\n" unless $is_shim;
-  print "#include \"t_transport.h\"\n";
+  print "#include \"t_transport.h\"\n#include \"t_transport_api.h\"\n";
   if ($is_shim) {
     $transport_reentrant_declared=0;
     # the shim records nothing unless the preloaded core library fits it: its t_shared (t_shim_state.h); a weak

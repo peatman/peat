@@ -39,13 +39,7 @@ $prototype {
     msl_event *t_event=NULL;
     const bool l_record=(counting_permission[fidc]>0) && !$skip_flag && !tractor_finished;
 
-#ifdef _HWCOUNTERS_ENABLED_
-    int num_hwcs=gt_info(num_hwcs);
-    long long l_hwcs[num_hwcs];
-#endif
-#ifdef _MEMPROFILE_STORE_
-    t_memory_event l_mem;
-#endif
+T_COUNTERS_DECL
 
     if(__builtin_expect(l_record,1)) {
         tsc_entry = peat_get_time_tid(&tid_in);
@@ -57,12 +51,7 @@ $prototype {
         t_event->gpu.num_arguments=0; /* the cuBLAS records are written in the GPU layout (CUDA group), with no arguments */
         t_event->gpu.num_out_arguments=0;
         t_event->gpu.num_extra_arguments=0;
-#ifdef _HWCOUNTERS_ENABLED_
-        gt_info(hwc).get_all_counters(l_hwcs);
-#endif
-#ifdef _MEMPROFILE_STORE_
-        gt_info(mprof).get_mem_status(&l_mem);
-#endif
+T_COUNTERS_ENTRY
         tsc_mpi_entry=peat_get_time();
     }
 #endif
@@ -76,14 +65,7 @@ $prototype {
         t_event->num_children += (short)(__msl_child_base(tid,level) - children_base);
         t_event->tscs[0] = tsc_entry;
         t_event->tscs[1] = tsc_mpi_entry;
-#ifdef _HWCOUNTERS_ENABLED_
-        memcpy(counters.hwcs,l_hwcs,num_hwcs*sizeof(l_hwcs[0]));
-        gt_info(hwc).get_all_counters(&counters.hwcs[num_hwcs]);
-#endif
-#ifdef _MEMPROFILE_STORE_
-        counters.mems[0]=l_mem;
-        gt_info(mprof).get_mem_status(&counters.mems[1]);
-#endif
+T_COUNTERS_EXIT(counters)
         tsc_exit = peat_get_time();
         t_event->tscs[2] = tsc_mpi_exit;
         t_event->tscs[3] = tsc_exit;

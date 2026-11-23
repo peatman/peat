@@ -22,8 +22,17 @@ MINOR=1
 
 
 #files
+# What is built (TARGET):
+#   core              the core library, libtractor[_dbg].core[.mem<x>][.<hwc>].so (no MPI: built with $(CXX))
+#   <mpi>             the MPI layer of that MPI, libtractor[_dbg].<mpi>[.mbs][.v2p][.eng].so, and its PTPD helper; it
+#                     needs a core library: its DT_NEEDED is the core's SONAME libtractor.core.so.$(MAJOR), found next to
+#                     it ($ORIGIN) unless a core library variant is preloaded before it
+#   class_layers      the event-class shims (OMPT, OpenACC, OpenCL, Level Zero, CUDA, llama.cpp)
+#   transport_layers  the transport shims (psm2, psm3, ucx, ofi)
+MPI_TARGETS=impi mpich3 mpich4 mpich5 mvapich2 mvapich4 openmpi5
 #objects
-OBJECTS=t_base_event.o tractor.o t_stat.o t_comm.o elf_parser.o t_topo.o mpi_layer.o t_globals.o
+CORE_OBJECTS=t_base_event.o tractor.o t_stat.o elf_parser.o t_topo.o t_globals.o t_transport.o
+MPI_OBJECTS=mpi_layer.o t_comm.o t_mpi.o
 FUNCIDS=mpi_func_ids_through.h mpi_func_names.h mpi_func_ids_trans.h
 FUNCID=mpi_func_ids_through.h # can pick any of 3 above
 #build options
@@ -46,6 +55,23 @@ mpi_layer_skip_core=off
 OMPT=on
 
 CPP:=/usr/bin/cpp -E
+
+ifeq "$(TARGET)" "core"
+IS_CORE=1
+endif
+ifneq "$(filter $(MPI_TARGETS),$(TARGET))" ""
+IS_MPI=1
+endif
+# the event classes other than OMPT (OpenCL, Level Zero, OpenACC, CUDA, llama.cpp) come from TARGET=class_layers;
+# the core may have OMPT built in (OMPT=on), the MPI layers have none
+ifneq "$(IS_CORE)$(IS_MPI)" ""
+override PARSE_GPU:=off
+override CUPTI_PARSE:=off
+override LLAMA_PARSE:=off
+endif
+ifdef IS_MPI
+override OMPT:=off
+endif
 
 TRACTOR_BUILD_DATE:="$(shell date)"
 #compiler options
@@ -73,7 +99,7 @@ CONTROLS= -D_TRACTOR_COLLECT_STAT_ -D_T_PER_INTERVAL_STAT_WRITE_ -D_USE_COMM_DIS
 
 ifdef USE_SIGNALS
 CONTROLS+=-D_USE_SIGNALS_
-OBJECTS+=t_signals.o
+CORE_OBJECTS+=t_signals.o
 endif
 
 # GPU parsing (PARSE_GPU=on): OpenCL, Level Zero and OpenACC are each looked for with the compiler that builds the library
@@ -163,6 +189,7 @@ endif
 endif
 endif
 
+ifndef IS_CORE
 # libfabric / MPI edition check (same rule as CMakeLists.txt): the engineering libfabric exports functions the stock one only
 # has as "static inline" (fi_close, ...), and the engineering libmpi references them as undefined symbols. The two have to
 # agree, and the transport_layers shims (which redefine those functions) only compile against the engineering libfabric.
@@ -196,14 +223,13 @@ endif
 endif
 endif
 
-# TRANSPORT=on enables core-side transport support: profiling struct/T_TRANSPORT_LAYER parsing,
-# t_collect_transport event collection, and (for TARGET=mvapich2) verbs/smpi proxy calls,
-# which are invoked unconditionally by that patched binary so they stay in core too.
-ifeq "$(TRANSPORT)" "on"
-CONTROLS+=-D_TRANSPORT_PROFILE_ 
-OBJECTS+=t_transport.o
-t_transport_layer_h=t_transport_layer_h.h
-#EXTRANAMELIB:=$(EXTRANAMELIB).transport
+endif # IS_CORE: no MPI checks for the core
+
+# transport records: always supported by the core (collected with PEAT_TRACTOR_COLLECT_TRANSPORT=1, the wrappers are
+# the transport shims), and in the MPI layer of TARGET=mvapich2 (its verbs/smpi/psm2 layers, see below); the former
+# TRANSPORT switch is not used any more
+ifneq "$(IS_CORE)$(IS_MPI)" ""
+CONTROLS+=-D_TRANSPORT_PROFILE_
 endif
 
 # TARGET=transport_layers: standalone build of just the transport .so's.
@@ -317,59 +343,6 @@ transport_func_layers+=-l verbs -l smpi -l psm2
 endif
 
 
-# legacy single-layer-only builds, kept for reference (never hit by current Build*.sh)
-ifeq "$(TRANSPORT)" "PSM2"
-CONTROLS+=-D_PSM2_PROFILE_ 
-#LIBS+=-L$(PSM2PATH)/lib64 -lpsm2
-OBJECTS+=t_transport.o 
-t_transport_layer_h=t_transport_layer_h.h
-transport_layer=psm2
-#transport_func_layers=-l psm2
-EXTRANAMELIB:=$(EXTRANAMELIB).psm2
-endif
-
-
-ifeq "$(TRANSPORT)" "VERBS"
-CONTROLS+= -D_VERBS_PROFILE_
-#LIBS+=-L$(VERBSPATH)/lib64 -libverbs
-OBJECTS+=t_transport.o 
-t_transport_layer_h=t_transport_layer_h.h
-transport_layer=verbs
-transport_func_layers=-l verbs -l smpi
-EXTRANAMELIB:=$(EXTRANAMELIB).verbs
-
-endif
-
-ifeq "$(TRANSPORT)" "PSM3"
-CONTROLS+=-D_PSM3_PROFILE_ 
-#LIBS+=-L$(PSM3PATH)/lib64 -lpsm3
-OBJECTS+=t_transport.o 
-t_transport_layer_h=t_transport_layer_h.h
-transport_layer=psm3
-transport_func_layers=-l psm3
-EXTRANAMELIB:=$(EXTRANAMELIB).psm3
-endif
-
-ifeq "$(TRANSPORT)" "UCX"
-CONTROLS+=-D_UCX_PROFILE_ 
-#LIBS+=-L$(UCXPATH)/lib -lucp -lucs
-OBJECTS+=t_transport.o 
-t_transport_layer_h=t_transport_layer_h.h
-transport_layer=ucx
-transport_func_layers=-l ucx
-EXTRANAMELIB:=$(EXTRANAMELIB).ucx
-endif
-
-ifeq "$(TRANSPORT)" "OFI"
-CONTROLS+=-D_OFI_PROFILE_ 
-#LIBS+=-L$(OFIPATH)/lib64 -lfabric
-OBJECTS+=t_transport.o 
-t_transport_layer_h=t_transport_layer_h.h
-transport_layer=ofi
-transport_func_layers=-l ofi
-EXTRANAMELIB:=$(EXTRANAMELIB).ofi
-endif
-
 # _STATUS_LO_HI_ picks the MPICH-family status struct layout (count_hi_and_cancelled);
 # OpenMPI uses its own (_ucount, gated by OPEN_MPI from its own mpi.h) - see t_mpidef.h
 ifeq "$(filter openmpi%,$(TARGET))" ""
@@ -406,6 +379,7 @@ CT_SUFFIX=.eng
 cpp_input+=-D_PARSE_MPI_INTERNAL_
 endif
 
+ifndef IS_CORE
 # MPI 4.x prototype probes: some MPI 4.x implementations declare a few functions without the standard's
 # const (MPICH 4.0: MPI_Psend_init, MPI_Pready_list; MPICH 4.2/MVAPICH 4.1/Intel MPI 2021: MPI_Status_get_*,
 # MPI_Request_get_status_*) or lack them (MPICH 4.0: MPI_Status_set_elements_c); mpi_func.inc picks the
@@ -428,6 +402,7 @@ ifeq "$(call mpi_proto_probe,int (*p)(MPI_Status*$(COMMA) MPI_Datatype$(COMMA) M
 cpp_input+=-D_MPI4_NO_STATUS_SET_ELEMENTS_C_
 endif
 
+endif # IS_CORE
 
 SHARED=-shared $(FPIC)
 
@@ -439,7 +414,7 @@ ifeq "$(DIAG)" "on"
 DBG=_dbg
 DEBUG+= $(NOINLINE) -D_TRACTOR_DIAG_ -D_TRACTOR_DEBUG_TRACTOR_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_TRANSPORT_LAYER_ENTRY_EXIT_  -D_TRACTOR_DEBUG_MPI_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_GPU_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_LLAMA_LAYER_ENTRY_EXIT_ -D_TRACTOR_DEBUG_OMPT_ENTRY_EXIT_ -D_TRACTOR_DEBUG_ACC_ENTRY_EXIT_ -D_TRACTOR_DEBUG_COMM_ENTRY_EXIT_
 OPT=-O0
-OBJECTS+=t_debug.o
+CORE_OBJECTS+=t_debug.o
 LIBS+=-lunwind
 endif
 
@@ -545,7 +520,7 @@ ifeq "$(TARGET)" "class_layers"
 CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX)_cuda
 else
 CONTROLS+=-D_T_CUPTI_
-OBJECTS+=t_cupti.o
+CORE_OBJECTS+=t_cupti.o
 LIBS+=$(CUPTI_LDFLAGS)
 # a GPU build: .gpu, first in the name as for OpenCL/Level Zero/OpenACC (nothing precedes it there)
 ifeq "$(findstring .gpu,$(EXTRANAMELIB))" ""
@@ -570,35 +545,45 @@ ifeq "$(PTPD)" "on"
 CMISC+=-D_TRACTOR_USE_PTPD_ 
 endif
 
+# MPIBUFFERS, VIRT2PHYS: buffer addresses in the MPI records (MPI layer; VIRT2PHYS changes how the core prints them too)
 ifeq "$(MPIBUFFERS)" "on"
 CMISC+= -D_TRACTOR_EXTRA_FIELDS_ 
-EXTRANAMELIB:=$(EXTRANAMELIB).mbs
+MPI_EXTRA:=$(MPI_EXTRA).mbs
 PRINT_EXTENDED_STUFF=on
 endif
 
 
 ifeq "$(VIRT2PHYS)" "on"
 CONTROLS+=-D_TRACTOR_VIRT2PHYS_ -D_TRACTOR_EXTRA_FIELDS_ 
-OBJECTS+=virt2phys.o
-EXTRANAMELIB:=$(EXTRANAMELIB).v2p
+CORE_OBJECTS+=virt2phys.o
+MPI_EXTRA:=$(MPI_EXTRA).v2p
+CORE_EXTRA:=$(CORE_EXTRA).v2p
 PRINT_EXTENDED_STUFF=on
 endif
 
+# MEMPROFILE, HWCOUNTERS: samples the core takes (the MPI layer asks for them through t_shared): core switches
+ifndef IS_CORE
+ifneq "$(MEMPROFILE)$(HWCOUNTERS)" "offoff"
+$(info tractor: MEMPROFILE/HWCOUNTERS are switches of TARGET=core, ignored for TARGET=$(TARGET))
+override MEMPROFILE:=off
+override HWCOUNTERS:=off
+endif
+endif
 ifneq "$(MEMPROFILE)" "off"
 
 MEM_PROFILE=$(shell echo $(MEMPROFILE) | tr a-z A-Z )
 
-OBJECTS+=memprofile.o #t_alloc.o
-EXTRANAMELIB:=$(EXTRANAMELIB).mem$(MEMPROFILE)
+CORE_OBJECTS+=memprofile.o #t_alloc.o
+CORE_EXTRA:=$(CORE_EXTRA).mem$(MEMPROFILE)
 CONTROLS+=-D_MEMPROFILE_ -D_MEMPROFILE_$(MEM_PROFILE)_ -D_TRACTOR_ZERO_ON_ALLOCATE_
 ifeq "$(MEM_PROFILE)" "HOOKS"
 CONTROLS+=-D_MEM_HOOKS_ -D_MEMPROFILE_STORE_
-OBJECTS+=t_alloc.o
+CORE_OBJECTS+=t_alloc.o
 endif
 endif
 
 ifeq "$(OMPT)" "on"
-OBJECTS+=t_ompt.o
+CORE_OBJECTS+=t_ompt.o
 ifeq "$(COMPILER)" "intel"
 OMP+=-qopenmp
 else
@@ -609,27 +594,43 @@ CONTROLS+=-D_T_OMPT_
 endif
 
 ifeq "$(ACC)" "on"
-OBJECTS+=t_acc.o
+CORE_OBJECTS+=t_acc.o
 CONTROLS+=-D_T_ACC_
 endif
 
 ifneq "$(HWCOUNTERS)" "off"
 HW_COUNTERS=$(shell echo $(HWCOUNTERS) | tr a-z A-Z )
 CONTROLS+=-D_HWCOUNTERS_ENABLED_ -D_HWCOUNTERS_$(HW_COUNTERS)_
-OBJECTS+=hwcounter.o
-EXTRANAMELIB:=$(EXTRANAMELIB).$(HWCOUNTERS)
+CORE_OBJECTS+=hwcounter.o
+CORE_EXTRA:=$(CORE_EXTRA).$(HWCOUNTERS)
 endif
 
 
-LIBSUFFIX=$(SUFFIX)$(DBG).$(TARGET)$(EXTRANAMELIB)$(CT_SUFFIX)
-# transport shims are TARGET-independent (see TRANSPORT=on block above) and never get
-# CT_SUFFIX either, since PARSE_MPI_INTERNAL doesn't affect the transport wrapper functions
+# the MPI layer as the trace's "Modules" remark names it (t_mpi.cpp): .<mpi>[.mbs][.v2p][.eng]
+LIBSUFFIX=$(SUFFIX)$(DBG).$(TARGET)$(MPI_EXTRA)$(CT_SUFFIX)
+# transport and class shims are TARGET-independent and never get CT_SUFFIX either, since PARSE_MPI_INTERNAL doesn't
+# affect them
 TRANSPORTLIBSUFFIX=$(SUFFIX)$(DBG)$(EXTRANAMELIB)
 BINSUFFIX=$(SUFFIX)$(DBG).$(TARGET)
-MTBL=tractor$(LIBSUFFIX)
-MTB=lib$(MTBL).so.$(MAJOR).$(MINOR)
+# the core: one SONAME for all its variants, so that an MPI layer (DT_NEEDED) takes whichever variant is preloaded
+CORE_LIBNAME=tractor$(SUFFIX)$(DBG).core$(CORE_EXTRA)
+CORE_LIB=lib$(CORE_LIBNAME).so.$(MAJOR).$(MINOR)
+CORE_SONAME=libtractor.core.so.$(MAJOR)
+# the MPI layer: libtractor[_dbg].<mpi>[.mbs][.v2p][.eng].so
+MPILAYER_LIBNAME=tractor$(SUFFIX)$(DBG).$(TARGET)$(MPI_EXTRA)$(CT_SUFFIX)
+MPILAYER_LIB=lib$(MPILAYER_LIBNAME).so.$(MAJOR).$(MINOR)
 PTPDL=ptpd$(BINSUFFIX)
 PTPD=$(PTPDL).$(MAJOR).$(MINOR)
+
+ifdef IS_MPI
+# the MPI layer reaches the core through t_shared only (t_mpi_event.h)
+CONTROLS+=-D_T_MPI_LAYER_
+endif
+ifdef IS_CORE
+# no MPI in the core: the plain compilers (env.sh: CXX, CC), not the MPI wrappers
+override MPICXX:=$(CXX)
+override MPICC:=$(CC)
+endif
 
 CMISC+=-D_TRACTOR_LIB_SUFFIX_=\"$(LIBSUFFIX)\" -D_TRACTOR_BIN_SUFFIX_=\"$(BINSUFFIX)\"   -D_TRACTOR_ZERO_ON_ALLOCATE_ #-D_TRACTOR_PASSTHROUGH_
 
@@ -647,18 +648,39 @@ all: $(CLASS_SHIM_LIBS)
 install: $(CLASS_SHIM_LIBS)
 	(mkdir -p ../../../lib/$(COMPILER); chmod o+rx $(CLASS_SHIM_LIBS); cp -v $(CLASS_SHIM_LIBS) ../../../lib/$(COMPILER); \
 	cd ../../../lib/$(COMPILER); for b in $(CLASS_SHIM_BASENAMES); do ln -sf lib$$b.so.$(MAJOR).$(MINOR) lib$$b.so.$(MAJOR); ln -sf lib$$b.so.$(MAJOR) lib$$b.so; done )
-else
-all: $(MTB) $(PTPD)
+else ifdef IS_CORE
+all: $(CORE_LIB)
 
-install: $(MTB) $(PTPD)
-	(mkdir -p ../../../lib/$(COMPILER); chmod o+rx $(MTB); cp -v $(MTB) ../../../lib/$(COMPILER); mkdir -p ../../../bin/$(COMPILER); cp -v $(PTPD) ../../../bin/$(COMPILER);\
-	cd ../../../lib/$(COMPILER); ln -sf $(MTB) lib$(MTBL).so.$(MAJOR); ln -sf lib$(MTBL).so.$(MAJOR) lib$(MTBL).so; \
+install: $(CORE_LIB)
+	(mkdir -p ../../../lib/$(COMPILER); chmod o+rx $(CORE_LIB); cp -v $(CORE_LIB) ../../../lib/$(COMPILER); \
+	cd ../../../lib/$(COMPILER); ln -sf $(CORE_LIB) lib$(CORE_LIBNAME).so.$(MAJOR); ln -sf lib$(CORE_LIBNAME).so.$(MAJOR) lib$(CORE_LIBNAME).so )
+else ifdef IS_MPI
+all: $(MPILAYER_LIB) $(PTPD)
+
+install: $(MPILAYER_LIB) $(PTPD)
+	(mkdir -p ../../../lib/$(COMPILER); chmod o+rx $(MPILAYER_LIB); cp -v $(MPILAYER_LIB) ../../../lib/$(COMPILER); mkdir -p ../../../bin/$(COMPILER); cp -v $(PTPD) ../../../bin/$(COMPILER);\
+	cd ../../../lib/$(COMPILER); ln -sf $(MPILAYER_LIB) lib$(MPILAYER_LIBNAME).so.$(MAJOR); ln -sf lib$(MPILAYER_LIBNAME).so.$(MAJOR) lib$(MPILAYER_LIBNAME).so; \
 	cd ../../bin/$(COMPILER); \
 	ln -sf $(PTPD) $(PTPDL) )
+else
+$(error TARGET=$(TARGET): one of core, $(MPI_TARGETS), class_layers, transport_layers)
 endif
 
-$(MTB): $(CPSOURCES) $(OBJECTS)
-	$(MPICXX) -o $(MTB) $(DEBUG) $(OPT) $(OMP) $(LDOPTMT) $(CONTROLS) $(SHARED) $(OBJECTS) $(LIBS)
+ifdef IS_CORE
+$(CORE_LIB): $(CORE_OBJECTS)
+	$(CXX) -o $@ $(DEBUG) $(OPT) $(OMP) $(LDOPTMT) $(SHARED) -Wl,-soname,$(CORE_SONAME) $(CORE_OBJECTS) $(LIBS)
+endif
+
+# the MPI layer needs the core: linked against a stub that has the core's SONAME only (DT_NEEDED libtractor.core.so.0;
+# the core's symbols are resolved at load time), found next to the MPI layer ($ORIGIN) or preloaded before it
+ifdef IS_MPI
+core_stub/$(CORE_SONAME):
+	mkdir -p core_stub && printf 'extern "C" void t_core_stub(void) {}\n' | $(CXX) -x c++ - $(SHARED) -Wl,-soname,$(CORE_SONAME) -o $@
+
+$(MPILAYER_LIB): $(MPI_OBJECTS) core_stub/$(CORE_SONAME)
+	$(MPICXX) -o $@ $(DEBUG) $(OPT) $(LDOPTMT) $(SHARED) -Wl,-soname,lib$(MPILAYER_LIBNAME).so.$(MAJOR) $(MPI_OBJECTS) \
+	    -Wl,--no-as-needed -Lcore_stub -l:$(CORE_SONAME) -Wl,-rpath,'$$ORIGIN' -lz
+endif
 
 # transport shims dlsym() their real symbols at runtime and never call real MPI, so they're
 # linked with plain CXX (CXX comes from env.sh; no MPI runtime dependency) and don't
@@ -738,9 +760,9 @@ mpi_layer.cpp: mpi_layer.cpp.in mpi_layer.cpp.in.end $(FUNCID)
 mpi_layer_transport_%.o: mpi_layer.cpp
 	$(MPICXX) -o $@ -c $(INCLUDE) $(CONTROLS) $(CMISC) $(CXXMISC) $(DEBUG) $(OPT) $(OMP) $(FPIC) mpi_layer_transport_$*.cpp
 
-$(OBJECTS):   $(FUNCID)
+$(CORE_OBJECTS) $(MPI_OBJECTS):   $(FUNCID)
 
-$(PTPD): $(MTB) 
+$(PTPD): $(MPILAYER_LIB)
 	$(MPICXX) -o $(PTPD) $(INCLUDE) $(CONTROLS) $(OPT) $(OMP) $(LDOPTMT) $(CXXMISC) src-ptpd.cpp t_globals.cpp $(DEBUG) $(PTPD_LIBS)
 
 .c.o:
@@ -757,7 +779,7 @@ $(PTPD): $(MTB)
 
 # mpi_func.inc and mpi_layer.cpp too: they depend on TARGET/PARSE_MPI_INTERNAL/TRANSPORT, which make cannot see
 clean:
-	rm -f mpi_func_ids_through.h mpi_func_names.h mpi_func_ids_trans.h $(OBJECTS) lib$(MTBL).so lib$(MTBL).so.$(MAJOR) $(MTB) $(PTPD) $(PTPDL) mpi_layer.c  \
+	rm -rf mpi_func_ids_through.h mpi_func_names.h mpi_func_ids_trans.h $(CORE_OBJECTS) $(MPI_OBJECTS) $(CORE_LIB) $(MPILAYER_LIB) core_stub $(PTPD) $(PTPDL) mpi_layer.c  \
         mpi_func.inc mpi_layer.cpp \
         t_transport_layer.h t_transport_layer_const.h t_transport_layer_h.h \
         $(TRANSPORT_LAYER_SRCS) $(TRANSPORT_LAYER_OBJS) $(TRANSPORT_SHIM_LIBS) t_ompt_shim.o t_acc_shim.o t_cupti_shim.o mpi_layer_cuda.o mpi_layer_cuda.cpp mpi_layer_cuda.unused mpi_layer_llama.o mpi_layer_llama.cpp mpi_layer_llama.unused \

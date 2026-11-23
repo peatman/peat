@@ -2,11 +2,11 @@
 # llama.cpp / CUDA smoke test for CI (or any box with a llama.cpp build):
 #   run llama-simple under tractor (LD_PRELOAD, no MPI: a one-process trace tractor_t_<pid>.*) -> mat and ctt on the trace.
 #
-#   ./llama.sh <libtractor.so>[:<shim.so>...] <llama.cpp bin dir (llama-simple)> <model.gguf> [tokens]
-#   e.g. ./llama.sh $PEAT/mpi.tool/lib/gnu/libtractor.openmpi.so ~/llama.cpp/build/bin stories15M-q4_0.gguf 16
-#        ./llama.sh $L/libtractor.mpich5.so:$L/libtractor_llama.so:$L/libtractor_cuda.so ~/llama.cpp/build/bin m.gguf 16
-# The first argument is what is preloaded: a core library with the classes built in, or a core and the shims of the
-# classes (TARGET=class_layers: libtractor_llama.so, libtractor_cuda.so). The checks for the llama.cpp and cuBLAS wrappers
+#   ./llama.sh <libtractor.core.so>[:<shim.so>...] <llama.cpp bin dir (llama-simple)> <model.gguf> [tokens]
+#   e.g. ./llama.sh $L/libtractor.core.so:$L/libtractor_llama.so ~/llama.cpp/build/bin stories15M-q4_0.gguf 16
+#        ./llama.sh $L/libtractor.core.so:$L/libtractor_llama.so:$L/libtractor_cuda.so ~/llama.cpp/build/bin m.gguf 16
+# The first argument is what is preloaded: the core and the shims of the classes (TARGET=class_layers:
+# libtractor_llama.so, libtractor_cuda.so); llama-simple is no MPI program, it needs no MPI layer. The checks for the llama.cpp and cuBLAS wrappers
 # look at all of them.
 #
 # Expects mat and ctt in <repo>/mpi.tool/bin (as installed by their Makefiles; SMOKE_BIN=<dir> to take them from
@@ -30,7 +30,7 @@
 
 set -u
 
-usage="usage: llama.sh <libtractor.so>[:<shim.so>...] <llama.cpp bin dir> <model.gguf> [tokens]"
+usage="usage: llama.sh <libtractor.core.so>[:<shim.so>...] <llama.cpp bin dir> <model.gguf> [tokens]"
 lib=${1:?$usage}
 llama_bin=${2:?$usage}
 model=${3:?$usage}

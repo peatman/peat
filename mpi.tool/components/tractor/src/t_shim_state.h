@@ -40,6 +40,7 @@
 #define T_SHIM_STATE_VERSION 1
 
 struct msl_event;
+struct msl_extras_counters;
 struct t_shim_class;
 
 #if defined(__CPLUSPLUS__) || defined(__cplusplus)
@@ -95,6 +96,33 @@ struct t_shim_state {
 
     /* --- appended for builds of the core and the shims apart (Makefile, CMake) --- */
     int timer; /* T_SHIM_TIMER of the core: the shims take their timestamps with the same clock (t_time.h) */
+    /* --- appended for the MPI layer (libtractor.<mpi>.so): it reaches the core through t_shared only --- */
+    /* records with counters (msl_extras_counters: return addresses, hardware counter and memory samples) */
+    void (*allocate_record)(int tid, int level, int skip_dump, msl_event **event, struct msl_extras_counters *counters);
+    int (*reuse_record)(int tid, int level, msl_event **event, struct msl_extras_counters *counters, short func_id);
+    int (*discard_record)(int tid, int level, msl_event **event, long long children_base);
+    void (*uncount_record)(int tid, int level); /* the second record of a pair (sendrecv) */
+    msl_event *(*last_record)(int tid, int level);
+    /* counter samples (hardware counters, memory; 0 bytes without): entry into a sample buffer, then into the record
+       with the exit sample (sample NULL: the entry is in the record already, counters_entry) */
+    int counters_size;
+    void (*counters_read)(void *sample);
+    void (*counters_entry)(struct msl_extras_counters *counters);
+    void (*counters_store)(struct msl_extras_counters *counters, const void *sample);
+    void (*counters_copy)(struct msl_extras_counters *dst, const struct msl_extras_counters *src);
+    int compress_events; /* PEAT_TRACTOR_COMPRESS_EVENTS */
+    int abort_sleep;     /* seconds MPI_Abort waits for the trace to be written */
+    /* the core's part of MPI_Init, MPI_Finalize, MPI_Abort and MPI_Pcontrol */
+    void (*post_mpi_init)(void);
+    void (*ptpd_init)(void);
+    void (*post_ptpd_init)(void);
+    void (*pre_finalize)(int abort);
+    void (*ptpd_finalize)(void);
+    void (*finalize)(void);
+    void (*abort)(void);
+    void (*pc_change_state)(int ctl);
+    /* VIRT2PHYS builds: the physical pages (pagemap, kpageflags) of the buffers of a finished MPI record; NULL otherwise */
+    void (*virt2phys)(msl_event *event);
 };
 
 /* the clock of the timestamps (t_time.h): a shim and the core have to use the same one */

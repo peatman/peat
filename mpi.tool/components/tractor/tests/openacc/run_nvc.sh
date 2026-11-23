@@ -31,7 +31,7 @@ gcc -O1 -g -rdynamic -I$mpi_root/include acc_sim_test.c -o acc_sim_test $mpi_lin
 preload=
 if [ "${TRACTOR:-1}" != "0" ] ; then
     libdir=$(realpath ../../../../lib/gnu)
-    lib=${TRACTOR_LIB:-$libdir/libtractor.mpich5.eng.so:$libdir/libtractor_acc.so} # the core and the OpenACC shim
+    lib=${TRACTOR_LIB:-$libdir/libtractor.mpich5.eng.so:$libdir/libtractor_acc.so} # the MPI layer (it loads the core) and the OpenACC shim
     preload="-genv LD_PRELOAD $lib"
 fi
 

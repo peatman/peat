@@ -18,7 +18,6 @@
 
 #ifndef __T_BASE_EVENT_H__
 #define __T_BASE_EVENT_H__
-#include "mpi.h"
 #include <assert.h>
 
 #ifdef _HWCOUNTERS_ENABLED_
@@ -38,6 +37,7 @@
 extern "C" {
 #endif
 extern int counting_permit;
+void t_core_abort(int code); /* tractor's fatal errors: the MPI job, or this process */
 const long defonetimealloc = 1000000;
 
 struct msl_base_chain {
@@ -116,8 +116,8 @@ struct msl_adv_chain : msl_base_chain {
         if (mem_size > 0) {
             mem_array = t_malloc((onetimealloc + 1) * mprof_size, 128);
         } else {
-            mem_array = NULL
-        };
+            mem_array = NULL;
+        }
 #endif
 
 #ifdef _TRACTOR_ZERO_ON_ALLOCATE_
@@ -221,7 +221,7 @@ struct t_base_event {
 #endif
     int use_realtime_dump;
 
-    msl_event fake_event;
+    msl_event *fake_event; /* t_record_size bytes: written when no record can be taken */
     void *fake_addrs[16];
     msl_event ***last_returned_event; /* [tid][level] */
 

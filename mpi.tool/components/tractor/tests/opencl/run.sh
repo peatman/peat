@@ -1,11 +1,11 @@
 #!/bin/bash
-# Build and run the OpenCL classification test under tractor: the core library and the OpenCL shim (libtractor_opencl.so,
-# TARGET=class_layers), or a core with OpenCL built in (PARSE_GPU=on).
+# Build and run the OpenCL classification test under tractor: the MPI layer (it loads the core) and the OpenCL shim
+# (libtractor_opencl.so, TARGET=class_layers).
 #   ./run.sh [iterations] [ranks]
 # cl_sim_test calls OpenCL enqueue functions that are implemented by cl_fake.c (they only sleep), so the
 # transfer / fill / execution / sync classification in the tractor GPU statistics is checked without a device.
-# Set TRACTOR_LIB=<lib>[:<lib>...] to preload other libraries, default lib/intel/libtractor.mpich5.eng.so (the core of the
-# engineering MPICH, eng: event handles) and lib/intel/libtractor_opencl.so.
+# Set TRACTOR_LIB=<lib>[:<lib>...] to preload other libraries, default lib/intel/libtractor.mpich5.eng.so (the MPI layer of
+# the engineering MPICH, eng: event handles) and lib/intel/libtractor_opencl.so.
 
 iterations=${1:-5}
 ranks=${2:-2}

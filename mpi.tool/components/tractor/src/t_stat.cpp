@@ -16,7 +16,6 @@
  * along with PEAT.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "mpi.h"
 #include <assert.h>
 #include <dlfcn.h>
 #include <libgen.h>
