@@ -75,7 +75,6 @@ The remainder of this file is legacy documentation, kept for historical referenc
         PTPD=[on*,off] build in support for the Precision Time Protocol Daemon (adds -D_TRACTOR_USE_PTPD_).
         OMPT=[on*,off] build in OpenMP (OMPT) callback hooks for combined MPI+OpenMP tracing.
         DIAG=[off*,on] enable diagnostic/debug messages during collection (DEBUG purposes). Adds _dbg to the library name, forces -O0.
-        PARSE_GPU=[off*,on] build in OpenCL/Level Zero (GPU) interception layers.
         PARSE_COLT=[off*,on] enable collective-timeline parsing engine.
         TRANSPORT=[off*,PSM2,PSM3,VERBS,UCX,OFI] (mvapich2 target only) build in transport-API (PSM2/PSM3/Verbs/UCX/OFI) event profiling via t_transport.
         USE_SIGNALS=[on*,off] install signal handlers for clean trace flushing on crash/termination.
@@ -92,7 +91,7 @@ The remainder of this file is legacy documentation, kept for historical referenc
        SUFFIX  exactly the same as one in 4.1.2 (usually empty)
        DBG={_dbg,<empty>}
        TARGET  exactly the same as one in 4.1.2
-       EXTRANAMELIB  accumulates suffixes from optional switches:  .gpu (PARSE_GPU), .eng (PARSE_COLT/transport layer)
+       EXTRANAMELIB  accumulates suffixes from optional switches:  .eng (PARSE_COLT/transport layer)
 
        Environment variables (all prefixed PEAT_TRACTOR_, read by tractor::parse_env_vars(), * - indicates default value):
        export PEAT_TRACTOR_FILE=<template>            - template for trace file names (default: tractor_t)

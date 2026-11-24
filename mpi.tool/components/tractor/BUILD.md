@@ -4,7 +4,7 @@
 
 ## 1. What gets built
 
-`src/Makefile` (and CMake) produce, installed to `mpi.tool/lib/<COMPILER>/` (`gnu`, `intel`, `nvc` or `clang`):
+`src/Makefile` (and CMake) produce, installed to `mpi.tool/lib/<COMPILER>/` (`gnu`, `intel`, `nvidia` or `clang`):
 - `libtractor[_dbg].core[.mem<x>][.<hwc>].so` (`TARGET=core`) - the core: records, nesting, counters, the trace writer. It has
   no MPI and is built with the plain compilers: one core serves every MPI. All its variants have the SONAME
   `libtractor.core.so.0`.
@@ -121,7 +121,7 @@ directly in `env.sh`.
 - `HOMEINIT`/`WORKINIT` (default `$HOME`) - root under which it looks for   `gcc/<ver>`, `mpich/<ver>`, `mvapich/<ver>`, `openmpi/<ver>`, `libfabric`,
   `ucx`, `psm2`, `psm3`.
 - `compiler=<oneAPI:VER|gcc|nvc[:VER[:VER]]|clang>` and `mpi_type=<impi|openmpi:VER|mvapich:VER|mpich:VER>` - normally set as
-  env vars right before invoking `Build.sh` (see `BuildAllg.sh`/`BuildAlli.sh`/`BuildAlln.sh`/`BuildAllc.sh` for examples).
+  env vars right before invoking `Build.sh` (see `BuildAll.sh` for an example).
   - `oneAPI:<version>` sources that oneAPI's `setvars.sh`; `gcc` is the default (anything else); `clang` is handled like gcc
     (system-wide, one version).
   - `nvc` puts the NVHPC compilers in `PATH`. Each version is looked up as an NVHPC release
@@ -141,39 +141,38 @@ place those libraries there, or edit `Build.sh`.
 ```sh
 export HWLOC_PATH=/usr                         # or your hwloc prefix
 
-# Option A: adapt and run the example "build everything" scripts
-./BuildAllg.sh     # GNU toolchain, builds several TARGETs in parallel
-./BuildAlli.sh     # Intel oneAPI toolchain
-./BuildAlln.sh     # NVHPC toolchain
-./BuildAllc.sh     # clang
+# Option A: adapt and run the example "build everything" script: every library for one compiler, DIAG and non-DIAG
+./BuildAll.sh gnu       # or intel, nvidia, clang; builds up to 4 variants in parallel (-j <n>)
 
 # Option B: build one variant directly
-#              mpi_type[:version]   TARGET   MEMPROFILE DIAG PARSE_GPU HWCOUNTERS MPIBUFFERS VIRT2PHYS
-compiler=gcc COMPILER=gnu ./Build.sh mpich:4.3.2g-mt-ofi mpich4 off off off off off off
+#                                          mpi_type[:version]   TARGET  [DIAG=off*|on]
+compiler=gcc COMPILER=gnu ./Build.sh mpich:4.3.2g-mt-ofi mpich4  on
 ```
 
 Output: `mpi.tool/lib/<COMPILER>/libtractor*.core*.so`, `libtractor.<mpi>*.so`, the shims, and `mpi.tool/bin/<COMPILER>/ptpd.<mpi>`.
 
-The `BuildAll*.sh` scripts are the same list of builds for each toolchain (GNU `g` MPIs; the Intel one uses the `x` MPIs): the
-core (also `DIAG=on`: `libtractor_dbg.core.so`), the shims, and one MPI layer per MPI; `.eng` in a name means the engineering
-MPI. `DIAG` is a switch of the core: the MPI layers are release builds (a DIAG MPI layer needs a DIAG core).
-`Build.sh` runs several `make` invocations that all fail the same way when something is wrong, check `Build.<COMPILER>.log`.
+`BuildAll.sh <compiler>` builds, for the plain and the DIAG (`_dbg`) variant: the core (MPI independent), the transport shims
+(MPI independent) and one MPI layer per MPI (`.eng` in a name means the engineering MPI); the event-class shims (OMPT,
+OpenACC, OpenCL, Level Zero, CUDA, llama.cpp: MPI independent, each one built when its headers are found) are built once, they
+fit the core of either variant. The GNU `g` MPIs are used, the Intel compiler uses the `x` ones. The variants with MPI buffers
+(`.mbs`), virtual->physical addresses (`.v2p`), memory profiling and hardware counters are not in the list: set `MPIBUFFERS=on`,
+`VIRT2PHYS=on`, `MEMPROFILE=<x>`, `HWCOUNTERS=<x>` in the environment of `Build.sh`. OMPT is always a shim (`OMPT=off` for the core).
+A failed build is reported at the end of `BuildAll.sh`; the details are in `Build.<COMPILER>.log`.
 
 ## 8. Key Makefile switches
 
-Pass as `make` vars, or positional args to `Build.sh`.
+Pass as `make` vars (`Build.sh` takes only the MPI, the target and DIAG; the others come from its environment, see above).
 
 | Switch | Values | Meaning |
 |---|---|---|
 | `TARGET` | `core, impi*, mpich3, mpich4, mpich5, mvapich2, mvapich4, openmpi5, transport_layers, class_layers` | what is built, see section 1 |
-| `COMPILER` | `gnu*, intel, nvc, clang` | toolchain (the directory name under `lib/` and `bin/`). `nvc` and `clang` take the GCC options; with `nvc` the `.c` sources are built with `nvc++` (done by the Makefile) |
+| `COMPILER` | `gnu*, intel, nvidia, clang` | toolchain (the directory name under `lib/` and `bin/`). `nvidia` and `clang` take the GCC options; with `nvidia` the `.c` sources are built with `nvc++` (done by the Makefile) |
 | `PTPD` | `on*, off` | build PTP daemon support |
 | `OMPT` | `on*, off` | OpenMP interception built into the core (`TARGET=core`; else the OMPT shim) |
 | `DIAG` | `off*, on` | debug build (`-O0`, `_dbg` suffix) |
-| `PARSE_GPU` | `off*, on` | GPU call interception: OpenCL, Level Zero and OpenACC (profiling interface), each only when found - see "GPU APIs" below; the shims of `TARGET=class_layers` (the core and the MPI layers have no GPU classes) |
-| `OCL_PARSE`, `LZE_PARSE`, `ACC_PARSE` | `auto*, on, off` | with `PARSE_GPU=on`: build OpenCL / Level Zero / OpenACC interception (`auto` when found, `on` = missing is an error) |
+| `OCL_PARSE`, `LZE_PARSE`, `ACC_PARSE` | `auto*, on, off` | `TARGET=class_layers`: build the OpenCL / Level Zero / OpenACC shim (`auto` when found, `on` = missing is an error) - see "GPU APIs" below |
 | `LLAMA_PARSE`, `LLAMA_ROOT`, `LLAMA_DEPRECATED` | `auto*, on, off`; path (default: `contrib/llama.cpp` if checked out, else installed headers); `off*, on` | llama.cpp pipeline stage and ggml CPU kernel interception, part of the base build like OMPT: `auto` when llama.cpp's headers are found and have the wrappers' API (`t_llama_probe.cpp`), any compiler, no change of the library name - see README "llama.cpp pipeline profiling" |
-| `CUPTI_PARSE`, `CUDA_ROOT` | `auto` with `PARSE_GPU=on`, `off` otherwise; `on, off, auto`; path (default: searched) | CUDA (CUPTI) and cuBLAS interception, one of the GPU APIs (`.gpu` in the name): `auto` when the toolkit is found and its host headers compile with this compiler (all four compilers can), `on` = missing is an error - see README "CUDA profiling" |
+| `CUPTI_PARSE`, `CUDA_ROOT` | `auto*, on, off`; path (default: searched) | CUDA (CUPTI) and cuBLAS interception, the CUDA shim of `TARGET=class_layers`: `auto` when the toolkit is found and its host headers compile with this compiler (all four compilers can), `on` = missing is an error - see README "CUDA profiling" |
 | `PARSE_COLT` | `off*, on` | collective-timeline engine ("engineering" build, needs patched MPI) |
 | `HWCOUNTERS` | `off*, RDPMC` | hardware counters via `perf_event_open` (`TARGET=core`) |
 | `MEMPROFILE` | `off*, ...` | allocation profiling (`TARGET=core`) |
@@ -184,8 +183,8 @@ want to go through `Build.sh`'s temp-directory copy dance.
 
 ### Compilers with CMake
 
-CMake detects the compiler family from `CMAKE_CXX_COMPILER_ID` (`GNU` - gnu, `Intel`/`IntelLLVM` - intel, `NVHPC`/`PGI` - nvc,
-`Clang` - clang) and installs to `lib/<family>`; `-DTRACTOR_COMPILER=gnu|intel|nvc|clang` overrides it. Select the toolchain with
+CMake detects the compiler family from `CMAKE_CXX_COMPILER_ID` (`GNU` - gnu, `Intel`/`IntelLLVM` - intel, `NVHPC`/`PGI` - nvidia,
+`Clang` - clang) and installs to `lib/<family>`; `-DTRACTOR_COMPILER=gnu|intel|nvidia|clang` overrides it. Select the toolchain with
 `compiler=<name>` before sourcing `env.sh` (e.g. `compiler=nvc:<CUDA version>`, `compiler=clang`) and pass the MPI wrappers
 (`-DCMAKE_C_COMPILER=$MPICC -DCMAKE_CXX_COMPILER=$MPICXX`); `env.sh` points the wrappers to the selected compiler. The core
 (`-DTRACTOR_TARGET=core`) is configured with the plain compilers instead (`-DCMAKE_C_COMPILER=$CC -DCMAKE_CXX_COMPILER=$CXX`):
@@ -193,8 +192,8 @@ an MPI wrapper would link `libmpi` into it, which the configuration refuses.
 
 ### GPU APIs
 
-With `PARSE_GPU=on` (CMake: `-DGPU=ON`) each GPU API is looked for with the compiler that builds the library, and only the ones
-that are found are built; the choice is printed as `tractor: GPU parsing: OpenCL=.. LevelZero=.. OpenACC=..`. The headers
+The GPU APIs are shims (`TARGET=class_layers`): each is looked for with the compiler that builds the shims, and only the ones
+that are found are built; the choice is printed as `tractor: GPU shims: OpenCL=.. LevelZero=.. OpenACC=..`. The headers
 count as present when the compiler can include them (also through `CPATH`, the oneAPI `${CMPLR_ROOT}/include` for Intel, ...),
 the libraries must be linkable. Each API has its own switch (CMake spells the values in upper case):
 
@@ -204,10 +203,9 @@ the libraries must be linkable. Each API has its own switch (CMake spells the va
 | `LZE_PARSE` | `AUTO*, ON, OFF` | `level_zero/ze_api.h` and `libze_loader` |
 | `ACC_PARSE` | `AUTO*, ON, OFF` | `acc_prof.h` (GCC >= 9 or NVHPC); always off with the Intel compilers |
 
-`AUTO` enables an API when it is found, `ON` makes a missing one an error, `OFF` skips it. If nothing is found the
-GPU parsing is switched off with a warning. The `Makefile` uses the same names (`make PARSE_GPU=on OCL_PARSE=off ...`) and
-probes by compiling a one-line program. OpenACC follows `PARSE_GPU`: it is never built with the Intel compilers (no `acc_prof.h`),
-and not with clang either (the probe fails); `ACC=` cannot be set by hand.
+`AUTO` enables an API when it is found, `ON` makes a missing one an error, `OFF` skips it. The `Makefile` uses the same
+names (`make TARGET=class_layers OCL_PARSE=off ...`) and probes by compiling a one-line program. The OpenACC shim is never
+built with the Intel compilers (no `acc_prof.h`), and not with clang either (the probe fails).
 
 ### libfabric and MPI editions
 

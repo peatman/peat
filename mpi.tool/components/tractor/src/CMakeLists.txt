@@ -188,14 +188,14 @@ endif()
 message(STATUS "tractor: using Perl ${PERL_VERSION_STRING} (${PERL_EXECUTABLE})")
 
 # ---------------------------------------------------------------------------
-# 1. Compiler family: gnu / intel / nvc / clang
-#    (override with -DTRACTOR_COMPILER=gnu|intel|nvc|clang to skip auto-detection; pgi = nvc)
+# 1. Compiler family: gnu / intel / nvidia / clang
+#    (override with -DTRACTOR_COMPILER=gnu|intel|nvidia|clang to skip auto-detection; pgi = nvidia)
 # ---------------------------------------------------------------------------
 if(NOT TRACTOR_COMPILER)
   if(CMAKE_CXX_COMPILER_ID STREQUAL "Intel" OR CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
     set(_tractor_compiler intel)
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "PGI" OR CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
-    set(_tractor_compiler nvc)
+    set(_tractor_compiler nvidia)
   elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang") # Clang, AppleClang
     set(_tractor_compiler clang)
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -204,9 +204,9 @@ if(NOT TRACTOR_COMPILER)
     message(WARNING "tractor: unrecognized CXX compiler id '${CMAKE_CXX_COMPILER_ID}', defaulting TRACTOR_COMPILER=gnu")
     set(_tractor_compiler gnu)
   endif()
-  set(TRACTOR_COMPILER ${_tractor_compiler} CACHE STRING "toolchain family: gnu|intel|nvc|clang" FORCE)
+  set(TRACTOR_COMPILER ${_tractor_compiler} CACHE STRING "toolchain family: gnu|intel|nvidia|clang" FORCE)
 endif()
-set_property(CACHE TRACTOR_COMPILER PROPERTY STRINGS gnu intel nvc clang)
+set_property(CACHE TRACTOR_COMPILER PROPERTY STRINGS gnu intel nvidia clang)
 message(STATUS "tractor: COMPILER=${TRACTOR_COMPILER} (CXX compiler id: ${CMAKE_CXX_COMPILER_ID})")
 
 # ---------------------------------------------------------------------------
@@ -354,9 +354,8 @@ message(STATUS "tractor: MPI vendor=${TRACTOR_MPI_VENDOR} version=${TRACTOR_MPI_
 # ---------------------------------------------------------------------------
 set(MEM  "off" CACHE STRING "memory profiling tag: off|<value used as _MEMPROFILE_<MEM>_>, e.g. HOOKS")
 set(DIAG OFF   CACHE BOOL   "debug/diagnostic build (-O0, _dbg suffix, entry/exit tracing)")
-set(GPU  OFF   CACHE BOOL   "GPU call interception (PARSE_GPU): OpenCL, Level Zero and OpenACC, each one only when found")
-# With GPU=ON every API below is looked for at configure time: AUTO enables it when its header (and library) are found,
-# ON makes a missing one an error, OFF skips it.
+# TRACTOR_TARGET=class_layers looks for every API below at configure time (its shims): AUTO builds the shim when the
+# header (and library) are found, ON makes a missing one an error, OFF skips it.
 set(OCL_PARSE "AUTO" CACHE STRING "OpenCL interception: AUTO|ON|OFF (needs CL/cl.h and libOpenCL)")
 set(LZE_PARSE "AUTO" CACHE STRING "Level Zero interception: AUTO|ON|OFF (needs level_zero/ze_api.h and libze_loader)")
 set(ACC_PARSE "AUTO" CACHE STRING "OpenACC interception: AUTO|ON|OFF (needs acc_prof.h, never built with the Intel compilers)")
@@ -367,7 +366,7 @@ set(LLAMA "" CACHE STRING "llama.cpp/ggml pipeline stage and CPU kernel intercep
 set_property(CACHE LLAMA PROPERTY STRINGS AUTO ON OFF)
 set(LLAMA_ROOT "" CACHE PATH "llama.cpp source tree or install prefix the traced llama.cpp was built from (default: contrib/llama.cpp if checked out, else the installed headers)")
 set(LLAMA_DEPRECATED OFF CACHE BOOL "also intercept the deprecated llama.cpp entry points (llama_decode, llama_encode)")
-set(CUPTI "" CACHE STRING "CUDA through CUPTI (GPU activity, host runtime calls) and cuBLAS wrappers (CUPTI_PARSE): OFF|ON|AUTO, default AUTO with GPU=ON, OFF otherwise")
+set(CUPTI "" CACHE STRING "CUDA through CUPTI (GPU activity, host runtime calls) and cuBLAS wrappers (CUPTI_PARSE): OFF|ON|AUTO, default AUTO (the CUDA shim of TRACTOR_TARGET=class_layers)")
 set_property(CACHE CUPTI PROPERTY STRINGS "" OFF ON AUTO)
 set(CUDA_ROOT "" CACHE PATH "CUDA toolkit with CUPTI, of the CUDA version the traced application runs with (default: searched)")
 # The same switches from the environment as the Makefile reads them (LLAMA_PARSE, LLAMA_ROOT, LLAMA_DEPRECATED,
@@ -505,7 +504,6 @@ elseif(NOT TRACTOR_TARGET MATCHES "^(transport_layers|class_layers)$")
 endif()
 if(_is_core OR _is_mpi)
   # the event classes other than OMPT come from TRACTOR_TARGET=class_layers; the core may have OMPT built in
-  set(GPU OFF)
   set(LLAMA OFF)
   set(CUPTI OFF)
   list(APPEND TRACTOR_CONTROLS _TRANSPORT_PROFILE_)
@@ -543,7 +541,7 @@ set(_gpu_cl OFF)
 set(_gpu_ze OFF)
 set(_gpu_acc OFF)
 set(TRACTOR_GPU_INCLUDE_DIRS "")
-if(GPU OR _class_layers) # class_layers: their shims, when found
+if(_class_layers) # their shims, when found
   foreach(_opt OCL_PARSE LZE_PARSE ACC_PARSE)
     string(TOUPPER "${${_opt}}" ${_opt})
     if(NOT ${_opt} MATCHES "^(AUTO|ON|OFF)$")
@@ -614,24 +612,7 @@ if(GPU OR _class_layers) # class_layers: their shims, when found
     endif()
   endif()
 
-  message(STATUS "tractor: GPU parsing: OpenCL=${_gpu_cl} LevelZero=${_gpu_ze} OpenACC=${_gpu_acc}")
-  # "no GPU API" is told after CUDA (CUPTI) is looked for, further down
-endif()
-
-set(_gpu_apis "")
-if(_gpu_cl)
-  list(APPEND _gpu_apis cl)
-  list(APPEND TRACTOR_CONTROLS GPUPARSE_CL)
-endif()
-if(_gpu_ze)
-  list(APPEND _gpu_apis ze)
-  list(APPEND TRACTOR_CONTROLS GPUPARSE_ZE)
-endif()
-if(_gpu_apis)
-  list(APPEND TRACTOR_CONTROLS GPUPARSE)
-endif()
-if((_gpu_apis OR _gpu_acc) AND NOT _class_layers) # the shim names get no .gpu
-  set(TRACTOR_EXTRANAME "${TRACTOR_EXTRANAME}.gpu")
+  message(STATUS "tractor: GPU shims: OpenCL=${_gpu_cl} LevelZero=${_gpu_ze} OpenACC=${_gpu_acc}")
 endif()
 
 # transport_func_layers: extra "-l <layer>[=outfile]" args forwarded to mpi_layer.pl.
@@ -829,7 +810,7 @@ endif()
 
 # CUDA through CUPTI (t_cupti.cpp) and cuBLAS wrappers, see the Makefile's CUPTI_PARSE
 # CUPTI: OFF, ON (missing toolkit or failing probe is an error) or AUTO (built when found and the probe compiles);
-# unset: AUTO with GPU=ON, OFF otherwise. One of the GPU APIs: a build with it is a GPU build (.gpu in the library name).
+# unset: AUTO. The CUDA shim of TRACTOR_TARGET=class_layers.
 # Toolkit: CUDA_ROOT, else NVHPC_CUDA_HOME, CUDA_HOME, CUDA_PATH (environment), /opt/cuda, /usr/local/cuda, /usr; CUPTI in
 # extras/CUPTI/{include,lib64} (NVIDIA installers, NVHPC), targets/x86_64-linux/{include,lib} (e.g. Arch) or include,
 # lib/<multiarch> (Debian/Ubuntu nvidia-cuda-dev + libcupti-dev; system directories are not added to -I/-rpath).
@@ -837,11 +818,7 @@ endif()
 set(_parse_cuda_flag off)
 string(TOUPPER "${CUPTI}" _cupti_mode)
 if(_cupti_mode STREQUAL "")
-  if(GPU OR _class_layers)
-    set(_cupti_mode AUTO)
-  else()
-    set(_cupti_mode OFF)
-  endif()
+  set(_cupti_mode AUTO)
 endif()
 if(_cupti_mode MATCHES "^(ON|YES|TRUE|1)$")
   set(_cupti_mode ON)
@@ -907,9 +884,6 @@ if(NOT _cupti_mode STREQUAL "OFF")
     list(APPEND TRACTOR_SOURCES t_cupti.cpp)
     list(APPEND TRACTOR_CONTROLS _T_CUPTI_)
     list(APPEND TRACTOR_LIBS ${_cupti_link})
-    if(NOT TRACTOR_EXTRANAME MATCHES "\\.gpu" AND NOT _class_layers) # a GPU build: .gpu, first as for OpenCL/Level Zero/OpenACC
-      set(TRACTOR_EXTRANAME ".gpu${TRACTOR_EXTRANAME}")
-    endif()
     set(_parse_cuda_flag on)
     if(NOT _timer_lower STREQUAL "nano") # CUPTI timestamps are nanoseconds on tractor's clock (cuptiActivityRegisterTimestampCallback)
       message(STATUS "tractor: CUPTI uses PEAT_TIMER=nano (was ${PEAT_TIMER})")
@@ -919,9 +893,6 @@ if(NOT _cupti_mode STREQUAL "OFF")
     message(FATAL_ERROR "tractor: CUPTI=ON but CUPTI/cuBLAS are not usable with ${CMAKE_CXX_COMPILER} (CUDA_ROOT='${_cuda_root}': cuda/cublas headers in '${_cuda_inc}', cupti.h in '${_cupti_inc}', libcupti in '${_cupti_lib}')")
   endif()
   message(STATUS "tractor: CUDA (CUPTI) parsing: ${_parse_cuda_flag} (CUPTI=${_cupti_mode}, CUDA_ROOT='${_cuda_root}')")
-endif()
-if(GPU AND NOT _class_layers AND NOT TRACTOR_EXTRANAME MATCHES "\\.gpu")
-  message(WARNING "tractor: GPU=ON but no GPU API (OpenCL, Level Zero, OpenACC, CUDA) was found, GPU parsing is off")
 endif()
 
 if(BUF)
@@ -953,12 +924,6 @@ if(OMPT)
   list(APPEND TRACTOR_CONTROLS _T_OMPT_)
 endif()
 
-# OpenACC interception (profiling interface, needs acc_prof.h): part of the GPU parsing, see the detection above
-if(_gpu_acc)
-  list(APPEND TRACTOR_SOURCES t_acc.cpp)
-  list(APPEND TRACTOR_CONTROLS _T_ACC_)
-endif()
-
 if(_timer_lower STREQUAL "nano")
   list(APPEND TRACTOR_CONTROLS USE_NANO_TIMER)
 endif()
@@ -977,7 +942,7 @@ if(TRACTOR_COMPILER STREQUAL "intel")
   list(APPEND TRACTOR_CONTROLS _INTELCOMPILER_)
   set(TRACTOR_CXX_MISC -std=c++11 -fno-omit-frame-pointer -w)
   set(TRACTOR_OMP_FLAG -qopenmp)
-elseif(TRACTOR_COMPILER STREQUAL "nvc" OR TRACTOR_COMPILER STREQUAL "pgi")
+elseif(TRACTOR_COMPILER STREQUAL "nvidia" OR TRACTOR_COMPILER STREQUAL "pgi")
   # nvc takes the GCC options (it has no OMPT, the OpenMP tools interface is simply unused)
   list(APPEND TRACTOR_CONTROLS _PGICOMPILER_ _GNUCOMPILER_)
   set(TRACTOR_CXX_MISC -Wno-write-strings -fno-omit-frame-pointer)
@@ -1049,17 +1014,11 @@ list(TRANSFORM _tractor_defs PREPEND "-D")
 # so they must execute with CMAKE_CURRENT_BINARY_DIR as their working directory)
 # ---------------------------------------------------------------------------
 set(_common_dir ${CMAKE_CURRENT_SOURCE_DIR}/../../common)
-if(_gpu_apis)
-  string(REPLACE ";" "," _parse_gpu_flag "${_gpu_apis}") # mpi_layer.pl -c cl,ze
-else()
-  set(_parse_gpu_flag off)
-endif()
 # class_layers: no core mpi_layer.cpp content (-s on), the wrappers of each found class into the source of its shim
 set(_class_shim_args)
 set(_class_shim_outputs)
 if(_class_layers)
   set(_mpi_layer_skip_core on)
-  set(_parse_gpu_flag off)
   foreach(_api cl ze)
     if(_gpu_${_api})
       list(APPEND _class_shim_args -C ${_api}=mpi_layer_${_api}.cpp)
@@ -1124,7 +1083,7 @@ add_custom_command(
 
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/mpi_layer.cpp ${_transport_shim_outputs} ${_class_shim_outputs}
-  COMMAND ${PERL_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer.pl -p on -e ${_print_extended_stuff} -m ${_maxmpi} -t ${_pct} -c ${_parse_gpu_flag} -g ${_core_llama_flag} -u ${_core_cuda_flag}
+  COMMAND ${PERL_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/mpi_layer.pl -p on -e ${_print_extended_stuff} -m ${_maxmpi} -t ${_pct} -g ${_core_llama_flag} -u ${_core_cuda_flag}
           -s ${_mpi_layer_skip_core} -i mpi_func.inc -o mpi_layer.cpp ${_transport_func_layers} ${_class_shim_args}
   DEPENDS mpi_layer.cpp.in mpi_layer.cpp.in.end mpi_layer.pl
           ${CMAKE_CURRENT_BINARY_DIR}/mpi_func_ids_through.h
@@ -1206,7 +1165,7 @@ if(_class_layers)
   else()
     set(_class_omp_flag -fopenmp)
   endif()
-  if(TRACTOR_COMPILER STREQUAL "nvc" OR TRACTOR_COMPILER STREQUAL "pgi")
+  if(TRACTOR_COMPILER STREQUAL "nvidia" OR TRACTOR_COMPILER STREQUAL "pgi")
     message(STATUS "tractor: class_layers: no OMPT shim with ${TRACTOR_COMPILER} (it has no OpenMP tools interface)")
   else()
     tractor_class_shim(ompt SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/t_ompt.cpp DEFS -D_T_OMPT_ FLAGS ${_class_omp_flag})
@@ -1214,7 +1173,7 @@ if(_class_layers)
   if(_gpu_acc)
     tractor_class_shim(acc SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/t_acc.cpp DEFS -D_T_ACC_)
   elseif(TRACTOR_COMPILER STREQUAL "intel")
-    message(STATUS "tractor: class_layers: no OpenACC shim with the Intel compilers (no acc_prof.h), build it with gnu or nvc")
+    message(STATUS "tractor: class_layers: no OpenACC shim with the Intel compilers (no acc_prof.h), build it with gnu or nvidia")
   endif()
   set(_gpu_inc_flags ${TRACTOR_GPU_INCLUDE_DIRS})
   list(TRANSFORM _gpu_inc_flags PREPEND "-I")

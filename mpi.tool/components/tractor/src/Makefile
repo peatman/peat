@@ -42,7 +42,6 @@ PTPD=on
 MEMPROFILE=off
 TARGET=impi
 PARSE_MPI_INTERNAL=off
-PARSE_GPU=off
 OVERALLSTATONLY=off
 VIRT2PHYS=off
 DIAG=off
@@ -62,10 +61,9 @@ endif
 ifneq "$(filter $(MPI_TARGETS),$(TARGET))" ""
 IS_MPI=1
 endif
-# the event classes other than OMPT (OpenCL, Level Zero, OpenACC, CUDA, llama.cpp) come from TARGET=class_layers;
-# the core may have OMPT built in (OMPT=on), the MPI layers have none
+# the event classes other than OMPT (OpenCL, Level Zero, OpenACC, CUDA, llama.cpp) come from TARGET=class_layers: they
+# are shims, built when their headers are found; the core may have OMPT built in (OMPT=on), the MPI layers have none
 ifneq "$(IS_CORE)$(IS_MPI)" ""
-override PARSE_GPU:=off
 override CUPTI_PARSE:=off
 override LLAMA_PARSE:=off
 endif
@@ -102,31 +100,25 @@ CONTROLS+=-D_USE_SIGNALS_
 CORE_OBJECTS+=t_signals.o
 endif
 
-# GPU parsing (PARSE_GPU=on): OpenCL, Level Zero and OpenACC are each looked for with the compiler that builds the library
-# (header compiles, library links) and are built when found. OCL_PARSE / LZE_PARSE / ACC_PARSE: auto (default) = when
-# found, on = a missing one is an error, off = skip. The OpenACC profiling interface (acc_prof.h: GCC >= 9, NVHPC) does
-# not exist for the Intel compilers, so ACC is always off with COMPILER=intel.
+# TARGET=class_layers: OpenCL and Level Zero are each looked for with the compiler that builds the shims (header compiles,
+# library links) and built when found (libtractor.opencl.so, libtractor.levelzero.so). OCL_PARSE / LZE_PARSE: auto
+# (default) = when found, on = a missing one is an error, off = skip. The OpenACC shim has its own probe (below): the
+# OpenACC profiling interface (acc_prof.h: GCC >= 9, NVHPC) does not exist for the Intel compilers.
 OCL_PARSE?=auto
 LZE_PARSE?=auto
-ACC_PARSE?=auto
-override ACC=off
-# -c argument of mpi_layer.pl: off or a list of cl,ze
-PARSE_GPU_APIS=off
 # helpers for the compile probes (GPU below, MPI 4.1 const-ness further down)
 HASH:=\#
 COMMA:=,
 EMPTY:=
 SPACE:=$(EMPTY) $(EMPTY)
-# TARGET=class_layers probes OpenCL and Level Zero too: it builds their shims (libtractor.opencl.so,
-# libtractor.levelzero.so) when found; OpenACC has its own probe there
-ifneq "$(filter on,$(PARSE_GPU))$(filter class_layers,$(TARGET))" ""
+ifeq "$(TARGET)" "class_layers"
 ifeq "$(COMPILER)" "intel"
 GPU_PROBE_FLAGS=-I$(CMPLR_ROOT)/include -L$(CMPLR_ROOT)/lib
 endif
 # $(call gpu_probe,<header>,<link flags>) -> yes|no
 gpu_probe=$(shell printf '$(HASH)include <$(1)>\nint main(){return 0;}\n' | $(MPICXX) $(GPU_PROBE_FLAGS) -x c++ - $(2) -o /dev/null >/dev/null 2>&1 && echo yes || echo no)
 
-$(foreach v,OCL_PARSE LZE_PARSE ACC_PARSE,$(if $(filter auto on off,$($(v))),,$(error $(v)=$($(v)) is not one of auto|on|off)))
+$(foreach v,OCL_PARSE LZE_PARSE,$(if $(filter auto on off,$($(v))),,$(error $(v)=$($(v)) is not one of auto|on|off)))
 
 GPU_CL=off
 ifneq "$(OCL_PARSE)" "off"
@@ -146,46 +138,13 @@ $(error LZE_PARSE=on but level_zero/ze_api.h or libze_loader was not found (comp
 endif
 endif
 
-ifneq "$(ACC_PARSE)" "off"
-ifeq "$(TARGET)" "class_layers"
-# nothing: the OpenACC shim has its own probe (CLASS_SHIM_BASENAMES above)
-else ifeq "$(COMPILER)" "intel"
-ifeq "$(ACC_PARSE)" "on"
-$(warning ACC_PARSE=on ignored: the Intel compilers have no OpenACC profiling interface header)
-endif
-else ifeq "$(call gpu_probe,acc_prof.h,)" "yes"
-override ACC=on
-else ifeq "$(ACC_PARSE)" "on"
-$(error ACC_PARSE=on but acc_prof.h was not found (GCC >= 9 or NVHPC needed))
-endif
-endif
-
-$(info tractor: GPU parsing: OpenCL=$(GPU_CL) LevelZero=$(GPU_ZE) OpenACC=$(ACC))
-ifeq "$(TARGET)" "class_layers"
-# the shims: no link to libOpenCL / libze_loader (the wrappers find the functions with dlsym(RTLD_NEXT)), no .gpu
+$(info tractor: GPU shims: OpenCL=$(GPU_CL) LevelZero=$(GPU_ZE))
+# the shims: no link to libOpenCL / libze_loader (the wrappers find the functions with dlsym(RTLD_NEXT))
 ifeq "$(GPU_CL)" "on"
 CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX).opencl
 endif
 ifeq "$(GPU_ZE)" "on"
 CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX).levelzero
-endif
-else
-ifeq "$(GPU_CL)" "on"
-LIBS+=-lOpenCL
-CONTROLS+=-DGPUPARSE_CL
-PARSE_GPU_APIS=cl
-endif
-ifeq "$(GPU_ZE)" "on"
-LIBS+=-lze_loader
-CONTROLS+=-DGPUPARSE_ZE
-PARSE_GPU_APIS:=$(if $(filter cl,$(PARSE_GPU_APIS)),cl$(COMMA)ze,ze)
-endif
-ifneq "$(PARSE_GPU_APIS)" "off"
-CONTROLS+=-DGPUPARSE
-endif
-ifneq "$(GPU_CL)$(GPU_ZE)$(ACC)" "offoffoff"
-EXTRANAMELIB:=$(EXTRANAMELIB).gpu
-endif
 endif
 endif
 
@@ -263,21 +222,21 @@ endif
 # TARGET=class_layers: standalone build of the event-class shims (OMPT, OpenACC, OpenCL, Level Zero, CUDA, llama.cpp, each when
 # it can be built: libtractor.<class>.so). Like the transport
 # shims they use the core only through t_shared (t_shim_state.h), so they do not depend on TARGET or on the core's
-# HWCOUNTERS/MEMPROFILE/DIAG/GPU switches; preload one next to a core built with OMPT=off (a core built with OMPT=on has
+# HWCOUNTERS/MEMPROFILE switches; preload one next to a core built with OMPT=off (a core built with OMPT=on has
 # the same code built in, then the shim is not needed). The OpenMP flags only give the compiler's omp-tools.h, the shim
 # does not link the OpenMP runtime.
 # The OpenACC shim (libtractor.acc.so) needs acc_prof.h (GCC >= 9, NVHPC), so it is built with those compilers only;
 # it works with a core of any compiler, e.g. a GCC-built libtractor.acc.so next to an Intel-built core.
 ifeq "$(TARGET)" "class_layers"
 # += : the OpenCL/Level Zero probes above may have added theirs. No OMPT shim with nvc (no OpenMP tools interface).
-ifeq "$(COMPILER)" "nvc"
+ifeq "$(COMPILER)" "nvidia"
 $(info tractor: class_layers: no OMPT shim with nvc (it has no OpenMP tools interface))
 else
 CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX).ompt
 endif
 ifeq "$(COMPILER)" "intel"
 CLASS_SHIM_OMP=-qopenmp
-$(info tractor: class_layers: no OpenACC shim with the Intel compilers (no acc_prof.h), build it with COMPILER=gnu or nvc)
+$(info tractor: class_layers: no OpenACC shim with the Intel compilers (no acc_prof.h), build it with COMPILER=gnu or nvidia)
 else
 CLASS_SHIM_OMP=-fopenmp
 ifeq "$(shell printf '$(HASH)include <acc_prof.h>\nint main(){return 0;}\n' | $(MPICXX) -x c++ - -o /dev/null >/dev/null 2>&1 && echo yes || echo no)" "yes"
@@ -406,7 +365,7 @@ endif # IS_CORE
 
 SHARED=-shared $(FPIC)
 
-NOINLINE=-fno-inline # nvc++ does not know it, see COMPILER=nvc below
+NOINLINE=-fno-inline # nvc++ does not know it, see COMPILER=nvidia below
 DEBUG=-g # -D_TRACTOR_PASSTHROUGH_
 DEBUG_TESTS=-g $(NOINLINE) 
 
@@ -432,7 +391,7 @@ CMISC=-fno-omit-frame-pointer -x c++ -fpermissive
 CONTROLS+=-D_GNUCOMPILER_
 endif
 
-ifeq "$(COMPILER)" "nvc"
+ifeq "$(COMPILER)" "nvidia"
 # nvc takes the GCC options above, but the C driver rejects "-x c++" (the .c files are C++): build them with nvc++,
 # i.e. through the MPI C++ wrapper (MPICH_CXX=nvc++ etc. are set by env.sh for compiler=nvc)
 override MPICC=$(MPICXX)
@@ -486,19 +445,17 @@ endif
 $(info tractor: llama.cpp parsing: $(LLAMA_ENABLED) (LLAMA_PARSE=$(LLAMA_PARSE), llama.h in '$(LLAMA_H_DIR)'))
 endif
 
-# CUDA through CUPTI (t_cupti.cpp) and cuBLAS wrappers (CLASS_CUDA/CLASS_CUBLAS in mpi_func.inc): one of the GPU APIs.
-# CUPTI_PARSE: auto with PARSE_GPU=on, off otherwise (default), on (a missing toolkit or a failing probe is an error) or
-# auto (built when the toolkit is found and the probe compiles, like OCL_PARSE/LZE_PARSE). A build with it is a GPU build
-# (.gpu in the library name, as with OpenCL, Level Zero, OpenACC). Only host CUDA headers are compiled, so any of the compilers
-# can do it; the probe is run with the compiler's own options (CXXMISC: -std=c++11 for intel), that's why this block
+# CUDA through CUPTI (t_cupti.cpp) and cuBLAS wrappers (CLASS_CUDA/CLASS_CUBLAS in mpi_func.inc): the CUDA shim of
+# TARGET=class_layers. CUPTI_PARSE: auto (default: built when the toolkit is found and the probe compiles, like
+# OCL_PARSE/LZE_PARSE), on (a missing toolkit or a failing probe is an error) or off. Only host CUDA headers are
+# compiled, so any of the compilers can do it; the probe is run with the compiler's own options (CXXMISC: -std=c++11 for intel), that's why this block
 # follows the compiler ones. The toolkit is CUDA_ROOT, else NVHPC_CUDA_HOME (env.sh, compiler=nvc:<cuda version>),
 # CUDA_HOME, CUDA_PATH, /opt/cuda, /usr/local/cuda, /usr. CUPTI is looked for in all layouts: extras/CUPTI/{include,lib64}
 # (NVIDIA installers, NVHPC), targets/x86_64-linux/{include,lib} (e.g. Arch's cuda) and include, lib/<multiarch>
 # (Debian/Ubuntu nvidia-cuda-dev + libcupti-dev, CUDA_ROOT=/usr: system directories are not added to -I/-rpath).
 # libcupti has to be the one of the CUDA version the application runs with (found through the rpath set here).
 # Recording is off unless PEAT_TRACTOR_PARSE_CUDA=1.
-# TARGET=class_layers looks for it too (auto): it builds the CUDA shim libtractor.cuda.so when found
-CUPTI_PARSE?=$(if $(filter on,$(PARSE_GPU))$(filter class_layers,$(TARGET)),auto,off)
+CUPTI_PARSE?=auto
 CUPTI_ENABLED=off
 $(if $(filter auto on off,$(CUPTI_PARSE)),,$(error CUPTI_PARSE=$(CUPTI_PARSE) is not one of auto|on|off))
 ifneq "$(CUPTI_PARSE)" "off"
@@ -515,29 +472,13 @@ cupti_probe=$(shell printf '$(HASH)include <cupti.h>\n$(HASH)include <cublas_v2.
 ifeq "$(if $(and $(CUDA_INC),$(CUPTI_INC),$(CUPTI_LIB)),$(cupti_probe),no)" "yes"
 CUPTI_ENABLED=on
 INCLUDE+=$(CUPTI_CFLAGS)
-ifeq "$(TARGET)" "class_layers"
-# the CUDA shim: t_cupti.cpp and the cuBLAS wrappers (mpi_layer_cuda.cpp); the shim names get no .gpu
+# the CUDA shim: t_cupti.cpp and the cuBLAS wrappers (mpi_layer_cuda.cpp)
 CLASS_SHIM_BASENAMES+=tractor$(TRANSPORTLIBSUFFIX).cuda
-else
-CONTROLS+=-D_T_CUPTI_
-CORE_OBJECTS+=t_cupti.o
-LIBS+=$(CUPTI_LDFLAGS)
-# a GPU build: .gpu, first in the name as for OpenCL/Level Zero/OpenACC (nothing precedes it there)
-ifeq "$(findstring .gpu,$(EXTRANAMELIB))" ""
-EXTRANAMELIB:=.gpu$(EXTRANAMELIB)
-endif
-endif
 else ifeq "$(CUPTI_PARSE)" "on"
 $(error CUPTI_PARSE=on but CUPTI/cuBLAS are not usable with $(MPICXX) $(CXXMISC) (CUDA_ROOT='$(CUDA_ROOT)': cuda/cublas headers in '$(CUDA_INC)', cupti.h in '$(CUPTI_INC)', libcupti in '$(CUPTI_LIB)'))
 endif
 $(info tractor: CUDA (CUPTI) parsing: $(CUPTI_ENABLED) (CUPTI_PARSE=$(CUPTI_PARSE), CUDA_ROOT='$(CUDA_ROOT)'))
 endif
-ifeq "$(PARSE_GPU)$(findstring .gpu,$(EXTRANAMELIB))" "on"
-$(warning PARSE_GPU=on but no GPU API (OpenCL, Level Zero, OpenACC, CUDA) was found, GPU parsing is off)
-endif
-
-# OpenACC interception (ACC, found by the PARSE_GPU detection above) is never set by hand
-
 FMISC= -fno-omit-frame-pointer 
 
 #MISC+=-D_TRACTOR_USE_SIMPLE_PTP_ 
@@ -593,11 +534,6 @@ endif
 CONTROLS+=-D_T_OMPT_
 endif
 
-ifeq "$(ACC)" "on"
-CORE_OBJECTS+=t_acc.o
-CONTROLS+=-D_T_ACC_
-endif
-
 ifneq "$(HWCOUNTERS)" "off"
 HW_COUNTERS=$(shell echo $(HWCOUNTERS) | tr a-z A-Z )
 CONTROLS+=-D_HWCOUNTERS_ENABLED_ -D_HWCOUNTERS_$(HW_COUNTERS)_
@@ -610,7 +546,7 @@ endif
 LIBSUFFIX=$(SUFFIX)$(DBG).$(TARGET)$(MPI_EXTRA)$(CT_SUFFIX)
 # transport and class shims are TARGET-independent and never get CT_SUFFIX either, since PARSE_MPI_INTERNAL doesn't
 # affect them
-TRANSPORTLIBSUFFIX=$(SUFFIX)$(DBG)$(EXTRANAMELIB)
+TRANSPORTLIBSUFFIX=$(SUFFIX)$(DBG)
 BINSUFFIX=$(SUFFIX)$(DBG).$(TARGET)
 # the core: one SONAME for all its variants, so that an MPI layer (DT_NEEDED) takes whichever variant is preloaded
 CORE_LIBNAME=tractor$(SUFFIX)$(DBG).core$(CORE_EXTRA)
@@ -752,7 +688,7 @@ $(FUNCID): mpi_func.inc ../../common/mpi_func_ids.h
 	../../common/mpi_func_ids.pl -i ../../common/mpi_func_ids.h mpi_func.inc -o mpi_func_ids_through.h mpi_func_names.h mpi_func_ids_trans.h  
 
 mpi_layer.cpp: mpi_layer.cpp.in mpi_layer.cpp.in.end $(FUNCID)
-	./mpi_layer.pl -p $(USE_PRAGMA_WEAK) -e $(PRINT_EXTENDED_STUFF) -m $(MAXMPI) -t $(PCT) -c $(PARSE_GPU_APIS) -g $(LLAMA_ENABLED) -u $(CUPTI_ENABLED) -s $(mpi_layer_skip_core) -i mpi_func.inc -o mpi_layer.cpp $(transport_func_layers)
+	./mpi_layer.pl -p $(USE_PRAGMA_WEAK) -e $(PRINT_EXTENDED_STUFF) -m $(MAXMPI) -t $(PCT) -g $(LLAMA_ENABLED) -u $(CUPTI_ENABLED) -s $(mpi_layer_skip_core) -i mpi_func.inc -o mpi_layer.cpp $(transport_func_layers)
 
 # transport_func_layers with "=outfile" makes mpi_layer.cpp's recipe also emit these
 # as a side effect; own recipe (not merged suffix-rule) avoids a -j race where
