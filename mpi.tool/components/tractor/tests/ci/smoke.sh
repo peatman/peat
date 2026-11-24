@@ -129,7 +129,9 @@ pmat_launch() {
 echo "== tractor: $lib (engineering=$engineering)"
 [ -z "$mat_alt" ] || echo "== alternative serial mat: $mat_alt"
 [ -z "$pmat" ] || echo "== pmat: $pmat (ranks: $pmat_ranks)"
-ldd "${libs[@]}" | grep -E "not found" && { echo "unresolved dependencies"; exit 1; }
+# the core is preloaded together with the MPI layer at run time: it satisfies the layer's libtractor.core.so.<major>
+# (the directory of a Makefile build holds no soname symlinks, so ldd needs the same preload)
+LD_PRELOAD="$lib" ldd "${libs[@]}" | grep -E "not found" && { echo "unresolved dependencies"; exit 1; }
 
 status=0
 fail() { echo "FAIL: $*"; status=1; }
