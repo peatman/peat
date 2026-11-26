@@ -44,7 +44,7 @@ for t in acc_test acc_sim_test ; do
     mkdir -p $trace
     ( cd $trace && mpiexec -np $ranks $preload ../$t $iterations ) || { status=1; continue; }
     [ -n "$preload" ] || continue
-    n=$(zcat $trace/tractor_t.mpi.0.gz | grep -c -E '^[-0-9:]+:acc_')
+    n=$(zcat $trace/tractor_t.mpi.0.gz | grep -c -E '^acc_')
     echo "$t: rank 0 recorded $n OpenACC events (trace dir: $trace)"
     [ "$n" -gt 0 ] || { echo "no OpenACC events in the trace (no libtractor.acc.so preloaded, ?)"; status=77; continue; }
     if [ $t == acc_sim_test ] ; then

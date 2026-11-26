@@ -93,7 +93,7 @@ elseif(TRACTOR_TARGET STREQUAL "transport_layers")
   if(TRACTOR_NM_EXE AND TRACTOR_OFI_LIBRARY)
     execute_process(COMMAND ${TRACTOR_NM_EXE} -D --defined-only ${TRACTOR_OFI_LIBRARY}
                     OUTPUT_VARIABLE _ofi_syms ERROR_QUIET)
-    if(NOT _ofi_syms MATCHES "(^|\n)[0-9a-f]+ [TtWw] fi_close(\n|$)")
+    if(NOT _ofi_syms MATCHES "(^|\n)[0-9a-f]+ [TtWw] fi_close(@@?[A-Za-z0-9_.]+)?(\n|$)")
       message(FATAL_ERROR "tractor: TRACTOR_TARGET=transport_layers needs the engineering libfabric, but ${TRACTOR_OFI_LIBRARY} is "
         "a stock build (fi_close is only an inline function there, the shims redefine it). Point OFIPATH to the engineering "
         "libfabric (libfabric_eng='-eng' before env.sh).")
@@ -138,12 +138,12 @@ else()
                     OUTPUT_VARIABLE _mpi_defs ERROR_QUIET)
     set(_ofi_eng OFF)
     set(_mpi_ofi_eng OFF)
-    if(_ofi_syms MATCHES "(^|\n)[0-9a-f]+ [TtWw] fi_close(\n|$)")
+    if(_ofi_syms MATCHES "(^|\n)[0-9a-f]+ [TtWw] fi_close(@@?[A-Za-z0-9_.]+)?(\n|$)")
       set(_ofi_eng ON)
     endif()
     # engineering MPI: it needs fi_close & co from libfabric, or - when its libfabric use is limited to ordinary calls
     # (the GNU Open MPI builds) - it is the patched one that defines mpi_internal_comm_create
-    if(_mpi_syms MATCHES "(^|\n) +[Uw] fi_close(\n|$)" OR _mpi_defs MATCHES "(^|\n)[0-9a-f]+ [TtWw] mpi_internal_comm_create(\n|$)")
+    if(_mpi_syms MATCHES "(^|\n) +[Uw] fi_close(@@?[A-Za-z0-9_.]+)?(\n|$)" OR _mpi_defs MATCHES "(^|\n)[0-9a-f]+ [TtWw] mpi_internal_comm_create(\n|$)")
       set(_mpi_ofi_eng ON)
     endif()
     if(_ofi_eng AND _mpi_ofi_eng)

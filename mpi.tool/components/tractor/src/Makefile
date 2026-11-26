@@ -166,14 +166,14 @@ MPI_LIB:=$(firstword $(wildcard $(MPI_BINDIR)../lib/libmpi.so $(MPI_BINDIR)../li
 ifeq "$(LIBFABRIC_LIB)" ""
 $(info tractor: libfabric edition not checked (libfabric not found))
 else
-LIBFABRIC_ENG:=$(if $(filter 0,$(shell nm -D --defined-only $(LIBFABRIC_LIB) | grep -c ' [TtWw] fi_close$$')),stock,engineering)
+LIBFABRIC_ENG:=$(if $(filter 0,$(shell nm -D --defined-only $(LIBFABRIC_LIB) | grep -Ec ' [TtWw] fi_close(@@?[A-Za-z0-9_.]+)?$$')),stock,engineering)
 ifeq "$(TARGET)" "transport_layers"
 ifeq "$(LIBFABRIC_ENG)" "stock"
 $(error TARGET=transport_layers needs the engineering libfabric, but $(LIBFABRIC_LIB) is a stock build (fi_close is only an inline function there). Point OFIPATH to the engineering libfabric (libfabric_eng=-eng before env.sh))
 endif
 else ifneq "$(MPI_LIB)" ""
 ifneq "$(shell readelf -d $(MPI_LIB) | grep -c 'NEEDED.*libfabric')" "0"
-MPI_ENG:=$(if $(filter-out 0,$(shell nm -D --undefined-only $(MPI_LIB) | grep -c ' [Uw] fi_close$$') $(shell nm -D --defined-only $(MPI_LIB) | grep -c ' [TtWw] mpi_internal_comm_create$$')),engineering,stock)
+MPI_ENG:=$(if $(filter-out 0,$(shell nm -D --undefined-only $(MPI_LIB) | grep -Ec ' [Uw] fi_close(@@?[A-Za-z0-9_.]+)?$$') $(shell nm -D --defined-only $(MPI_LIB) | grep -c ' [TtWw] mpi_internal_comm_create$$')),engineering,stock)
 ifneq "$(MPI_ENG)" "$(LIBFABRIC_ENG)"
 $(error libfabric version mismatch: the MPI library $(MPI_LIB) is a $(MPI_ENG) build but $(LIBFABRIC_LIB) is a $(LIBFABRIC_ENG) libfabric. Use matching ones (OFIPATH, libfabric_eng=-eng before env.sh))
 endif

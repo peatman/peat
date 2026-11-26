@@ -64,6 +64,7 @@ extern "C" {
 FILE *debug_fp;
 #endif
 extern PEAT_Clock global_cuda_time; /* CUDA records were taken (the CUDA class, built in or a shim) */
+static int t_class_records = 0;     /* an event class (OMPT, OpenACC, OpenCL, ...) took records, see t_shim_allocate_event */
 
 int gettimeofday_counter = 0;
 int clock_gettime_counter = 0;
@@ -1471,7 +1472,7 @@ void tractor::end(void)
     t_shared.tractor_initialized = 0; /* the shims record nothing from here on */
     /* in case LD_PRELOAD was used with 'wrong' app (like mpiexec.hydra etc); a non-MPI llama.cpp process
        has no MPI time but its pipeline stages */
-    bool non_mpi_records = global_llama_time > 0 || global_cuda_time > 0;
+    bool non_mpi_records = global_llama_time > 0 || global_cuda_time > 0 || t_class_records;
     if (global_mpi_time > 0 || non_mpi_records)
         write_trace();
     if (gt_ninfo)
@@ -3450,6 +3451,10 @@ static int t_shim_write_records(int tid, int level, const long long *values, int
 static void t_shim_allocate_event(int tid, int level, msl_event **event, void ***addrs)
 {
     msl_extras_counters counters;
+    /* an event class (OMPT, OpenACC, OpenCL, Level Zero, ...) took a record: tractor::end() writes the trace of a
+       non-MPI process. Test first, so the hot path does not write to a shared cache line */
+    if (!__atomic_load_n(&t_class_records, __ATOMIC_RELAXED))
+        __atomic_store_n(&t_class_records, 1, __ATOMIC_RELAXED);
     gt_info(allocate_event(tid, level, 0, event, &counters));
     *addrs = counters.addrs;
 }

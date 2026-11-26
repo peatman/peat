@@ -50,13 +50,13 @@ for t in acc_test acc_sim_test ; do
     [ -n "$preload" ] || continue
     # the function name is preceded by one id column per nesting level of the recorded calls: zeInit, called by libfabric inside
     # MPI_Init and recorded by the Level Zero wrapper, makes it two (4:-1:0:0:acc_...), without it there is one (4:0:0:acc_...)
-    n=$(zcat $trace/tractor_t.mpi.0.gz | grep -c -E '^[-0-9:]+:acc_')
+    n=$(zcat $trace/tractor_t.mpi.0.gz | grep -c -E '^acc_')
     echo "$t: rank 0 recorded $n OpenACC events (trace dir: $trace)"
     [ "$n" -gt 0 ] || { echo "no OpenACC events in the trace (no libtractor.acc.so preloaded, or a core built without OpenACC?)"; status=77; continue; }
     zcat $trace/tractor_t.com.0.gz | grep -A8 "GPU Statistics"
     if [ $t == acc_test ] ; then
         # the host runtime raises no launch or transfer events, so these show that the kernels really ran on the GPU
-        launches=$(zcat $trace/tractor_t.mpi.0.gz | grep -c -E '^[-0-9:]+:acc_enqueue_launch')
+        launches=$(zcat $trace/tractor_t.mpi.0.gz | grep -c -E '^acc_enqueue_launch')
         echo "$t: rank 0 recorded $launches kernel launches"
         [ "$launches" -gt 0 ] || { echo "no kernel launches recorded: acc_test did not run on the GPU"; status=1; }
     fi
