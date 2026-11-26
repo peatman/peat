@@ -87,6 +87,7 @@ struct Stat {
              num_events(0), cpu_len(0), transport_len(0), changed_UR_num(0), covered_UR_length(0), uncovered_UR_length(0), progress_len_total(0), pcontrol_removed_user_code_length(0) {}
     PEAT_Clock rank_start;
     PEAT_Clock rank_end;
+    std::map<PEAT_Thread, PEAT_Clock> thread_last_out; // end of the last event of every thread of the rank (a check only, not packed)
     PEAT_Clock rank_mpi_init_start;
     PEAT_Clock rank_mpi_init_end;
     PEAT_Clock rank_mpi_finalize_start;
@@ -108,7 +109,7 @@ struct Stat {
     PEAT_Clock get_max_msg_length() const;
     PEAT_Clock get_min_msg_length() const;
     void add_mpi_msg_len_stat(const PEAT_MPI_Func_ID func_id, const PEAT_Message_Size msg_send_size, const PEAT_Clock msg_length);
-    void add_mpi_stat(const PEAT_MPI_Func_ID func, const PEAT_Clock in, const PEAT_Clock out, const PEAT_Clock len_in, const PEAT_Clock cpu_len_in);
+    void add_mpi_stat(const PEAT_MPI_Func_ID func, const PEAT_Thread thread, const PEAT_Clock in, const PEAT_Clock out, const PEAT_Clock len_in, const PEAT_Clock cpu_len_in);
     std::map<PEAT_MPI_Func_ID, PEAT_Clock> progress_len; // time spent inside other calls progressing this (nonblocking) function
     PEAT_Clock progress_len_total;
     void add_progress_stat(const PEAT_MPI_Func_ID owner_func, const PEAT_Clock len)
@@ -507,7 +508,7 @@ struct Event_Set_Stat {
     void add_event_stat(const t_stat_type t, const PEAT_Transports ct, const PEAT_Rank rank, const PEAT_MPI_Func_ID func, const PEAT_MPI_Func_ID parent_func, const PEAT_Rank num_ranks, const PEAT_Message_Size send_size, const PEAT_Message_Size recv_size,
                         const PEAT_Clock prolog, const PEAT_Clock transport, const PEAT_Clock centre, const PEAT_Clock epilog, const PEAT_Clock wait, const PEAT_Clock overlap, PEAT_Bool is_rndv, PEAT_Bool is_not_verified);
     void add_ts_fs_event_stat(const t_stat_type t, PET_Event *event);
-    void add_mpi_event_stat(const t_stat_type t, const PEAT_Rank rank, const PEAT_MPI_Func_ID func, const PEAT_Clock in, const PEAT_Clock out, const PEAT_Clock len_in, const PEAT_Clock cpu_len_in);
+    void add_mpi_event_stat(const t_stat_type t, const PEAT_Rank rank, const PEAT_MPI_Func_ID func, const PEAT_Thread thread, const PEAT_Clock in, const PEAT_Clock out, const PEAT_Clock len_in, const PEAT_Clock cpu_len_in);
     void add_uc_event_stat(const t_stat_type t, const PEAT_Rank rank, const PEAT_Clock len_in, const PEAT_Bool changed);
     void add_mpi_length_stat(const t_stat_type t, const PEAT_Rank rank, const PEAT_MPI_Func_ID func, const PEAT_Message_Size msg_size, const PEAT_Clock msg_len);
     void add_progress_stat(const t_stat_type t, const PEAT_Rank rank, const PEAT_MPI_Func_ID owner_func, const PEAT_Clock len)

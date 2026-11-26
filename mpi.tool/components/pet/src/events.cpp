@@ -483,6 +483,14 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
         return NULL;
     }
     // event->node = ptp->get_tgt_node(rank);
+    // An implicit barrier (OMPT sync_region) contains its sync_region_wait, which the trace has as the next record of the
+    // same thread: hold the barrier until the wait is read (below), so that the wait can become its nested record
+    PET_OMPT_Event *ompt_barrier = NULL;
+    if (host_evt == NULL && container == NULL && func_id == OMPT_SYNC_REGION_ID) {
+        ompt_barrier = dynamic_cast<PET_OMPT_Event *>(event);
+        if (ompt_barrier)
+            ompt_barrier->set_hold_for_child(true);
+    }
     if (global_func_id.check_property(func_id, PEAT_PROP_DATA_TXRX)) {
         input_MPI->read_lines(trace_line_MPI, rank, ':'); // the receive part is only a function-specific line
         if (event->get_event_type() == PET_EVENT_TYPE_TAR) {
@@ -561,6 +569,35 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
                 event->move_event(difference);
             }
         }
+        if (func_id == OMPT_SYNC_REGION_WAIT_ID && prev_event && event->ids.size() >= 2) {
+            // the wait of an implicit barrier lies inside the barrier (OMPT spec, implicit-barrier-wait-begin/end): a record
+            // nested in it, not the next one of the thread: the thread does not wait after the barrier but in it
+            PET_OMPT_Event *barrier = dynamic_cast<PET_OMPT_Event *>(prev_event);
+            PET_OMPT_Event *wait = dynamic_cast<PET_OMPT_Event *>(event);
+            if (barrier && wait && barrier->can_nest_wait(wait)) {
+                event_rank->unregister_event_by_ids(event);
+                PEAT_Event_IDs nested_ids(barrier->ids.size(), -1); // id path of a nested record: id of the container, index in it
+                nested_ids[0] = barrier->ids[0];
+                nested_ids[1] = static_cast<PEAT_UID>(barrier->nested_events.size());
+                event->ids = nested_ids;
+                event_rank->register_event_by_ids(event);
+                event->container_event = barrier;
+                event->host_event = barrier;
+                // a nested record does not begin before its container (the timeline would take it as an event of the past)
+                if (event->e_time.func.in < barrier->e_time.func.in)
+                    event->e_time.func.in = barrier->e_time.func.in;
+                if (event->e_time.mpi.in < barrier->e_time.mpi.in)
+                    event->e_time.mpi.in = barrier->e_time.mpi.in;
+                if (event->e_time.mpi.out < event->e_time.mpi.in)
+                    event->e_time.mpi.out = event->e_time.mpi.in;
+                if (event->e_time.func.out < event->e_time.mpi.out)
+                    event->e_time.func.out = event->e_time.mpi.out;
+                barrier->nested_events.push_back(event);
+                barrier->flat_events.push_back(event);
+                barrier->set_hold_for_child(false);
+                return event; // not a record of the thread's chain: no insert(), the barrier writes and estimates it
+            }
+        }
         if (event->thread_id == 0) {
             event_rank->tractor_overhead_time += sub_t;
             // if (event->func_id!= OMPT_PARALLEL_ID) move_openmp_regions(sub_t, event);
@@ -575,6 +612,16 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
         event->post_read_event();
         event->set_sub_t(event_rank->tractor_overhead_time, event_rank->sub_time);
         event_rank->last_read_event = event;
+    }
+    if (ompt_barrier) {
+        // read on until its wait (the next record of the same thread; records of the other threads can come in between)
+        const int lookahead = 2 * static_cast<int>(get_max_thread_id(rank) + 1) + 2;
+        for (int i = 0; i < lookahead && !ompt_barrier->has_nested(); i++) {
+            String_Split t_trace_line_MPI, t_trace_line_TRC;
+            if (get_event(rank, t_trace_line_MPI, t_trace_line_TRC, NULL) == NULL)
+                break; // end of the trace
+        }
+        ompt_barrier->set_hold_for_child(false);
     }
     return event;
 }

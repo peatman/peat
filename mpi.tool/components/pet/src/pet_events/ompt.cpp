@@ -37,7 +37,7 @@
 #include <mpi.h>
 #endif
 
-PET_OMPT_Event::PET_OMPT_Event(PET_Core *p) : PET_Local_Event(p), pair_event(NULL), t0(NULL), is_all_estimated(false), kind(-1), endpoint(-1), parallel_data(-1), task_data(-1), addr_id(-1)
+PET_OMPT_Event::PET_OMPT_Event(PET_Core *p) : PET_Local_Event(p), pair_event(NULL), t0(NULL), is_all_estimated(false), kind(-1), endpoint(-1), parallel_data(-1), task_data(-1), addr_id(-1), hold_for_child(false)
 {
 }
 
@@ -58,8 +58,11 @@ PEAT_Bool PET_OMPT_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_s
 
 PET_Event *PET_OMPT_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind)
 {
-    if (thread_id == 0 || (func_id != OMPT_PARALLEL_BEGIN_ID && func_id != OMPT_PARALLEL_END_ID))
-        return PET_Local_Event::write_event(gz_MPI, gz_bind);
+    if (thread_id == 0 || (func_id != OMPT_PARALLEL_BEGIN_ID && func_id != OMPT_PARALLEL_END_ID)) {
+        PET_Event *written = PET_Local_Event::write_event(gz_MPI, gz_bind);
+        write_nested_records(gz_MPI, gz_bind); // the wait inside an implicit barrier, see hold_for_child
+        return written;
+    }
     is_written = true;
     return NULL;
 }
@@ -188,7 +191,11 @@ PEAT_Bool PET_OMPT_Event::estimate(Estimation_Event *event)
                     concatenate_event();
                 }
         */
-        submit(e_time.func.out, EET_FUNC_END, this, this, NULL);
+        if (has_nested()) {
+            initiate_nested(); // FUNC_END follows the last nested record (EET_CHILD_COMPLETED)
+        } else {
+            submit(e_time.func.out, EET_FUNC_END, this, this, NULL);
+        }
         break;
     case EET_FUNC_END:
         if (!estimation_started) {
@@ -197,8 +204,21 @@ PEAT_Bool PET_OMPT_Event::estimate(Estimation_Event *event)
         // assert(estimation_started);
         set_estimated();
         put_transport_event_stat();
+        if (get_completion_target()) { // a nested record (the wait inside a barrier) tells its container
+            submit(event->start, EET_CHILD_COMPLETED, get_completion_target(), this, NULL);
+        }
         if (is_estimated()) { // checkl if other paralle_ends finish
             update_finish();
+        }
+        break;
+    case EET_CHILD_COMPLETED: // as PET_Event::estimate()
+        if (handle_nested_completed(event) && nested_all_estimated() && !finish_calculations) {
+            PEAT_Clock finish = __max__(e_time.func.out, get_nested_finish());
+            if (finish > e_time.func.out) {
+                e_time.mpi.out = e_time.func.out = finish;
+            }
+            finish_calculations = true;
+            submit(e_time.func.out, EET_FUNC_END, this, this, NULL);
         }
         break;
     case EET_PROGRESS_NOTIFY:
@@ -238,12 +258,21 @@ PEAT_Bool PET_OMPT_Event::can_be_destroyed()
     return answer && PET_Event::can_be_destroyed();
 }
 
+PEAT_Bool PET_OMPT_Event::can_nest_wait(const PET_OMPT_Event *wait) const
+{
+    return func_id == OMPT_SYNC_REGION_ID && wait != NULL && wait->func_id == OMPT_SYNC_REGION_WAIT_ID && wait->thread_id == thread_id &&
+           wait->rank == rank && wait->kind == kind && nested_events.empty() && host_event == NULL &&
+           wait->e_time.func.in < e_time.func.out && wait->e_time.func.out > e_time.func.in; // overlaps the barrier. The wait begins after
+                                                                                              // the barrier begins, but the times of the records are
+                                                                                              // reconstructed from their differences and can be off by some clocks
+}
+
 PEAT_Bool PET_OMPT_Event::initiate()
 {
     if (is_initiated || is_estimated()) {
         return true;
     }
-    if (get_parallel_section_begin() == NULL && func_id != OMPT_PARALLEL_BEGIN_ID) {
+    if (host_event == NULL && get_parallel_section_begin() == NULL && func_id != OMPT_PARALLEL_BEGIN_ID) {
         is_initiated = true;
         set_estimated(); // assume this orphan event estimated to prevent pipeline from falling
         submit(0, NULL);

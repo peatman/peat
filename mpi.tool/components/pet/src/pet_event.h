@@ -1380,12 +1380,19 @@ struct PET_OMPT_Event : public PET_Local_Event {
     PEAT_Signed_Num kind, endpoint;
     PEAT_UID parallel_data, task_data;
     PEAT_UID addr_id;
+    /* An implicit barrier is reported as two records on one thread, sync_region (the barrier) and sync_region_wait (the wait
+       inside it): the wait begins after the barrier begins and ends before it ends, but both records are on the same level of
+       the thread, so the barrier overlaps its own wait. The wait is attached to the barrier as a nested record (can_nest_wait(),
+       PET_Core::get_event()); hold_for_child keeps the barrier from being estimated or written until its wait could be read. */
+    PEAT_Bool hold_for_child;
 
   public:
     PET_OMPT_Event(PET_Core *p);
     ~PET_OMPT_Event();
     virtual PET_Event_Type get_event_type() const { return PET_EVENT_TYPE_OMPT; }
     virtual PEAT_Bool estimate(Estimation_Event *event);
+    void set_hold_for_child(PEAT_Bool hold) { hold_for_child = hold; }
+    PEAT_Bool can_nest_wait(const PET_OMPT_Event *wait) const; // wait: this barrier's sync_region_wait, see hold_for_child
     virtual PEAT_Bool read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr);
     virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind);
     virtual void insert();
@@ -1438,6 +1445,8 @@ struct PET_OMPT_Event : public PET_Local_Event {
     };
     virtual PEAT_Bool ready_to_estimate()
     {
+        if (hold_for_child)
+            return false; // its wait may still be unread (hold_for_child)
         if (func_id == OMPT_PARALLEL_BEGIN_ID && thread_id > 0 && t0)
             return t0->ready_to_estimate();
         // not needed since already checking in bind()

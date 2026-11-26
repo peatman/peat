@@ -966,19 +966,19 @@ PEAT_Bool PET_Core::write_event_and_update_stat(PET_Event *event)
 
         // time this call spent progressing other (nonblocking) collectives is not its own: subtract it here, credit the owners below
         PEAT_Clock foreign_orig = event->foreign_progress_time(0), foreign_trc = event->foreign_progress_time(1), foreign_post = event->foreign_progress_time(2);
-        stat.add_mpi_event_stat(Event_Set_Stat::tst_orig, event->rank, event->func_id,
+        stat.add_mpi_event_stat(Event_Set_Stat::tst_orig, event->rank, event->func_id, event->thread_id,
                                 event->o_time.func.in,
                                 event->o_time.func.out,
                                 event->o_time.func.duration() - foreign_orig,
                                 event->o_event_parts.prolog + event->o_event_parts.epilog +
                                     event->o_time.mpi.in - event->o_time.func.in + event->o_time.func.out - event->o_time.mpi.out);
-        stat.add_mpi_event_stat(Event_Set_Stat::tst_trc, event->rank, event->func_id,
+        stat.add_mpi_event_stat(Event_Set_Stat::tst_trc, event->rank, event->func_id, event->thread_id,
                                 event->t_time.func.in,
                                 event->t_time.func.out,
                                 event->t_time.func.duration() - foreign_trc,
                                 event->o_event_parts.prolog + event->o_event_parts.epilog);
         if (!get_mo()) {
-            stat.add_mpi_event_stat(Event_Set_Stat::tst_post, event->rank, event->func_id,
+            stat.add_mpi_event_stat(Event_Set_Stat::tst_post, event->rank, event->func_id, event->thread_id,
                                     event->e_time.func.in,
                                     event->e_time.func.out,
                                     event->e_time.func.duration() - foreign_post,

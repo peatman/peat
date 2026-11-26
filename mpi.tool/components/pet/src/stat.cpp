@@ -108,16 +108,21 @@ void Stat::add_uc_stat(const PEAT_Clock len_in, PEAT_Bool changed)
     }
 }
 
-void Stat::add_mpi_stat(const PEAT_MPI_Func_ID func, const PEAT_Clock in, const PEAT_Clock out, const PEAT_Clock len_in, const PEAT_Clock cpu_len_in)
+void Stat::add_mpi_stat(const PEAT_MPI_Func_ID func, const PEAT_Thread thread, const PEAT_Clock in, const PEAT_Clock out, const PEAT_Clock len_in, const PEAT_Clock cpu_len_in)
 {
     // process events
     if (rank_start > in) {
         rank_start = in;
     }
+    // The events of one thread have to come in the order of their ends (nested records are not counted here). The threads of a
+    // rank (OpenMP workers) are estimated independently, so the events of the rank as a whole do not: it ends with its latest event.
+    std::map<PEAT_Thread, PEAT_Clock>::iterator last = thread_last_out.find(thread);
+    if (last != thread_last_out.end() && out < last->second) {
+        assert(0); //supposedly it should be monotonic within a thread
+    }
+    thread_last_out[thread] = out;
     if (rank_end < out) {
         rank_end = out;
-    } else {
-        assert(0); //supposedly it should be monotonic
     }
     // process MPI_INIT
     if (func == MPI_INIT_ID || func == MPI_INIT_THREAD_ID) {
@@ -314,10 +319,10 @@ void Event_Set_Stat::add_event_stat(const t_stat_type t, const PEAT_Transports c
     }
 }
 
-void Event_Set_Stat::add_mpi_event_stat(const t_stat_type t, const PEAT_Rank rank, const PEAT_MPI_Func_ID func, const PEAT_Clock in, const PEAT_Clock out, const PEAT_Clock len_in, const PEAT_Clock cpu_len_in)
+void Event_Set_Stat::add_mpi_event_stat(const t_stat_type t, const PEAT_Rank rank, const PEAT_MPI_Func_ID func, const PEAT_Thread thread, const PEAT_Clock in, const PEAT_Clock out, const PEAT_Clock len_in, const PEAT_Clock cpu_len_in)
 {
     Stat &evt_stat = stat[t][rank];
-    evt_stat.add_mpi_stat(func, in, out, len_in, cpu_len_in);
+    evt_stat.add_mpi_stat(func, thread, in, out, len_in, cpu_len_in);
 }
 void Event_Set_Stat::add_uc_event_stat(const t_stat_type t, const PEAT_Rank rank, const PEAT_Clock len_in, const PEAT_Bool changed)
 {
