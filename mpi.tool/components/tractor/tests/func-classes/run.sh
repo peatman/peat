@@ -8,6 +8,7 @@
 #   TOOLCHAIN=gcc     GCC, MPICH 5.0.2g, libraries from lib/gnu
 #   TOOLCHAIN=nvc     NVHPC (NVC_COMPILER, default nvc:12.9), MPICH 5.0.2g, libraries from lib/nvc
 #   TOOLCHAIN=clang   system clang, MPICH 5.0.2g, libraries from lib/clang
+#   TOOLCHAIN=amd     AMD's LLVM compiler (ROCm amdclang), MPICH 5.0.2g, libraries from lib/amd
 # e.g. TOOLCHAIN=gcc ./run.sh p2p 20 4. mpi_type overrides the MPICH, TRACTOR_LIBDIR=<dir> the library directory.
 # The tests are rebuilt when the toolchain or the MPI changes.
 
@@ -23,7 +24,8 @@ case $toolchain in
     gcc )   compiler=gcc ; mpi_default=mpich:5.0.2g-mt-ofi-eng ; libsubdir=gnu ;;
     nvc )   compiler=${NVC_COMPILER:-nvc:12.9} ; mpi_default=mpich:5.0.2g-mt-ofi-eng ; libsubdir=nvc ;;
     clang ) compiler=clang ; mpi_default=mpich:5.0.2g-mt-ofi-eng ; libsubdir=clang ;;
-    * )     echo "unknown TOOLCHAIN=$toolchain (intel, gcc, nvc or clang)" ; exit 2 ;;
+    amd )   compiler=amd ; mpi_default=mpich:5.0.2g-mt-ofi-eng ; libsubdir=amd ;;
+    * )     echo "unknown TOOLCHAIN=$toolchain (intel, gcc, nvc, clang or amd)" ; exit 2 ;;
 esac
 export compiler
 export mpi_type=${mpi_type:-$mpi_default}

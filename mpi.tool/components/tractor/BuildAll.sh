@@ -2,7 +2,7 @@
 #
 # Build every tractor library for one compiler, each in the plain (release) and the DIAG (_dbg) variant:
 #
-#   ./BuildAll.sh gnu|intel|nvidia|clang [-j <parallel builds>]
+#   ./BuildAll.sh gnu|intel|nvidia|clang|amd [-j <parallel builds>]
 #
 # The libraries go to ../../lib/<compiler> (the logs: Build.<compiler>.log):
 #   MPI independent
@@ -21,6 +21,8 @@
 # The variants with MPI buffers (.mbs), virtual->physical addresses (.v2p), memory profiling (.mem<x>) and hardware
 # counters are not built here: set MPIBUFFERS=on / VIRT2PHYS=on / MEMPROFILE=<x> / HWCOUNTERS=<x> in the environment (or run
 # Build.sh by hand).
+# amd is the clang family built with ROCm's amdclang (env.sh: compiler=amd[:<ROCm root>]); it has its own lib/amd, so it does not
+# replace the libraries of the system clang. No OpenACC shim (no acc_prof.h).
 # Build.sh takes the MPIs from $HOME/{mpich,mvapich,openmpi}/<version><g|x>[-mt-ofi][-eng] (env.sh): g for the MPIs built
 # with GCC (used with every compiler but intel), x for the ones built with the Intel compilers.
 
@@ -31,6 +33,7 @@ case "$1" in
     intel)  export compiler=oneAPI:2026.1.0 ;   L=x ;;
     nvidia) export compiler=nvc:12.9 ;          L=g ;; # CUDA 12.9: needed for Pascal GPUs
     clang)  export compiler=clang ;             L=g ;;
+    amd)    export compiler=amd ;               L=g ;; # AMD's LLVM compiler (ROCm: amdclang, $ROCM_PATH or /opt/rocm); clang options, own lib/amd
     *) sed -n '3,6p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
 export COMPILER=$1

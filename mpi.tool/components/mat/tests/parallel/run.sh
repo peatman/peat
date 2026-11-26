@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build traffic_test and record its trace under tractor.
 #   ./run.sh [iterations] [ranks] [trace dir]      default: 20 iterations, 8 ranks, trace.traffic
-# Same toolchain selection as tractor/tests/func-classes/run.sh (TOOLCHAIN=intel|gcc|nvc|clang, mpi_type,
+# Same toolchain selection as tractor/tests/func-classes/run.sh (TOOLCHAIN=intel|gcc|nvc|clang|amd, mpi_type,
 # TRACTOR_LIBDIR); TRACTOR=0 runs the test without the tractor preload.
 # Then compare serial mat with parallel mat on the trace: ./compare.sh <trace dir>
 
@@ -15,7 +15,8 @@ case $toolchain in
     gcc )   compiler=gcc ; mpi_default=mpich:5.0.2g-mt-ofi-eng ; libsubdir=gnu ; tlib=libtractor.mpich5.eng.so ;;
     nvc )   compiler=${NVC_COMPILER:-nvc:12.9} ; mpi_default=mpich:5.0.2g-mt-ofi-eng ; libsubdir=nvc ; tlib=libtractor.mpich5.eng.so ;;
     clang ) compiler=clang ; mpi_default=mpich:5.0.2g-mt-ofi-eng ; libsubdir=clang ; tlib=libtractor.mpich5.eng.so ;;
-    * )     echo "unknown TOOLCHAIN=$toolchain (intel, gcc, nvc or clang)" ; exit 2 ;;
+    amd )   compiler=amd ; mpi_default=mpich:5.0.2g-mt-ofi-eng ; libsubdir=amd ; tlib=libtractor.mpich5.eng.so ;;
+    * )     echo "unknown TOOLCHAIN=$toolchain (intel, gcc, nvc, clang or amd)" ; exit 2 ;;
 esac
 here=$(cd "$(dirname "$0")" && pwd)
 export compiler

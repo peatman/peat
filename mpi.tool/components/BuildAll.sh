@@ -15,7 +15,7 @@ pushd pet/src
 popd 
 
 pushd tractor 
-for c in intel gnu nvidia clang ; do ./BuildAll.sh $c ; done
+for c in intel gnu nvidia clang amd ; do ./BuildAll.sh $c ; done
 popd 
 
 pushd urpu/src 

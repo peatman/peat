@@ -385,7 +385,7 @@ CXXMISC=-std=c++11 -fno-omit-frame-pointer -w $(SINCLUDE) # -use-intel-optimized
 CMISC=-fno-omit-frame-pointer -w -use-intel-optimized-headers $(SINCLUDE)
 CONTROLS+=-D_INTELCOMPILER_
 else
-COMPILER=gnu #default
+COMPILER=gnu #default (a COMPILER given on the command line is kept: clang and amd, ROCm's amdclang, take these GCC options too)
 CXXMISC=-Wno-write-strings
 CMISC=-fno-omit-frame-pointer -x c++ -fpermissive
 CONTROLS+=-D_GNUCOMPILER_

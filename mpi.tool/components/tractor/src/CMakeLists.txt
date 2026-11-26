@@ -188,25 +188,31 @@ endif()
 message(STATUS "tractor: using Perl ${PERL_VERSION_STRING} (${PERL_EXECUTABLE})")
 
 # ---------------------------------------------------------------------------
-# 1. Compiler family: gnu / intel / nvidia / clang
-#    (override with -DTRACTOR_COMPILER=gnu|intel|nvidia|clang to skip auto-detection; pgi = nvidia)
+# 1. Compiler family: gnu / intel / nvidia / clang / amd
+#    (override with -DTRACTOR_COMPILER=gnu|intel|nvidia|clang|amd to skip auto-detection; pgi = nvidia;
+#    amd = ROCm's amdclang++: the clang family with its own lib/amd, detected by the name of the compiler)
 # ---------------------------------------------------------------------------
 if(NOT TRACTOR_COMPILER)
   if(CMAKE_CXX_COMPILER_ID STREQUAL "Intel" OR CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
     set(_tractor_compiler intel)
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "PGI" OR CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
     set(_tractor_compiler nvidia)
-  elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang") # Clang, AppleClang
-    set(_tractor_compiler clang)
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang") # Clang, AppleClang, AMD's amdclang++ (reports Clang too)
+    get_filename_component(_tractor_cxx_name "${CMAKE_CXX_COMPILER}" NAME)
+    if(_tractor_cxx_name MATCHES "^amdclang")
+      set(_tractor_compiler amd)
+    else()
+      set(_tractor_compiler clang)
+    endif()
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(_tractor_compiler gnu)
   else()
     message(WARNING "tractor: unrecognized CXX compiler id '${CMAKE_CXX_COMPILER_ID}', defaulting TRACTOR_COMPILER=gnu")
     set(_tractor_compiler gnu)
   endif()
-  set(TRACTOR_COMPILER ${_tractor_compiler} CACHE STRING "toolchain family: gnu|intel|nvidia|clang" FORCE)
+  set(TRACTOR_COMPILER ${_tractor_compiler} CACHE STRING "toolchain family: gnu|intel|nvidia|clang|amd" FORCE)
 endif()
-set_property(CACHE TRACTOR_COMPILER PROPERTY STRINGS gnu intel nvidia clang)
+set_property(CACHE TRACTOR_COMPILER PROPERTY STRINGS gnu intel nvidia clang amd)
 message(STATUS "tractor: COMPILER=${TRACTOR_COMPILER} (CXX compiler id: ${CMAKE_CXX_COMPILER_ID})")
 
 # ---------------------------------------------------------------------------
@@ -947,7 +953,7 @@ elseif(TRACTOR_COMPILER STREQUAL "nvidia" OR TRACTOR_COMPILER STREQUAL "pgi")
   list(APPEND TRACTOR_CONTROLS _PGICOMPILER_ _GNUCOMPILER_)
   set(TRACTOR_CXX_MISC -Wno-write-strings -fno-omit-frame-pointer)
   set(TRACTOR_OMP_FLAG -mp)
-else() # gnu and clang
+else() # gnu, clang and amd
   list(APPEND TRACTOR_CONTROLS _GNUCOMPILER_)
   # the stack unwinder walks frame pointers: without this flag -O3 code crashes at start
   set(TRACTOR_CXX_MISC -Wno-write-strings -fno-omit-frame-pointer)

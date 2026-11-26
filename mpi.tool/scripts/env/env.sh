@@ -139,6 +139,30 @@ export I_MPI_CC=clang
 export I_MPI_CXX=clang++
 export I_MPI_FC=gfortran
 fi
+if [ "$ctype" == "amd" ] ; then
+# AMD's LLVM compiler (ROCm LLVM: amdclang/amdclang++, package rocm-llvm), handled like clang. compiler=amd[:<ROCm root>],
+# the root defaults to $ROCM_PATH, else /opt/rocm. Its OpenMP runtime (libomp, OMPT) is in <root>/lib/llvm/lib. No Fortran
+# front end is used (amdflang needs rocm-flang): gfortran stays. The MPI wrappers are pointed to it as for nvc and clang.
+AMD_ROOT_PATH=`echo $compiler | cut -s -f 2 -d:` # not cversion: the GCC branch above has defaulted it to a GCC version
+AMD_ROOT_PATH=${AMD_ROOT_PATH:-${ROCM_PATH:-/opt/rocm}}
+if [ -x "$AMD_ROOT_PATH/bin/amdclang++" ] ; then
+  export PATH=$AMD_ROOT_PATH/bin:$PATH
+  export LD_LIBRARY_PATH=$AMD_ROOT_PATH/lib/llvm/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+else
+  echo "env.sh: no amdclang++ in $AMD_ROOT_PATH/bin (ROCm LLVM: package rocm-llvm)" >&2
+fi
+export CC=amdclang
+export CXX=amdclang++
+export MPICH_CC=amdclang
+export MPICH_CXX=amdclang++
+export MPICH_FC=gfortran
+export OMPI_CC=amdclang
+export OMPI_CXX=amdclang++
+export OMPI_FC=gfortran
+export I_MPI_CC=amdclang
+export I_MPI_CXX=amdclang++
+export I_MPI_FC=gfortran
+fi
 
 fi
 

@@ -41,7 +41,7 @@ See [doc/README.md](doc/README.md) for older build/usage/trace-format documentat
 - `src/pinc/` - per-call-category C++ code snippets included by the generated MPI layer (collectives, requests, local/buffer handling, transport-API direct/poll/ipeek, GPU).
 - `doc/` - README and trace format description documents.
 - `tests/ci/smoke.sh` - CI end-to-end test of the MPI tracing (func-classes tests under tractor -> mat -> ctt); `tests/ci/llama.sh` - the same for llama.cpp and CUDA: llama-simple under tractor (stages, ggml CPU kernels, llama off, CUDA) -> mat -> ctt, output unchanged, Modules remark; with a GPU also kernel/copy records and their binds. CI runs it on a pinned llama.cpp and Ubuntu's CUDA 12.0 packages, with the CMake (GCC, clang) and make libraries.
-- `Build.sh`/`BuildAll.sh` - build scripts: one variant / every library (core, shims, MPI layers; plain and DIAG) for a compiler (gnu, intel, nvidia, clang) across supported MPI.
+- `Build.sh`/`BuildAll.sh` - build scripts: one variant / every library (core, shims, MPI layers; plain and DIAG) for a compiler (gnu, intel, nvidia, clang, amd) across supported MPI.
 
 ## Transport-API profiling
 
@@ -108,7 +108,9 @@ CUDA is a shim (`TARGET=class_layers`, `libtractor.cuda.so`): it is built when a
 
 ## Processes without MPI rank
 
-A process not started by an MPI launcher (no `PMI_RANK`/`OMPI_COMM_WORLD_RANK`, e.g. a llama.cpp application) is written as rank 0 of a one-rank, one-node run, under the per-process template `<PEAT_TRACTOR_FILE>_<pid>`: `tractor_t_<pid>.app.gz`, `tractor_t_<pid>.{mpi,hwc,com}.0.gz`. The node records of the `.app` file (host, frequencies, sync points) are filled from the process itself, so ctt/mat/qTV read it as any other trace: `ctt -i tractor_t_<pid>`. (The pid is joined with `_`, not `.`: the tools take the rank from the first dot-separated part of a file name that starts with a digit.)
+A process not started by an MPI launcher (no `PMI_RANK`/`OMPI_COMM_WORLD_RANK`, e.g. a llama.cpp application) is written as rank 0 of a one-rank, one-node run, under the per-process template `<PEAT_TRACTOR_FILE>_<pid>`: `tractor_t_<pid>.app.gz`, `tractor_t_<pid>.{mpi,com}.0.gz`. The node records of the `.app` file (host, frequencies, sync points) are filled from the process itself, so ctt/mat/qTV read it as any other trace: `ctt -i tractor_t_<pid>`. (The pid is joined with `_`, not `.`: the tools take the rank from the first dot-separated part of a file name that starts with a digit.)
+
+The trace is written when the process took records of a class that needs no MPI: llama.cpp stages, CUDA, or any record of an event-class shim or of the same class built into the core (OMPT, OpenACC, OpenCL, Level Zero). So an OpenMP program without MPI is traced by preloading the core and the OMPT shim, `LD_PRELOAD=libtractor.core.so:libtractor.ompt.so ./app` (`libtractor.core.so` and the shim must come from the same build, the shim takes its timestamps with the core's clock), and its `.com` file says `Modules: no MPI OMPT ...`. A process that took no such record (e.g. a launcher such as `mpiexec.hydra` run with the MPI layer preloaded) writes no trace. The OMPT records of such a process are the thread, parallel-region and synchronization events only; there is no MPI time to relate them to. Checked with Intel- and AMD-built (ROCm `amdclang`, the `clang` family) libraries.
 
 Runtime switch: export PEAT_TRACTOR_PARSE_LLAMA=0 - do not record llama.cpp stages (default 1, builds with llama.cpp only)
 

@@ -4,7 +4,7 @@
 
 ## 1. What gets built
 
-`src/Makefile` (and CMake) produce, installed to `mpi.tool/lib/<COMPILER>/` (`gnu`, `intel`, `nvidia` or `clang`):
+`src/Makefile` (and CMake) produce, installed to `mpi.tool/lib/<COMPILER>/` (`gnu`, `intel`, `nvidia`, `clang` or `amd`):
 - `libtractor[_dbg].core[.mem<x>][.<hwc>].so` (`TARGET=core`) - the core: records, nesting, counters, the trace writer. It has
   no MPI and is built with the plain compilers: one core serves every MPI. All its variants have the SONAME
   `libtractor.core.so.0`.
@@ -32,6 +32,10 @@ application, ...) preloads the core and the shims: `LD_PRELOAD=libtractor.core.s
     the architecture of the GPU (newer toolkits drop old architectures); select a suitable one with `compiler=nvc:<CUDA version>`.
   - **Clang/LLVM** (`clang`/`clang++`): the system-wide installation, one version. There is no Fortran front end, `gfortran`
     is used for Fortran. Clang has no OpenACC runtime or `acc_prof.h`, so OpenACC is never built with it.
+  - **AMD LLVM** (`amdclang`/`amdclang++` of ROCm, Arch package `rocm-llvm`; `rocm-openmp` adds the OpenMP runtime with OMPT): the
+    `clang` family built with AMD's compiler, installed to `lib/amd` so that it does not replace the libraries of the system clang.
+    The ROCm root is `$ROCM_PATH`, else `/opt/rocm`. Same limits as clang: no Fortran front end used, no OpenACC. AMD's
+    separate CPU compiler AOCC has not been tried.
 - **Perl** - required at build time to run the code generators (`mpi_layer.pl`,
   `../../common/mpi_func_ids.pl`, `func_split`, etc.). The generators need the `Switch` module, which is no longer
   part of core Perl: `libswitch-perl` (Debian/Ubuntu), `perl-Switch` (Fedora/RHEL), or `cpan Switch`.
@@ -120,15 +124,16 @@ directly in `env.sh`.
 `env.sh` expects (adjust or export overrides before running `Build.sh`):
 - `HOMEINIT`/`WORKINIT` (default `$HOME`) - root under which it looks for   `gcc/<ver>`, `mpich/<ver>`, `mvapich/<ver>`, `openmpi/<ver>`, `libfabric`,
   `ucx`, `psm2`, `psm3`.
-- `compiler=<oneAPI:VER|gcc|nvc[:VER[:VER]]|clang>` and `mpi_type=<impi|openmpi:VER|mvapich:VER|mpich:VER>` - normally set as
+- `compiler=<oneAPI:VER|gcc|nvc[:VER[:VER]]|clang|amd[:ROCM_ROOT]>` and `mpi_type=<impi|openmpi:VER|mvapich:VER|mpich:VER>` - normally set as
   env vars right before invoking `Build.sh` (see `BuildAll.sh` for an example).
   - `oneAPI:<version>` sources that oneAPI's `setvars.sh`; `gcc` is the default (anything else); `clang` is handled like gcc
-    (system-wide, one version).
+    (system-wide, one version); `amd` is the same with ROCm's `amdclang` (`amd:<ROCm root>` for another place than
+    `$ROCM_PATH` or `/opt/rocm`; its `lib/llvm/lib`, with the OpenMP runtime, is put in `LD_LIBRARY_PATH`).
   - `nvc` puts the NVHPC compilers in `PATH`. Each version is looked up as an NVHPC release
     (`$NVHPC_ROOT_PATH/Linux_x86_64/<version>`, default root `/opt/nvidia/hpc_sdk`) or, if there is none, as a CUDA toolkit
     (`/opt/cuda-<version>`, `/usr/local/cuda-<version>`; exported as `NVHPC_CUDA_HOME`): `nvc`, `nvc:<CUDA version>`,
     `nvc:<NVHPC version>`, `nvc:<NVHPC version>:<CUDA version>`. No NVHPC version means the newest installed.
-  - For `nvc` and `clang`, `env.sh` also sets `MPICH_CC/CXX/FC`, `OMPI_CC/CXX/FC` and `I_MPI_CC/CXX/FC`, so the MPI wrappers
+  - For `nvc`, `clang` and `amd`, `env.sh` also sets `MPICH_CC/CXX/FC`, `OMPI_CC/CXX/FC` and `I_MPI_CC/CXX/FC`, so the MPI wrappers
     (`mpicc` ...) and `mpivars.sh` use the selected compiler; `CC`/`CXX`/`FC` follow.
 - `libfabric_eng='-eng'` - selects `$HOME/libfabric-eng` (the engineering libfabric, `OFIPATH`) instead of `$HOME/libfabric`.
 - **`HWLOC_PATH`** - not set by `env.sh`; export it yourself.
@@ -142,7 +147,7 @@ place those libraries there, or edit `Build.sh`.
 export HWLOC_PATH=/usr                         # or your hwloc prefix
 
 # Option A: adapt and run the example "build everything" script: every library for one compiler, DIAG and non-DIAG
-./BuildAll.sh gnu       # or intel, nvidia, clang; builds up to 4 variants in parallel (-j <n>)
+./BuildAll.sh gnu       # or intel, nvidia, clang, amd; builds up to 4 variants in parallel (-j <n>)
 
 # Option B: build one variant directly
 #                                          mpi_type[:version]   TARGET  [DIAG=off*|on]
@@ -166,7 +171,7 @@ Pass as `make` vars (`Build.sh` takes only the MPI, the target and DIAG; the oth
 | Switch | Values | Meaning |
 |---|---|---|
 | `TARGET` | `core, impi*, mpich3, mpich4, mpich5, mvapich2, mvapich4, openmpi5, transport_layers, class_layers` | what is built, see section 1 |
-| `COMPILER` | `gnu*, intel, nvidia, clang` | toolchain (the directory name under `lib/` and `bin/`). `nvidia` and `clang` take the GCC options; with `nvidia` the `.c` sources are built with `nvc++` (done by the Makefile) |
+| `COMPILER` | `gnu*, intel, nvidia, clang, amd` | toolchain (the directory name under `lib/` and `bin/`). `nvidia`, `clang` and `amd` take the GCC options; with `nvidia` the `.c` sources are built with `nvc++` (done by the Makefile) |
 | `PTPD` | `on*, off` | build PTP daemon support |
 | `OMPT` | `on*, off` | OpenMP interception built into the core (`TARGET=core`; else the OMPT shim) |
 | `DIAG` | `off*, on` | debug build (`-O0`, `_dbg` suffix) |
@@ -184,7 +189,7 @@ want to go through `Build.sh`'s temp-directory copy dance.
 ### Compilers with CMake
 
 CMake detects the compiler family from `CMAKE_CXX_COMPILER_ID` (`GNU` - gnu, `Intel`/`IntelLLVM` - intel, `NVHPC`/`PGI` - nvidia,
-`Clang` - clang) and installs to `lib/<family>`; `-DTRACTOR_COMPILER=gnu|intel|nvidia|clang` overrides it. Select the toolchain with
+`Clang` - clang, or amd when the compiler is named `amdclang*`) and installs to `lib/<family>`; `-DTRACTOR_COMPILER=gnu|intel|nvidia|clang|amd` overrides it. Select the toolchain with
 `compiler=<name>` before sourcing `env.sh` (e.g. `compiler=nvc:<CUDA version>`, `compiler=clang`) and pass the MPI wrappers
 (`-DCMAKE_C_COMPILER=$MPICC -DCMAKE_CXX_COMPILER=$MPICXX`); `env.sh` points the wrappers to the selected compiler. The core
 (`-DTRACTOR_TARGET=core`) is configured with the plain compilers instead (`-DCMAKE_C_COMPILER=$CC -DCMAKE_CXX_COMPILER=$CXX`):
@@ -232,9 +237,9 @@ The `com` file written by the library starts with `PEAT TRACTOR V<major>.<minor>
 ### Tests
 
 - `tests/func-classes/run.sh [p2p|coll|comm|rma|fio|all] [iterations] [ranks]` - the MPI function classes under tractor. The
-  toolchain is selected with `TOOLCHAIN=intel|gcc|nvc|clang` (default `intel`) and the libraries come from `lib/<toolchain>`
+  toolchain is selected with `TOOLCHAIN=intel|gcc|nvc|clang|amd` (default `intel`) and the libraries come from `lib/<toolchain>`
   (`TRACTOR_LIBDIR=<dir>` overrides, `mpi_type=` replaces the MPICH); the test programs are rebuilt when the toolchain changes.
-  The function sets collected are the same for all four toolchains; only the counts of polling calls (`MPI_Test*`, `MPI_Iprobe`,
+  The function sets collected are the same for all the toolchains; only the counts of polling calls (`MPI_Test*`, `MPI_Iprobe`,
   ...) vary with timing.
 - `tests/openacc/run.sh` - OpenACC under tractor with `gcc -fopenacc` (runs on the host), plus `acc_sim_test`, which raises the
   OpenACC device events itself. `tests/openacc/run_nvc.sh` builds `acc_test` with nvc (`NVC_COMPILER` selects the `compiler=` value, see the script for the default) and runs

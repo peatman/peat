@@ -2,7 +2,7 @@
 #
 # Build and install one tractor library variant (src/Makefile) in a private copy of src/:
 #
-#   [COMPILER=gnu|intel|nvidia|clang compiler=<env.sh compiler spec>] ./Build.sh <mpi_type[:version]> <target> [diag]
+#   [COMPILER=gnu|intel|nvidia|clang|amd compiler=<env.sh compiler spec>] ./Build.sh <mpi_type[:version]> <target> [diag]
 #
 #   mpi_type[:version]  the MPI that sets up the environment (env.sh): impi, mpich:<version>, mvapich:<version>,
 #                       openmpi:<version>; the 'eng' in the version selects the engineering (patched) MPI and libfabric.
