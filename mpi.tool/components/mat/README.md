@@ -18,7 +18,8 @@ Available on Linux (GNU Makefile) and Windows (MSVC solution).
   timestamps of the trace. pet reads them together with the raw trace: `mat -i tractor_t`, then
   `pet -w <trace dir> -i tractor_t ...`. `-m`/`--matching-only` selects this mode too; it is kept for old command lines.
 - `-f`/`--full`: also rewrites the `.mpi` files with absolute times into `./out` (or `-o <dir>`), corrects negative times and
-  calculates the imbalance statistics. pet does not read the rewritten `.mpi` files.
+  calculates the imbalance statistics. Neither pet nor qTV reads the rewritten `.mpi` files: both read the raw trace with
+  the `.bind` files and the `.trace.info` (qTV is built with `TV_IGNORE_PROCESSED_OUTPUT`).
 
 
 ## Layout
