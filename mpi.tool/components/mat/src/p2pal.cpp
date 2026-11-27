@@ -241,7 +241,10 @@ void P2PAL::print_Local(const Tractor_Event &event)
     if (skip_locals)
         return;
 #ifdef MAT_PROCESS_MPI_OUTPUT
-    if (event.landbuf.buf_size >= 0 || event.landbuf.buf_count >= 0) {
+    if (event.func_class == PEAT_PROP_CLASS_OMPT) { // the union holds OMPT, not landbuf
+        output_MPI->printf(event.rank, "%s:%d:%d:%lld:%lld:%lld\n", global_func_id.name_by_idx(event.func_id),
+                           event.OMPT.kind, event.OMPT.endpoint, event.OMPT.task_data, event.OMPT.parallel_data, event.OMPT.addr_id);
+    } else if (event.landbuf.buf_size >= 0 || event.landbuf.buf_count >= 0) {
         output_MPI->printf(event.rank, "%s:%lld:%lld\n", global_func_id.name_by_idx(event.func_id), event.landbuf.buf_count, event.landbuf.buf_size);
     } else {
         output_MPI->printf(event.rank, "%s\n", global_func_id.name_by_idx(event.func_id));

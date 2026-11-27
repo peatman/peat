@@ -171,6 +171,14 @@ struct Tractor_Event : public Phase {
             PEAT_MPI_File fh = 0;
             PEAT_MPIO_Request request = 0; /* actual request or "0" if no request */
         } MPIFIO;
+        /*          OMPT: the fields tractor writes after the function id, passed through to pet (PET_OMPT_Event::read_event) */
+        struct {
+            int kind = -1;
+            int endpoint = -1;
+            long long task_data = -1;
+            long long parallel_data = -1;
+            long long addr_id = -1; // code address id (map file)
+        } OMPT;
     };
     struct {
         int ctl = 0;
@@ -217,6 +225,9 @@ struct Tractor_Event : public Phase {
         case PEAT_PROP_CLASS_BUF_LOCAL:
         case PEAT_PROP_CLASS_LOCAL:
             usize = sizeof(landbuf);
+            break;
+        case PEAT_PROP_CLASS_OMPT:
+            usize = sizeof(OMPT);
             break;
         case PEAT_PROP_CLASS_COMM:
             usize = sizeof(Comms);
@@ -307,6 +318,11 @@ struct Tractor_Event : public Phase {
             memcpy(ptr + ptr_it, &landbuf, ssize);
             ptr_it += ssize;
             break;
+        case PEAT_PROP_CLASS_OMPT:
+            ssize = sizeof(OMPT);
+            memcpy(ptr + ptr_it, &OMPT, ssize);
+            ptr_it += ssize;
+            break;
         case PEAT_PROP_CLASS_COMM:
             ssize = sizeof(Comms);
             memcpy(ptr + ptr_it, &Comms, ssize);
@@ -378,6 +394,11 @@ struct Tractor_Event : public Phase {
         case PEAT_PROP_CLASS_LOCAL:
             ssize = sizeof(landbuf);
             memcpy(&landbuf, ptr + ptr_it, ssize);
+            ptr_it += ssize;
+            break;
+        case PEAT_PROP_CLASS_OMPT:
+            ssize = sizeof(OMPT);
+            memcpy(&OMPT, ptr + ptr_it, ssize);
             ptr_it += ssize;
             break;
         case PEAT_PROP_CLASS_COMM:
