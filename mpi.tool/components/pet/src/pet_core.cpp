@@ -414,6 +414,11 @@ PEAT_Bool PET_Core::process_events()
                                         read_event = get_event(r, trace_line_MPI, trace_line_TRC, NULL);
                                         // assert(event);
                                         if (read_event == NULL) {
+#ifdef PET_OMPT_NEST_IN_SYNC_REGION
+                                            // the end of the trace has closed the sync_region this event held open
+                                            if (r == evt->rank && evt->get_event_type() == PET_EVENT_TYPE_OMPT && evt->bind())
+                                                goto handle_again;
+#endif
                                             if (remove_orphans(r)) {
                                                 if (r == rank_it->first)
                                                     goto handle_again;

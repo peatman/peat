@@ -29,7 +29,7 @@ secs() { local d=$(( $(now) - $1 )) ; printf '%d.%02d' $((d / 1000000000)) $((d 
 run() {
     rm -rf "$2" && mkdir -p "$2" && cp "$trace"/tractor_t.* "$2"/
     local rc=0
-    ( cd "$2" && OMP_NUM_THREADS=${3:-1} timeout 600 "$1" > mat.log 2>&1 ) || rc=$?
+    ( cd "$2" && OMP_NUM_THREADS=${3:-1} timeout 600 "$1" -f > mat.log 2>&1 ) || rc=$?
     return $rc
 }
 

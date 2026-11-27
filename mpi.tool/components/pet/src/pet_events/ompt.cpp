@@ -59,7 +59,11 @@ PEAT_Bool PET_OMPT_Event::read_event(PEAT_Rank r_rank, const String_Split &mpi_s
 PET_Event *PET_OMPT_Event::write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind)
 {
     if (thread_id == 0 || (func_id != OMPT_PARALLEL_BEGIN_ID && func_id != OMPT_PARALLEL_END_ID)) {
-        PET_Event *written = PET_Local_Event::write_event(gz_MPI, gz_bind);
+        // the function-specific line keeps the OMPT fields of the input (read_event): name:kind:endpoint:task_data:parallel_data:addr_id
+        write_function_head(gz_MPI);
+        gz_MPI->printf(rank, ":%lld:%lld:%lld:%lld:%lld\n", (long long)kind, (long long)endpoint, (long long)task_data,
+                       (long long)parallel_data, (long long)addr_id);
+        PET_Event *written = write_trace_line(gz_MPI);
         write_nested_records(gz_MPI, gz_bind); // the wait inside an implicit barrier, see hold_for_child
         return written;
     }
@@ -215,7 +219,15 @@ PEAT_Bool PET_OMPT_Event::estimate(Estimation_Event *event)
         if (handle_nested_completed(event) && nested_all_estimated() && !finish_calculations) {
             PEAT_Clock finish = __max__(e_time.func.out, get_nested_finish());
             if (finish > e_time.func.out) {
+#ifdef PET_OMPT_NEST_IN_SYNC_REGION
+                // the region ends later than read: the later records of its thread were placed after the old end
+                const PEAT_Clock grow = finish - e_time.func.out;
                 e_time.mpi.out = e_time.func.out = finish;
+                if (host_event == NULL)
+                    get_core()->update_active_event_chain(-grow, this); // move_event() subtracts
+#else
+                e_time.mpi.out = e_time.func.out = finish;
+#endif
             }
             finish_calculations = true;
             submit(e_time.func.out, EET_FUNC_END, this, this, NULL);

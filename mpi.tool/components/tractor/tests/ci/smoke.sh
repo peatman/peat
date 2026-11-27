@@ -19,7 +19,7 @@
 # SMOKE_ENGINEERING=1|0 says whether <libtractor.so> is an engineering build (CI sets it from the matrix); unset, it is
 # guessed: ".eng" in the name of the core (the first library; GNU make) or an exported MPIC_Send wrapper (MPICH family).
 #
-# mat runs in <test>.<names|ids>/serial, on its own copy of the raw trace, without switches (output in serial/out).
+# mat runs in <test>.<names|ids>/serial, on its own copy of the raw trace, with -f (full: .mpi rewritten too, output in serial/out).
 # SMOKE_PMAT=<pmat binary> also runs parallel mat (pmat.<target>, built with the same MPI) once per rank count in
 # SMOKE_PMAT_RANKS (default "1 2 4"), each the same way in its own <test>.<names|ids>/pmat<N> (log pmat<N>/mat.log). It
 # must exit 0, finish processing, report ("Rank:<r> is handling rank <t>.", printed only by a PEAT_MPI build) every trace
@@ -257,10 +257,10 @@ trace_and_analyse() {
 
     # every (p)mat run gets its own copy of the raw trace and runs there without switches (output in <run>/out)
     new_run_dir serial
-    (cd serial && timeout 300 "$bin/mat" > mat.log 2>&1) || { tail -n 20 serial/mat.log ; fail "$t/$mode: mat" ; }
+    (cd serial && timeout 300 "$bin/mat" -f > mat.log 2>&1) || { tail -n 20 serial/mat.log ; fail "$t/$mode: mat" ; }
     if [ -n "$mat_alt" ] ; then
         new_run_dir mat_alt
-        if ! (cd mat_alt && timeout 300 "$mat_alt" > mat.log 2>&1) ; then
+        if ! (cd mat_alt && timeout 300 "$mat_alt" -f > mat.log 2>&1) ; then
             tail -n 20 mat_alt/mat.log ; fail "$t/$mode: alternative mat (log $d/mat_alt/mat.log)"
         elif compare_exact "$d/serial" "$d/mat_alt" ; then
             echo "    $mode: alternative mat output identical to serial mat ($(ls serial/out | wc -l) files)"
@@ -273,7 +273,7 @@ trace_and_analyse() {
         for n in $pmat_ranks ; do
             new_run_dir "pmat$n"
             pmat_launch "$n"
-            rc=0 ; (cd "pmat$n" && timeout 300 "${launch[@]}" "$pmat" > mat.log 2>&1) || rc=$?
+            rc=0 ; (cd "pmat$n" && timeout 300 "${launch[@]}" "$pmat" -f > mat.log 2>&1) || rc=$?
             if [ $rc -ne 0 ] ; then
                 show_crash "pmat$n/mat.log" ; pmat_fail "$t/$mode: pmat on $n ranks: exit status $rc (log $d/pmat$n/mat.log)"
             elif ! grep -q "End processing" "pmat$n/mat.log" ; then

@@ -48,7 +48,7 @@ zcat $mpi | grep -q "clWaitForEvents:2:0:1:" || { echo "event list of clWaitForE
 # mat pairs the commands with what completes them (needs the mat binary: MAT=<path>)
 if [ -n "$MAT" ] ; then
     mkdir -p $trace/mat
-    $MAT -w $trace -i tractor_t -o $trace/mat > $trace/mat.log 2>&1
+    $MAT -f -w $trace -i tractor_t -o $trace/mat > $trace/mat.log 2>&1
     # in-order queue: the blocking SVM copy finishes everything enqueued before it; a wait finishes the commands before its event
     grep -q "clEnqueueCopyBuffer *clEnqueueSVMMemcpy *65536" $trace/mat.log || { echo "mat: in-order copy not finished by the blocking call after it"; status=1; }
     grep -q "clEnqueueCopyBuffer *clWaitForEvents *16384" $trace/mat.log || { echo "mat: in-order copy not completed by the later wait"; status=1; }

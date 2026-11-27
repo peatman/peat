@@ -256,6 +256,17 @@ Tractor_Event::Tractor_Event(const PEAT_Rank r, const String_Split &line_mpi, co
     }
     if (func_id >= OMPT_START_GROUP && func_id < OMPT_END_GROUP) {
         func_class = PEAT_PROP_CLASS_OMPT;
+        // tractor writes kind:endpoint:task_data:parallel_data:addr_id after the function id (tractor.cpp, OMPT group)
+        OMPT.kind = -1;
+        OMPT.endpoint = -1;
+        OMPT.task_data = -1;
+        OMPT.parallel_data = -1;
+        OMPT.addr_id = -1;
+        extract(OMPT.kind, line_mpi.at(b + 1));
+        extract(OMPT.endpoint, line_mpi.at(b + 2));
+        extract(OMPT.task_data, line_mpi.at(b + 3));
+        extract(OMPT.parallel_data, line_mpi.at(b + 4));
+        extract(OMPT.addr_id, line_mpi.at(b + 5));
     }
 }
  

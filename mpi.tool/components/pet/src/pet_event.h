@@ -1372,6 +1372,18 @@ struct PET_Completion_Event : public PET_Start_Event {
     virtual PEAT_Bool initiate();
 };
 
+/* OMPT records that run inside a sync_region of their thread (tasks run in a taskwait or a barrier, a taskwait inside such a
+   task, ...) become nested records of that sync_region (PET_Core::get_event, PET_OMPT_Event::can_nest_in_sync_region).
+   Off: the old crutch, which only nests a sync_region_wait into its barrier and needs 2 id columns. */
+#define PET_OMPT_NEST_IN_SYNC_REGION
+#ifdef PET_OMPT_NEST_IN_SYNC_REGION
+/* Runtimes without the worker barrier fix (libiomp5, stock libomp) report the end of the join barrier of a worker only when
+   the worker is released for the next region: the barrier record then covers all idle time up to the next fork. The join
+   is over when the primary thread ends the region (its parallel_end): a worker join barrier still open then ends there
+   (PET_Core::get_event). Off: such barriers keep their length. Needs PET_OMPT_NEST_IN_SYNC_REGION (open regions). */
+#define PET_OMPT_CLAMP_LATE_WORKER_JOIN
+#endif
+
 struct PET_OMPT_Event : public PET_Local_Event {
     std::vector<PET_OMPT_Event *> sections;
     PET_OMPT_Event *pair_event;
@@ -1393,6 +1405,16 @@ struct PET_OMPT_Event : public PET_Local_Event {
     virtual PEAT_Bool estimate(Estimation_Event *event);
     void set_hold_for_child(PEAT_Bool hold) { hold_for_child = hold; }
     PEAT_Bool can_nest_wait(const PET_OMPT_Event *wait) const; // wait: this barrier's sync_region_wait, see hold_for_child
+#ifdef PET_OMPT_NEST_IN_SYNC_REGION
+    /* a record that may become a nested record of an open sync_region of its thread: not the records of the region
+       structure, which pet places on every thread itself (parallel begin/end copies, implicit tasks, thread begin/end) */
+    PEAT_Bool can_nest_in_sync_region() const
+    {
+        return func_id != OMPT_PARALLEL_BEGIN_ID && func_id != OMPT_PARALLEL_END_ID && func_id != OMPT_NESTED_PARALLEL_BEGIN_ID &&
+               func_id != OMPT_NESTED_PARALLEL_END_ID && func_id != OMPT_IMPLICIT_TASK_ID && func_id != OMPT_THREAD_BEGIN_ID &&
+               func_id != OMPT_THREAD_END_ID;
+    }
+#endif
     virtual PEAT_Bool read_event(PEAT_Rank r_rank, const String_Split &mpi_string, const String_Split &trace_string, PET_Event *host, const PEAT_Record_Header &hdr);
     virtual PET_Event *write_event(File_Storage_GZ *gz_MPI, File_Storage_GZ *gz_bind);
     virtual void insert();
@@ -1439,6 +1461,10 @@ struct PET_OMPT_Event : public PET_Local_Event {
     PET_Event *get_last_event();
     virtual PEAT_Bool bind()
     {
+#ifdef PET_OMPT_NEST_IN_SYNC_REGION
+        if (hold_for_child)
+            return false; // an open sync_region: records of its thread inside it may still be unread (get_rank_read_suggestion)
+#endif
         if (func_id == OMPT_PARALLEL_BEGIN_ID && get_parallel_section_end() == NULL)
             return false;
         return true;
@@ -1467,6 +1493,10 @@ struct PET_OMPT_Event : public PET_Local_Event {
     {
         if (func_id == OMPT_PARALLEL_BEGIN_ID && pair_event == NULL)
             return rank;
+#ifdef PET_OMPT_NEST_IN_SYNC_REGION
+        if (hold_for_child)
+            return rank; // read on until the next record of this thread after the end of the region (or the end of the trace)
+#endif
         return -1;
     }
     virtual PEAT_MPI_Func_ID missing_event()

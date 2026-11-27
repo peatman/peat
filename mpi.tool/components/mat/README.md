@@ -12,6 +12,14 @@ Buildable in two flavors from the same sources (`Makefile` `TARGET=`):
 
 Available on Linux (GNU Makefile) and Windows (MSVC solution).
 
+## Modes
+
+- Default (binding only): writes the `.bind` files and `.trace.info` next to the trace (or into `-o <dir>`), without reading the
+  timestamps of the trace. pet reads them together with the raw trace: `mat -i tractor_t`, then
+  `pet -w <trace dir> -i tractor_t ...`. `-m`/`--matching-only` selects this mode too; it is kept for old command lines.
+- `-f`/`--full`: also rewrites the `.mpi` files with absolute times into `./out` (or `-o <dir>`), corrects negative times and
+  calculates the imbalance statistics. pet does not read the rewritten `.mpi` files.
+
 
 ## Layout
 

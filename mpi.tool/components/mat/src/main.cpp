@@ -75,9 +75,13 @@ void help(int rank)
         printf("%s\n", tstring.c_str());
         printf("--help (-h) print this help\n");
         printf("--input=<mask> (-i) select input file mask (default tractor_t)\n");
-        printf("--output=<dir> (-o) select output directory (default ./out)\n");
+        printf("--output=<dir> (-o) select output directory (default: the working directory; with --full ./out)\n");
         printf("--wdir=<dir> (-w) select working (input) directory (default current one)\n");
-        printf("--matching-only (-m) only write .bind files, don't rewrite .mpi, don't read the timestamps of the trace, and skip negative-time correction/imbalance calculation (default off)\n");
+        printf("By default mat only writes the .bind files (next to the trace, where pet reads them with the raw trace) and does not\n"
+               "read the timestamps of the trace.\n");
+        printf("--full (-f) also rewrite the .mpi files (into ./out by default), read the timestamps, correct negative times and\n"
+               "calculate the imbalance statistics\n");
+        printf("--matching-only (-m) the default, accepted for old command lines\n");
         printf("--verbose (-v) print additional info\n");
         printf("\n");
     }
@@ -113,6 +117,7 @@ int main(int argc, char **argv)
     glob_param.bind_files = ".bind";
     glob_param.transport_files = ".transport";
     glob_param.input_path = ".";
+    glob_param.matching_only = 1; // the default: .bind files only (--full rewrites .mpi too)
 
     struct option long_options[] = {
         {"input", required_argument, 0, 'i'},
@@ -120,6 +125,7 @@ int main(int argc, char **argv)
         {"wdir", required_argument, 0, 'w'},
         {"skip", no_argument, 0, 's'},
         {"pc_levels", required_argument, 0, 'l'},
+        {"full", no_argument, 0, 'f'},
         {"matching-only", no_argument, 0, 'm'},
         {"print_on_send", no_argument, 0, 'p'},
         {"verbose", no_argument, 0, 'v'},
@@ -127,7 +133,7 @@ int main(int argc, char **argv)
         {0, 0, 0, 0},
     };
     do {
-        res = getopt_long(argc, argv, "i:w:o:l:c:phvsm", long_options, &option_index);
+        res = getopt_long(argc, argv, "i:w:o:l:c:phvsmf", long_options, &option_index);
         switch (res) {
         case 'i':
             glob_param.trace_files = optarg;
@@ -135,8 +141,11 @@ int main(int argc, char **argv)
         case 'w':
             glob_param.input_path = optarg;
             break;
-        case 'm':
+        case 'm': // the default now, kept for old command lines
             glob_param.matching_only = 1;
+            break;
+        case 'f':
+            glob_param.matching_only = 0;
             break;
         case 'o':
             glob_param.output_path = optarg;
@@ -237,7 +246,7 @@ int main(int argc, char **argv)
                 glob_param.pe_MPI_files_in_rank[*it] = MPI_files.at(*it);
                 std::string mpi_out_name = make_out_file_name(glob_param.output_path, MPI_files.at(*it), glob_param.output_files, ".gz");
                 // bind files don't carry the ".out" marker mpi output does: they're the only output written
-                // in matching-only mode (-m), so there's no risk of colliding with the input .bind file, and
+                // in matching-only mode (the default), so there's no risk of colliding with the input .bind file, and
                 // dropping it keeps the name pet/qTV expect (see get_file_names/parse_trace_info_file, which
                 // only look for the ".bind" substring and a rank digit - neither cares about a trailing suffix).
                 std::string bind_out_name = make_out_file_name(glob_param.output_path, MPI_files.at(*it), "", ".gz");

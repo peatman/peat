@@ -23,7 +23,8 @@
  *
  *   omp_control_tool(start/end)      -> START_ONDEMAND / STOP_ONDEMAND
  *   parallel                         -> FORK_CALL, MICROTASK_*
- *   implicit barrier / worker wait   -> JOIN_BARRIER_*, FORK_BARRIER_*
+ *   implicit barrier at the end      -> JOIN_BARRIER_*
+ *   worker idle after it             -> FORK_BARRIER_* (workers only)
  *   barrier                          -> PLAIN_BARRIER_*
  *   single, master                   -> SINGLE_* (master is folded in)
  *   critical                         -> CRITICAL_SECTION_*, CRITICAL_BARRIER_*

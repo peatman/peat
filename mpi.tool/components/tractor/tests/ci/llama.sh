@@ -125,7 +125,7 @@ check_trace() {
     echo "$m" | grep -qE "$modules_re" || fail "$run: Modules remark does not match '$modules_re'"
 
     mkdir -p "$d/serial" && cp "$d/$trace".* "$d/serial/"
-    (cd "$d/serial" && timeout 300 "$bin/mat" -i "$trace" > mat.log 2>&1) || { tail -n 20 "$d/serial/mat.log" ; fail "$run: mat" ; }
+    (cd "$d/serial" && timeout 300 "$bin/mat" -f -i "$trace" > mat.log 2>&1) || { tail -n 20 "$d/serial/mat.log" ; fail "$run: mat" ; }
     [ -z "$(ls "$d/serial/out" 2>/dev/null)" ] && fail "$run: mat wrote nothing to out/"
     # ctt: report on stdout, progress on stderr
     (cd "$d" && timeout 300 "$bin/ctt" -i "$trace" > ctt.log 2> ctt.err) || { tail -n 20 "$d/ctt.log" "$d/ctt.err" ; fail "$run: ctt" ; }

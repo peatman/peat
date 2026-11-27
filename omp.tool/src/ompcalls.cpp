@@ -45,11 +45,15 @@
  * OSL_SERIALIZED_MICROTASK_STARTS/ENDS    -> ompt_callback_implicit_task, actual_parallelism==1
  * OSL_SERIALIZED_TEAM_MICROTASK_STARTS/ENDS -> folded into OSL_SERIALIZED_MICROTASK_* (see note)
  * OSL_MICROTASK_STARTS/ENDS               -> ompt_callback_implicit_task, actual_parallelism>1
- * OSL_FORK_BARRIER_STARTS/ENDS            -> ompt_callback_sync_region_wait(ompt_sync_region_barrier_implicit_parallel)
- *                                            (ompt_callback_idle was removed from the OMPT spec/
- *                                            omp-tools.h; the wait sub-phase of the parallel-region-
- *                                            exit barrier is used instead, same worker-idle window)
- * OSL_JOIN_BARRIER_STARTS/ENDS            -> ompt_callback_sync_region(ompt_sync_region_barrier_implicit)
+ * OSL_JOIN_BARRIER_STARTS/ENDS            -> ompt_callback_sync_region(ompt_sync_region_barrier_implicit_parallel)
+ *                                            (the barrier at the end of a parallel region; also the
+ *                                            deprecated ompt_sync_region_barrier_implicit)
+ * OSL_FORK_BARRIER_STARTS                 -> ompt_callback_implicit_task, scope_end, index != 0
+ *                                            (a worker has finished its implicit task, so its join is
+ *                                            over and it waits idle for the next parallel region)
+ * OSL_FORK_BARRIER_ENDS                   -> the next ompt_callback_implicit_task, scope_begin, on that
+ *                                            worker (it is released for a new region) or
+ *                                            ompt_callback_thread_end (no new region, shutdown)
  * OSL_PLAIN_BARRIER_STARTS/ENDS           -> ompt_callback_sync_region(ompt_sync_region_barrier_explicit)
  * OSL_SINGLE_STARTS/ENDS                  -> ompt_callback_work(single_executor/single_other)
  *                                            and ompt_callback_masked (master)
@@ -61,6 +65,24 @@
  * OSL_TASKWAIT_STARTS/ENDS                -> ompt_callback_sync_region(ompt_sync_region_taskwait)
  * OSL_START_ONDEMAND/OSL_STOP_ONDEMAND    -> ompt_callback_control_tool (omp_control_tool() API)
  * OSL_TASKFORK_CALL                       -> not recorded (unused/dead in the legacy code too)
+ *
+ * Join barrier and fork barrier of a worker (in this order, one after the other, never nested):
+ *
+ *   microtask starts   MS
+ *   join barrier       JBS .. JBE   the worker arrives at the end of the region and registers there
+ *   microtask ends     ME           (OMPT reports the end of the implicit task after the barrier events)
+ *   fork barrier       FBS .. FBE   idle wait for the next parallel region; ends when the worker is released,
+ *                                   i.e. at the MS of the next region, or at thread end
+ *
+ * The main thread (team index 0) has a join barrier but no fork barrier: it releases the workers.
+ * The old mapping took the fork barrier from ompt_callback_sync_region_wait, a sub-interval nested in the join
+ * barrier. It is gone: a nested interval cannot tell join time from idle time.
+ *
+ * The runtime must dispatch the end events of the implicit barrier (sync_region end, implicit_task end) on a
+ * worker when the worker has left the join barrier, not when it is released for the next region. Intel
+ * libiomp5 and LLVM libomp are treated as the same runtime here; both need the fix of the OMPT end events of
+ * the worker (see MEMO.md of the OMPT investigation). A runtime without that fix reports the idle time as
+ * join barrier time and a fork barrier of zero length.
  *
  * Unlike the older TR API, OMPT 5.x resolves every gap the TR version had:
  *   - ompt_callback_sync_region's "kind" argument tells barrier_implicit
@@ -99,6 +121,7 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <stdlib.h>
 #include <unistd.h>
 
 #include "omp-tools.h"
@@ -118,6 +141,11 @@ static thread_local int64_t tls_tid = 0;      /* assigned in on_implicit_task, t
 static thread_local int64_t tls_gtmid = 0;    /* assigned in on_implicit_task, from parallel_data->value */
 static thread_local void *tls_task_fn = NULL; /* codeptr_ra cached from task_create for task_schedule */
 
+/* Number of per-thread event chains allocated by __osl_begin_application(). Event recording indexes them with
+   the gtid without a bounds check, so threads beyond this number are not tracked (see ompcalls_record_event). */
+static int g_max_threads = 1;
+static std::atomic<int> g_untracked_warned(0);
+
 static inline int current_gtid(void) { return (int)tls_gtid; }
 static inline int current_tid(void) { return (int)tls_tid; }
 static inline int current_gtmid(void) { return (int)tls_gtmid; }
@@ -131,7 +159,20 @@ static thread_local long long tls_uniq_task = -1;
 static thread_local long long tls_uniq_taskwait = -1;
 static thread_local long long tls_uniq_microtask = -1;
 static thread_local long long tls_uniq_fork_barrier = -1;
+static thread_local int tls_in_fork_barrier = 0;  /* worker between its implicit task end and the next begin/thread end */
+static thread_local int tls_fork_barrier_gtmid = 0;
+static thread_local int tls_fork_barrier_tid = 0;
 static thread_local long long tls_uniq_critical = -1;
+
+/* Every event goes through this wrapper: a thread that got a gtid beyond g_max_threads has no event chain. */
+static inline long long
+ompcalls_record_event(int event_type, int tid, int gtid, int gtmid, const void *p_entry,
+                      long long uniq_id_in = -1, int forced = 0)
+{
+    if (gtid < 0 || gtid >= g_max_threads)
+        return -1;
+    return __osl_record_event(event_type, tid, gtid, gtmid, p_entry, uniq_id_in, forced);
+}
 
 /* ---------------------------------------------------------------------- */
 /* Runtime entry points looked up during initialize()                     */
@@ -143,17 +184,35 @@ static ompt_set_callback_t ompcalls_set_callback = NULL;
 /* Thread life cycle -> OSL_CALIBRATION_STARTS                            */
 /* ---------------------------------------------------------------------- */
 
+/* A worker leaves the fork barrier when it is released for a new region
+   (next implicit task begin) or when it terminates. */
+static void
+close_fork_barrier(void)
+{
+    if (!tls_in_fork_barrier)
+        return;
+    tls_in_fork_barrier = 0;
+    ompcalls_record_event(OSL_FORK_BARRIER_ENDS, tls_fork_barrier_tid, current_gtid(), tls_fork_barrier_gtmid, NULL,
+                       tls_uniq_fork_barrier);
+}
+
 static void
 on_thread_begin(ompt_thread_t thread_type, ompt_data_t *thread_data)
 {
     (void)thread_type;
     thread_data->value = tls_gtid = g_next_gtid.fetch_add(1);
+    if (tls_gtid >= g_max_threads && g_untracked_warned.exchange(1) == 0)
+        fprintf(stderr,
+                "ompcalls: more than %d threads, the events of the extra threads are not recorded "
+                "(set OSL_MAX_THREADS)\n",
+                g_max_threads);
 }
 
 static void
 on_thread_end(ompt_data_t *thread_data)
 {
     //    __osl_calibrate_counters((int) thread_data->value);
+    close_fork_barrier(); /* the worker was idle until shutdown */
 }
 
 /* ---------------------------------------------------------------------- */
@@ -174,7 +233,7 @@ on_parallel_begin(ompt_data_t *encountering_task_data,
     (void)flags;
 
     parallel_data->value = g_next_gtmid.fetch_add(1);
-    __osl_record_event(OSL_FORK_CALL, current_tid(), current_gtid(), (int)parallel_data->value,
+    ompcalls_record_event(OSL_FORK_CALL, current_tid(), current_gtid(), (int)parallel_data->value,
                        (void *)codeptr_ra);
 }
 
@@ -197,24 +256,36 @@ on_implicit_task(ompt_scope_endpoint_t endpoint,
        worker threads), so the serialized flag is carried to the end in
        the implicit task's own task_data. */
     if (endpoint == ompt_scope_begin) {
+        close_fork_barrier(); /* released from the fork barrier: it ends before the microtask starts */
         int serialized = actual_parallelism <= 1;
         task_data->value = serialized;
         tls_tid = index;
         tls_gtmid = parallel_data ? parallel_data->value : current_gtid();
-        tls_uniq_microtask = __osl_record_event(serialized ? OSL_SERIALIZED_MICROTASK_STARTS
+        tls_uniq_microtask = ompcalls_record_event(serialized ? OSL_SERIALIZED_MICROTASK_STARTS
                                                            : OSL_MICROTASK_STARTS,
                                                 current_tid(), current_gtid(), current_gtmid(),
                                                 NULL);
     } else if (endpoint == ompt_scope_end) {
-        __osl_record_event(task_data->value ? OSL_SERIALIZED_MICROTASK_ENDS : OSL_MICROTASK_ENDS,
+        ompcalls_record_event(task_data->value ? OSL_SERIALIZED_MICROTASK_ENDS : OSL_MICROTASK_ENDS,
                            current_tid(), current_gtid(), current_gtmid(),
                            NULL, tls_uniq_microtask);
+        /* The implicit task of a worker (team index != 0) ends after the events of the join barrier; from now
+           on the worker is idle and waits for the next region: the fork barrier starts. The primary thread of
+           the team (index 0) continues its own work instead. */
+        if (!task_data->value && index != 0) {
+            tls_fork_barrier_gtmid = current_gtmid();
+            tls_fork_barrier_tid = current_tid();
+            tls_uniq_fork_barrier = ompcalls_record_event(OSL_FORK_BARRIER_STARTS, tls_fork_barrier_tid, current_gtid(),
+                                                       tls_fork_barrier_gtmid, NULL);
+            tls_in_fork_barrier = 1;
+        }
     }
 }
 
 /* ---------------------------------------------------------------------- */
 /* Barriers / taskwait -> OSL_JOIN_BARRIER_*, OSL_PLAIN_BARRIER_*,         */
 /*                        OSL_TASKWAIT_*                                  */
+/* (OSL_FORK_BARRIER_* come from the implicit task callback above)        */
 /* ---------------------------------------------------------------------- */
 
 static void
@@ -254,37 +325,10 @@ on_sync_region(ompt_sync_region_t kind,
     int gtmid = parallel_data ? (int)parallel_data->value : current_gtmid();
 
     if (endpoint == ompt_scope_begin) {
-        *slot = __osl_record_event(start_event, current_tid(), current_gtid(), gtmid,
+        *slot = ompcalls_record_event(start_event, current_tid(), current_gtid(), gtmid,
                                    (void *)codeptr_ra);
     } else if (endpoint == ompt_scope_end) {
-        __osl_record_event(end_event, current_tid(), current_gtid(), gtmid, NULL, *slot);
-    }
-}
-
-/* ---------------------------------------------------------------------- */
-/* Parallel-region exit barrier wait phase -> OSL_FORK_BARRIER_*          */
-/* (worker blocked here until released to join the next team)             */
-/* ---------------------------------------------------------------------- */
-
-static void
-on_sync_region_wait(ompt_sync_region_t kind,
-                    ompt_scope_endpoint_t endpoint,
-                    ompt_data_t *parallel_data,
-                    ompt_data_t *task_data,
-                    const void *codeptr_ra)
-{
-    (void)task_data;
-
-    if (kind != ompt_sync_region_barrier_implicit_parallel)
-        return; /* only the parallel-region-exit barrier maps to the old fork barrier */
-
-    int gtmid = parallel_data ? (int)parallel_data->value : current_gtmid();
-
-    if (endpoint == ompt_scope_begin) {
-        tls_uniq_fork_barrier = __osl_record_event(OSL_FORK_BARRIER_STARTS, current_tid(), current_gtid(),
-                                                   gtmid, codeptr_ra);
-    } else if (endpoint == ompt_scope_end) {
-        __osl_record_event(OSL_FORK_BARRIER_ENDS, current_tid(), current_gtid(), gtmid, codeptr_ra, tls_uniq_fork_barrier);
+        ompcalls_record_event(end_event, current_tid(), current_gtid(), gtmid, NULL, *slot);
     }
 }
 
@@ -309,10 +353,10 @@ on_work(ompt_work_t wstype,
     int gtmid = parallel_data ? (int)parallel_data->value : current_gtmid();
 
     if (endpoint == ompt_scope_begin) {
-        tls_uniq_single = __osl_record_event(OSL_SINGLE_STARTS, current_tid(), current_gtid(), gtmid,
+        tls_uniq_single = ompcalls_record_event(OSL_SINGLE_STARTS, current_tid(), current_gtid(), gtmid,
                                              (void *)codeptr_ra);
     } else if (endpoint == ompt_scope_end) {
-        __osl_record_event(OSL_SINGLE_ENDS, current_tid(), current_gtid(), gtmid, codeptr_ra, tls_uniq_single);
+        ompcalls_record_event(OSL_SINGLE_ENDS, current_tid(), current_gtid(), gtmid, codeptr_ra, tls_uniq_single);
     }
 }
 
@@ -344,9 +388,9 @@ on_mutex_acquire(ompt_mutex_t kind,
     if (kind != ompt_mutex_critical)
         return; /* only "critical" was instrumented in the legacy code */
 
-    __osl_record_event(OSL_CRITICAL_SECTION_STARTS, current_tid(), current_gtid(), current_gtmid(),
+    ompcalls_record_event(OSL_CRITICAL_SECTION_STARTS, current_tid(), current_gtid(), current_gtmid(),
                        (void *)codeptr_ra);
-    tls_uniq_critical = __osl_record_event(OSL_CRITICAL_BARRIER_STARTS, current_tid(), current_gtid(),
+    tls_uniq_critical = ompcalls_record_event(OSL_CRITICAL_BARRIER_STARTS, current_tid(), current_gtid(),
                                            current_gtmid(), (void *)codeptr_ra);
 }
 
@@ -359,7 +403,7 @@ on_mutex_acquired(ompt_mutex_t kind, ompt_wait_id_t wait_id, const void *codeptr
     if (kind != ompt_mutex_critical)
         return;
 
-    __osl_record_event(OSL_CRITICAL_BARRIER_ENDS, current_tid(), current_gtid(), current_gtmid(),
+    ompcalls_record_event(OSL_CRITICAL_BARRIER_ENDS, current_tid(), current_gtid(), current_gtmid(),
                        codeptr_ra, tls_uniq_critical);
 }
 
@@ -372,7 +416,7 @@ on_mutex_released(ompt_mutex_t kind, ompt_wait_id_t wait_id, const void *codeptr
     if (kind != ompt_mutex_critical)
         return;
 
-    __osl_record_event(OSL_CRITICAL_SECTION_ENDS, current_tid(), current_gtid(), current_gtmid(), codeptr_ra);
+    ompcalls_record_event(OSL_CRITICAL_SECTION_ENDS, current_tid(), current_gtid(), current_gtmid(), codeptr_ra);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -406,11 +450,11 @@ on_task_schedule(ompt_data_t *prior_task_data,
     (void)prior_task_status;
 
     if (prior_task_data != NULL && prior_task_data->ptr != NULL) {
-        __osl_record_event(OSL_TASK_ENDS, current_tid(), current_gtid(), current_gtmid(),
+        ompcalls_record_event(OSL_TASK_ENDS, current_tid(), current_gtid(), current_gtmid(),
                            prior_task_data->ptr, tls_uniq_task);
     }
     if (next_task_data != NULL && next_task_data->ptr != NULL) {
-        tls_uniq_task = __osl_record_event(OSL_TASK_STARTS, current_tid(), current_gtid(), current_gtmid(),
+        tls_uniq_task = ompcalls_record_event(OSL_TASK_STARTS, current_tid(), current_gtid(), current_gtmid(),
                                            next_task_data->ptr);
     }
 }
@@ -479,6 +523,26 @@ on_control_tool(omp_control_tool_t command, uint64_t modifier, void *arg, const 
             fprintf(stderr, "ompcalls: runtime does not support %s\n", #event); \
     } while (0)
 
+/* Number of threads to allocate event chains for. Must not call the OpenMP API (omp_get_max_threads() takes the
+   initialization lock of the runtime, which is held while the runtime calls ompcalls_initialize(): deadlock).
+   OSL_MAX_THREADS, else the first number of OMP_NUM_THREADS (the nthreads-var of the outermost level), else
+   the number of processors. */
+static int
+ompcalls_max_threads(int num_procs)
+{
+    const char *names[] = {"OSL_MAX_THREADS", "OMP_NUM_THREADS"};
+    for (int i = 0; i < 2; i++) {
+        const char *v = getenv(names[i]);
+        if (v == NULL)
+            continue;
+        char *end = NULL;
+        long n = strtol(v, &end, 10); /* "4,2": the first number is the outermost level */
+        if (end != v && n > 0 && n < 1000000)
+            return (int)n;
+    }
+    return num_procs > 0 ? num_procs : 1;
+}
+
 static int
 ompcalls_initialize(ompt_function_lookup_t lookup, int initial_device_num, ompt_data_t *tool_data)
 {
@@ -489,12 +553,17 @@ ompcalls_initialize(ompt_function_lookup_t lookup, int initial_device_num, ompt_
     if (ompcalls_set_callback == NULL)
         return 0; /* runtime is not OMPT capable enough, decline */
 
+    ompt_get_num_procs_t get_num_procs = (ompt_get_num_procs_t)lookup("ompt_get_num_procs");
+    int num_procs = get_num_procs ? get_num_procs() : 0;
+    if (num_procs <= 0) /* the runtime reports 0 this early in its initialization */
+        num_procs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+    g_max_threads = ompcalls_max_threads(num_procs);
+
     OMPCALLS_SET(ompt_callback_thread_begin, on_thread_begin);
     OMPCALLS_SET(ompt_callback_thread_end, on_thread_end);
     OMPCALLS_SET(ompt_callback_parallel_begin, on_parallel_begin);
     OMPCALLS_SET(ompt_callback_implicit_task, on_implicit_task);
     OMPCALLS_SET(ompt_callback_sync_region, on_sync_region);
-    OMPCALLS_SET(ompt_callback_sync_region_wait, on_sync_region_wait);
     OMPCALLS_SET(ompt_callback_work, on_work);
     OMPCALLS_SET(ompt_callback_masked, on_masked);
     OMPCALLS_SET(ompt_callback_mutex_acquire, on_mutex_acquire);
@@ -506,7 +575,7 @@ ompcalls_initialize(ompt_function_lookup_t lookup, int initial_device_num, ompt_
 
     /* OSL_APPLICATION_STARTS: allocates the per-thread event chains, so it
        has to run before any of the callbacks above can fire. */
-    __osl_begin_application(omp_get_max_threads(), (int)sysconf(_SC_NPROCESSORS_ONLN));
+    __osl_begin_application(g_max_threads, (int)sysconf(_SC_NPROCESSORS_ONLN));
 
     return 1; /* accept the tool */
 }

@@ -422,15 +422,33 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
     assert(com_store);
     assert(user_region_file);
     PET_Event *event = NULL;
+#ifdef PET_OMPT_NEST_IN_SYNC_REGION
+    // the end of the trace of the rank: the sync_regions still open have all their nested records
+    auto close_open_sync_regions = [this](PEAT_Rank r) {
+        PET_Rank *pet_rank = get_pet_rank(r);
+        for (auto &thread_regions : pet_rank->open_sync_regions) {
+            for (PET_OMPT_Event *region : thread_regions.second)
+                region->set_hold_for_child(false);
+            thread_regions.second.clear();
+        }
+    };
+#endif
     // a record is two lines: the function-specific one (trace_line_MPI) and the trace-specific one (trace_line_TRC)
-    if (!input_MPI->read_record(trace_line_MPI, trace_line_TRC, rank, ':'))
+    if (!input_MPI->read_record(trace_line_MPI, trace_line_TRC, rank, ':')) {
+#ifdef PET_OMPT_NEST_IN_SYNC_REGION
+        close_open_sync_regions(rank);
+#endif
         return NULL;
+    }
     if (trace_line_TRC.size() < 2) {
         if (!input_MPI->is_file_good(rank)) {
             if (!ranks_read[rank]) {
                 ranks_read[rank] = true;
             }
         }
+#ifdef PET_OMPT_NEST_IN_SYNC_REGION
+        close_open_sync_regions(rank);
+#endif
         return NULL;
     }
 
@@ -485,12 +503,14 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
     // event->node = ptp->get_tgt_node(rank);
     // An implicit barrier (OMPT sync_region) contains its sync_region_wait, which the trace has as the next record of the
     // same thread: hold the barrier until the wait is read (below), so that the wait can become its nested record
+#ifndef PET_OMPT_NEST_IN_SYNC_REGION
     PET_OMPT_Event *ompt_barrier = NULL;
     if (host_evt == NULL && container == NULL && func_id == OMPT_SYNC_REGION_ID) {
         ompt_barrier = dynamic_cast<PET_OMPT_Event *>(event);
         if (ompt_barrier)
             ompt_barrier->set_hold_for_child(true);
     }
+#endif
     if (global_func_id.check_property(func_id, PEAT_PROP_DATA_TXRX)) {
         input_MPI->read_lines(trace_line_MPI, rank, ':'); // the receive part is only a function-specific line
         if (event->get_event_type() == PET_EVENT_TYPE_TAR) {
@@ -542,6 +562,43 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
     PET_Rank* event_rank = get_pet_rank(event);
     event->o_time = event->e_time;
     if (host_evt == NULL) {
+#ifdef PET_OMPT_NEST_IN_SYNC_REGION
+        // OMPT records of a thread that begin inside a sync_region of the same thread (tasks run in a taskwait or a barrier,
+        // a taskwait inside such a task, ...) are its nested records: the thread runs them inside the region, not after it.
+        // A region stays open (hold_for_child: not bound, so pet reads on) until a record of its thread begins after its end
+        // or the trace of the rank ends. The records keep their own ids (unique in the rank, any number of id columns).
+        PET_OMPT_Event *ompt_event = (func_id >= OMPT_START_GROUP && func_id < OMPT_END_GROUP) ? dynamic_cast<PET_OMPT_Event *>(event) : NULL;
+        std::vector<PET_OMPT_Event *> &open_regions = event_rank->open_sync_regions[event->thread_id];
+        for (size_t i = 0; i < open_regions.size(); i++) {
+            if (event->o_time.func.in >= open_regions[i]->o_time.func.out) { // this one and the ones inside it are complete
+                for (size_t j = i; j < open_regions.size(); j++)
+                    open_regions[j]->set_hold_for_child(false);
+                open_regions.resize(i);
+                break;
+            }
+        }
+        if (ompt_event && !open_regions.empty() && ompt_event->can_nest_in_sync_region()) {
+            PET_OMPT_Event *region = open_regions.back(); // the innermost one
+            event->container_event = region;
+            event->host_event = open_regions.front(); // the top-level record that writes and owns the whole tree
+            // estimated times keep the distance to the region (move_event subtracts); a nested record does not begin before
+            // its container (the timeline would take it as an event of the past)
+            event->move_event(region->o_time.func.in - region->e_time.func.in);
+            if (event->e_time.func.in < region->e_time.func.in)
+                event->e_time.func.in = region->e_time.func.in;
+            if (event->e_time.mpi.in < event->e_time.func.in)
+                event->e_time.mpi.in = event->e_time.func.in;
+            if (event->e_time.mpi.out < event->e_time.mpi.in)
+                event->e_time.mpi.out = event->e_time.mpi.in;
+            if (event->e_time.func.out < event->e_time.mpi.out)
+                event->e_time.func.out = event->e_time.mpi.out;
+            region->nested_events.push_back(event);
+            open_regions.front()->flat_events.push_back(event); // pre-order: the order of reading
+            if (func_id == OMPT_SYNC_REGION_ID)
+                open_regions.push_back(ompt_event); // a region inside the region: may have nested records of its own
+            return event; // not a record of the thread's chain: no insert(), the region estimates and writes it
+        }
+#endif
         PEAT_Clock prev_o_out, prev_e_out = 0;
         PET_Event *prev_event = get_last_event_long(event);       // previous event from the same thread
         PET_Event *prev_read_event = event_rank->last_read_event; // previous read event from the rank
@@ -569,6 +626,7 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
                 event->move_event(difference);
             }
         }
+#ifndef PET_OMPT_NEST_IN_SYNC_REGION
         if (func_id == OMPT_SYNC_REGION_WAIT_ID && prev_event && event->ids.size() >= 2) {
             // the wait of an implicit barrier lies inside the barrier (OMPT spec, implicit-barrier-wait-begin/end): a record
             // nested in it, not the next one of the thread: the thread does not wait after the barrier but in it
@@ -598,6 +656,7 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
                 return event; // not a record of the thread's chain: no insert(), the barrier writes and estimates it
             }
         }
+#endif
         if (event->thread_id == 0) {
             event_rank->tractor_overhead_time += sub_t;
             // if (event->func_id!= OMPT_PARALLEL_ID) move_openmp_regions(sub_t, event);
@@ -606,13 +665,49 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
         if (prev_event) {
             event_rank->sub_time = difference + event->apply_user_code(get_user_code_ratio(prev_event, event), prev_event);
         }
+#ifdef PET_OMPT_CLAMP_LATE_WORKER_JOIN
+        // before insert(): it places the copies of parallel_end on the other threads after their last records
+        if (ompt_event && func_id == OMPT_PARALLEL_END_ID && event->thread_id == 0) {
+            const PEAT_Signed_Num barrier_implicit_parallel = 9; // ompt_sync_region_barrier_implicit_parallel: the join barrier
+            const PEAT_Clock join = event->o_time.func.in;      // the primary thread has finished the join
+            for (auto &thread_regions : event_rank->open_sync_regions) {
+                std::vector<PET_OMPT_Event *> &regions = thread_regions.second;
+                if (thread_regions.first == 0 || regions.empty())
+                    continue;
+                PET_OMPT_Event *barrier = regions.front();
+                if (barrier->kind != barrier_implicit_parallel || barrier->o_time.func.in > join || barrier->o_time.func.out <= join)
+                    continue;
+                const PEAT_Clock late = barrier->o_time.func.out - join; // idle time after the join, reported as barrier
+                barrier->o_time.func.out = join;
+                if (barrier->o_time.mpi.out > join)
+                    barrier->o_time.mpi.out = join;
+                barrier->e_time.func.out -= late;
+                if (barrier->e_time.mpi.out > barrier->e_time.func.out)
+                    barrier->e_time.mpi.out = barrier->e_time.func.out;
+                if (barrier->e_time.func.out < barrier->e_time.func.in) // all is fine as long as the estimate is consistent
+                    barrier->e_time.func.out = barrier->e_time.func.in;
+                if (barrier->e_time.mpi.out < barrier->e_time.mpi.in)
+                    barrier->e_time.mpi.out = barrier->e_time.mpi.in;
+                for (PET_OMPT_Event *region : regions) // its end is passed now: the worker's later records follow it
+                    region->set_hold_for_child(false);
+                regions.clear();
+            }
+        }
+#endif
         read_transport_events(event);
         event->insert();
         // event->split_event();
         event->post_read_event();
         event->set_sub_t(event_rank->tractor_overhead_time, event_rank->sub_time);
         event_rank->last_read_event = event;
+#ifdef PET_OMPT_NEST_IN_SYNC_REGION
+        if (ompt_event && func_id == OMPT_SYNC_REGION_ID) { // open until a record of its thread begins after its end
+            ompt_event->set_hold_for_child(true);
+            open_regions.push_back(ompt_event);
+        }
+#endif
     }
+#ifndef PET_OMPT_NEST_IN_SYNC_REGION
     if (ompt_barrier) {
         // read on until its wait (the next record of the same thread; records of the other threads can come in between)
         const int lookahead = 2 * static_cast<int>(get_max_thread_id(rank) + 1) + 2;
@@ -623,6 +718,7 @@ PET_Event *PET_Core::get_event(const PEAT_Rank rank, String_Split &trace_line_MP
         }
         ompt_barrier->set_hold_for_child(false);
     }
+#endif
     return event;
 }
 /*

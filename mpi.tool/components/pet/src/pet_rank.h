@@ -126,6 +126,9 @@ class PET_Rank
     PEAT_Bool orphans_processed;
     std::list<PET_Collective_Event *> nb_collectives; // outstanding nonblocking collectives (owners of foreign progress records)
     std::map<PEAT_Event_IDs, PET_Event *> events_by_ids; // every currently-live event of this rank, keyed by its full id path (any nesting depth)
+    /* per thread: the sync_regions being read whose end has not been passed yet, outermost first (PET_OMPT_NEST_IN_SYNC_REGION).
+       The records of the thread that begin before the end of the last one are its nested records. */
+    std::map<PEAT_Thread, std::vector<PET_OMPT_Event *>> open_sync_regions;
 
   public:
     void register_nb_collective(PET_Collective_Event *event) { nb_collectives.push_back(event); }
